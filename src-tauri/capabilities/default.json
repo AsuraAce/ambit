@@ -1,0 +1,112 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "fs:default",
+    "dialog:default",
+    "sql:default",
+    "sql:allow-execute",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-watch",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
+        }
+      ]
+    }
+  ]
+}

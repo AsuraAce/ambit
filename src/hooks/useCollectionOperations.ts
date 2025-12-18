@@ -1,0 +1,139 @@
+import * as React from 'react';
+import { useCallback } from 'react';
+import { Collection, AIImage, SmartCollection, FilterState } from '../types';
+import { useToast } from './useToast';
+
+interface UseCollectionOperationsProps {
+  collections: Collection[];
+  setCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
+  smartCollections: SmartCollection[];
+  setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
+  images: AIImage[];
+  updateCollectionThumbnails: (images: AIImage[]) => void;
+  setFilters: React.Dispatch<React.SetStateAction<any>>;
+  activeCollectionId: string | null;
+}
+
+export const useCollectionOperations = ({
+  collections,
+  setCollections,
+  smartCollections,
+  setSmartCollections,
+  images,
+  updateCollectionThumbnails,
+  setFilters,
+  activeCollectionId
+}: UseCollectionOperationsProps) => {
+  const { addToast } = useToast();
+
+  // --- Regular Collections ---
+
+  const createCollection = useCallback((name: string) => {
+    const newCol: Collection = { 
+        id: `c_${Date.now()}`, 
+        name, 
+        imageIds: [], 
+        createdAt: Date.now() 
+    };
+    setCollections(prev => [...prev, newCol]);
+    addToast(`Collection "${name}" created`, 'success');
+  }, [setCollections, addToast]);
+
+  const deleteCollection = useCallback((id: string) => {
+    setCollections(prev => prev.filter(c => c.id !== id));
+    if (activeCollectionId === id) {
+        setFilters((prev: any) => ({ ...prev, collectionId: null }));
+    }
+    addToast("Collection deleted", "success");
+  }, [setCollections, activeCollectionId, setFilters, addToast]);
+
+  const renameCollection = useCallback((id: string, newName: string) => {
+    setCollections(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+    addToast("Collection renamed", "success");
+  }, [setCollections, addToast]);
+
+  const setCollectionColor = useCallback((id: string, color: string | undefined) => {
+      setCollections(prev => prev.map(c => c.id === id ? { ...c, color } : c));
+  }, [setCollections]);
+
+  const toggleArchiveCollection = useCallback((id: string) => {
+      setCollections(prev => prev.map(c => {
+          if (c.id === id) {
+              const newState = !c.isArchived;
+              addToast(newState ? "Collection archived" : "Collection unarchived", "info");
+              return { ...c, isArchived: newState };
+          }
+          return c;
+      }));
+      
+      // Auto-eject logic: If user archives the collection they are currently viewing, switch to All Photos
+      if (activeCollectionId === id) {
+        setFilters((prev: any) => ({ ...prev, collectionId: null }));
+      }
+  }, [setCollections, addToast, activeCollectionId, setFilters]);
+
+  const togglePinCollection = useCallback((id: string) => {
+      setCollections(prev => prev.map(c => {
+          if (c.id === id) {
+              const newState = !c.isPinned;
+              return { ...c, isPinned: newState };
+          }
+          return c;
+      }));
+  }, [setCollections]);
+
+  const addImagesToCollection = useCallback((imageIds: string[], collectionId: string) => {
+    setCollections(prev => prev.map(col => {
+        if (col.id !== collectionId) return col;
+        const newIds = [...col.imageIds];
+        imageIds.forEach(id => {
+            if (!newIds.includes(id)) {
+                newIds.push(id);
+            }
+        });
+        return { ...col, imageIds: newIds };
+    }));
+    
+    setTimeout(() => updateCollectionThumbnails(images), 0);
+    addToast(`Added images to collection`, 'success');
+  }, [setCollections, images, updateCollectionThumbnails, addToast]);
+
+  const removeImagesFromCollection = useCallback((imageIds: string[], collectionId: string) => {
+      setCollections(prev => prev.map(col => {
+          if (col.id !== collectionId) return col;
+          return { ...col, imageIds: col.imageIds.filter(id => !imageIds.includes(id)) };
+      }));
+      setTimeout(() => updateCollectionThumbnails(images), 0);
+      addToast("Removed from collection", "info");
+  }, [setCollections, images, updateCollectionThumbnails, addToast]);
+
+  // --- Smart Collections ---
+
+  const saveSmartCollection = useCallback((name: string, filters: FilterState) => {
+      const newSmartCol: SmartCollection = {
+          id: `sc_${Date.now()}`,
+          name,
+          filters
+      };
+      setSmartCollections(prev => [...prev, newSmartCol]);
+      addToast(`Smart collection "${name}" saved`, 'success');
+  }, [setSmartCollections, addToast]);
+
+  const deleteSmartCollection = useCallback((id: string) => {
+      setSmartCollections(prev => prev.filter(s => s.id !== id));
+      addToast("Smart collection deleted", "info");
+  }, [setSmartCollections, addToast]);
+
+  return {
+    createCollection,
+    deleteCollection,
+    renameCollection,
+    setCollectionColor,
+    toggleArchiveCollection,
+    togglePinCollection,
+    addImagesToCollection,
+    removeImagesFromCollection,
+    saveSmartCollection,
+    deleteSmartCollection
+  };
+};

@@ -1,0 +1,425 @@
+import * as React from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
+import { AIImage } from '../types';
+import { DuplicateFinder } from './DuplicateFinder';
+import { StackGroup } from './StackGroup';
+import { useStacking } from '../hooks/useStacking';
+import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag } from 'lucide-react';
+import { VirtualGrid } from './VirtualGrid';
+
+interface MaintenanceViewProps {
+    images: AIImage[];
+    onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
+    onRestoreImages: (ids: string[]) => void;
+    onDeleteForever: (ids: string[]) => void;
+    onEmptyTrash: () => void;
+    onGroupImages?: (ids: string[]) => void;
+    onViewImage?: (id: string) => void;
+    onRegenerateThumbnails?: () => void;
+}
+
+export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
+    images,
+    onResolveDuplicate,
+    onRestoreImages,
+    onDeleteForever,
+    onEmptyTrash,
+    onGroupImages,
+    onViewImage,
+    onRegenerateThumbnails
+}) => {
+    // 1. Memoize basic filters (Fast O(N))
+    const deletedImages = useMemo(() => images.filter(img => img.isDeleted), [images]);
+    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
+    const missingImages = useMemo(() => images.filter(img => img.isMissing && !img.isDeleted), [images]);
+    const untaggedImages = useMemo(() => activeImages.filter(img => !img.metadata.positivePrompt || img.metadata.positivePrompt.trim() === ''), [activeImages]);
+
+    // Heuristic for unoptimized images: where thumbnail url equals full url (and isn't a web blob)
+    // We only care about active images
+    const unoptimizedImages = useMemo(() => activeImages.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:')), [activeImages]);
+
+    // 2. Default Tab Logic - Simplified to avoid scans
+    // We prioritize "Known Bad" states (Missing/Trash) over "Potential Optimizations" (Stacks/Dupes)
+    // to avoid running heavy stacking logic on mount.
+    const defaultTab = missingImages.length > 0 ? 'missing' :
+        (untaggedImages.length > 0 ? 'untagged' :
+            (unoptimizedImages.length > 0 ? 'thumbnails' :
+                (deletedImages.length > 0 ? 'trash' : 'stacks')));
+
+    const [activeTab, setActiveTab] = useState<'duplicates' | 'trash' | 'missing' | 'stacks' | 'untagged' | 'thumbnails'>(defaultTab);
+
+    // 3. Lazy Stacking Calculation
+    // Only run the heavy useStacking hook if the User explicitly goes to the 'stacks' tab.
+    // This prevents the "Freeze on Open" issue for the Trash tab.
+    const shouldCalculateStacks = activeTab === 'stacks';
+    // We pass 'activeImages' only if we should calculate, else empty array to skip processing.
+    // Use a stable empty array reference to prevent useStacking from infinite looping
+    const emptyImages = useMemo<AIImage[]>(() => [], []);
+    const { suggestedStacks } = useStacking(shouldCalculateStacks ? activeImages : emptyImages);
+
+    // 4. Trash Selection State
+    const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
+
+    const toggleTrashSelection = useCallback((id: string) => {
+        setSelectedTrashIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const selectAllTrash = () => {
+        setSelectedTrashIds(new Set(deletedImages.map(i => i.id)));
+    };
+
+    const handleRestoreSelected = () => {
+        onRestoreImages(Array.from(selectedTrashIds));
+        setSelectedTrashIds(new Set());
+    };
+
+    const handleDeleteSelected = () => {
+        onDeleteForever(Array.from(selectedTrashIds));
+        setSelectedTrashIds(new Set());
+    };
+
+    const handlePurgeMissing = () => {
+        onDeleteForever(missingImages.map(i => i.id));
+    };
+
+    const handleGroupConfirm = (baseId: string, relatedIds: string[]) => {
+        if (onGroupImages) {
+            onGroupImages([baseId, ...relatedIds]);
+        }
+    };
+
+    // VirtualGrid ref
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    // --- VirtualGrid Renderers ---
+    // Memoized individually to ensure stability for the VirtualGrid engine
+
+    const renderTrashItem = useCallback((img: AIImage, style: React.CSSProperties) => {
+        const isSelected = selectedTrashIds.has(img.id);
+        return (
+            <div key={img.id} style={style} className="p-1">
+                <div
+                    onClick={() => toggleTrashSelection(img.id)}
+                    className={`h-full w-full rounded-xl overflow-hidden border-2 transition-all cursor-pointer relative ${isSelected ? 'border-sage-500 ring-2 ring-sage-500/30' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 bg-gray-100 dark:bg-slate-800'}`}
+                >
+                    <div className="relative w-full h-full">
+                        <img
+                            src={img.thumbnailUrl}
+                            loading="lazy"
+                            className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-70 grayscale'}`}
+                            alt=""
+                        />
+                        {isSelected && (
+                            <div className="absolute top-2 left-2 w-5 h-5 bg-sage-500 rounded-full flex items-center justify-center shadow-md z-10">
+                                <CheckSquare className="w-3 h-3 text-white" />
+                            </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[10px] text-white truncate">
+                            {img.filename}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }, [selectedTrashIds, toggleTrashSelection]);
+
+    const renderUntaggedItem = useCallback((img: AIImage, style: React.CSSProperties) => {
+        return (
+            <div key={img.id} style={style} className="p-1">
+                <div
+                    onClick={() => onViewImage && onViewImage(img.id)}
+                    className="h-full w-full relative group rounded-xl overflow-hidden border-2 border-transparent hover:border-orange-300 dark:hover:border-orange-500/50 cursor-pointer bg-gray-100 dark:bg-slate-800"
+                >
+                    <div className="relative w-full h-full">
+                        <img src={img.thumbnailUrl} loading="lazy" className="w-full h-full object-cover" alt="" />
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
+                                <Wand2 className="w-3 h-3" /> Recover
+                            </span>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-slate-900 text-[10px] text-gray-500 truncate border-t border-gray-100 dark:border-white/5">
+                            {img.filename}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }, [onViewImage]);
+
+    const renderMissingItem = useCallback((img: AIImage, style: React.CSSProperties) => {
+        return (
+            <div key={img.id} style={style} className="p-2">
+                <div className="h-full w-full flex flex-col items-center justify-center gap-2 p-3 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/30 rounded-xl shadow-sm relative group hover:shadow-md transition-shadow">
+                    <div className="w-12 h-12 bg-gray-100 dark:bg-black rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/10 shrink-0">
+                        <FileWarning className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <div className="text-center w-full min-w-0">
+                        <div className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate w-full" title={img.filename}>{img.filename}</div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">{new Date(img.timestamp).toLocaleDateString()}</div>
+                        <div className="text-[10px] text-red-500 mt-1 font-medium">Source Not Found</div>
+                    </div>
+                </div>
+            </div>
+        );
+    }, []);
+
+
+    return (
+        <div className="h-full flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="flex-shrink-0 pt-4 pl-6 pr-8 pb-4 z-20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg">
+                    <div>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="p-2 bg-sage-100 dark:bg-sage-900/30 rounded-lg text-sage-600 dark:text-sage-400">
+                                <Eraser className="w-5 h-5" />
+                            </div>
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Maintenance</h2>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Organize your library, resolve conflicts, and manage deleted items.</p>
+                    </div>
+
+                    <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">
+                        <button onClick={() => setActiveTab('thumbnails')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'thumbnails' ? 'bg-white dark:bg-zinc-700 text-blue-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Thumbnails {unoptimizedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'thumbnails' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{unoptimizedImages.length}</span>}
+                        </button>
+
+                        <button onClick={() => setActiveTab('stacks')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'stacks' ? 'bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Stacks
+                        </button>
+
+                        <button onClick={() => setActiveTab('duplicates')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === 'duplicates' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Duplicates
+                        </button>
+
+                        <button onClick={() => setActiveTab('untagged')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'untagged' ? 'bg-white dark:bg-zinc-700 text-orange-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Untagged {untaggedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'untagged' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{untaggedImages.length}</span>}
+                        </button>
+
+                        <button onClick={() => setActiveTab('missing')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'missing' ? 'bg-white dark:bg-zinc-700 text-red-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Missing {missingImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'missing' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{missingImages.length}</span>}
+                        </button>
+
+                        <button onClick={() => setActiveTab('trash')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'trash' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            Trash {deletedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'trash' ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{deletedImages.length}</span>}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-8" style={{ scrollbarGutter: 'stable' }}>
+
+                {activeTab === 'thumbnails' && (
+                    <div className="w-full pb-24 h-full flex flex-col">
+                        <div className="flex-shrink-0 mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <Layers className="w-5 h-5 text-blue-500" /> Optimize Thumbnails
+                            </h3>
+                            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                                Found {unoptimizedImages.length} images using full-resolution files as thumbnails.
+                                Regenerating them will significantly improve gallery scroll smoothness.
+                            </p>
+                            {unoptimizedImages.length > 0 && onRegenerateThumbnails && (
+                                <button onClick={() => onRegenerateThumbnails()} className="mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
+                                    <Wand2 className="w-4 h-4" /> Generate All Thumbnails
+                                </button>
+                            )}
+                        </div>
+                        {unoptimizedImages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                <p>All items optimized!</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 min-h-[500px]">
+                                <VirtualGrid
+                                    items={unoptimizedImages}
+                                    layout="masonry"
+                                    minItemWidth={200}
+                                    gap={16}
+                                    padding={0}
+                                    scrollContainerRef={scrollContainerRef}
+                                    renderItem={renderUntaggedItem} // Reuse simple renderer
+                                    getItemRatio={(img) => img.width / img.height}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+
+                {activeTab === 'stacks' && (
+                    <div className="w-full pb-24 animate-in fade-in">
+                        <div className="flex flex-col gap-6 max-w-5xl mx-auto">
+                            {/* Explanation Banner */}
+                            <div className="p-4 bg-amethyst-50 dark:bg-amethyst-900/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl flex gap-4">
+                                <div className="p-2 bg-white dark:bg-amethyst-900/30 rounded-lg h-fit text-amethyst-600">
+                                    <Wand2 className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">Intelligent Grouping</h3>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
+                                        Ambit detected these images might be part of the same generation workflow (e.g. Upscales, Hires Fix, or Variations).
+                                        Grouping them will clean up your grid by stacking them under a single card.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Content */}
+                            {suggestedStacks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                    <div className="p-4 bg-amethyst-100 dark:bg-amethyst-900/20 rounded-full mb-4">
+                                        <Layers className="w-10 h-10 text-amethyst-500 dark:text-amethyst-400" />
+                                    </div>
+                                    <p className="font-medium text-gray-900 dark:text-white">No Stacks Detected</p>
+                                    <p className="text-sm mt-1 max-w-sm text-center">Your library looks flat! We couldn't find sequential workflows (like Base -&gt; Upscale) based on time and prompts.</p>
+                                </div>
+                            ) : (
+                                suggestedStacks.map(group => (
+                                    <StackGroup key={group.id} group={group} onConfirm={handleGroupConfirm} />
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'duplicates' && (
+                    <DuplicateFinder
+                        images={activeImages.filter(i => !i.groupId)}
+                        onResolve={onResolveDuplicate}
+                        onStack={onGroupImages}
+                    />
+                )}
+
+                {activeTab === 'untagged' && (
+                    <div className="w-full pb-24 h-full flex flex-col">
+                        <div className="flex-shrink-0 mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <Tag className="w-5 h-5 text-orange-500" /> Untagged Images
+                            </h3>
+                            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                                These images have no generation metadata.
+                            </p>
+                        </div>
+                        {untaggedImages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                <p>All Metadata Present!</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 min-h-[500px]">
+                                <VirtualGrid
+                                    items={untaggedImages}
+                                    layout="masonry"
+                                    minItemWidth={200}
+                                    gap={16}
+                                    padding={0}
+                                    scrollContainerRef={scrollContainerRef}
+                                    renderItem={renderUntaggedItem}
+                                    getItemRatio={(img) => img.width / img.height}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'missing' && (
+                    <div className="w-full pb-24 h-full flex flex-col">
+                        <div className="flex-shrink-0 flex items-center justify-between mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm gap-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <Unlink className="w-5 h-5 text-red-500" /> Missing Files
+                                </h3>
+                                <p className="text-sm text-gray-500 mt-1">Files in library but not on disk.</p>
+                            </div>
+                            {missingImages.length > 0 && (
+                                <button onClick={handlePurgeMissing} className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
+                                    <Trash2 className="w-4 h-4" /> Purge {missingImages.length} Entries
+                                </button>
+                            )}
+                        </div>
+                        {missingImages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                <p>No missing files.</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 min-h-[500px]">
+                                <VirtualGrid
+                                    items={missingImages}
+                                    layout="grid"
+                                    minItemWidth={250}
+                                    gap={16}
+                                    padding={0}
+                                    scrollContainerRef={scrollContainerRef}
+                                    renderItem={renderMissingItem}
+                                    getItemRatio={() => 0.5}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'trash' && (
+                    <div className="w-full pb-24 h-full flex flex-col">
+                        <div className="flex-shrink-0 flex items-center justify-between mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm">
+                            <div className="flex items-center gap-3">
+                                <button onClick={selectAllTrash} className="text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+                                    <CheckSquare className="w-4 h-4" /> Select All
+                                </button>
+                                {selectedTrashIds.size > 0 && (
+                                    <button onClick={() => setSelectedTrashIds(new Set())} className="text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+                                        <XSquare className="w-4 h-4" /> Clear
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {selectedTrashIds.size > 0 ? (
+                                    <>
+                                        <span className="text-xs font-medium text-sage-600 dark:text-sage-400 mr-2">{selectedTrashIds.size} selected</span>
+                                        <button onClick={handleRestoreSelected} className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-lg text-xs font-bold shadow flex items-center gap-2 transition-colors">
+                                            <ArchiveRestore className="w-4 h-4" /> Restore
+                                        </button>
+                                        <button onClick={handleDeleteSelected} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold shadow flex items-center gap-2 transition-colors">
+                                            <Trash2 className="w-4 h-4" /> Delete Forever
+                                        </button>
+                                    </>
+                                ) : (
+                                    deletedImages.length > 0 && (
+                                        <button onClick={onEmptyTrash} className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-red-200 dark:hover:bg-red-900/50">
+                                            <Trash2 className="w-4 h-4" /> Empty All Trash
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                        </div>
+
+                        {deletedImages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                <Trash2 className="w-10 h-10 opacity-30 mb-4" />
+                                <p>Trash is empty.</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 min-h-[500px]">
+                                <VirtualGrid
+                                    items={deletedImages}
+                                    layout="masonry"
+                                    minItemWidth={180}
+                                    gap={16}
+                                    padding={0}
+                                    scrollContainerRef={scrollContainerRef}
+                                    renderItem={renderTrashItem}
+                                    getItemRatio={(img) => img.width / img.height}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};

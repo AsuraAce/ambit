@@ -1,0 +1,79 @@
+import { useState, useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Minus, Square, X, Monitor } from "lucide-react";
+
+export const TitleBar = () => {
+    const [appWindow, setAppWindow] = useState<any>(null);
+    const [isMaximized, setIsMaximized] = useState(false);
+
+    useEffect(() => {
+        const initWindow = async () => {
+            try {
+                const { getCurrentWindow } = await import("@tauri-apps/api/window");
+                const win = getCurrentWindow();
+                setAppWindow(win);
+
+                setIsMaximized(await win.isMaximized());
+                const updateState = async () => setIsMaximized(await win.isMaximized());
+                const unlisten = await win.listen('tauri://resize', updateState);
+
+                return () => unlisten();
+            } catch (e) {
+                console.warn("TitleBar: Not in Tauri environment");
+            }
+        };
+        initWindow();
+    }, []);
+
+    const handleMinimize = () => appWindow?.minimize();
+    const handleMaximize = async () => {
+        if (!appWindow) return;
+        const current = await appWindow.isMaximized();
+        if (current) {
+            await appWindow.unmaximize();
+        } else {
+            await appWindow.maximize();
+        }
+        setIsMaximized(!current);
+    };
+    const handleClose = () => appWindow?.close();
+
+    if (!appWindow) return null; // Don't render if not in Tauri (or loading)
+
+    return (
+        <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 bg-white dark:bg-black/90 flex justify-between items-center select-none z-50 border-b border-gray-200 dark:border-white/5 transition-colors">
+            <div className="flex items-center gap-2 px-3 pointer-events-none">
+                <div className="w-3 h-3 bg-sage-500 rounded-full" />
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">AMBIT</span>
+            </div>
+
+            <div className="flex h-full">
+                <button
+                    onClick={handleMinimize}
+                    className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                >
+                    <Minus className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={handleMaximize}
+                    className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                >
+                    {isMaximized ? (
+                        <div className="relative w-3 h-3">
+                            <Square className="w-3 h-3 absolute -top-0.5 -right-0.5 opacity-50" />
+                            <Square className="w-3 h-3 absolute -bottom-0.5 -left-0.5" />
+                        </div>
+                    ) : (
+                        <Square className="w-3 h-3" />
+                    )}
+                </button>
+                <button
+                    onClick={handleClose}
+                    className="h-full px-4 hover:bg-red-500 flex items-center justify-center transition-colors text-gray-500 hover:text-white dark:text-gray-400"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+};
