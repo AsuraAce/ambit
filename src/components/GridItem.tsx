@@ -41,7 +41,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     // Determine if this specific image should be masked
     // 1. Matches keyword?
     const matchesKeyword = maskedKeywords.length > 0 &&
-        maskedKeywords.some(kw => (image.metadata.positivePrompt || '').toLowerCase().includes(kw.toLowerCase()));
+        maskedKeywords.some(kw => String(image.metadata.positivePrompt || '').toLowerCase().includes(kw.toLowerCase()));
 
     // 2. Is manually masked?
     const isManuallyMasked = !!image.userMasked;

@@ -41,12 +41,12 @@ export const useFiltering = (
                         if (val.startsWith('<')) return img.metadata.cfg < Number(val.slice(1));
                         return img.metadata.cfg === Number(val);
                     case 'model':
-                        return (img.metadata.overrideModel || img.metadata.model).toLowerCase().includes(val);
+                        return String(img.metadata.overrideModel || img.metadata.model || '').toLowerCase().includes(val);
                     case 'tool':
-                        return img.metadata.tool.toLowerCase().includes(val);
+                        return String(img.metadata.tool || '').toLowerCase().includes(val);
                     case 'lora':
                         // Check if any lora in the list includes the search value
-                        return img.metadata.loras?.some(l => l.toLowerCase().includes(val)) ?? false;
+                        return img.metadata.loras?.some(l => String(l).toLowerCase().includes(val)) ?? false;
                     case 'seed':
                         return String(img.metadata.seed).includes(val);
                     default:
@@ -54,7 +54,7 @@ export const useFiltering = (
                 }
             }
             return (
-                img.metadata.positivePrompt.toLowerCase().includes(lowerTerm) ||
+                String(img.metadata.positivePrompt || '').toLowerCase().includes(lowerTerm) ||
                 img.filename.toLowerCase().includes(lowerTerm)
             );
         });
@@ -69,7 +69,7 @@ export const useFiltering = (
             // 2. PRIVACY LOGIC:
             // If privacy is enabled AND mode is 'hide', we completely filter out masked items.
             if (privacyEnabled && maskingMode === 'hide') {
-                const isAutoMasked = maskedKeywords.length > 0 && maskedKeywords.some(kw => img.metadata.positivePrompt.toLowerCase().includes(kw.toLowerCase()));
+                const isAutoMasked = maskedKeywords.length > 0 && maskedKeywords.some(kw => String(img.metadata.positivePrompt || '').toLowerCase().includes(kw.toLowerCase()));
                 if (img.userMasked || isAutoMasked) {
                     return false;
                 }
@@ -176,7 +176,7 @@ export const useFiltering = (
         ['cyberpunk', 'portrait', 'landscape', 'anime', 'realistic', '8k', 'masterpiece', 'oil painting', 'concept art', 'sci-fi', 'fantasy'].forEach(t => tags.add(t));
 
         images.slice(0, 200).forEach(img => {
-            if (img.metadata.positivePrompt) {
+            if (typeof img.metadata.positivePrompt === 'string') {
                 img.metadata.positivePrompt.split(',').forEach(t => {
                     const clean = t.trim().toLowerCase();
                     if (clean.length > 2 && clean.length < 40) tags.add(clean);

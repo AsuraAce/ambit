@@ -32,7 +32,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const deletedImages = useMemo(() => images.filter(img => img.isDeleted), [images]);
     const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
     const missingImages = useMemo(() => images.filter(img => img.isMissing && !img.isDeleted), [images]);
-    const untaggedImages = useMemo(() => activeImages.filter(img => !img.metadata.positivePrompt || img.metadata.positivePrompt.trim() === ''), [activeImages]);
+    const untaggedImages = useMemo(() => activeImages.filter(img => !img.metadata.positivePrompt || (typeof img.metadata.positivePrompt === 'string' && img.metadata.positivePrompt.trim() === '')), [activeImages]);
 
     // Heuristic for unoptimized images: where thumbnail url equals full url (and isn't a web blob)
     // We only care about active images
