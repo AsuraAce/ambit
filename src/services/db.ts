@@ -48,10 +48,10 @@ export const insertImage = async (image: AIImage) => {
     );
 };
 
-export const getAllImages = async (limit?: number): Promise<AIImage[]> => {
+export const getAllImages = async (limit?: number, offset: number = 0): Promise<AIImage[]> => {
     const db = await getDb();
     const query = limit
-        ? `SELECT * FROM images WHERE is_deleted = 0 ORDER BY timestamp DESC LIMIT ${limit}`
+        ? `SELECT * FROM images WHERE is_deleted = 0 ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
         : 'SELECT * FROM images WHERE is_deleted = 0 ORDER BY timestamp DESC';
 
     const rows = await db.select<any[]>(query);

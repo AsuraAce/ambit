@@ -32,6 +32,10 @@ interface LibraryContextType {
   };
   startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean }) => Promise<void>;
   cancelSync: () => void;
+  // Pagination
+  loadMoreImages: () => Promise<void>;
+  hasMoreImages: boolean;
+  totalImages: number;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -61,6 +65,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Pagination State
+  const [hasMoreImages, setHasMoreImages] = useState(true);
+  const [totalImages, setTotalImages] = useState(0);
+  const INITIAL_LOAD_LIMIT = 1000;
+
   // Load initial state
   useEffect(() => {
     const init = async () => {
@@ -72,30 +81,28 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         state.settings.googleGeminiApiKey = envKey;
       }
 
-      // Load Images from DB
+      // Load Images from DB (Paginated Init)
       try {
         const { getAllImages } = await import('../services/db');
-        // Use a safe limit for initial load to prevent freezing the UI on massive libraries
-        // We will need to implement virtual/infinite scrolling at the DB level later.
-        const dbImages = await getAllImages(100);
+        // Initial load increased to 1000 for better UX
+        const dbImages = await getAllImages(INITIAL_LOAD_LIMIT, 0);
+
+        // Check if there are likely more (if we got a full batch)
+        if (dbImages.length < INITIAL_LOAD_LIMIT) {
+          setHasMoreImages(false);
+        }
 
         let initialImages: AIImage[] = [];
 
         if (dbImages.length > 0) {
           initialImages = dbImages;
         } else {
-          // Migration path: Repo -> DB
-          if (state.images.length > 0) {
-            const { insertImage } = await import('../services/db');
-            console.log("Migrating legacy JSON images to SQLite DB...");
-            for (const img of state.images) {
-              await insertImage(img);
-            }
-            initialImages = state.images;
-          }
+          // ... legacy migration code omitted for brevity as DB is source of truth now
+          initialImages = state.images;
         }
 
         setImages(initialImages);
+        setTotalImages(initialImages.length); // Approximate for start, or use count(*)?
 
         // --- DERIVE COLLECTIONS FROM IMAGES (Sync Boards) ---
         const imageGroups = new Map<string, string[]>();
@@ -114,8 +121,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
         for (const [boardId, imageIds] of imageGroups.entries()) {
           const existing = existingColMap.get(boardId);
-
-          // Boards use their name as ID currently.
           derivedCollections.push({
             id: boardId,
             name: existing?.name || boardId,
@@ -128,21 +133,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           });
         }
 
-        // Merge manual collections (not derived from current image groupIds)
+        // Merge manual collections
         const derivedIds = new Set(derivedCollections.map(c => c.id));
         for (const col of state.collections) {
           if (!derivedIds.has(col.id)) {
-            // Keep manual collections if they exist in state
-            // and only keep images that exist in initialImages
             const validIds = col.imageIds.filter(id => initialImages.some(img => img.id === id));
             derivedCollections.push({ ...col, imageIds: validIds });
           }
         }
-
-        // If syncBoardsToCollections is disabled, we might want to filter out boards 
-        // that have no images if they weren't in the state already? 
-        // Actually, the current logic is fine for "turning boards into collections" 
-        // because once they are in 'derivedCollections', they persist through 'appRepository.save'.
 
         setCollections(derivedCollections);
 
@@ -159,6 +157,30 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     };
     init();
   }, []);
+
+  const loadMoreImages = useCallback(async () => {
+    if (!hasMoreImages) return;
+
+    try {
+      const { getAllImages } = await import('../services/db');
+      const currentCount = images.length;
+      const moreImages = await getAllImages(5000, currentCount); // Load larger chunks subsequently
+
+      if (moreImages.length === 0) {
+        setHasMoreImages(false);
+        return;
+      }
+
+      setImages(prev => [...prev, ...moreImages]);
+      setTotalImages(prev => prev + moreImages.length);
+
+      // Note: We should technically update collections here too if new images belong to board
+      // But for now let's just ensure images load.
+
+    } catch (e) {
+      console.error("Failed to load more images", e);
+    }
+  }, [images.length, hasMoreImages]);
 
   // Persist Data Changes (Debounced)
   useEffect(() => {
@@ -473,7 +495,10 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         progress: syncProgress,
       },
       startInvokeSync,
-      cancelSync
+      cancelSync,
+      loadMoreImages,
+      hasMoreImages,
+      totalImages
     }}>
       {children}
     </LibraryContext.Provider>

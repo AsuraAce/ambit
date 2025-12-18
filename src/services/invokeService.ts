@@ -22,7 +22,7 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
         negativePrompt: '',
     };
 
-    const root = meta.image || meta;
+    const root = meta.image || meta.generation || meta;
 
     if (root.positive_prompt) mapped.positivePrompt = root.positive_prompt;
     if (root.negative_prompt) mapped.negativePrompt = root.negative_prompt;
@@ -36,8 +36,13 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
     }
 
     if (root.model) {
+        // Debug Log for first few images to identify structure
+        if (Math.random() < 0.001) console.log('[Invoke Metadata Debug]', 'Raw Model:', root.model);
+
         if (typeof root.model === 'string') mapped.model = root.model;
         else if (root.model.model_name) mapped.model = root.model.model_name;
+        else if (root.model.name) mapped.model = root.model.name;
+        else if (root.model.default) mapped.model = root.model.default; // Some store as default?
     }
 
     return mapped;
@@ -54,7 +59,7 @@ async function fetchBoardMappings(db: Database): Promise<Map<string, string>> {
 
         for (const img of images as any[]) {
             const name = boardMap.get(img.board_id);
-            if (name) mapping.set(img.image_name as any, name);
+            if (name) mapping.set(String(img.image_name), name);
         }
     } catch (e) {
         console.warn('Failed to fetch boards/collections mapping:', e);
