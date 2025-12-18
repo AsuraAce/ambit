@@ -1,64 +1,5 @@
-async function fetchBoardMappings(db: Database): Promise<Map<string, string>> {
-    const mapping = new Map<string, string>();
-    try {
-        const boards = await db.select<{ board_id: string, board_name: string }[]>("SELECT board_id, board_name FROM boards");
-        console.log(`[InvokeSync] Found ${boards.length} boards.`);
-
-        const boardMap = new Map(boards.map(b => [b.board_id, b.board_name]));
-
-        const images = await db.select<{ image_name: string, board_id: string }[]>("SELECT image_name, board_id FROM board_images");
-        console.log(`[InvokeSync] Found ${images.length} board_image associations.`);
-
-        for (const img of images) {
-            const name = boardMap.get(img.board_id);
-            if (name) mapping.set(img.image_name, name);
-        }
-        console.log(`[InvokeSync] Mapped ${mapping.size} images to boards.`);
-        if (mapping.size > 0) {
-            console.log(`[InvokeSync] Sample mapping: ${images[0].image_name} -> ${mapping.get(images[0].image_name)}`);
-        }
-
-    } catch (e) {
-        console.warn('Failed to fetch boards/collections mapping:', e);
-    }
-    return mapping;
-}
-const isFile = rootPath.endsWith('.db');
-
-const candidates = isFile ? [rootPath] : [
-    `${rootPath}/databases/invokeai.db`,
-    `${rootPath}\\databases\\invokeai.db`,
-    `${rootPath}/invokeai.db`
-];
-
-for (const path of candidates) {
-    try {
-        const cleanPath = path.replace(/\\/g, '/');
-        const connectionString = `sqlite:${cleanPath}`;
-
-        console.log(`Attempting connection to ${connectionString}`);
-
-        const db = await Database.load(connectionString);
-        const result = await db.select<any[]>('SELECT count(*) as count FROM images');
-        const count = result[0]?.count || 0;
-
-        return {
-            success: true,
-            count: count,
-            message: `Connected! Found ${count} images.`
-        };
-
-    } catch (e: any) {
-        console.warn(`Failed to connect to ${path}:`, e);
-    }
-}
-
-return {
-    success: false,
-    count: 0,
-    message: "Could not find valid 'invokeai.db' at this path."
-};
-};
+import Database from '@tauri-apps/plugin-sql';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 // --- Helper to map InvokeAI metadata to Ambit's format ---
 function mapInvokeMetadata(row: any, metaCol: string): any {
@@ -106,20 +47,57 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
 async function fetchBoardMappings(db: Database): Promise<Map<string, string>> {
     const mapping = new Map<string, string>();
     try {
-        const boards = await db.select<{ board_id: string, board_name: string }[]>("SELECT board_id, board_name FROM boards");
+        const boards = await (db as any).select("SELECT board_id, board_name FROM boards");
         const boardMap = new Map(boards.map(b => [b.board_id, b.board_name]));
 
-        const images = await db.select<{ image_name: string, board_id: string }[]>("SELECT image_name, board_id FROM board_images");
+        const images = await (db as any).select("SELECT image_name, board_id FROM board_images");
 
-        for (const img of images) {
+        for (const img of images as any[]) {
             const name = boardMap.get(img.board_id);
-            if (name) mapping.set(img.image_name, name);
+            if (name) mapping.set(img.image_name as any, name);
         }
     } catch (e) {
         console.warn('Failed to fetch boards/collections mapping:', e);
     }
     return mapping;
 }
+
+export const testConnection = async (rootPath: string): Promise<{ success: boolean, count: number, message: string }> => {
+    if (!rootPath) return { success: false, count: 0, message: "No path provided." };
+
+    const isFile = rootPath.endsWith('.db');
+    const candidates = isFile ? [rootPath] : [
+        `${rootPath}/databases/invokeai.db`,
+        `${rootPath}\\databases\\invokeai.db`,
+        `${rootPath}/invokeai.db`
+    ];
+
+    for (const path of candidates) {
+        try {
+            const cleanPath = path.replace(/\\/g, '/');
+            const connectionString = `sqlite:${cleanPath}`;
+
+            console.log(`[InvokeAI] Testing connection to ${connectionString}`);
+            const db = await Database.load(connectionString);
+            const result = await (db as any).select('SELECT count(*) as count FROM images');
+            const count = result[0]?.count || 0;
+
+            return {
+                success: true,
+                count: count,
+                message: `Connected! Found ${count} images.`
+            };
+        } catch (e: any) {
+            console.warn(`[InvokeAI] Failed to connect to ${path}:`, e);
+        }
+    }
+
+    return {
+        success: false,
+        count: 0,
+        message: "Could not find valid 'invokeai.db' at this path."
+    };
+};
 
 export const syncImages = async (
     rootPath: string,
@@ -129,18 +107,12 @@ export const syncImages = async (
 ): Promise<number> => {
     if (!rootPath) return 0;
 
-    // ... (connection logic remains same)
     let dbPath = rootPath;
     const isFile = rootPath.endsWith('.db');
     if (!isFile) {
-        if (rootPath.endsWith('/') || rootPath.endsWith('\\')) {
-            dbPath = rootPath + 'databases/invokeai.db';
-        } else {
-            dbPath = rootPath + '/databases/invokeai.db';
-        }
+        dbPath = rootPath.replace(/[\\/]$/, '') + '/databases/invokeai.db';
     }
 
-    // Normalize meant for SQLite URL
     const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
     let invokeDb;
@@ -151,7 +123,7 @@ export const syncImages = async (
     }
 
     // 2. Inspect Schema
-    const tableInfo = await invokeDb.select<any[]>('PRAGMA table_info(images)');
+    const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)');
     const columns = tableInfo.map(c => c.name);
 
     const hasMetadataJson = columns.includes('metadata_json');
@@ -159,6 +131,7 @@ export const syncImages = async (
     const hasIsIntermediate = columns.includes('is_intermediate');
     const hasStarred = columns.includes('starred');
     const hasIsStarred = columns.includes('is_starred');
+    const hasThumbnailName = columns.includes('thumbnail_name');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -167,23 +140,21 @@ export const syncImages = async (
     }
 
     // Check for Boards
-    let hasBoards = false;
+    let hasBoardsTable = false;
     try {
-        const boardsTable = await invokeDb.select<any[]>("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
-        hasBoards = boardsTable.length > 0;
+        const boardsTable = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
+        hasBoardsTable = boardsTable.length > 0;
     } catch (e) { }
 
     // Pre-fetch Boards if requested
     let boardMapping = new Map<string, string>();
-    if (options.syncBoards && hasBoards) {
+    if (options.syncBoards && hasBoardsTable) {
         boardMapping = await fetchBoardMappings(invokeDb);
     }
 
-    console.log('[InvokeAI Schema]', { columns, hasBoards, hasStarred, hasIsStarred });
+    console.log('[InvokeAI Schema]', { columns, hasBoardsTable, hasStarred, hasIsStarred, hasThumbnailName });
 
-    // 3. Prepare Import Dependencies
     const { insertImage } = await import('./db');
-    const { convertFileSrc } = await import('@tauri-apps/api/core');
 
     let imagesRoot = rootPath;
     if (isFile) {
@@ -192,7 +163,7 @@ export const syncImages = async (
 
     // 4. Count Total
     const whereClause = hasIsIntermediate ? 'WHERE is_intermediate = 0' : '';
-    const countRes = await invokeDb.select<any[]>(`SELECT count(*) as count FROM images ${whereClause}`);
+    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 
     if (totalToImport === 0) return 0;
@@ -202,22 +173,20 @@ export const syncImages = async (
     const BATCH_SIZE = 500;
     let offset = 0;
 
-    // Build SELECT Query
     const favCol = hasStarred ? ', starred' : (hasIsStarred ? ', is_starred' : '');
+    const thumbCol = hasThumbnailName ? ', thumbnail_name' : '';
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
-        // Dynamic column selection
         const query = `
-            SELECT image_name, ${metaCol}, created_at, width, height ${favCol}
+            SELECT image_name, ${metaCol}, created_at, width, height ${favCol} ${thumbCol}
             FROM images 
             ${whereClause} 
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
         `;
 
-        const rows = await invokeDb.select<any[]>(query);
-
+        const rows = await (invokeDb as any).select(query);
         if (rows.length === 0) break;
 
         for (const row of rows) {
@@ -237,16 +206,22 @@ export const syncImages = async (
                 }
 
                 // Determine Group/Collection from Board
-                let groupId: string | undefined = undefined;
+                let boardId: string | undefined = undefined;
                 if (options.syncBoards) {
-                    groupId = boardMapping.get(row.image_name);
+                    boardId = boardMapping.get(row.image_name);
+                }
+
+                // Determine Thumbnail Url
+                let thumbnailUrl = convertFileSrc(fullPath);
+                if (hasThumbnailName && row.thumbnail_name) {
+                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/thumbnails/${row.thumbnail_name}`);
                 }
 
                 const newImg: any = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
-                    thumbnailUrl: convertFileSrc(fullPath),
-                    filename: row.image_name, // Usually basename
+                    thumbnailUrl: thumbnailUrl,
+                    filename: row.image_name,
                     fileSize: 0,
                     timestamp: isNaN(timestamp) ? Date.now() : timestamp,
                     width: row.width || 0,
@@ -254,7 +229,8 @@ export const syncImages = async (
                     isFavorite: isFavorite,
                     isDeleted: false,
                     isMissing: false,
-                    groupId: groupId, // Store Board Name as Group ID
+                    groupId: undefined, // Cleared to prevent incorrect stacking
+                    boardId: boardId,
                     metadata: metadata
                 };
 
@@ -267,10 +243,9 @@ export const syncImages = async (
 
         offset += rows.length;
         onProgress(Math.min(imported, totalToImport), totalToImport);
-
-        // Brief pause to allow UI updates
         await new Promise(r => setTimeout(r, 0));
     }
 
     return imported;
 };
+

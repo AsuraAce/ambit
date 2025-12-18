@@ -51,7 +51,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,
-    hasCompletedOnboarding: false
+    hasCompletedOnboarding: false,
+    syncBoardsToCollections: false
   });
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
@@ -74,7 +75,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       // Load Images from DB
       try {
         const { getAllImages } = await import('../services/db');
-        const dbImages = await getAllImages();
+        // Use a safe limit for initial load to prevent freezing the UI on massive libraries
+        // We will need to implement virtual/infinite scrolling at the DB level later.
+        const dbImages = await getAllImages(100);
 
         let initialImages: AIImage[] = [];
 
@@ -95,48 +98,51 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         setImages(initialImages);
 
         // --- DERIVE COLLECTIONS FROM IMAGES (Sync Boards) ---
-        // Merge DB-derived collections with existing ones (preserving custom names/thumbnails if possible)
         const imageGroups = new Map<string, string[]>();
 
         for (const img of initialImages) {
-          if (img.groupId) {
-            if (!imageGroups.has(img.groupId)) {
-              imageGroups.set(img.groupId, []);
+          if (img.boardId) {
+            if (!imageGroups.has(img.boardId)) {
+              imageGroups.set(img.boardId, []);
             }
-            imageGroups.get(img.groupId)?.push(img.id);
+            imageGroups.get(img.boardId)?.push(img.id);
           }
         }
 
         const derivedCollections: Collection[] = [];
-        // Map existing collections for persistence of metadata
         const existingColMap = new Map(state.collections.map(c => [c.id, c]));
 
-        for (const [groupId, imageIds] of imageGroups.entries()) {
-          const existing = existingColMap.get(groupId);
+        for (const [boardId, imageIds] of imageGroups.entries()) {
+          const existing = existingColMap.get(boardId);
+
+          // Boards use their name as ID currently.
           derivedCollections.push({
-            id: groupId,
-            name: groupId, // Boards use name as ID currently, or we can use separate Name field
+            id: boardId,
+            name: existing?.name || boardId,
             createdAt: existing?.createdAt || Date.now(),
             imageIds: imageIds,
-            thumbnail: existing?.thumbnail, // Allow existing thumbnail or auto-calc later
-            customThumbnail: existing?.customThumbnail
+            thumbnail: existing?.thumbnail,
+            customThumbnail: existing?.customThumbnail,
+            description: existing?.description,
+            color: existing?.color
           });
         }
 
-        // Also keep collections that might be empty but user created manually? 
-        // For now, let's sync strictly to what's in DB + what was in Repo
-        // If a collection is in Repo but has no images in DB, it might be an empty manual collection.
-        // We can keep it.
+        // Merge manual collections (not derived from current image groupIds)
         const derivedIds = new Set(derivedCollections.map(c => c.id));
         for (const col of state.collections) {
           if (!derivedIds.has(col.id)) {
-            // If it's a manual collection (not a board sync result), keep it.
-            // How to distinguish? For now, we keep all.
-            // But we must verify its images exist.
+            // Keep manual collections if they exist in state
+            // and only keep images that exist in initialImages
             const validIds = col.imageIds.filter(id => initialImages.some(img => img.id === id));
             derivedCollections.push({ ...col, imageIds: validIds });
           }
         }
+
+        // If syncBoardsToCollections is disabled, we might want to filter out boards 
+        // that have no images if they weren't in the state already? 
+        // Actually, the current logic is fine for "turning boards into collections" 
+        // because once they are in 'derivedCollections', they persist through 'appRepository.save'.
 
         setCollections(derivedCollections);
 
@@ -178,29 +184,32 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       // Rebuild Collections from Images
       setCollections(prevCollections => {
+        // --- DERIVE COLLECTIONS FROM IMAGES (Sync Boards) ---
         const imageGroups = new Map<string, string[]>();
 
         for (const img of allImages) {
-          if (img.groupId) {
-            if (!imageGroups.has(img.groupId)) {
-              imageGroups.set(img.groupId, []);
+          if (img.boardId) {
+            if (!imageGroups.has(img.boardId)) {
+              imageGroups.set(img.boardId, []);
             }
-            imageGroups.get(img.groupId)?.push(img.id);
+            imageGroups.get(img.boardId)?.push(img.id);
           }
         }
 
         const derivedCollections: Collection[] = [];
         const existingColMap = new Map(prevCollections.map(c => [c.id, c]));
 
-        for (const [groupId, imageIds] of imageGroups.entries()) {
-          const existing = existingColMap.get(groupId);
+        for (const [boardId, imageIds] of imageGroups.entries()) {
+          const existing = existingColMap.get(boardId);
           derivedCollections.push({
-            id: groupId,
-            name: groupId,
+            id: boardId,
+            name: existing?.name || boardId, // Board name is currently stored as ID
             createdAt: existing?.createdAt || Date.now(),
             imageIds: imageIds,
             thumbnail: existing?.thumbnail,
-            customThumbnail: existing?.customThumbnail
+            customThumbnail: existing?.customThumbnail,
+            description: existing?.description,
+            color: existing?.color
           });
         }
 
@@ -208,7 +217,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         const derivedIds = new Set(derivedCollections.map(c => c.id));
         for (const col of prevCollections) {
           if (!derivedIds.has(col.id)) {
-            // Validate IDs
             const validIds = col.imageIds.filter(id => allImages.some(img => img.id === id));
             derivedCollections.push({ ...col, imageIds: validIds });
           }

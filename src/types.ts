@@ -75,6 +75,7 @@ export interface AIImage {
   isMissing?: boolean; // File system link broken
   userMasked?: boolean; // Explicit manual mask
   groupId?: string; // ID linking multiple versions/upscales
+  boardId?: string; // ID linking to external board/collection
   stack?: AIImage[]; // UI ONLY: List of images collapsed under this one
   notes?: string;
   metadata: ImageMetadata;
@@ -138,6 +139,7 @@ export interface AppSettings {
   enableAI: boolean;
   googleGeminiApiKey?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
+  syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
 }
 
 export interface ToastMessage {

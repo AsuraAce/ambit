@@ -25,5 +25,21 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration]
+    let migration2 = Migration {
+        version: 2,
+        description: "add_board_id_column",
+        sql: "ALTER TABLE images ADD COLUMN board_id TEXT;",
+        kind: MigrationKind::Up,
+    };
+
+    let migration3 = Migration {
+        version: 3,
+        description: "migrate_groups_to_boards",
+        // Move existing group_ids (which were incorrectly used for boards) to board_id
+        // and clear group_id to fix the 'stacking' issue.
+        sql: "UPDATE images SET board_id = group_id, group_id = NULL WHERE group_id IS NOT NULL;",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3]
 }
