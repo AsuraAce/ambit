@@ -58,7 +58,7 @@ async function fetchBoardMappings(db: Database): Promise<Map<string, string>> {
         const images = await (db as any).select("SELECT image_name, board_id FROM board_images");
 
         for (const img of images as any[]) {
-            const name = boardMap.get(img.board_id);
+            const name = boardMap.get(img.board_id) as string | undefined;
             if (name) mapping.set(String(img.image_name), name);
         }
     } catch (e) {
@@ -112,11 +112,18 @@ export const syncImages = async (
 ): Promise<number> => {
     if (!rootPath) return 0;
 
-    let dbPath = rootPath;
+    let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
-    if (!isFile) {
-        dbPath = rootPath.replace(/[\\/]$/, '') + '/databases/invokeai.db';
+    if (isFile) {
+        // If they pointed to invokeai.db or similar, go up to the root
+        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
+    } else if (imagesRoot.endsWith('databases')) {
+        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
     }
+
+    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
+    // Final check: if databases/invokeai.db doesn't exist, try root/invokeai.db
+    // But for now we trust the path provided or the standard structure.
 
     const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
@@ -161,10 +168,8 @@ export const syncImages = async (
 
     const { insertImage } = await import('./db');
 
-    let imagesRoot = rootPath;
-    if (isFile) {
-        imagesRoot = rootPath.replace(/[\\/](databases)?[\\/]?invokeai\.db$/, '');
-    }
+    // imagesRoot is already calculated above robustly
+    console.log('[InvokeAI Sync] Using root:', imagesRoot);
 
     // 4. Count Total
     const whereClause = hasIsIntermediate ? 'WHERE is_intermediate = 0' : '';
@@ -218,8 +223,16 @@ export const syncImages = async (
 
                 // Determine Thumbnail Url
                 let thumbnailUrl = convertFileSrc(fullPath);
+
+                // InvokeAI v3/v4 puts thumbnails in outputs/images/thumbnails/
+                // Older versions might put them in outputs/thumbnails/
+
                 if (hasThumbnailName && row.thumbnail_name) {
-                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/thumbnails/${row.thumbnail_name}`);
+                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`);
+                } else {
+                    // Fallback: Infer thumbnail name (usually image name + .webp)
+                    const inferredThumbName = row.image_name.replace(/\.[^/.]+$/, "") + ".webp";
+                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${inferredThumbName}`);
                 }
 
                 const newImg: any = {
