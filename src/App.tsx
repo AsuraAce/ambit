@@ -22,7 +22,6 @@ import { useToast } from './hooks/useToast';
 import { useLibraryContext } from './hooks/useLibraryContext';
 
 // Hooks
-import { useFiltering } from './hooks/useFiltering';
 import { useSelection } from './hooks/useSelection';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSearch } from './hooks/useSearch';
@@ -43,7 +42,9 @@ export default function App() {
     const {
         isLoaded, images, setImages, collections, setCollections,
         smartCollections, setSmartCollections, settings, setSettings,
-        setRecentSearches, updateCollectionThumbnails
+        setRecentSearches, updateCollectionThumbnails,
+        filters, setFilters, sortOption, setSortOption, clearAllFilters,
+        totalImages, loadMoreImages
     } = useLibraryContext();
 
     // --- Theme Hook ---
@@ -52,15 +53,26 @@ export default function App() {
     // Privacy State (Defaults to true for safety)
     const [privacyEnabled, setPrivacyEnabled] = useState(true);
 
-    const {
-        filters, setFilters, sortOption, setSortOption, filteredImages,
-        availableTags: libraryTags, clearAllFilters
-    } = useFiltering(images, collections, privacyEnabled, settings.maskingMode, settings.maskedKeywords);
+    // Generate Tags from currently loaded images (View-based tags)
+    const availableTags = React.useMemo(() => {
+        const tags = new Set<string>();
+        // Only scan a subset to avoid lag if view is large
+        images.slice(0, 500).forEach(img => {
+            if (typeof img.metadata.positivePrompt === 'string') {
+                img.metadata.positivePrompt.split(',').forEach(t => {
+                    const clean = t.trim().toLowerCase();
+                    if (clean.length > 2 && clean.length < 40) tags.add(clean);
+                });
+            }
+        });
+        return Array.from(tags).sort();
+    }, [images]);
 
     const {
         selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
         handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
-    } = useSelection(filteredImages);
+    } = useSelection(images); // Selection now works on the "View" (images)
+
 
     // --- UI State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -111,7 +123,7 @@ export default function App() {
         setFilters,
         settings,
         setRecentSearches,
-        availableTags: libraryTags,
+        availableTags: availableTags,
         onOpenSettings: () => { setInitialSettingsTab('experiments'); openModal('settings'); }
     });
 
@@ -211,11 +223,11 @@ export default function App() {
         fileOps.deleteImages(ids);
 
         if (pendingViewerDeleteId) {
-            const idx = filteredImages.findIndex(img => img.id === pendingViewerDeleteId);
+            const idx = images.findIndex(img => img.id === pendingViewerDeleteId);
             if (idx !== -1) {
                 let nextIndex: number | null = idx;
-                if (filteredImages.length === 1) nextIndex = null;
-                else if (idx === filteredImages.length - 1) nextIndex = idx - 1;
+                if (images.length === 1) nextIndex = null;
+                else if (idx === images.length - 1) nextIndex = idx - 1;
                 setSelectedImageIndex(nextIndex);
             }
         } else {
@@ -243,13 +255,13 @@ export default function App() {
     };
 
     const handleBulkFavorite = () => {
-        const anyUnfavorite = filteredImages.some(img => selectedIds.has(img.id) && !img.isFavorite);
+        const anyUnfavorite = images.some(img => selectedIds.has(img.id) && !img.isFavorite);
         setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
     };
 
     const handleBulkPin = () => {
-        const anyUnpinned = filteredImages.some(img => selectedIds.has(img.id) && !img.isPinned);
+        const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
         setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img));
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
@@ -285,15 +297,15 @@ export default function App() {
     };
 
     const executeMetadataRecovery = async (style: any) => {
-        const targetId = contextMenu?.imageId || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null) || (selectedImageIndex !== null ? filteredImages[selectedImageIndex]?.id : null) || viewingImageId;
+        const targetId = contextMenu?.imageId || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null) || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || viewingImageId;
         if (!targetId) return;
         fileOps.recoverMetadata(targetId, style, () => setModals(p => ({ ...p, recovery: false })));
     };
 
     // --- Shortcut Action Wrappers ---
     const handleShortcutFavorite = () => {
-        if (selectedImageIndex !== null && filteredImages[selectedImageIndex]) {
-            const id = filteredImages[selectedImageIndex].id;
+        if (selectedImageIndex !== null && images[selectedImageIndex]) {
+            const id = images[selectedImageIndex].id;
             setImages(prev => prev.map(i => i.id === id ? { ...i, isFavorite: !i.isFavorite } : i));
         } else {
             handleBulkFavorite();
@@ -301,8 +313,8 @@ export default function App() {
     };
 
     const handleShortcutPin = () => {
-        if (selectedImageIndex !== null && filteredImages[selectedImageIndex]) {
-            const id = filteredImages[selectedImageIndex].id;
+        if (selectedImageIndex !== null && images[selectedImageIndex]) {
+            const id = images[selectedImageIndex].id;
             setImages(prev => prev.map(i => i.id === id ? { ...i, isPinned: !i.isPinned } : i));
             addToast("Pin toggled", "info");
         } else {
@@ -314,7 +326,7 @@ export default function App() {
     useGlobalShortcuts({
         viewMode,
         selectedIds,
-        filteredImages,
+        filteredImages: images, // Map to images
         lastSelectedId,
         selectedImageIndex,
         gridRef,
@@ -342,7 +354,7 @@ export default function App() {
     // Determine which image to show in viewer
     const displayedViewerImage = viewingImageId
         ? images.find(i => i.id === viewingImageId)
-        : (selectedImageIndex !== null ? filteredImages[selectedImageIndex] : null);
+        : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
 
     // --- Render ---
     if (!isLoaded) return <div className="h-screen w-full bg-gray-50 dark:bg-slate-950 flex items-center justify-center text-sage-500 font-bold">Initializing Ambit...</div>;
@@ -361,7 +373,7 @@ export default function App() {
                     modals={modals}
                     setModals={setModals}
                     selectedIds={selectedIds}
-                    filteredImages={filteredImages}
+                    filteredImages={images} // map to images
                     onSettingsSave={(s) => { setSettings(s); addToast('Settings saved', 'success'); }}
                     onExportConfirm={handleExportConfirm}
                     onRename={(pattern, start) => {
@@ -457,7 +469,7 @@ export default function App() {
                         <FilterPanel
                             isVisible={isFilterPanelOpen}
                             filters={filters} setFilters={setFilters}
-                            filteredImages={filteredImages}
+                            filteredImages={images} // map to images
                             onCreateCollection={colOps.createCollection}
                             onSaveSmartCollection={colOps.saveSmartCollection}
                             onDeleteSmartCollection={colOps.deleteSmartCollection}
@@ -512,8 +524,8 @@ export default function App() {
                                 setLayoutMode={setLayoutMode}
                                 sortOption={sortOption}
                                 setSortOption={setSortOption}
-                                displayedCount={filteredImages.length}
-                                totalCount={images.filter(i => !i.isDeleted).length}
+                                displayedCount={images.length} // Map to images.length
+                                totalCount={totalImages} // Use true DB count
                                 onImport={() => fileOps.fileInputRef.current?.click()}
                                 onSlideshow={() => { setSlideshowShuffle(false); openModal('slideshow'); }}
                                 clearAllFilters={clearAllFilters}
@@ -527,7 +539,7 @@ export default function App() {
                         >
                             <ErrorBoundary>
                                 {viewMode === 'dashboard' ? (
-                                    <StatsDashboard images={filteredImages} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); setViewMode('grid'); }} />
+                                    <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); setViewMode('grid'); }} />
                                 ) : viewMode === 'maintenance' ? (
                                     <MaintenanceView
                                         images={images}
@@ -539,10 +551,10 @@ export default function App() {
                                         onViewImage={(id) => setViewingImageId(id)}
                                         onRegenerateThumbnails={fileOps.regenerateThumbnails}
                                     />
-                                ) : filteredImages.length > 0 ? (
+                                ) : images.length > 0 ? (
                                     viewMode === 'timeline' ? (
                                         <TimelineView
-                                            images={filteredImages}
+                                            images={images}
                                             selectedIds={selectedIds}
                                             thumbnailSize={settings.thumbnailSize}
                                             sortOption={sortOption}
@@ -554,12 +566,13 @@ export default function App() {
                                     ) : (
                                         <VirtualGrid<AIImage>
                                             ref={gridRef}
-                                            items={filteredImages}
+                                            items={images}
                                             layout={layoutMode}
                                             minItemWidth={settings.thumbnailSize}
                                             gap={16}
                                             padding={24}
                                             scrollContainerRef={scrollContainerRef}
+                                            onEndReached={loadMoreImages} // Infinite Scroll connection
                                             getItemRatio={(img) => {
                                                 const w = img.width || 1;
                                                 const h = img.height || 1;
@@ -590,6 +603,7 @@ export default function App() {
                                     )
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                                        {/* TODO: Better Empty Status checking using totalImages instead of images.length */}
                                         {images.length === 0 ? <><div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500"><Import className="w-12 h-12 text-sage-500 opacity-50" /></div><h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-300">Your Ambit is empty</h3><button onClick={() => fileOps.fileInputRef.current?.click()} className="px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl font-bold shadow-lg shadow-sage-500/20 transition-all hover:scale-105">Import Images</button></> : <><Search className="w-12 h-12 mb-4 opacity-20" /><p className="text-gray-500 dark:text-gray-400">No images match your current filters.</p><button onClick={clearAllFilters} className="mt-4 text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 text-sm underline">Clear all filters</button></>}
                                     </div>
                                 )}
@@ -598,7 +612,7 @@ export default function App() {
 
                         <SelectionBar
                             selectedIds={selectedIds}
-                            filteredImages={filteredImages}
+                            filteredImages={images} // map to images
                             lastSelectedId={lastSelectedId}
                             isExporting={fileOps.isExporting}
                             confirmDelete={settings.confirmDelete}
@@ -618,11 +632,11 @@ export default function App() {
                     {displayedViewerImage && (
                         <ImageViewer
                             key="image-viewer" // Important for AnimatePresence
-                            image={displayedViewerImage} availableTags={libraryTags} isOpen={true}
+                            image={displayedViewerImage} availableTags={availableTags} isOpen={true}
                             onAddToCollection={(id, colId) => colOps.addImagesToCollection([id], colId)}
                             onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
-                            onNext={!viewingImageId ? () => setSelectedImageIndex(p => p !== null && p < filteredImages.length - 1 ? p + 1 : 0) : () => { }}
-                            onPrev={!viewingImageId ? () => setSelectedImageIndex(p => p !== null && p > 0 ? p - 1 : filteredImages.length - 1) : () => { }}
+                            onNext={!viewingImageId ? () => setSelectedImageIndex(p => p !== null && p < images.length - 1 ? p + 1 : 0) : () => { }}
+                            onPrev={!viewingImageId ? () => setSelectedImageIndex(p => p !== null && p > 0 ? p - 1 : images.length - 1) : () => { }}
                             onSearch={(t) => { setFilters(p => ({ ...p, searchQuery: t })); setRecentSearches(prev => [t, ...prev.filter(s => s !== t)].slice(0, 8)); }}
                             onUpdateNotes={(id, n) => { setImages(p => p.map(i => i.id === id ? { ...i, notes: n } : i)); addToast('Saved', 'success'); }}
                             onUpdatePrompt={handleUpdatePrompt}

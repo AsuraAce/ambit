@@ -159,15 +159,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     <div className="flex items-center gap-2 text-gray-500 ml-2"><Sliders className="w-3 h-3" /><input type="range" min="100" max="400" value={settings.thumbnailSize} onChange={(e) => setSettings(p => ({ ...p, thumbnailSize: Number(e.target.value) }))} className="w-20 h-1 bg-gray-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sage-500" /></div>
                 </div>
                 <div className="flex items-center gap-4">
-                    {hasMoreImages && (
-                        <button
-                            onClick={loadMoreImages}
-                            className="px-3 py-1.5 text-xs font-semibold bg-sage-500 hover:bg-sage-600 text-white rounded-lg shadow-sm transition-all active:scale-95"
-                        >
-                            Load More
-                        </button>
-                    )}
-                    <div className="text-xs text-gray-500 font-mono"><span className="text-gray-700 dark:text-gray-300">{displayedCount}</span> / {totalCount}{hasMoreImages ? '+' : ''}</div>
+                    <div className="text-xs font-medium text-gray-500">{totalCount.toLocaleString()} {totalCount === 1 ? 'Image' : 'Images'}</div>
                     {activeCollection && <div className="flex items-center gap-2 px-4 py-1 bg-sage-100 dark:bg-sage-500/20 border border-sage-200 dark:border-sage-500/30 rounded-full text-sage-700 dark:text-sage-300 text-sm"><Folder className="w-3 h-3" />{activeCollection.name}<button onClick={() => setFilters(p => ({ ...p, collectionId: null }))}><X className="w-3 h-3" /></button></div>}
                 </div>
             </div>

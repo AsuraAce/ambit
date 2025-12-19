@@ -16,9 +16,11 @@ interface VirtualGridProps<T> {
   onLayoutChange?: (columns: number, rowHeight: number) => void;
   onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
   onBackgroundClick?: () => void;
+  onEndReached?: () => void;
 }
 
 export interface VirtualGridHandle {
+  // ... existing handle interface
   navigate: (currentIndex: number, key: string) => number;
   scrollToItem: (index: number) => void;
 }
@@ -35,7 +37,8 @@ const VirtualGridInternal = <T extends { id: string }>(
     getItemRatio = () => 1,
     onLayoutChange,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
+    onEndReached
   }: VirtualGridProps<T>,
   ref: React.Ref<VirtualGridHandle>
 ) => {
@@ -50,13 +53,15 @@ const VirtualGridInternal = <T extends { id: string }>(
   const layoutResultRef = useRef<LayoutResult>({ positions: [], totalHeight: 0, columns: 1, rowHeight: 0 });
   const onRangeSelectionRef = useRef(onRangeSelection);
   const onBackgroundClickRef = useRef(onBackgroundClick);
+  const onEndReachedRef = useRef(onEndReached);
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
 
   useEffect(() => {
     onRangeSelectionRef.current = onRangeSelection;
     onBackgroundClickRef.current = onBackgroundClick;
-  }, [onRangeSelection, onBackgroundClick]);
+    onEndReachedRef.current = onEndReached;
+  }, [onRangeSelection, onBackgroundClick, onEndReached]);
 
   // Measure container width
   useLayoutEffect(() => {
@@ -76,10 +81,24 @@ const VirtualGridInternal = <T extends { id: string }>(
     if (!scrollContainer) return;
 
     let rafId: number;
+    let lastCallTime = 0;
+
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         setScrollTop(scrollContainer.scrollTop);
+
+        // Infinite Scroll Trigger
+        const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
+        // Threshold: 1000px from bottom (approx 1-2 screen heights)
+        if (scrollHeight - (scrollTop + clientHeight) < 1000) {
+          // Debounce slightly to avoid spamming per frame if logic is fast
+          const now = Date.now();
+          if (now - lastCallTime > 200) {
+            lastCallTime = now;
+            onEndReachedRef.current?.();
+          }
+        }
       });
     };
 

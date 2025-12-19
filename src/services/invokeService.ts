@@ -108,23 +108,19 @@ export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean } = { syncFavorites: true, syncBoards: true }
+    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number } = { syncFavorites: true, syncBoards: true }
 ): Promise<number> => {
     if (!rootPath) return 0;
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
     if (isFile) {
-        // If they pointed to invokeai.db or similar, go up to the root
         imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
     } else if (imagesRoot.endsWith('databases')) {
         imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
     }
 
     let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-    // Final check: if databases/invokeai.db doesn't exist, try root/invokeai.db
-    // But for now we trust the path provided or the standard structure.
-
     const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
     let invokeDb;
@@ -167,12 +163,25 @@ export const syncImages = async (
     console.log('[InvokeAI Schema]', { columns, hasBoardsTable, hasStarred, hasIsStarred, hasThumbnailName });
 
     const { insertImage } = await import('./db');
-
-    // imagesRoot is already calculated above robustly
     console.log('[InvokeAI Sync] Using root:', imagesRoot);
 
-    // 4. Count Total
-    const whereClause = hasIsIntermediate ? 'WHERE is_intermediate = 0' : '';
+    // 4. Count Total & Prepare Filter
+    const conditions: string[] = [];
+    if (hasIsIntermediate) conditions.push('is_intermediate = 0');
+
+    // Incremental Sync Logic
+    if (options.afterTimestamp && options.afterTimestamp > 0) {
+        // Convert JS timestamp (ms) to InvokeAI created_at format (ISO string usually, or SQLite timestamp string)
+        // InvokeAI usually stores as '2023-10-27 10:00:00.000'
+        const isoDate = new Date(options.afterTimestamp).toISOString();
+        // Since ISO string is YYYY-MM-DDTHH:mm:ss.sssZ, and SQLite standard string might just be comparison compliant.
+        // We'll trust string comparison for ISO dates.
+        conditions.push(`created_at > '${isoDate}'`);
+        console.log('[InvokeAI Sync] Incremental Scan since:', isoDate);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 

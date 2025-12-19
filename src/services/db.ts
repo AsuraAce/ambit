@@ -56,11 +56,52 @@ export const getAllImages = async (limit?: number, offset: number = 0): Promise<
 
     const rows = await db.select<any[]>(query);
 
-    return rows.map(row => ({
+    return rows.map(mapRowToImage);
+};
+
+// --- New SQL-Based Search & Filtering ---
+
+export const countImages = async (whereClause: string, params: any[]): Promise<number> => {
+    const db = await getDb();
+    // Ensure we don't count deleted unless explicitly asked (usually handled in whereClause generation)
+    // But for safety, if whereClause is empty, we default to is_deleted=0
+    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+
+    const query = `SELECT count(*) as count FROM images ${finalWhere}`;
+    const result = await db.select<any[]>(query, params);
+    return result[0]?.count || 0;
+};
+
+export const searchImages = async (
+    whereClause: string,
+    params: any[],
+    limit: number,
+    offset: number,
+    sortField: string = 'timestamp',
+    sortOrder: 'ASC' | 'DESC' = 'DESC'
+): Promise<AIImage[]> => {
+    const db = await getDb();
+    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+
+    const query = `
+        SELECT * FROM images 
+        ${finalWhere} 
+        ORDER BY ${sortField} ${sortOrder} 
+        LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    // console.log('[DB Search]', query, params);
+    const rows = await db.select<any[]>(query, params);
+    return rows.map(mapRowToImage);
+};
+
+// Helper to keep mapping consistent
+function mapRowToImage(row: any): AIImage {
+    return {
         id: row.id,
         url: convertFileSrc(row.path),
         thumbnailUrl: row.thumbnail_path,
-        filename: row.path,
+        filename: row.path.split(/[\\/]/).pop() || row.path, // Re-derive filename for safety
         fileSize: row.file_size,
         timestamp: row.timestamp,
         width: row.width,
@@ -75,5 +116,6 @@ export const getAllImages = async (limit?: number, offset: number = 0): Promise<
         notes: row.notes,
         metadata: JSON.parse(row.metadata_json || '{}'),
         originalMetadata: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined
-    }));
-};
+    };
+}
+

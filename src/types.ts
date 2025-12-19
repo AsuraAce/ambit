@@ -140,6 +140,7 @@ export interface AppSettings {
   googleGeminiApiKey?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
+  lastSyncedAt?: number; // Timestamp of the last successful sync
 }
 
 export interface ToastMessage {
