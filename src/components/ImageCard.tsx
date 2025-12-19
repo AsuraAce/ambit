@@ -47,7 +47,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
   return (
     <div
-      className={`group relative w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-slate-800 border transition-all duration-500 ease-spring select-none
+      className={`group relative w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-slate-800 border transition-all duration-500 ease-spring
         ${isSelected
           ? 'border-sage-500 ring-2 ring-sage-500/50 z-10 shadow-[0_0_20px_rgba(140,163,107,0.3)] scale-[1.02]'
           : isMissing
@@ -59,8 +59,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       onClick={!isMissing ? onClick : undefined}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
-      draggable={!isMissing && !!onDragStart}
+      draggable={!isMissing}
+      data-draggable="true"
       onDragStart={(e) => onDragStart && onDragStart(e, image.id)}
+      style={{ WebkitUserDrag: 'element' } as any}
     >
       <SmartImage
         src={image.thumbnailUrl}

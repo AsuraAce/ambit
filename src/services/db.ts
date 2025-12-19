@@ -11,8 +11,24 @@ export const getDb = async () => {
     return db;
 };
 
+export const normalizeAllPaths = async () => {
+    const db = await getDb();
+    console.log('[DB] Normalizing all paths to use forward slashes...');
+    // Replace backslashes with forward slashes in both 'id' and 'path' columns
+    // We do this for all rows where a backslash is present
+    await db.execute(`
+        UPDATE images 
+        SET id = REPLACE(id, '\\', '/'), 
+            path = REPLACE(path, '\\', '/')
+        WHERE id LIKE '%\\%' OR path LIKE '%\\%'
+    `);
+    console.log('[DB] Path normalization complete.');
+};
+
 export const insertImage = async (image: AIImage) => {
     const db = await getDb();
+    // Normalize path to forward slashes for consistency
+    const id = image.id.replace(/\\/g, '/').replace(/\/+/g, '/');
     await db.execute(
         `INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
@@ -27,8 +43,8 @@ export const insertImage = async (image: AIImage) => {
             board_id=excluded.board_id
         `,
         [
-            image.id,
-            image.id, // Use Full Path (stored in id) for the path column
+            id,
+            id, // Use Full Path (stored in id) for the path column
             image.width,
             image.height,
             image.fileSize,
@@ -46,6 +62,12 @@ export const insertImage = async (image: AIImage) => {
             image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
         ]
     );
+};
+
+export const isImageNew = async (id: string): Promise<boolean> => {
+    const db = await getDb();
+    const result = await db.select<any[]>(`SELECT count(*) as count FROM images WHERE id = ?`, [id]);
+    return (result[0]?.count || 0) === 0;
 };
 
 export const getAllImages = async (limit?: number, offset: number = 0): Promise<AIImage[]> => {

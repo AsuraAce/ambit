@@ -44,14 +44,12 @@ export default function App() {
         smartCollections, setSmartCollections, settings, setSettings,
         setRecentSearches, updateCollectionThumbnails,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
-        totalImages, loadMoreImages
+        totalImages, loadMoreImages,
+        privacyEnabled, setPrivacyEnabled
     } = useLibraryContext();
 
     // --- Theme Hook ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
-
-    // Privacy State (Defaults to true for safety)
-    const [privacyEnabled, setPrivacyEnabled] = useState(true);
 
     // Generate Tags from currently loaded images (View-based tags)
     const availableTags = React.useMemo(() => {
@@ -473,7 +471,14 @@ export default function App() {
                             onCreateCollection={colOps.createCollection}
                             onSaveSmartCollection={colOps.saveSmartCollection}
                             onDeleteSmartCollection={colOps.deleteSmartCollection}
-                            onDropOnCollection={(colId, data) => { try { const ids = JSON.parse(data); colOps.addImagesToCollection(ids, colId); } catch { } }}
+                            onDropOnCollection={(colId, data) => {
+                                try {
+                                    const ids = JSON.parse(data);
+                                    colOps.addImagesToCollection(ids, colId);
+                                    const col = collections.find(c => c.id === colId);
+                                    addToast(`Added ${ids.length} images to ${col?.name || 'collection'}`, 'success');
+                                } catch { }
+                            }}
                             onRenameCollection={colOps.renameCollection}
                             onDeleteCollection={(id) => {
                                 setCollectionToDelete(id);
@@ -651,6 +656,20 @@ export default function App() {
                         />
                     )}
                 </AnimatePresence>
+
+                {/* DEBUG DRAG BOX */}
+                <div
+                    draggable="true"
+                    onDragStart={(e) => {
+                        console.log('DEBUG BOX DRAG START');
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', 'DEBUG_DRAG');
+                    }}
+                    className="fixed bottom-10 right-10 w-20 h-20 bg-red-500 z-[9999] flex items-center justify-center text-white font-bold cursor-grab active:cursor-grabbing border-4 border-white shadow-xl rounded-xl"
+                    style={{ WebkitUserDrag: 'element' } as any}
+                >
+                    DRAG ME
+                </div>
             </div>
         </HashRouter>
     );

@@ -87,4 +87,11 @@
   .dark ::-webkit-scrollbar-thumb {
     @apply bg-white/10 hover:bg-white/20;
   }
+
+  [draggable="true"],
+  [data-draggable="true"] {
+    -webkit-user-drag: element;
+    user-select: none;
+    -webkit-user-select: none;
+  }
 }

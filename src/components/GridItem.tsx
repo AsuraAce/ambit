@@ -80,25 +80,40 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                 opacity: { duration: 0.4, ease: "easeOut" }, // Smooth fade for scroll
                 scale: { duration: 0.4, ease: "easeOut" } // Smooth scale for scroll
             }}
-            whileHover={{ scale: 1.02, transition: { duration: 0.2, ease: "easeOut" } }} // Smooth hover
+            whileHover={{ transition: { duration: 0.2, ease: "easeOut" } }}
             className="group/griditem absolute top-0 left-0" // Force absolute here as we stripped it or rely on style
         >
-            {/* Stack Effect Background - Visible Layers peeking out top */}
+            {/* ... stack layers omitted for clarity in chunk ... */}
             {isStack && (
                 <>
-                    {/* Bottom Layer */}
                     <div className="absolute -top-2 left-3 right-3 h-full bg-gray-200 dark:bg-zinc-800 rounded-2xl border border-gray-300 dark:border-white/5 z-0 transition-transform duration-300 group-hover/griditem:-translate-y-1" />
-                    {/* Middle Layer */}
                     <div className="absolute -top-1 left-1.5 right-1.5 h-full bg-gray-300 dark:bg-zinc-700 rounded-2xl border border-gray-300 dark:border-white/5 z-0 transition-transform duration-300 group-hover/griditem:-translate-y-0.5" />
                 </>
             )}
 
-            <div className={`relative z-10 w-full h-full transition-transform duration-300 ${isStack ? 'group-hover/griditem:translate-y-1' : ''}`}>
+            <div
+                className={`relative z-10 w-full h-full ${isStack ? 'group-hover/griditem:translate-y-1' : ''}`}
+            >
                 <ImageCard
                     image={image}
                     isSelected={isSelected}
                     isMasked={isMasked}
                     isThumbnail={isThumbnail}
+                    onDragStart={(e) => {
+                        const idsToDrag = isSelected ? Array.from(selectedIds) : [image.id];
+                        console.log('[GridItem] Drag Start. IDs:', idsToDrag);
+
+                        // Set multiple data types for maximum compatibility
+                        e.dataTransfer.effectAllowed = 'copyMove';
+                        e.dataTransfer.setData('text/plain', JSON.stringify(idsToDrag));
+                        e.dataTransfer.setData('application/json', JSON.stringify(idsToDrag));
+
+                        // Set a drag image as a fallback (browser should handle it usually)
+                        const img = (e.currentTarget as HTMLElement).querySelector('img');
+                        if (img && e.dataTransfer.setDragImage) {
+                            e.dataTransfer.setDragImage(img, 20, 20);
+                        }
+                    }}
                     onClick={(e) => onClick(e, image.id, index)}
                     onToggleSelection={(e) => onToggleSelection(e, image.id)}
                     onToggleFavorite={(e) => {
@@ -112,10 +127,6 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                     onContextMenu={(e) => {
                         e.preventDefault();
                         onContextMenu(e, image.id);
-                    }}
-                    onDragStart={(e) => {
-                        const idsToDrag = isSelected ? Array.from(selectedIds) : [image.id];
-                        e.dataTransfer.setData('text/plain', JSON.stringify(idsToDrag));
                     }}
                     onImageError={handleImageError}
                 />

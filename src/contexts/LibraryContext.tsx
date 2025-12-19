@@ -41,7 +41,9 @@ interface LibraryContextType {
   sortOption: SortOption;
   setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
   clearAllFilters: () => void;
-  activeSqlWhere: string; // Exposed for debugging or advanced use
+  activeSqlWhere: string;
+  privacyEnabled: boolean;
+  setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -65,6 +67,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     syncBoardsToCollections: false
   });
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [privacyEnabled, setPrivacyEnabled] = useState(true);
 
   // Filtering & Sorting State
   const [filters, setFilters] = useState<FilterState>({
@@ -88,32 +91,13 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   // Pagination State
   const [hasMoreImages, setHasMoreImages] = useState(true);
   const [totalImages, setTotalImages] = useState(0);
-  const PAGE_SIZE = 1000; // Load 1000 at a time for smooth scrolling (balance between req count and payload size)
+  const PAGE_SIZE = 1000;
 
-  // Ref to track if we are currently fetching to prevent double-fetches
   const isFetchingRef = useRef(false);
 
   // --- SQL Generation Effect ---
   useEffect(() => {
-    // Determine Privacy Enabled (Local state? Or derived from settings?)
-    // Note: Privacy Toggle is usually UI state in App.tsx. 
-    // Ideally, it should be in Context or Settings. 
-    // For now, let's assume 'privacyEnabled' is passed or defaults to Safe if not managed here.
-    // ACTUALLY: The user request didn't specify moving privacy state.
-    // We'll trust that 'settings.maskingMode' is the source of truth for configuration.
-    // The *Temporary* privacy toggle in App.tsx needs to be communicated.
-    // COMPROMISE: We will ignore the temporary toggle for the SQL generation for now
-    // and rely on pure Filters. If the user toggles privacy in App.tsx, they might need to 
-    // invoke a refresh or we add `privacyEnabled` to Context.
-
-    // Let's assume privacy is always enforced by default filters or not.
-    // We will generate SQL based on current `filters`.
-
-    const { where, params } = buildSqlWhereClause(filters, false, settings.maskingMode, settings.maskedKeywords); // Privacy toggle handled in UI filtering usually?
-    // Wait, if we move to DB filtering, we MUST handle privacy in SQL if "Hide" mode is active.
-    // Accessing `privacyEnabled` from App.tsx is hard.
-    // It's better to add `privacyEnabled` to this Context if it affects data fetching.
-    // For this step, I will generate the base SQL.
+    const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections);
 
     setActiveSqlWhere(where);
     setActiveSqlParams(params);
@@ -122,7 +106,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     setImages([]);
     setHasMoreImages(true);
     setTotalImages(0);
-  }, [filters, settings.maskingMode, settings.maskedKeywords]); // Re-run when filters change
+  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]); // Re-run when filters change
 
   // --- Data Fetching Logic (Debounced slightly or immediate) ---
   const fetchData = useCallback(async (isLoadMore: boolean) => {
@@ -190,7 +174,16 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       const envKey = process.env.API_KEY;
       if (envKey) state.settings.googleGeminiApiKey = envKey;
 
-      setCollections(state.collections);
+      const { normalizeAllPaths } = await import('../services/db');
+      await normalizeAllPaths();
+
+      // Migration for Collections: Ensure all stored IDs (paths) are normalized
+      const normalizedCollections = (state.collections || []).map(c => ({
+        ...c,
+        imageIds: (c.imageIds || []).map(id => typeof id === 'string' ? id.replace(/\\/g, '/').replace(/\/+/g, '/') : id)
+      }));
+
+      setCollections(normalizedCollections);
       setSmartCollections(state.smartCollections);
       setSettings(state.settings);
       setRecentSearches(state.recentSearches);
@@ -246,7 +239,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     try {
       const { syncImages } = await import('../services/invokeService');
-      const count = await syncImages(
+      const { imported, maxTimestamp } = await syncImages(
         path,
         (current, total) => setSyncProgress({ current, total }),
         abortControllerRef.current.signal,
@@ -254,10 +247,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       );
 
       setSyncStatus('complete');
-      setSyncProgress({ current: count, total: count });
+      setSyncProgress({ current: imported, total: imported });
 
-      // Update Last Synced Timestamp
-      setSettings(prev => ({ ...prev, lastSyncedAt: Date.now() }));
+      addToast(`Sync complete: ${imported} new images added.`, 'success');
+
+      // Update Last Synced Timestamp with the highest seen timestamp from the source
+      if (maxTimestamp) {
+        setSettings(prev => ({ ...prev, lastSyncedAt: maxTimestamp }));
+      }
 
       // Refresh Data after Sync
       fetchData(false);
@@ -400,7 +397,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       sortOption,
       setSortOption,
       clearAllFilters,
-      activeSqlWhere
+      activeSqlWhere,
+      privacyEnabled,
+      setPrivacyEnabled
     }}>
       {children}
     </LibraryContext.Provider>

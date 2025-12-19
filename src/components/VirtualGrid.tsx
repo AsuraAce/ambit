@@ -90,8 +90,8 @@ const VirtualGridInternal = <T extends { id: string }>(
 
         // Infinite Scroll Trigger
         const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
-        // Threshold: 1000px from bottom (approx 1-2 screen heights)
-        if (scrollHeight - (scrollTop + clientHeight) < 1000) {
+        // Threshold: 3000px from bottom (approx 3-5 screen heights)
+        if (scrollHeight - (scrollTop + clientHeight) < 3000) {
           // Debounce slightly to avoid spamming per frame if logic is fast
           const now = Date.now();
           if (now - lastCallTime > 200) {
@@ -216,10 +216,6 @@ const VirtualGridInternal = <T extends { id: string }>(
   // --- Selection Interaction ---
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a')) return;
-    if (target.closest('[draggable="true"]')) return;
 
     if (!containerRef.current) return;
 
@@ -401,7 +397,6 @@ const VirtualGridInternal = <T extends { id: string }>(
   return (
     <div
       ref={containerRef}
-      onMouseDown={handleMouseDown}
       style={{
         height: Math.max(100, totalHeight),
         position: 'relative',
@@ -410,6 +405,12 @@ const VirtualGridInternal = <T extends { id: string }>(
       }}
       className="outline-none"
     >
+      {/* Background Selection Layer - Only catches clicks on empty space */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="absolute inset-0 z-0 bg-transparent"
+      />
+
       {visibleItems}
 
       {dragBox && (

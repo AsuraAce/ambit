@@ -174,6 +174,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         }
     };
 
+    const handleDragEnter = (e: React.DragEvent, colId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        setDropTargetId(colId);
+    };
+
     const handleDragOver = (e: React.DragEvent, colId: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -195,6 +202,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         e.stopPropagation();
         setDropTargetId(null);
         const data = e.dataTransfer.getData('text/plain');
+        console.log('[FilterPanel] Drop on collection:', colId, 'Data:', data);
         if (data && onDropOnCollection) {
             onDropOnCollection(colId, data);
         }
@@ -303,13 +311,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const renderCollectionItem = (col: Collection) => (
         <div
             key={col.id}
+            onDragEnter={(e) => handleDragEnter(e, col.id)}
             onDragOver={(e) => handleDragOver(e, col.id)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, col.id)}
             onContextMenu={(e) => handleContextMenu(e, col.id)}
             className={`relative rounded-xl transition-all duration-300 ease-spring group ${dropTargetId === col.id
-                    ? 'bg-sage-100 dark:bg-sage-900/50 ring-2 ring-sage-500 z-10 scale-105 overflow-hidden'
-                    : ''
+                ? 'bg-sage-100 dark:bg-sage-900/50 ring-2 ring-sage-500 z-10 scale-105 overflow-hidden'
+                : ''
                 }`}
         >
             {editingColId === col.id ? (
@@ -327,8 +336,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 <div
                     onClick={() => setFilters(prev => ({ ...prev, collectionId: col.id }))}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id
-                            ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
-                            : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
+                        ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
+                        : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
                         }`}
                 >
                     {/* Name & Icon Section */}
@@ -374,8 +383,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 key={lora.name}
                 onClick={() => toggleLora(lora.name)}
                 className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${isSelected
-                        ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
-                        : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
+                    ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+                    : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
                     }`}
             >
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -423,8 +432,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             loras: [] // Reset LoRAs too
                         }))}
                         className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all shadow-sm font-medium flex items-center justify-between group ease-spring duration-300 ${!filters.collectionId && !filters.favoritesOnly && !filters.minSteps && filters.loras.length === 0
-                                ? 'bg-sage-600 text-white shadow-sage-500/20'
-                                : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
+                            ? 'bg-sage-600 text-white shadow-sage-500/20'
+                            : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
                             }`}
                     >
                         All Photos
@@ -762,8 +771,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     key={range}
                                     onClick={() => setFilters(prev => ({ ...prev, dateRange: range }))}
                                     className={`px-3 py-2 text-xs rounded-lg capitalize transition-all ease-spring duration-300 border ${filters.dateRange === range
-                                            ? 'bg-sage-600 text-white border-sage-600 shadow-md shadow-sage-500/20'
-                                            : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200'
+                                        ? 'bg-sage-600 text-white border-sage-600 shadow-md shadow-sage-500/20'
+                                        : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200'
                                         }`}
                                 >
                                     {range}

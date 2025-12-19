@@ -1,10 +1,11 @@
-import { FilterState, AppSettings } from '../types';
+import { FilterState, AppSettings, Collection } from '../types';
 
 export const buildSqlWhereClause = (
     filters: FilterState,
     privacyEnabled: boolean,
     maskingMode: AppSettings['maskingMode'],
-    maskedKeywords: string[]
+    maskedKeywords: string[],
+    collections?: Collection[]
 ): { where: string; params: any[] } => {
     const conditions: string[] = [];
     const params: any[] = [];
@@ -15,9 +16,6 @@ export const buildSqlWhereClause = (
     // 1. Privacy Logic
     if (privacyEnabled && maskingMode === 'hide' && maskedKeywords.length > 0) {
         // Construct NOT LIKE clauses for each keyword
-        // Assuming positivePrompt is in metadata_json -> positivePrompt
-        // OR simply metadata_json LIKE '%keyword%' is faster but less precise
-        // Let's use json_extract for precision if possible, or simple NOT LIKE on the whole json for speed
         const privacyConditions = maskedKeywords.map(kw => {
             params.push(`%${kw}%`);
             return `metadata_json NOT LIKE ?`;
@@ -27,8 +25,19 @@ export const buildSqlWhereClause = (
 
     // 2. Collection ID
     if (filters.collectionId) {
-        conditions.push('board_id = ?');
-        params.push(filters.collectionId);
+        const manualCol = collections?.find(c => c.id === filters.collectionId);
+        if (manualCol && manualCol.imageIds && manualCol.imageIds.length > 0) {
+            // Manual Collection: Filter by paths (Ambit IDs are paths)
+            // Normalize requested IDs to match DB format
+            const ids = manualCol.imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
+            const placeholders = ids.map(() => '?').join(',');
+            conditions.push(`path IN (${placeholders})`);
+            params.push(...ids);
+        } else {
+            // Board ID from InvokeAI
+            conditions.push('board_id = ?');
+            params.push(filters.collectionId);
+        }
     }
 
     // 3. Favorites

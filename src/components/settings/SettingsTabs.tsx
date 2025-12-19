@@ -492,12 +492,25 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
       <div className="flex items-center justify-between">
         {status === 'idle' || status === 'error' || status === 'complete' ? (
-          <button
-            onClick={handleSync}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-500/20"
-          >
-            {status === 'error' ? 'Retry Sync' : 'Sync Now'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSync}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-500/20"
+            >
+              {status === 'error' ? 'Retry Sync' : 'Sync Now'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning. This can take a while.")) {
+                  setSettings(p => ({ ...p, lastSyncedAt: undefined }));
+                }
+              }}
+              className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-red-500 transition-colors"
+            >
+              Reset Cursor
+            </button>
+          </div>
         ) : (
           <button
             onClick={cancelSync}

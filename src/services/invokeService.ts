@@ -108,9 +108,9 @@ export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number } = { syncFavorites: true, syncBoards: true }
-): Promise<number> => {
-    if (!rootPath) return 0;
+    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any } = { syncFavorites: true, syncBoards: true }
+): Promise<{ imported: number, maxTimestamp: any }> => {
+    if (!rootPath) return { imported: 0, maxTimestamp: '' };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -162,22 +162,21 @@ export const syncImages = async (
 
     console.log('[InvokeAI Schema]', { columns, hasBoardsTable, hasStarred, hasIsStarred, hasThumbnailName });
 
-    const { insertImage } = await import('./db');
     console.log('[InvokeAI Sync] Using root:', imagesRoot);
 
     // 4. Count Total & Prepare Filter
+    // Aggressive Sync: Removing is_intermediate filter because node-based workflows often 
+    // flag final outputs as intermediate if they are not the literal end-of-graph.
     const conditions: string[] = [];
-    if (hasIsIntermediate) conditions.push('is_intermediate = 0');
 
     // Incremental Sync Logic
     if (options.afterTimestamp && options.afterTimestamp > 0) {
-        // Convert JS timestamp (ms) to InvokeAI created_at format (ISO string usually, or SQLite timestamp string)
-        // InvokeAI usually stores as '2023-10-27 10:00:00.000'
-        const isoDate = new Date(options.afterTimestamp).toISOString();
-        // Since ISO string is YYYY-MM-DDTHH:mm:ss.sssZ, and SQLite standard string might just be comparison compliant.
-        // We'll trust string comparison for ISO dates.
+        // Use a 1-minute buffer (shrunk from 5) to catch drift but minimize duplicates
+        // IMPORTANT: InvokeAI stores created_at in UTC.
+        const bufferedTimestamp = options.afterTimestamp - (60 * 1000);
+        const isoDate = new Date(bufferedTimestamp).toISOString().replace('T', ' ').replace('Z', '');
         conditions.push(`created_at > '${isoDate}'`);
-        console.log('[InvokeAI Sync] Incremental Scan since:', isoDate);
+        console.log('[InvokeAI Sync] Incremental Scan since (buffered):', isoDate);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -185,12 +184,25 @@ export const syncImages = async (
     const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 
-    if (totalToImport === 0) return 0;
+    const { getDb, isImageNew, insertImage } = await import('./db');
+
+    if (totalToImport === 0) {
+        if (options.syncBoards && boardMapping.size > 0) {
+            console.log('[InvokeAI Sync] Refreshing board associations for existing images...');
+            const ambitDb = await getDb();
+            for (const [imgName, boardName] of boardMapping.entries()) {
+                await ambitDb.execute("UPDATE images SET board_id = ? WHERE filename = ? AND board_id IS NULL", [boardName, imgName]);
+            }
+        }
+        return { imported: 0, maxTimestamp: options.afterTimestamp || 0 };
+    }
 
     // 5. Batch Process
-    let imported = 0;
+    let processed = 0;
+    let newImportedCount = 0;
     const BATCH_SIZE = 500;
     let offset = 0;
+    let maxTimestampNum = options.afterTimestamp || 0;
 
     const favCol = hasStarred ? ', starred' : (hasIsStarred ? ', is_starred' : '');
     const thumbCol = hasThumbnailName ? ', thumbnail_name' : '';
@@ -202,6 +214,7 @@ export const syncImages = async (
             SELECT image_name, ${metaCol}, created_at, width, height ${favCol} ${thumbCol}
             FROM images 
             ${whereClause} 
+            ORDER BY created_at ASC
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
         `;
 
@@ -211,35 +224,35 @@ export const syncImages = async (
         for (const row of rows) {
             if (signal?.aborted) throw new Error('Aborted');
 
-            const fullPath = `${imagesRoot}/outputs/images/${row.image_name}`;
+            // Force UTC parsing as InvokeAI SQLite uses UTC
+            const timeRaw = row.created_at.includes('Z') ? row.created_at : row.created_at + ' Z';
+            const timestamp = new Date(timeRaw).getTime();
+
+            if (processed === 0) console.log('[InvokeAI Sync] First image found timestamp:', row.created_at, '->', timestamp);
+            if (timestamp > maxTimestampNum) {
+                maxTimestampNum = timestamp;
+            }
+
+            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
+            const fullPath = rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
 
             try {
                 const metadata = mapInvokeMetadata(row, metaCol);
-                const timestamp = new Date(row.created_at).getTime();
-
-                // Determine Favorites
                 let isFavorite = false;
                 if (options.syncFavorites) {
                     if (hasStarred && row.starred) isFavorite = true;
                     else if (hasIsStarred && row.is_starred) isFavorite = true;
                 }
 
-                // Determine Group/Collection from Board
                 let boardId: string | undefined = undefined;
                 if (options.syncBoards) {
                     boardId = boardMapping.get(row.image_name);
                 }
 
-                // Determine Thumbnail Url
                 let thumbnailUrl = convertFileSrc(fullPath);
-
-                // InvokeAI v3/v4 puts thumbnails in outputs/images/thumbnails/
-                // Older versions might put them in outputs/thumbnails/
-
                 if (hasThumbnailName && row.thumbnail_name) {
                     thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`);
                 } else {
-                    // Fallback: Infer thumbnail name (usually image name + .webp)
                     const inferredThumbName = row.image_name.replace(/\.[^/.]+$/, "") + ".webp";
                     thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${inferredThumbName}`);
                 }
@@ -250,29 +263,34 @@ export const syncImages = async (
                     thumbnailUrl: thumbnailUrl,
                     filename: row.image_name,
                     fileSize: 0,
-                    timestamp: isNaN(timestamp) ? Date.now() : timestamp,
+                    timestamp: timestamp || Date.now(),
                     width: row.width || 0,
                     height: row.height || 0,
                     isFavorite: isFavorite,
                     isDeleted: false,
                     isMissing: false,
-                    groupId: undefined, // Cleared to prevent incorrect stacking
+                    groupId: undefined,
                     boardId: boardId,
                     metadata: metadata
                 };
 
+                const isNew = await isImageNew(fullPath);
+                if (isNew) {
+                    newImportedCount++;
+                }
+
                 await insertImage(newImg);
-                imported++;
+                processed++;
             } catch (e) {
                 console.error('Failed to import image:', fullPath, e);
             }
         }
 
         offset += rows.length;
-        onProgress(Math.min(imported, totalToImport), totalToImport);
+        onProgress(Math.min(processed, totalToImport), totalToImport);
         await new Promise(r => setTimeout(r, 0));
     }
 
-    return imported;
+    return { imported: newImportedCount, maxTimestamp: maxTimestampNum };
 };
 

@@ -98,7 +98,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           ref={imgRef}
           src={processedSrc}
           alt={alt}
-          draggable={draggable}
+          draggable="false" // Disable inner drag so parent GridItem handles it cleanly
           onLoad={handleLoad}
           onError={handleError}
           className={`w-full h-full object-cover transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'
