@@ -1,67 +1,168 @@
 import Database from '@tauri-apps/plugin-sql';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { AIImage } from '../types';
 
 let db: Database | null = null;
+let dbInitialized = false;
+
+// Simple Mutex to prevent concurrent write transactions
+class Mutex {
+    private mutex = Promise.resolve();
+    lock(): Promise<() => void> {
+        return new Promise(resolve => {
+            this.mutex = this.mutex.then(() => {
+                return new Promise<void>(unlock => {
+                    resolve(unlock);
+                });
+            });
+        });
+    }
+
+    async dispatch<T>(fn: (() => T) | (() => PromiseLike<T>)): Promise<T> {
+        const unlock = await this.lock();
+        try {
+            return await Promise.resolve(fn());
+        } finally {
+            unlock();
+        }
+    }
+}
+
+const dbMutex = new Mutex();
 
 export const getDb = async () => {
     if (!db) {
         db = await Database.load('sqlite:images.db');
     }
+
+    if (!dbInitialized && db) {
+        dbInitialized = true;
+        // Enable WAL mode and busy timeout for better concurrency
+        try {
+            await db.execute('PRAGMA journal_mode=WAL');
+            await db.execute('PRAGMA synchronous=NORMAL');
+            await db.execute('PRAGMA busy_timeout=30000'); // Higher timeout for massive batches
+        } catch (e) {
+            console.error('[DB] Failed to set PRAGMAs', e);
+        }
+    }
     return db;
 };
 
 export const normalizeAllPaths = async () => {
-    const db = await getDb();
-    console.log('[DB] Normalizing all paths to use forward slashes...');
-    // Replace backslashes with forward slashes in both 'id' and 'path' columns
-    // We do this for all rows where a backslash is present
-    await db.execute(`
-        UPDATE images 
-        SET id = REPLACE(id, '\\', '/'), 
-            path = REPLACE(path, '\\', '/')
-        WHERE id LIKE '%\\%' OR path LIKE '%\\%'
-    `);
-    console.log('[DB] Path normalization complete.');
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Normalizing all paths to use forward slashes...');
+        // Replace backslashes with forward slashes in both 'id' and 'path' columns
+        // We do this for all rows where a backslash is present
+        await db.execute(`
+            UPDATE images 
+            SET id = REPLACE(id, '\\', '/'), 
+                path = REPLACE(path, '\\', '/')
+            WHERE id LIKE '%\\%' OR path LIKE '%\\%'
+        `);
+        console.log('[DB] Path normalization complete.');
+    });
+};
+
+export const clearLibrary = async () => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Clearing library...');
+        await db.execute('DELETE FROM images');
+        // Optional: VACUUM to reclaim space, though slow on large DBs. 
+        // For 200k rows, maybe skip or do async? Let's skip for responsiveness.
+        // await db.execute('VACUUM'); 
+        console.log('[DB] Library cleared.');
+    });
 };
 
 export const insertImage = async (image: AIImage) => {
-    const db = await getDb();
-    // Normalize path to forward slashes for consistency
-    const id = image.id.replace(/\\/g, '/').replace(/\/+/g, '/');
-    await db.execute(
-        `INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-         ON CONFLICT(id) DO UPDATE SET 
-            path=excluded.path,
-            timestamp=excluded.timestamp, 
-            file_size=excluded.file_size,
-            metadata_json=excluded.metadata_json,
-            thumbnail_path=excluded.thumbnail_path,
-            is_favorite=excluded.is_favorite,
-            group_id=excluded.group_id,
-            board_id=excluded.board_id
-        `,
-        [
-            id,
-            id, // Use Full Path (stored in id) for the path column
-            image.width,
-            image.height,
-            image.fileSize,
-            image.timestamp,
-            JSON.stringify(image.metadata),
-            image.thumbnailUrl,
-            image.isFavorite ? 1 : 0,
-            image.isPinned ? 1 : 0,
-            image.isDeleted ? 1 : 0,
-            image.isMissing ? 1 : 0,
-            image.userMasked ? 1 : 0,
-            image.groupId,
-            image.boardId,
-            image.notes,
-            image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
-        ]
-    );
+    // Wrap in mutex to prevent collisions with batch inserts
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        // Normalize path to forward slashes for consistency
+        const id = image.id.replace(/\\/g, '/').replace(/\/+/g, '/');
+        await db.execute(
+            `INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+             ON CONFLICT(id) DO UPDATE SET 
+                path=excluded.path,
+                timestamp=excluded.timestamp, 
+                file_size=excluded.file_size,
+                metadata_json=excluded.metadata_json,
+                thumbnail_path=excluded.thumbnail_path,
+                is_favorite=excluded.is_favorite,
+                group_id=excluded.group_id,
+                board_id=excluded.board_id
+            `,
+            [
+                id,
+                id,
+                image.width,
+                image.height,
+                image.fileSize,
+                image.timestamp,
+                JSON.stringify(image.metadata),
+                image.thumbnailUrl,
+                image.isFavorite ? 1 : 0,
+                image.isPinned ? 1 : 0,
+                image.isDeleted ? 1 : 0,
+                image.isMissing ? 1 : 0,
+                image.userMasked ? 1 : 0,
+                image.groupId,
+                image.boardId,
+                image.notes,
+                image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
+            ]
+        );
+    });
+};
+
+
+
+export const insertImagesBatch = async (images: AIImage[]) => {
+    if (images.length === 0) return;
+
+    // Wrap in mutex to prevent collisions with other DB ops
+    await dbMutex.dispatch(async () => {
+        // Map to Rust ImageRecord format
+        // Note: Rust side expects keys in camelCase as per serde rename
+        const records = images.map(img => ({
+            id: img.id.replace(/\\/g, '/').replace(/\/+/g, '/'),
+            path: img.id.replace(/\\/g, '/').replace(/\/+/g, '/'), // Path same as ID
+            width: img.width,
+            height: img.height,
+            fileSize: img.fileSize || 0,
+            timestamp: img.timestamp,
+            metadataJson: JSON.stringify(img.metadata),
+            thumbnailPath: img.thumbnailUrl || '',
+            isFavorite: !!img.isFavorite,
+            isPinned: !!img.isPinned,
+            isDeleted: !!img.isDeleted,
+            isMissing: !!img.isMissing,
+            userMasked: !!img.userMasked,
+            groupId: img.groupId || null,
+            boardId: img.boardId || null,
+            notes: img.notes || null,
+            originalMetadataJson: img.originalMetadata ? JSON.stringify(img.originalMetadata) : null
+        }));
+
+        // Group into chunks of 5000 to avoid hitting IPC limits (though rare for this size)
+        // or SQLite variable limits if we were doing raw SQL. 
+        // passing vector to Rust is efficient.
+        const CHUNK_SIZE = 5000;
+        for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+            const chunk = records.slice(i, i + CHUNK_SIZE);
+            try {
+                // Call atomic Rust command
+                await invoke('save_images_batch', { images: chunk });
+            } catch (e) {
+                console.error('[DB] Rust batch insert failed', e);
+                throw e;
+            }
+        }
+    });
 };
 
 export const isImageNew = async (id: string): Promise<boolean> => {

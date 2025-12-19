@@ -30,7 +30,7 @@ interface LibraryContextType {
     progress: { current: number; total: number };
     message?: string;
   };
-  startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean, afterTimestamp?: number }) => Promise<void>;
+  startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean, afterTimestamp?: number, importIntermediates?: boolean }) => Promise<void>;
   cancelSync: () => void;
   // Pagination & Filtering
   loadMoreImages: () => Promise<void>;
@@ -44,6 +44,7 @@ interface LibraryContextType {
   activeSqlWhere: string;
   privacyEnabled: boolean;
   setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  cleanLibrary: () => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -245,7 +246,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         path,
         (current, total) => setSyncProgress({ current, total }),
         abortControllerRef.current.signal,
-        { afterTimestamp: settings.lastSyncedAt, ...options }
+        {
+          afterTimestamp: settings.lastSyncedAt,
+          importIntermediates: settings.importIntermediates,
+          ...options
+        }
       );
 
       // Phase 2: Orphan Scanning
@@ -258,7 +263,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           // Since we don't have a "Phase" UI state, let's just reset progress to 0 for this phase
           // Or maybe we treat "Total" as ambiguous.
           setSyncProgress({ current, total });
-        }
+        },
+        { importIntermediates: settings.importIntermediates }
       );
 
       setSyncStatus('complete');
@@ -386,6 +392,20 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     }));
   }, [recalculateCollectionThumbnail]);
 
+  const cleanLibrary = useCallback(async () => {
+    try {
+      const { clearLibrary } = await import('../services/db');
+      await clearLibrary();
+      setImages([]);
+      setTotalImages(0);
+      setSettings(prev => ({ ...prev, lastSyncedAt: undefined }));
+      addToast('Library cleared successfully.', 'success');
+    } catch (e) {
+      console.error(e);
+      addToast('Failed to clear library.', 'error');
+    }
+  }, [addToast]);
+
   return (
     <LibraryContext.Provider value={{
       isLoaded,
@@ -416,7 +436,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       clearAllFilters,
       activeSqlWhere,
       privacyEnabled,
-      setPrivacyEnabled
+      setPrivacyEnabled,
+      cleanLibrary
     }}>
       {children}
     </LibraryContext.Provider>

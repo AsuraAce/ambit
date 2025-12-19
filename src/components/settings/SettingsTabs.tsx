@@ -565,7 +565,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
 
 // Sub-component for Sync Logic
 const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch<React.SetStateAction<AppSettings>> }> = ({ settings, setSettings }) => {
-  const { syncState, startInvokeSync, cancelSync } = useLibrary();
+  const { syncState, startInvokeSync, cancelSync, cleanLibrary } = useLibrary();
   const { status, progress } = syncState;
 
   // Local state for sync options
@@ -574,7 +574,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
   const handleSync = () => {
     if (!settings.invokeAiPath) return;
-    startInvokeSync(settings.invokeAiPath, { syncFavorites, syncBoards, afterTimestamp: settings.lastSyncedAt });
+    startInvokeSync(settings.invokeAiPath, { syncFavorites, syncBoards, importIntermediates: settings.importIntermediates, afterTimestamp: settings.lastSyncedAt });
   };
 
   if (!settings.invokeAiPath) return null;
@@ -617,7 +617,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
         </div>
 
         {syncBoards && (
-          <div className="pt-2 animate-in fade-in slide-in-from-top-1">
+          <div className="pt-2 animate-in fade-in slide-in-from-top-1 space-y-3">
             <label className="flex items-center gap-2 cursor-pointer group">
               <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
                 <input
@@ -631,6 +631,22 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
               <div className="flex-1">
                 <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Convert Boards to Permanent Collections</span>
                 <p className="text-[10px] text-gray-500">Allows renaming and customizing board-derived collections in Ambit.</p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importIntermediates ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={settings.importIntermediates || false}
+                  onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))}
+                />
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importIntermediates ? 'left-7' : 'left-1'}`} />
+              </div>
+              <div className="flex-1">
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Import intermediates</span>
+                <p className="text-[10px] text-gray-500">Import intermediate generation steps (usually hidden in InvokeAI)</p>
               </div>
             </label>
           </div>
@@ -649,13 +665,24 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             <button
               type="button"
               onClick={() => {
-                if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning. This can take a while.")) {
+                if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning.")) {
                   setSettings(p => ({ ...p, lastSyncedAt: undefined }));
                 }
               }}
               className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-red-500 transition-colors"
             >
               Reset Cursor
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("DANGER: This will delete ALL images from your Ambit library (files on disk are safe). Are you sure?")) {
+                  cleanLibrary();
+                }
+              }}
+              className="px-3 py-2 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10 rounded transition-colors"
+            >
+              Empty Library
             </button>
           </div>
         ) : (

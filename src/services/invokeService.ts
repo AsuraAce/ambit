@@ -189,7 +189,7 @@ export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any } = { syncFavorites: true, syncBoards: true }
+    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean } = { syncFavorites: true, syncBoards: true, importIntermediates: false }
 ): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string> }> => {
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set() };
 
@@ -246,9 +246,12 @@ export const syncImages = async (
     console.log('[InvokeAI Sync] Using root:', imagesRoot);
 
     // 4. Count Total & Prepare Filter
-    // Aggressive Sync: Removing is_intermediate filter because node-based workflows often 
-    // flag final outputs as intermediate if they are not the literal end-of-graph.
     const conditions: string[] = [];
+
+    // Intermediate Filter
+    if (!options.importIntermediates && hasIsIntermediate) {
+        conditions.push('is_intermediate = 0');
+    }
 
     // Incremental Sync Logic
     if (options.afterTimestamp && options.afterTimestamp > 0) {
@@ -265,15 +268,28 @@ export const syncImages = async (
     const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 
-    const { getDb, isImageNew, insertImage } = await import('./db');
+    const { getDb, insertImagesBatch } = await import('./db');
+
+    // Get all existing IDs from Ambit DB once to avoid individual SELECTs
+    const ambitDb = await getDb();
+    const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
+    const ambitExistingIds = new Set(existingRows.map(r => r.id));
+
     const syncedIds = new Set<string>();
 
     if (totalToImport === 0) {
         if (options.syncBoards && boardMapping.size > 0) {
-            console.log('[InvokeAI Sync] Refreshing board associations for existing images...');
-            const ambitDb = await getDb();
-            for (const [imgName, boardName] of boardMapping.entries()) {
-                await ambitDb.execute("UPDATE images SET board_id = ? WHERE filename = ? AND board_id IS NULL", [boardName, imgName]);
+            console.log('[InvokeAI Sync] Refreshing board associations natively...');
+            const { invoke } = await import('@tauri-apps/api/core');
+            try {
+                // Convert Map to plain object for Rust HashMap compatibility
+                const mappingObj: Record<string, string> = {};
+                boardMapping.forEach((val, key) => { mappingObj[key] = val; });
+
+                const updatedCount = await invoke<number>('refresh_boards_native', { boardMapping: mappingObj });
+                console.log(`[InvokeAI Sync] Native board mapping complete. Updated ${updatedCount} images.`);
+            } catch (e) {
+                console.error('[InvokeAI Sync] Native board refresh failed', e);
             }
         }
         return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds };
@@ -304,6 +320,8 @@ export const syncImages = async (
         const rows = await (invokeDb as any).select(query);
         if (rows.length === 0) break;
 
+        const currentBatch: any[] = [];
+
         for (const row of rows) {
             if (signal?.aborted) throw new Error('Aborted');
 
@@ -321,6 +339,12 @@ export const syncImages = async (
 
             try {
                 const metadata = mapInvokeMetadata(row, metaCol);
+
+                // Tag as intermediate if applicable
+                if (hasIsIntermediate) {
+                    metadata.isIntermediate = !!row.is_intermediate;
+                }
+
                 let isFavorite = false;
                 if (options.syncFavorites) {
                     if (hasStarred && row.starred) isFavorite = true;
@@ -357,19 +381,24 @@ export const syncImages = async (
                     metadata: metadata
                 };
 
-                const isNew = await isImageNew(fullPath);
+                const isNew = !ambitExistingIds.has(fullPath);
                 if (isNew) {
                     newImportedCount++;
+                    ambitExistingIds.add(fullPath); // Mark as seen for this run
                 } else {
                     totalUpdated++;
                 }
 
-                await insertImage(newImg);
+                currentBatch.push(newImg);
                 syncedIds.add(row.image_name);
                 processed++;
             } catch (e) {
                 console.error('Failed to import image:', fullPath, e);
             }
+        }
+
+        if (currentBatch.length > 0) {
+            await insertImagesBatch(currentBatch);
         }
 
         offset += rows.length;
@@ -383,7 +412,8 @@ export const syncImages = async (
 export const scanForOrphans = async (
     rootPath: string,
     syncedIds: Set<string>,
-    onProgress: (phase: string, current: number, total: number) => void
+    onProgress: (phase: string, current: number, total: number) => void,
+    options: { importIntermediates?: boolean } = { importIntermediates: false }
 ): Promise<number> => {
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -399,10 +429,27 @@ export const scanForOrphans = async (
     const { insertImage, getDb } = await import('./db');
 
     // 1. Get ALL existing absolute paths already in Ambit (Phase 1.5)
+    // AND get known intermediates if we are skipping them
     const ambitDb = await getDb();
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
     const ambitExistingIds = new Set(existingRows.map(r => r.id));
     console.log(`[Hybrid Sync] Ambit already knows about ${ambitExistingIds.size} images.`);
+
+    let knownIntermediates = new Set<string>();
+    if (!options.importIntermediates) {
+        try {
+            // Re-connect to Invoke DB just to get the intermediates list
+            // We use a simplified connection here since we assume checkConnection passed
+            const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
+            const invokeDb = await Database.load(`sqlite:${dbPath.replace(/\\/g, '/')}`);
+            const interRows = await (invokeDb as any).select("SELECT image_name FROM images WHERE is_intermediate = 1");
+            knownIntermediates = new Set(interRows.map((r: any) => r.image_name));
+            console.log(`[Hybrid Sync] Loaded ${knownIntermediates.size} known intermediates to ignore.`);
+            // Close not strictly necessary as plugin manages valid pool, but good practice if API supported it
+        } catch (e) {
+            console.warn("[Hybrid Sync] Failed to load intermediates list from Invoke DB, falling back to metadata check.", e);
+        }
+    }
 
     // 2. Get all files list (Phase 2)
     let allFiles: string[] = [];
@@ -418,6 +465,9 @@ export const scanForOrphans = async (
     // 3. Identify REAL Orphans (Phase 3)
     // We only care about files that are NOT in Ambit's database already.
     const orphans = allFiles.filter(f => {
+        // Filter out known intermediates first
+        if (!options.importIntermediates && knownIntermediates.has(f)) return false;
+
         const absPath = `${imagesRoot}/outputs/images/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         return !ambitExistingIds.has(absPath);
     });
@@ -431,18 +481,24 @@ export const scanForOrphans = async (
     const total = orphans.length;
     onProgress('Importing untracked files...', 0, total);
 
-    // We use scan_images_bulk for speed
-    const CHUNK_SIZE = 50;
+    // We use scan_images_bulk for speed with skip_thumbnail = true
+    const CHUNK_SIZE = 100; // Increased chunk size for better batching
     for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = orphans.slice(i, i + CHUNK_SIZE);
         const chunkAbsPaths = chunk.map(rel => {
             return `${imagesRoot}/outputs/images/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
 
-        const thumbDir = `${imagesRoot}/outputs/images/thumbnails`.replace(/\\/g, '/');
-
         try {
-            const scanResults: any[] = await invoke('scan_images_bulk', { paths: chunkAbsPaths, thumbnailDir: thumbDir });
+            // skip_thumbnail = true for orphans (Strategy #2: Lazy Thumbnails)
+            // thumbnailDir is NULL to prevent accidental writing to Invoke folder
+            const scanResults: any[] = await invoke('scan_images_bulk', {
+                paths: chunkAbsPaths,
+                thumbnailDir: null,
+                skipThumbnail: true
+            });
+
+            const batchToInsert: any[] = [];
 
             for (let j = 0; j < chunk.length; j++) {
                 const meta = scanResults[j];
@@ -451,11 +507,16 @@ export const scanForOrphans = async (
 
                 if (!meta || meta.failed || meta.error) continue;
 
+                // Intermediate Filter
+                if (!options.importIntermediates && meta.isIntermediate) continue;
+
                 // Double check just in case of race condition
                 if (ambitExistingIds.has(absPath)) continue;
 
                 const finalMeta: any = {
                     tool: 'InvokeAI',
+                    source: 'orphan_scan',
+                    tags: ['ambit_orphan'],
                     model: meta.metadata?.model || 'Unknown',
                     seed: meta.metadata?.seed || 0,
                     steps: meta.metadata?.steps || 0,
@@ -464,12 +525,14 @@ export const scanForOrphans = async (
                     negativePrompt: meta.metadata?.negativePrompt || '',
                     sampler: meta.metadata?.sampler || '',
                     loras: meta.metadata?.loras || [],
-                    controlNets: meta.metadata?.controlNets || []
+                    controlNets: meta.metadata?.controlNets || [],
+                    isIntermediate: !!meta.isIntermediate
                 };
 
                 const newImg: any = {
                     id: absPath,
                     url: convertFileSrc(absPath),
+                    // Use original image as thumbnail (Strategy #2)
                     thumbnailUrl: meta.thumbnail ? convertFileSrc(meta.thumbnail) : convertFileSrc(absPath),
                     filename: relName.split('/').pop(),
                     fileSize: meta.size,
@@ -482,8 +545,13 @@ export const scanForOrphans = async (
                     metadata: finalMeta
                 };
 
-                await insertImage(newImg);
+                batchToInsert.push(newImg);
                 processed++;
+            }
+
+            if (batchToInsert.length > 0) {
+                const { insertImagesBatch } = await import('./db');
+                await insertImagesBatch(batchToInsert);
             }
         } catch (e) {
             console.error("Chunk failed", e);

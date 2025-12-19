@@ -141,6 +141,7 @@ export interface AppSettings {
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
   lastSyncedAt?: number; // Timestamp of the last successful sync
+  importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
 }
 
 export interface ToastMessage {

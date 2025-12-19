@@ -3,19 +3,132 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use rayon::prelude::*;
 use flate2::read::ZlibDecoder;
-// use image::GenericImageView; // Not needed if we only use Reader for dimensions
+use tauri::Manager;
+// use image::GenericImageView; // Needed for resize algo
+use rusqlite::params;
+use std::collections::HashMap;
 
-#[tauri::command]
-async fn scan_image(path: String, thumbnail_dir: Option<String>) -> Result<serde_json::Value, String> {
-   // Wrapper for single image scan
-   scan_image_internal(path, thumbnail_dir)
+#[derive(serde::Deserialize)]
+struct ImageRecord {
+    id: String,
+    path: String,
+    width: u32,
+    height: u32,
+    #[serde(rename = "fileSize")]
+    file_size: u64,
+    timestamp: u64,
+    #[serde(rename = "metadataJson")]
+    metadata_json: String,
+    #[serde(rename = "thumbnailPath")]
+    thumbnail_path: String,
+    #[serde(rename = "isFavorite")]
+    is_favorite: bool,
+    #[serde(rename = "isPinned")]
+    is_pinned: bool,
+    #[serde(rename = "isDeleted")]
+    is_deleted: bool,
+    #[serde(rename = "isMissing")]
+    is_missing: bool,
+    #[serde(rename = "userMasked")]
+    user_masked: bool,
+    #[serde(rename = "groupId")]
+    group_id: Option<String>,
+    #[serde(rename = "boardId")]
+    board_id: Option<String>,
+    notes: Option<String>,
+    #[serde(rename = "originalMetadataJson")]
+    original_metadata_json: Option<String>,
+}
+
+// Helper to resolve the correct DB path used by tauri-plugin-sql
+fn resolve_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // tauri-plugin-sql typically uses AppData (Roaming) or AppConfig
+    // but sometimes LocalData. We check which one exists.
+    
+    // 1. Check AppData / Roaming (Most likely for plugin defaults)
+    if let Ok(mut path) = app.path().app_config_dir() {
+        path.push("images.db");
+        if path.exists() {
+             println!("[Rust Native] Found DB in Config Dir: {:?}", path);
+             return Ok(path);
+        }
+    }
+
+    // 2. Check AppData / Local
+    if let Ok(mut path) = app.path().app_local_data_dir() {
+        path.push("images.db");
+        if path.exists() {
+             println!("[Rust Native] Found DB in Local Data Dir: {:?}", path);
+             return Ok(path);
+        }
+        
+        // If neither exists, we must decide where to create it (or default to one)
+        // Since plugin initializes it, we expect it to exist.
+        // But if this is a fresh run and plugin hasn't run yet? (Unlikely due to frontend flow)
+        // Fallback to Roaming/Config as it matches typical Tauri behavior
+    }
+
+    // Fallback: Return Config Dir + images.db
+    let mut path = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    path.push("images.db");
+    println!("[Rust Native] Defaulting to Config Dir: {:?}", path);
+    Ok(path)
 }
 
 #[tauri::command]
-async fn scan_images_bulk(paths: Vec<String>, thumbnail_dir: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
+    let db_path = resolve_db_path(&app)?;
+    
+    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    // Performance PRAGMAs for this connection
+    let _ = conn.execute("PRAGMA journal_mode=WAL", []); 
+    let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
+    let _ = conn.execute("PRAGMA busy_timeout=30000", []);
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    
+    {
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+             ON CONFLICT(id) DO UPDATE SET 
+                path=excluded.path,
+                timestamp=excluded.timestamp, 
+                file_size=excluded.file_size,
+                metadata_json=excluded.metadata_json,
+                thumbnail_path=excluded.thumbnail_path,
+                is_favorite=excluded.is_favorite,
+                group_id=excluded.group_id,
+                board_id=excluded.board_id"
+        ).map_err(|e| e.to_string())?;
+
+        for img in &images {
+             stmt.execute(params![
+                img.id, img.path, img.width, img.height, img.file_size as i64, img.timestamp as i64, 
+                img.metadata_json, img.thumbnail_path, 
+                img.is_favorite, img.is_pinned, img.is_deleted, img.is_missing, img.user_masked,
+                img.group_id, img.board_id, img.notes, img.original_metadata_json
+             ]).map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(images.len())
+}
+
+
+#[tauri::command]
+async fn scan_image(path: String, thumbnail_dir: Option<String>, skip_thumbnail: bool) -> Result<serde_json::Value, String> {
+   // Wrapper for single image scan
+   scan_image_internal(path, thumbnail_dir, skip_thumbnail)
+}
+
+#[tauri::command]
+async fn scan_images_bulk(paths: Vec<String>, thumbnail_dir: Option<String>, skip_thumbnail: bool) -> Result<Vec<serde_json::Value>, String> {
     // Process in parallel using Rayon
     let results: Vec<serde_json::Value> = paths.par_iter().map(|path| {
-        match scan_image_internal(path.clone(), thumbnail_dir.clone()) {
+        match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail) {
             Ok(json) => json,
             Err(e) => serde_json::json!({
                 "id": path,
@@ -138,7 +251,7 @@ fn collect_images_recursive(root: &std::path::Path, current: &std::path::Path, f
     }
 }
 
-fn scan_image_internal(path: String, thumbnail_dir: Option<String>) -> Result<serde_json::Value, String> {
+fn scan_image_internal(path: String, thumbnail_dir: Option<String>, skip_thumbnail: bool) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
     
     // 1. Basic File Info
@@ -159,33 +272,35 @@ fn scan_image_internal(path: String, thumbnail_dir: Option<String>) -> Result<se
     let mut generated_thumbnail_path = String::new();
     
     if let Some(dir) = &thumbnail_dir {
-        // Generate safe filename: base64 encode the full path to avoid collisions and invalid chars
-        // Using standard alphabet
-        use base64::{Engine as _, engine::general_purpose};
-        let safe_name = general_purpose::STANDARD_NO_PAD.encode(path.as_bytes());
-        let thumb_filename = format!("{}.webp", safe_name);
-        let thumb_path = PathBuf::from(dir).join(thumb_filename);
-        
-        generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+        if !skip_thumbnail {
+            // Generate safe filename: base64 encode the full path to avoid collisions and invalid chars
+            // Using standard alphabet
+            use base64::{Engine as _, engine::general_purpose};
+            let safe_name = general_purpose::STANDARD_NO_PAD.encode(path.as_bytes());
+            let thumb_filename = format!("{}.webp", safe_name);
+            let thumb_path = PathBuf::from(dir).join(thumb_filename);
+            
+            generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
 
-        if !thumb_path.exists() {
-            // Re-open explicitly for decoding (into_dimensions consumed the previous reader)
-            match image::open(&path) {
-                Ok(img) => {
-                    // Resize to 400px width (preserving aspect ratio)
-                    // FilterType::Lanczos3 is high quality
-                    let thumb = img.resize(400, 400, image::imageops::FilterType::Lanczos3);
-                    
-                    // Create dir if missing
-                    let _ = std::fs::create_dir_all(dir);
-                    
-                    if let Err(e) = thumb.save(&thumb_path) {
-                        println!("Failed to save thumbnail: {}", e);
-                        generated_thumbnail_path = String::new(); 
+            if !thumb_path.exists() {
+                // Re-open explicitly for decoding (into_dimensions consumed the previous reader)
+                match image::open(&path) {
+                    Ok(img) => {
+                        // Resize to 400px width (preserving aspect ratio)
+                        // FilterType::Lanczos3 is high quality
+                        let thumb = img.resize(400, 400, image::imageops::FilterType::Lanczos3);
+                        
+                        // Create dir if missing
+                        let _ = std::fs::create_dir_all(dir);
+                        
+                        if let Err(e) = thumb.save(&thumb_path) {
+                            println!("Failed to save thumbnail: {}", e);
+                            generated_thumbnail_path = String::new(); 
+                        }
+                    },
+                    Err(e) => {
+                        println!("Failed to open image for thumbnail: {}", e);
                     }
-                },
-                Err(e) => {
-                    println!("Failed to open image for thumbnail: {}", e);
                 }
             }
         }
@@ -460,6 +575,54 @@ fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
     }
 }
 
+
+#[tauri::command]
+fn refresh_boards_native(app: tauri::AppHandle, board_mapping: HashMap<String, String>) -> Result<usize, String> {
+    let db_path = resolve_db_path(&app)?;
+    
+    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    // Performance PRAGMAs
+    let _ = conn.execute("PRAGMA journal_mode=WAL", []); 
+    let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
+    let _ = conn.execute("PRAGMA busy_timeout=30000", []);
+
+    // 1. Get all images that lack a board
+    let images_to_check: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT id, path FROM images WHERE board_id IS NULL").map_err(|e| e.to_string())?;
+        let items = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| e.to_string())?
+          .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        items
+    };
+
+    if images_to_check.is_empty() {
+        return Ok(0);
+    }
+
+    // 2. Start Transaction
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut updated_count = 0;
+
+    {
+        let mut update_stmt = tx.prepare_cached("UPDATE images SET board_id = ?1 WHERE id = ?2").map_err(|e| e.to_string())?;
+
+        for (id, path) in images_to_check {
+            // Extract filename from path (cross-platform)
+            let filename = path.split('/').last().or_else(|| path.split('\\').last()).unwrap_or(&path);
+            
+            if let Some(board_name) = board_mapping.get(filename) {
+                update_stmt.execute(params![board_name, id]).map_err(|e| e.to_string())?;
+                updated_count += 1;
+            }
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(updated_count)
+}
+
 mod db;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -469,7 +632,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::init_db()).build())
         .plugin(tauri_plugin_log::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images])
+        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images, save_images_batch, refresh_boards_native])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
