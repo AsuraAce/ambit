@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Monitor, Folder, Plus, Trash2, FolderSearch, AlertTriangle, Shield, Eye, Lock, FlaskConical, Clock, Zap, Palette, Save, Loader2, XCircle, Moon, Sun, Key } from 'lucide-react';
 import { useLibrary } from '../../contexts/LibraryContext';
 import { AppSettings, MonitoredFolder } from '../../types';
@@ -304,9 +305,31 @@ export const ExperimentsTab: React.FC<TabProps> = ({ settings, setSettings }) =>
 };
 
 // --- INTEGRATIONS TAB ---
+
 export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [diagData, setDiagData] = useState<any>(null);
+  const [isDiagLoading, setIsDiagLoading] = useState(false);
+
+  const runDiagnostics = async () => {
+    if (!settings.invokeAiPath) return;
+    setIsDiagLoading(true);
+    try {
+      const { diagnoseInvokeAI } = await import('../../services/invokeService');
+      const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath);
+      const folderAudit: any = await invoke('audit_invokeai_folder', { path: settings.invokeAiPath });
+
+      setDiagData({
+        ...dbDiag,
+        folder: folderAudit
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDiagLoading(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     if (!settings.invokeAiPath) return;
@@ -408,6 +431,130 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
             )}
           </div>
         </div>
+      </section>
+
+      {/* Diagnostics Section */}
+      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
+        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center justify-between">
+          <span>Troubleshooting</span>
+          <button
+            type="button"
+            onClick={runDiagnostics}
+            disabled={isDiagLoading || !settings.invokeAiPath}
+            className="text-[10px] bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 px-2 py-1 rounded transition-colors"
+          >
+            {isDiagLoading ? 'Running Audit...' : 'Audit Library'}
+          </button>
+        </h4>
+
+        {!diagData ? (
+          <p className="text-xs text-gray-500">Run an audit to compare the database entries with files in the outputs folder.</p>
+        ) : (
+          <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">InvokeAI DB</div>
+                <div className="text-xl font-mono text-blue-500">{diagData.totalInDb.toLocaleString()}</div>
+                <div className="text-[10px] text-gray-400">Records in 'images' table</div>
+              </div>
+              <div className="p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Outputs Folder</div>
+                <div className="text-xl font-mono text-green-500">{diagData.folder.imageFiles.toLocaleString()}</div>
+                <div className="text-[10px] text-gray-400">Images in /outputs/images</div>
+              </div>
+            </div>
+
+            {diagData.totalInDb !== diagData.folder.imageFiles && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                <div className="font-bold flex items-center gap-2 mb-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Count Discrepancy Found
+                </div>
+                There are {Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()} more {diagData.totalInDb > diagData.folder.imageFiles ? 'records in DB than files' : 'files than DB records'}.
+                {diagData.totalInDb > diagData.folder.imageFiles && (
+                  <p className="mt-1 opacity-80 leading-relaxed font-medium">This suggests orphaned database entries (files were deleted manually or are on another drive).</p>
+                )}
+                {diagData.folder.imageFiles > diagData.totalInDb && (
+                  <p className="mt-1 opacity-80 leading-relaxed font-medium">This suggests untracked images in the folder that InvokeAI is not aware of.</p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Category Breakdown (DB)</div>
+              <div className="grid grid-cols-2 gap-2">
+                {diagData.categories.map((c: any) => (
+                  <div key={c.image_category} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                    <span className="text-gray-500 capitalize">{c.image_category}</span>
+                    <span className="font-mono font-bold">{c.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Origin Breakdown (DB)</div>
+              <div className="grid grid-cols-2 gap-2">
+                {diagData.origins.map((o: any) => (
+                  <div key={o.image_origin} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                    <span className="text-gray-500 capitalize">{o.image_origin}</span>
+                    <span className="font-mono font-bold">{o.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {diagData.intermediateStatus && diagData.intermediateStatus.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Intermediate Status (DB)</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {diagData.intermediateStatus.map((is: any) => (
+                    <div key={String(is.is_intermediate)} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
+                      <span className="text-gray-500 capitalize">{is.is_intermediate ? 'Intermediate' : 'Final Output'}</span>
+                      <span className="font-mono font-bold">{is.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-gray-100 dark:border-white/5 space-y-4">
+              <div>
+                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Folder Structure</div>
+                <div className="grid grid-cols-1 gap-1">
+                  {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
+                    <div key={folder} className="flex justify-between text-[10px] p-1.5 bg-gray-50/50 dark:bg-white/5 rounded border border-gray-100/50 dark:border-white/5">
+                      <span className="text-gray-500 font-mono truncate">{folder}</span>
+                      <span className="font-bold">{count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                  {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
+                    <div className="text-[10px] text-gray-500 italic">No subfolders found (everything in root).</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">All DB Tables</div>
+                <div className="grid grid-cols-2 gap-1 max-h-[200px] overflow-y-auto pr-1">
+                  {diagData.tables.map((tbl: any) => (
+                    <div key={tbl.name} className="flex justify-between text-[10px] p-1.5 bg-gray-100/30 dark:bg-black/20 rounded border border-gray-100/50 dark:border-white/5">
+                      <span className="text-gray-400 font-mono truncate">{tbl.name}</span>
+                      <span className="font-bold">{tbl.count === 'Error' ? '!' : tbl.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100 dark:border-white/5">
+                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Thumbnails Audit</div>
+                <div className="text-xs text-gray-500">
+                  Detected <span className="text-gray-900 dark:text-gray-200 font-mono font-bold">{diagData.folder.thumbnailFiles.toLocaleString()}</span> thumbnails in <code>/thumbnails</code> subfolder.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Sync Logic Section */}

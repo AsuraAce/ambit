@@ -238,29 +238,41 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     abortControllerRef.current = new AbortController();
 
     try {
-      const { syncImages } = await import('../services/invokeService');
-      const { imported, updated, maxTimestamp } = await syncImages(
+      const { syncImages, scanForOrphans } = await import('../services/invokeService');
+
+      // Phase 1: DB Sync
+      const { imported, updated, maxTimestamp, syncedIds } = await syncImages(
         path,
         (current, total) => setSyncProgress({ current, total }),
         abortControllerRef.current.signal,
         { afterTimestamp: settings.lastSyncedAt, ...options }
       );
 
+      // Phase 2: Orphan Scanning
+      // We pass the syncedIds set to exclude them from the scan
+      const orphansImported = await scanForOrphans(
+        path,
+        syncedIds,
+        (phase, current, total) => {
+          // We can use a special toast or just update progress?
+          // Since we don't have a "Phase" UI state, let's just reset progress to 0 for this phase
+          // Or maybe we treat "Total" as ambiguous.
+          setSyncProgress({ current, total });
+        }
+      );
+
       setSyncStatus('complete');
-      const totalProcessed = (imported || 0) + (updated || 0);
+      const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
+      // Just set progress to done
       setSyncProgress({ current: totalProcessed, total: totalProcessed });
 
-      const message = imported > 0 || updated > 0
-        ? `Sync complete: ${imported} new, ${updated} updated.`
-        : 'Sync complete: No changes found.';
+      const message = `Sync complete: ${imported} from DB, ${orphansImported} orphans recovered, ${updated} updated.`;
       addToast(message, 'success');
 
-      // Update Last Synced Timestamp with the highest seen timestamp from the source
       if (maxTimestamp) {
         setSettings(prev => ({ ...prev, lastSyncedAt: maxTimestamp }));
       }
 
-      // Refresh Data after Sync
       fetchData(false);
 
     } catch (e: any) {
@@ -268,11 +280,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       else {
         console.error('Sync failed', e);
         setSyncStatus('error');
+        addToast('Sync failed: ' + e.message, 'error');
       }
     } finally {
       abortControllerRef.current = null;
     }
-  }, [syncStatus, fetchData, settings.lastSyncedAt]);
+  }, [syncStatus, fetchData, settings.lastSyncedAt, addToast]);
 
   const cancelSync = useCallback(() => {
     abortControllerRef.current?.abort();

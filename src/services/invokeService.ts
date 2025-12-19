@@ -122,13 +122,76 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
     };
 };
 
+export const diagnoseInvokeAI = async (rootPath: string): Promise<any> => {
+    if (!rootPath) return { error: "No path provided." };
+
+    let imagesRoot = rootPath.replace(/[\\/]$/, '');
+    const isFile = rootPath.endsWith('.db');
+    if (isFile) {
+        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
+    } else if (imagesRoot.endsWith('databases')) {
+        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
+    }
+
+    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
+    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
+
+    try {
+        const db = await Database.load(connectionString);
+
+        // 1. Get Column Info
+        const tableInfo = await (db as any).select('PRAGMA table_info(images)');
+        const columns = tableInfo.map((c: any) => c.name);
+
+        // 2. Counts
+        const totalImages = (await (db as any).select('SELECT count(*) as count FROM images'))[0].count;
+
+        const categories = columns.includes('image_category')
+            ? await (db as any).select('SELECT image_category, count(*) as count FROM images GROUP BY image_category')
+            : [];
+
+        const origins = columns.includes('image_origin')
+            ? await (db as any).select('SELECT image_origin, count(*) as count FROM images GROUP BY image_origin')
+            : [];
+
+        const intermediateStatus = columns.includes('is_intermediate')
+            ? await (db as any).select('SELECT is_intermediate, count(*) as count FROM images GROUP BY is_intermediate')
+            : [];
+
+        // 3. All Tables
+        const tablesList = await (db as any).select("SELECT name FROM sqlite_master WHERE type='table'");
+        const tableCounts = [];
+        for (const t of tablesList) {
+            try {
+                const res = await (db as any).select(`SELECT count(*) as count FROM ${t.name}`);
+                tableCounts.push({ name: t.name, count: res[0].count });
+            } catch (e) {
+                tableCounts.push({ name: t.name, count: 'Error' });
+            }
+        }
+
+        return {
+            totalInDb: totalImages,
+            columns,
+            categories,
+            origins,
+            intermediateStatus,
+            dbPath,
+            imagesRoot,
+            tables: tableCounts
+        };
+    } catch (e: any) {
+        return { error: e.message || String(e) };
+    }
+};
+
 export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
     options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any } = { syncFavorites: true, syncBoards: true }
-): Promise<{ imported: number, updated: number, maxTimestamp: any }> => {
-    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '' };
+): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string> }> => {
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -203,6 +266,7 @@ export const syncImages = async (
     const totalToImport = countRes[0]?.count || 0;
 
     const { getDb, isImageNew, insertImage } = await import('./db');
+    const syncedIds = new Set<string>();
 
     if (totalToImport === 0) {
         if (options.syncBoards && boardMapping.size > 0) {
@@ -212,7 +276,7 @@ export const syncImages = async (
                 await ambitDb.execute("UPDATE images SET board_id = ? WHERE filename = ? AND board_id IS NULL", [boardName, imgName]);
             }
         }
-        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0 };
+        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds };
     }
 
     // 5. Batch Process
@@ -301,6 +365,7 @@ export const syncImages = async (
                 }
 
                 await insertImage(newImg);
+                syncedIds.add(row.image_name);
                 processed++;
             } catch (e) {
                 console.error('Failed to import image:', fullPath, e);
@@ -312,6 +377,120 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
-    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum };
+    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds };
 };
 
+export const scanForOrphans = async (
+    rootPath: string,
+    syncedIds: Set<string>,
+    onProgress: (phase: string, current: number, total: number) => void
+): Promise<number> => {
+    let imagesRoot = rootPath.replace(/[\\/]$/, '');
+    const isFile = rootPath.endsWith('.db');
+    if (isFile) {
+        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
+    } else if (imagesRoot.endsWith('databases')) {
+        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
+    }
+
+    onProgress('Scanning disk for untracked files...', 0, 0);
+
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { insertImage, getDb } = await import('./db');
+
+    // 1. Get ALL existing absolute paths already in Ambit (Phase 1.5)
+    const ambitDb = await getDb();
+    const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
+    const ambitExistingIds = new Set(existingRows.map(r => r.id));
+    console.log(`[Hybrid Sync] Ambit already knows about ${ambitExistingIds.size} images.`);
+
+    // 2. Get all files list (Phase 2)
+    let allFiles: string[] = [];
+    try {
+        allFiles = await invoke('list_invokeai_images', { path: imagesRoot });
+    } catch (e) {
+        console.error("Failed to list invokeai images:", e);
+        return 0;
+    }
+
+    if (!allFiles || allFiles.length === 0) return 0;
+
+    // 3. Identify REAL Orphans (Phase 3)
+    // We only care about files that are NOT in Ambit's database already.
+    const orphans = allFiles.filter(f => {
+        const absPath = `${imagesRoot}/outputs/images/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+        return !ambitExistingIds.has(absPath);
+    });
+
+    console.log(`[Hybrid Sync] Found ${orphans.length} genuine orphans out of ${allFiles.length} files.`);
+
+    if (orphans.length === 0) return 0;
+
+    // 4. Import Orphans (Phase 4)
+    let processed = 0;
+    const total = orphans.length;
+    onProgress('Importing untracked files...', 0, total);
+
+    // We use scan_images_bulk for speed
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = orphans.slice(i, i + CHUNK_SIZE);
+        const chunkAbsPaths = chunk.map(rel => {
+            return `${imagesRoot}/outputs/images/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+        });
+
+        const thumbDir = `${imagesRoot}/outputs/images/thumbnails`.replace(/\\/g, '/');
+
+        try {
+            const scanResults: any[] = await invoke('scan_images_bulk', { paths: chunkAbsPaths, thumbnailDir: thumbDir });
+
+            for (let j = 0; j < chunk.length; j++) {
+                const meta = scanResults[j];
+                const absPath = chunkAbsPaths[j];
+                const relName = chunk[j];
+
+                if (!meta || meta.failed || meta.error) continue;
+
+                // Double check just in case of race condition
+                if (ambitExistingIds.has(absPath)) continue;
+
+                const finalMeta: any = {
+                    tool: 'InvokeAI',
+                    model: meta.metadata?.model || 'Unknown',
+                    seed: meta.metadata?.seed || 0,
+                    steps: meta.metadata?.steps || 0,
+                    cfg: meta.metadata?.cfg || 0,
+                    positivePrompt: meta.metadata?.positivePrompt || '',
+                    negativePrompt: meta.metadata?.negativePrompt || '',
+                    sampler: meta.metadata?.sampler || '',
+                    loras: meta.metadata?.loras || [],
+                    controlNets: meta.metadata?.controlNets || []
+                };
+
+                const newImg: any = {
+                    id: absPath,
+                    url: convertFileSrc(absPath),
+                    thumbnailUrl: meta.thumbnail ? convertFileSrc(meta.thumbnail) : convertFileSrc(absPath),
+                    filename: relName.split('/').pop(),
+                    fileSize: meta.size,
+                    timestamp: meta.modified || Date.now(),
+                    width: meta.width,
+                    height: meta.height,
+                    isFavorite: false,
+                    isDeleted: false,
+                    isMissing: false,
+                    metadata: finalMeta
+                };
+
+                await insertImage(newImg);
+                processed++;
+            }
+        } catch (e) {
+            console.error("Chunk failed", e);
+        }
+
+        onProgress('Importing untracked files...', processed, total);
+    }
+
+    return processed;
+};

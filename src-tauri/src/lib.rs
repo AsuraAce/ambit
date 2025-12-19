@@ -28,6 +28,116 @@ async fn scan_images_bulk(paths: Vec<String>, thumbnail_dir: Option<String>) -> 
     Ok(results)
 }
 
+#[tauri::command]
+async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
+    let path_buf = PathBuf::from(&path);
+    let images_path = path_buf.join("outputs").join("images");
+    
+    let mut stats = FolderStats::default();
+    stats.directory_checked = images_path.to_string_lossy().to_string();
+
+    if images_path.exists() && images_path.is_dir() {
+        scan_dir_recursive(&images_path, &images_path, &mut stats);
+    }
+
+    Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({"error": "Failed to serialize stats"})))
+}
+
+#[derive(serde::Serialize, Default)]
+struct FolderStats {
+    #[serde(rename = "totalFiles")]
+    total_files: usize,
+    #[serde(rename = "imageFiles")]
+    image_files: usize,
+    #[serde(rename = "thumbnailFiles")]
+    thumbnail_files: usize,
+    #[serde(rename = "otherFiles")]
+    other_files: usize,
+    #[serde(rename = "directoryChecked")]
+    directory_checked: String,
+    #[serde(rename = "subfolders")]
+    subfolders: std::collections::HashMap<String, usize>,
+}
+
+fn scan_dir_recursive(root: &std::path::Path, current: &std::path::Path, stats: &mut FolderStats) {
+    if let Ok(entries) = std::fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                // If it's the thumbnails folder, we count specifically but don't recurse for "images"
+                if p.ends_with("thumbnails") {
+                    if let Ok(sub_entries) = std::fs::read_dir(&p) {
+                        for sub_entry in sub_entries.flatten() {
+                            if sub_entry.path().is_file() {
+                                stats.thumbnail_files += 1;
+                            }
+                        }
+                    }
+                } else {
+                    scan_dir_recursive(root, &p, stats);
+                }
+            } else if p.is_file() {
+                stats.total_files += 1;
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                    stats.image_files += 1;
+                    
+                    // Track relative subfolder
+                    if let Ok(rel) = p.strip_prefix(root) {
+                        if let Some(parent) = rel.parent() {
+                            let path_str = parent.to_string_lossy().to_string();
+                            if !path_str.is_empty() {
+                                *stats.subfolders.entry(path_str).or_insert(0) += 1;
+                            } else {
+                                *stats.subfolders.entry("root".to_string()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                } else {
+                    stats.other_files += 1;
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn list_invokeai_images(path: String) -> Result<Vec<String>, String> {
+    let path_buf = PathBuf::from(&path);
+    let images_path = path_buf.join("outputs").join("images");
+    let mut files = Vec::new();
+
+    if images_path.exists() && images_path.is_dir() {
+        collect_images_recursive(&images_path, &images_path, &mut files);
+    }
+    
+    Ok(files)
+}
+
+fn collect_images_recursive(root: &std::path::Path, current: &std::path::Path, files: &mut Vec<String>) {
+    // Limit to prevent OOM on massive folders (optional safety)
+    if files.len() > 300_000 { return; }
+
+    if let Ok(entries) = std::fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if !p.ends_with("thumbnails") {
+                    collect_images_recursive(root, &p, files);
+                }
+            } else if p.is_file() {
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                     // Get relative path from outputs/images ROOT
+                     if let Ok(rel) = p.strip_prefix(root) {
+                         files.push(rel.to_string_lossy().replace("\\", "/"));
+                     }
+                }
+            }
+        }
+    }
+}
+
 fn scan_image_internal(path: String, thumbnail_dir: Option<String>) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
     
@@ -359,7 +469,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::init_db()).build())
         .plugin(tauri_plugin_log::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk])
+        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
