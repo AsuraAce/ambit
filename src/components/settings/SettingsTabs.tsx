@@ -427,7 +427,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
   const handleSync = () => {
     if (!settings.invokeAiPath) return;
-    startInvokeSync(settings.invokeAiPath, { syncFavorites, syncBoards });
+    startInvokeSync(settings.invokeAiPath, { syncFavorites, syncBoards, afterTimestamp: settings.lastSyncedAt });
   };
 
   if (!settings.invokeAiPath) return null;

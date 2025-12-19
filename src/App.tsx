@@ -657,19 +657,7 @@ export default function App() {
                     )}
                 </AnimatePresence>
 
-                {/* DEBUG DRAG BOX */}
-                <div
-                    draggable="true"
-                    onDragStart={(e) => {
-                        console.log('DEBUG BOX DRAG START');
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', 'DEBUG_DRAG');
-                    }}
-                    className="fixed bottom-10 right-10 w-20 h-20 bg-red-500 z-[9999] flex items-center justify-center text-white font-bold cursor-grab active:cursor-grabbing border-4 border-white shadow-xl rounded-xl"
-                    style={{ WebkitUserDrag: 'element' } as any}
-                >
-                    DRAG ME
-                </div>
+
             </div>
         </HashRouter>
     );

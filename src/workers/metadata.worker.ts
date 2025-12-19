@@ -559,6 +559,18 @@ const parseInvokeAIMetadata = (json: any, metadata: Partial<ImageMetadata>, extr
         }
     }
 
+    if (json.loras && Array.isArray(json.loras)) {
+        metadata.loras = json.loras.map((l: any) => {
+            if (typeof l === 'string') return l;
+            // Handle { model: { name: "..." } } structure (InvokeAI 4+)
+            if (l.model && typeof l.model === 'object') {
+                return l.model.model_name || l.model.name || 'Unknown LoRA';
+            }
+            if (l.lora && typeof l.lora === 'object') return l.lora.model_name || l.lora.name;
+            return l.model_name || l.name || 'Unknown LoRA';
+        }).filter(Boolean);
+    }
+
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 

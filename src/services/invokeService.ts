@@ -45,6 +45,24 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
         else if (root.model.default) mapped.model = root.model.default; // Some store as default?
     }
 
+    // Extract LoRAs
+    if (root.loras && Array.isArray(root.loras)) {
+        mapped.loras = root.loras.map((l: any) => {
+            if (typeof l === 'string') return l;
+            // Handle { model: { name: "..." } } structure (InvokeAI 4+)
+            if (l.model && typeof l.model === 'object') {
+                return l.model.model_name || l.model.name || 'Unknown LoRA';
+            }
+            // Handle older or alternative structures
+            if (l.lora && typeof l.lora === 'object') return l.lora.model_name || l.lora.name;
+            return l.model_name || l.name || 'Unknown LoRA';
+        }).filter(Boolean);
+
+        if (mapped.loras.length > 0) {
+            console.log('[Invoke LoRA Sync] Extracted LoRAs:', mapped.loras);
+        }
+    }
+
     return mapped;
 }
 
@@ -109,8 +127,8 @@ export const syncImages = async (
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
     options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any } = { syncFavorites: true, syncBoards: true }
-): Promise<{ imported: number, maxTimestamp: any }> => {
-    if (!rootPath) return { imported: 0, maxTimestamp: '' };
+): Promise<{ imported: number, updated: number, maxTimestamp: any }> => {
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '' };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -194,12 +212,13 @@ export const syncImages = async (
                 await ambitDb.execute("UPDATE images SET board_id = ? WHERE filename = ? AND board_id IS NULL", [boardName, imgName]);
             }
         }
-        return { imported: 0, maxTimestamp: options.afterTimestamp || 0 };
+        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0 };
     }
 
     // 5. Batch Process
     let processed = 0;
     let newImportedCount = 0;
+    let totalUpdated = 0;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -277,6 +296,8 @@ export const syncImages = async (
                 const isNew = await isImageNew(fullPath);
                 if (isNew) {
                     newImportedCount++;
+                } else {
+                    totalUpdated++;
                 }
 
                 await insertImage(newImg);
@@ -291,6 +312,6 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
-    return { imported: newImportedCount, maxTimestamp: maxTimestampNum };
+    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum };
 };
 

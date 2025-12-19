@@ -101,13 +101,15 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2, ease: "easeIn" } }}
                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                        className="w-full h-full flex items-center justify-center pointer-events-none"
+                        className="flex items-center justify-center pointer-events-none"
                     >
                         <SmartImage
                             src={image.url}
                             alt={image.metadata.positivePrompt}
                             draggable={false}
-                            className="max-w-full max-h-[90vh] object-contain shadow-2xl shadow-black pointer-events-none"
+                            objectFit="contain"
+                            wrapperClassName="w-auto h-auto flex items-center justify-center"
+                            imgClassName="max-w-full max-h-[90vh] w-auto h-auto shadow-2xl shadow-black pointer-events-none object-contain"
                         />
                     </motion.div>
                 </div>

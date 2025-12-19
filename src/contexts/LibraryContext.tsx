@@ -30,7 +30,7 @@ interface LibraryContextType {
     progress: { current: number; total: number };
     message?: string;
   };
-  startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean }) => Promise<void>;
+  startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean, afterTimestamp?: number }) => Promise<void>;
   cancelSync: () => void;
   // Pagination & Filtering
   loadMoreImages: () => Promise<void>;
@@ -239,17 +239,21 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     try {
       const { syncImages } = await import('../services/invokeService');
-      const { imported, maxTimestamp } = await syncImages(
+      const { imported, updated, maxTimestamp } = await syncImages(
         path,
         (current, total) => setSyncProgress({ current, total }),
         abortControllerRef.current.signal,
-        { ...options, afterTimestamp: settings.lastSyncedAt }
+        { afterTimestamp: settings.lastSyncedAt, ...options }
       );
 
       setSyncStatus('complete');
-      setSyncProgress({ current: imported, total: imported });
+      const totalProcessed = (imported || 0) + (updated || 0);
+      setSyncProgress({ current: totalProcessed, total: totalProcessed });
 
-      addToast(`Sync complete: ${imported} new images added.`, 'success');
+      const message = imported > 0 || updated > 0
+        ? `Sync complete: ${imported} new, ${updated} updated.`
+        : 'Sync complete: No changes found.';
+      addToast(message, 'success');
 
       // Update Last Synced Timestamp with the highest seen timestamp from the source
       if (maxTimestamp) {

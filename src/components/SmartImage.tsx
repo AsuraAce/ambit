@@ -6,19 +6,25 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 interface SmartImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
   alt: string;
-  className?: string;
+  className?: string; // Backwards compatibility: acts as wrapper class
+  wrapperClassName?: string; // Explicit wrapper class control
+  imgClassName?: string; // Explicit img class control
   fallbackSrc?: string;
   onImageError?: () => void;
+  objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
 }
 
 export const SmartImage: React.FC<SmartImageProps> = ({
   src,
   alt,
   className,
+  wrapperClassName,
+  imgClassName,
   onLoad,
   draggable = false,
   onImageError,
   fallbackSrc,
+  objectFit = 'cover',
   ...props
 }) => {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
@@ -72,16 +78,20 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     return src;
   }, [src]);
 
+  const finalWrapperClass = wrapperClassName || className || '';
+  // Default to w-full h-full if no specific img class provided (maintains existing grid behavior)
+  const finalImgClass = imgClassName || `w-full h-full transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`;
+
   if (!src && status === 'error') {
     return (
-      <div className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${className}`}>
+      <div className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${finalWrapperClass}`}>
         <ImageOff className="w-1/3 h-1/3" />
       </div>
     );
   }
 
   return (
-    <div className={`relative overflow-hidden ${className}`}>
+    <div className={`relative overflow-hidden ${finalWrapperClass}`}>
       {status === 'loading' && (
         <div className="absolute inset-0 bg-gray-200 dark:bg-white/5 animate-pulse flex items-center justify-center">
           <ImageIcon className="w-8 h-8 text-gray-400 dark:text-gray-600 opacity-50" />
@@ -101,8 +111,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           draggable="false" // Disable inner drag so parent GridItem handles it cleanly
           onLoad={handleLoad}
           onError={handleError}
-          className={`w-full h-full object-cover transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'
-            }`}
+          style={{ objectFit }}
+          className={finalImgClass}
           loading="lazy"
           decoding="async"
           {...props}
