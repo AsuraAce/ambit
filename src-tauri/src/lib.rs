@@ -653,16 +653,117 @@ fn refresh_boards_native(app: tauri::AppHandle, board_mapping: HashMap<String, S
     Ok(updated_count)
 }
 
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri::Emitter;
+
+struct WatcherState {
+    watcher: Mutex<Option<RecommendedWatcher>>,
+    last_event: Mutex<Instant>,
+}
+
+impl Default for WatcherState {
+    fn default() -> Self {
+        Self {
+            watcher: Mutex::new(None),
+            last_event: Mutex::new(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()),
+        }
+    }
+}
+
+#[tauri::command]
+fn start_live_link_watcher(app: tauri::AppHandle, path: String, state: tauri::State<'_, WatcherState>) -> Result<(), String> {
+    let path_buf = PathBuf::from(&path);
+    if !path_buf.exists() {
+        return Err("Target path does not exist".into());
+    }
+
+    let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
+
+    // Drop existing watcher if any (stops watching)
+    if watcher_guard.is_some() {
+        *watcher_guard = None;
+        println!("[Rust Watcher] Stopped previous watcher");
+    }
+
+    if path.is_empty() {
+        return Ok(()); // Just stop if empty path
+    }
+
+    let app_handle = app.clone();
+    // We need to share the last_emit time with the closure... but accessing State inside closure is hard if closure is long lived?
+    // Actually, we can clone the State handle if it's cheap? No, State is a wrapper.
+    // We can wrap the last_emit in an Arc<Mutex<Instant>> that we pass to closure? 
+    // But State holds it. 
+    // Simpler: The closure owns its OWN throttle timer. The Global state is just to allow stopping/starting (replacing the watcher).
+    // The "Global" debounce isn't strictly needed across restarts, just across events.
+    
+    let last_emit_local = std::sync::Arc::new(Mutex::new(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()));
+    
+    let event_handler = move |res: notify::Result<notify::Event>| {
+        match res {
+            Ok(event) => {
+                // Check if relevant event
+                let is_relevant = match event.kind {
+                    notify::EventKind::Create(_) | notify::EventKind::Modify(_) => true,
+                    _ => false
+                };
+
+                if is_relevant {
+                    // Check extension
+                    let has_image = event.paths.iter().any(|p| {
+                         p.extension().map(|e| {
+                             let s = e.to_string_lossy().to_lowercase();
+                             ["png", "jpg", "jpeg", "webp"].contains(&s.as_str())
+                         }).unwrap_or(false)
+                    });
+
+                    if has_image {
+                        // Throttle: Max 1 emit per second
+                        let mut last = last_emit_local.lock().unwrap();
+                        if last.elapsed() > Duration::from_millis(1000) {
+                            println!("[Rust Watcher] Detected change, emitting event...");
+                            let _ = app_handle.emit("invoke-live-event", ());
+                            *last = Instant::now();
+                        }
+                    }
+                }
+            },
+            Err(e) => println!("watch error: {:?}", e),
+        }
+    };
+
+    let mut watcher = RecommendedWatcher::new(event_handler, Config::default()).map_err(|e| e.to_string())?;
+
+    watcher.watch(&path_buf, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    
+    *watcher_guard = Some(watcher);
+    println!("[Rust Watcher] Started watching: {}", path);
+
+    Ok(())
+}
+
 mod db;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatcherState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::init_db()).build())
         .plugin(tauri_plugin_log::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images, save_images_batch, refresh_boards_native, scan_directory_recursive])
+        .invoke_handler(tauri::generate_handler![
+            scan_image, 
+            scan_images_bulk, 
+            audit_invokeai_folder, 
+            list_invokeai_images, 
+            save_images_batch, 
+            refresh_boards_native, 
+            scan_directory_recursive,
+            start_live_link_watcher
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -101,6 +101,7 @@ dependencies = [
  "flate2",
  "image",
  "log",
+ "notify",
  "rayon",
  "rusqlite",
  "serde",

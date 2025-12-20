@@ -6,7 +6,7 @@ import { appRepository } from '../services/repository';
 import { watcherService } from '../services/WatcherService';
 import { WatchEvent } from '@tauri-apps/plugin-fs';
 import { useToast } from '../hooks/useToast';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { scanImageNative } from '../services/metadataParser';
 import { GeneratorTool } from '../types';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -334,26 +334,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     const currentSettings = settingsRef.current;
 
     if (isAdd) {
-      // Check if this event comes from the InvokeAI Output Folder
-      let isInvokeEvent = false;
-      if (currentSettings.invokeAiPath) {
-        const invokeImagesPath = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '') + '/outputs/images';
-        isInvokeEvent = event.paths.some(p => p.replace(/\\/g, '/').startsWith(invokeImagesPath));
-      }
-
-      if (isInvokeEvent) {
-        // STRATEGY: Watcher-Triggered Sync
-        if (debouncedSyncRef.current) clearTimeout(debouncedSyncRef.current);
-
-        debouncedSyncRef.current = setTimeout(() => {
-          console.log('[Watcher] Detected InvokeAI file change. Triggering Live Sync...');
-          // Trigger Live Sync using Ref
-          if (currentSettings.invokeAiPath) {
-            startInvokeSyncRef.current(currentSettings.invokeAiPath, { mode: 'live', syncFavorites: true, syncBoards: true });
-          }
-        }, 2000);
-        return;
-      }
+      // NOTE: InvokeAI events are now handled by Native Watcher + Event Listener below.
+      // This HandleWatcherEvent is now ONLY for "Manual Monitored Folders" (User added folders).
 
       // --- Standard Folder Watcher Logic (For non-Invoke folders) ---
       const pathsToScan = event.paths.filter(p => /\.(png|jpg|jpeg|webp)$/i.test(p));
@@ -418,28 +400,53 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   useEffect(() => {
     if (!isLoaded) return;
 
-    // If Live Watch is disabled, stop watching and return
-    if (!isLiveWatching) {
-      watcherService.stopWatching();
-      return;
-    }
-
-    // Inject Auto-Watch for InvokeAI
-    const effectiveSettings = { ...settings };
-    if (settings.invokeAiPath) {
-      const invokePath = settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '') + '/outputs/images';
-      // Avoid duplicates in the service call (though service might handle it, better to be clean)
-      if (!effectiveSettings.monitoredFolders.some(f => f.path.replace(/\\/g, '/') === invokePath)) {
-        effectiveSettings.monitoredFolders = [
-          ...effectiveSettings.monitoredFolders,
-          { id: 'invoke-auto-watch', path: invokePath, isActive: true, imageCount: 0 }
-        ];
+    // Use a small timeout to let the UI update (toggle button color/state) before heavy background work
+    const timeout = setTimeout(async () => {
+      // If Live Watch is disabled, stop watching and return
+      if (!isLiveWatching) {
+        watcherService.stopWatching();
+        // Also stop native watcher
+        await invoke('start_live_link_watcher', { path: '' }).catch(console.error);
+        return;
       }
-    }
 
-    // Now safe to start watcher
-    watcherService.updateWatcher(effectiveSettings, handleWatcherEvent);
+      // 1. Start Native Rust Watcher for InvokeAI (The Heavy Lifting)
+      if (settings.invokeAiPath) {
+        const invokePath = settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '') + '/outputs/images';
+        console.log('[Watcher] Starting Native Watcher on:', invokePath);
+        // We pass the path to start. Passing empty string stops it.
+        await invoke('start_live_link_watcher', { path: invokePath }).catch(console.error);
+      }
+
+      // 2. Start Standard Watcher for User Folders (Lightweight)
+      // We use the original settings.monitoredFolders directly (no injection)
+      watcherService.updateWatcher(settings, handleWatcherEvent);
+    }, 200); // 200ms delay to ensure UI paint
+
+    return () => clearTimeout(timeout);
   }, [settings.monitoredFolders, settings.invokeAiPath, isLoaded, handleWatcherEvent, isLiveWatching]);
+
+  // Listen for Native Watcher Events
+  useEffect(() => {
+    let unlisten: () => void;
+
+    // We listen for the specific event emitted by Rust
+    import('@tauri-apps/api/event').then(async ({ listen }) => {
+      unlisten = await listen('invoke-live-event', () => {
+        console.log('[Live Link] Native Event Received. Triggering Sync...');
+        if (settings.invokeAiPath) {
+          // Trigger Live Sync with debounce protection handled by the sync function or here?
+          // Note: Rust already throttles to 1s. We can just call it.
+          // We use mode 'live' which does internal logic.
+          startInvokeSync(settings.invokeAiPath, { mode: 'live', syncFavorites: true, syncBoards: true });
+        }
+      });
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [settings.invokeAiPath, startInvokeSync]);
 
   // Helper to recalculate thumbnails
   const recalculateCollectionThumbnail = useCallback((col: Collection, currentImages: AIImage[]): string | undefined => {

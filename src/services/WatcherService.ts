@@ -13,7 +13,8 @@ export class WatcherService {
         this.isWatching = true;
         const folders = settings.monitoredFolders.filter(f => f.isActive);
 
-        for (const folder of folders) {
+        // Map folders to promises to initialize in parallel
+        const watchPromises = folders.map(async (folder) => {
             try {
                 // watch returns a promise that resolves to an unwatch function
                 const unwatch = await watch(folder.path, (event) => {
@@ -30,7 +31,10 @@ export class WatcherService {
             } catch (err) {
                 console.error(`Failed to watch ${folder.path}:`, err);
             }
-        }
+        });
+
+        // Wait for all watchers to initialize in parallel
+        await Promise.all(watchPromises);
     }
 
     async stopWatching() {

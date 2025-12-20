@@ -52,9 +52,12 @@ export const getDb = async () => {
 export const normalizeAllPaths = async () => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
-        console.log('[DB] Normalizing all paths to use forward slashes...');
-        // Replace backslashes with forward slashes in both 'id' and 'path' columns
-        // We do this for all rows where a backslash is present
+
+        // Fast check: Are there any paths with backslashes?
+        const check = await db.select<any[]>('SELECT id FROM images WHERE id LIKE "%\\%" OR path LIKE "%\\%" LIMIT 1');
+        if (check.length === 0) return;
+
+        console.log('[DB] Normalizing paths to use forward slashes...');
         await db.execute(`
             UPDATE images 
             SET id = REPLACE(id, '\\', '/'), 
