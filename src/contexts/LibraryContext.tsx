@@ -30,7 +30,7 @@ interface LibraryContextType {
     progress: { current: number; total: number };
     message?: string;
   };
-  startInvokeSync: (path: string, options?: { syncFavorites: boolean, syncBoards: boolean, afterTimestamp?: number, importIntermediates?: boolean }) => Promise<void>;
+  startInvokeSync: (path: string, options?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, mode?: 'manual' | 'live' }) => Promise<void>;
   cancelSync: () => void;
   // Pagination & Filtering
   loadMoreImages: () => Promise<void>;
@@ -45,6 +45,8 @@ interface LibraryContextType {
   privacyEnabled: boolean;
   setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   cleanLibrary: () => Promise<void>;
+  isLiveWatching: boolean;
+  setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -69,6 +71,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   });
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [privacyEnabled, setPrivacyEnabled] = useState(true);
+  const [isLiveWatching, setIsLiveWatching] = useState(false);
 
   // Filtering & Sorting State
   const [filters, setFilters] = useState<FilterState>({
@@ -231,8 +234,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [collections, smartCollections, settings, recentSearches, isLoaded]);
 
   // Sync Logic
-  const startInvokeSync = useCallback(async (path: string, options: { syncFavorites?: boolean, syncBoards?: boolean } = { syncFavorites: true, syncBoards: true }) => {
-    if (syncStatus === 'syncing') return;
+  const startInvokeSync = useCallback(async (path: string, options: { syncFavorites?: boolean, syncBoards?: boolean, mode?: 'manual' | 'live' } = { syncFavorites: true, syncBoards: true, mode: 'manual' }) => {
+    if (syncStatus === 'syncing' && options.mode === 'manual') return; // Don't block live syncs if possible, or queue them? For now, simple block if busy.
 
     setSyncStatus('syncing');
     setSyncProgress({ current: 0, total: 0 });
@@ -241,41 +244,50 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     try {
       const { syncImages, scanForOrphans } = await import('../services/invokeService');
 
+      // Determine Timestamp Strategy
+      // Manual: Use settings.lastSyncedAt
+      // Live: Use "Now - 2 minutes" to catch just the new file safely
+      let scanTimestamp = settings.lastSyncedAt;
+      if (options.mode === 'live') {
+        scanTimestamp = Date.now() - (120 * 1000); // Look back 2 minutes
+      }
+
       // Phase 1: DB Sync
       const { imported, updated, maxTimestamp, syncedIds } = await syncImages(
         path,
         (current, total) => setSyncProgress({ current, total }),
         abortControllerRef.current.signal,
         {
-          afterTimestamp: settings.lastSyncedAt,
+          afterTimestamp: scanTimestamp,
           importIntermediates: settings.importIntermediates,
           ...options
         }
       );
 
-      // Phase 2: Orphan Scanning
-      // We pass the syncedIds set to exclude them from the scan
-      const orphansImported = await scanForOrphans(
-        path,
-        syncedIds,
-        (phase, current, total) => {
-          // We can use a special toast or just update progress?
-          // Since we don't have a "Phase" UI state, let's just reset progress to 0 for this phase
-          // Or maybe we treat "Total" as ambiguous.
-          setSyncProgress({ current, total });
-        },
-        { importIntermediates: settings.importIntermediates }
-      );
+      // Phase 2: Orphan Scanning (Only run on Manual Sync to save resources)
+      let orphansImported = 0;
+      if (options.mode === 'manual') {
+        orphansImported = await scanForOrphans(
+          path,
+          syncedIds,
+          (phase, current, total) => {
+            setSyncProgress({ current, total });
+          },
+          { importIntermediates: settings.importIntermediates }
+        );
+      }
 
       setSyncStatus('complete');
       const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
-      // Just set progress to done
       setSyncProgress({ current: totalProcessed, total: totalProcessed });
 
-      const message = `Sync complete: ${imported} from DB, ${orphansImported} orphans recovered, ${updated} updated.`;
-      addToast(message, 'success');
+      if (options.mode === 'manual') {
+        const message = `Sync complete: ${imported} from DB, ${orphansImported} orphans recovered, ${updated} updated.`;
+        addToast(message, 'success');
+      }
+      // specific toast for live? Maybe silent is better or just a small "New image imported"
 
-      if (maxTimestamp) {
+      if (maxTimestamp && options.mode === 'manual') {
         setSettings(prev => ({ ...prev, lastSyncedAt: maxTimestamp }));
       }
 
@@ -286,35 +298,73 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       else {
         console.error('Sync failed', e);
         setSyncStatus('error');
-        addToast('Sync failed: ' + e.message, 'error');
+        if (options.mode === 'manual') addToast('Sync failed: ' + e.message, 'error');
       }
     } finally {
       abortControllerRef.current = null;
+      // If live sync finishes quickly, we might want to reset status to idle after a moment so user doesn't see 'Complete' forever
+      if (options.mode === 'live') {
+        setTimeout(() => setSyncStatus('idle'), 2000);
+      }
     }
-  }, [syncStatus, fetchData, settings.lastSyncedAt, addToast]);
+  }, [syncStatus, fetchData, settings.lastSyncedAt, settings.importIntermediates, addToast]);
 
   const cancelSync = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
 
-  // Handle Watcher Events
-  const handleWatcherEvent = useCallback(async (event: WatchEvent) => {
-    // ... [Original Watcher Logic Preserved but modified to append/prepend] ...
-    // For Safety with DB Paging:
-    // If we receive a new file, we should insert it into DB (done by scanner?)
-    // This part requires DB Insertion Logic if the watcher calls `scanImageNative` but doesn't insert.
-    // The previous implementation of `scanImageNative` implicitly returned metadata, 
-    // but DID NOT insert into DB. `App.tsx` or `LibraryContext` handled state update.
-    // WE MUST INSERT INTO DB HERE now.
+  const debouncedSyncRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Refs for stable callback access to prevent re-creation of handleWatcherEvent
+  const activeSqlWhereRef = useRef(activeSqlWhere);
+  useEffect(() => { activeSqlWhereRef.current = activeSqlWhere; }, [activeSqlWhere]);
+
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  const startInvokeSyncRef = useRef(startInvokeSync);
+  useEffect(() => { startInvokeSyncRef.current = startInvokeSync; }, [startInvokeSync]);
+
+  // Handle Watcher Events - Now STABLE (Empty deps)
+  const handleWatcherEvent = useCallback(async (event: WatchEvent) => {
     if (!event.paths || event.paths.length === 0) return;
     const isAdd = typeof event.type === 'string' ? ['create', 'modify', 'write', 'rename'].some(t => event.type.toString().toLowerCase().includes(t)) : true;
 
+    // Access current values via Refs
+    const currentSettings = settingsRef.current;
+
     if (isAdd) {
+      // Check if this event comes from the InvokeAI Output Folder
+      let isInvokeEvent = false;
+      if (currentSettings.invokeAiPath) {
+        const invokeImagesPath = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '') + '/outputs/images';
+        isInvokeEvent = event.paths.some(p => p.replace(/\\/g, '/').startsWith(invokeImagesPath));
+      }
+
+      if (isInvokeEvent) {
+        // STRATEGY: Watcher-Triggered Sync
+        if (debouncedSyncRef.current) clearTimeout(debouncedSyncRef.current);
+
+        debouncedSyncRef.current = setTimeout(() => {
+          console.log('[Watcher] Detected InvokeAI file change. Triggering Live Sync...');
+          // Trigger Live Sync using Ref
+          if (currentSettings.invokeAiPath) {
+            startInvokeSyncRef.current(currentSettings.invokeAiPath, { mode: 'live', syncFavorites: true, syncBoards: true });
+          }
+        }, 2000);
+        return;
+      }
+
+      // --- Standard Folder Watcher Logic (For non-Invoke folders) ---
       const pathsToScan = event.paths.filter(p => /\.(png|jpg|jpeg|webp)$/i.test(p));
       for (const path of pathsToScan) {
         try {
-          const { metadata, extra, width, height, fileSize, timestamp } = await scanImageNative(path);
+          const { metadata, extra, width, height, fileSize, timestamp, isIntermediate } = await scanImageNative(path, undefined, true);
+
+          if (!currentSettings.importIntermediates && isIntermediate) {
+            continue;
+          }
+
           const { normalizePath } = await import('../utils/pathUtils');
           const normalizedPath = normalizePath(path);
           const assetUrl = convertFileSrc(normalizedPath);
@@ -350,25 +400,46 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
             metadata: mappedMeta
           };
 
-          // Insert to DB
           const { insertImage } = await import('../services/db');
           await insertImage(imageObj);
 
-          // Update UI if it matches current filter (Simplified: Just prepend if no complex filter)
-          // OR just re-fetch page 1
-          if (!activeSqlWhere || activeSqlWhere === 'is_deleted = 0') {
+          // Update UI using Ref for current Filter State
+          const currentWhere = activeSqlWhereRef.current;
+          const cleanWhere = currentWhere.replace(/^WHERE\s+/i, '');
+          if (!cleanWhere || cleanWhere === 'is_deleted = 0') {
             setImages(prev => [imageObj, ...prev]);
           }
         } catch (e) { console.error(e); }
       }
     }
-  }, [activeSqlWhere]);
+  }, []); // STABLE CALLBACK allows updateWatcher to run only when folders change
 
   // Update Watcher when settings change
   useEffect(() => {
     if (!isLoaded) return;
-    watcherService.updateWatcher(settings, handleWatcherEvent);
-  }, [settings.monitoredFolders, isLoaded, handleWatcherEvent]);
+
+    // If Live Watch is disabled, stop watching and return
+    if (!isLiveWatching) {
+      watcherService.stopWatching();
+      return;
+    }
+
+    // Inject Auto-Watch for InvokeAI
+    const effectiveSettings = { ...settings };
+    if (settings.invokeAiPath) {
+      const invokePath = settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '') + '/outputs/images';
+      // Avoid duplicates in the service call (though service might handle it, better to be clean)
+      if (!effectiveSettings.monitoredFolders.some(f => f.path.replace(/\\/g, '/') === invokePath)) {
+        effectiveSettings.monitoredFolders = [
+          ...effectiveSettings.monitoredFolders,
+          { id: 'invoke-auto-watch', path: invokePath, isActive: true, imageCount: 0 }
+        ];
+      }
+    }
+
+    // Now safe to start watcher
+    watcherService.updateWatcher(effectiveSettings, handleWatcherEvent);
+  }, [settings.monitoredFolders, settings.invokeAiPath, isLoaded, handleWatcherEvent, isLiveWatching]);
 
   // Helper to recalculate thumbnails
   const recalculateCollectionThumbnail = useCallback((col: Collection, currentImages: AIImage[]): string | undefined => {
@@ -437,7 +508,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       activeSqlWhere,
       privacyEnabled,
       setPrivacyEnabled,
-      cleanLibrary
+      cleanLibrary,
+      isLiveWatching,
+      setIsLiveWatching
     }}>
       {children}
     </LibraryContext.Provider>

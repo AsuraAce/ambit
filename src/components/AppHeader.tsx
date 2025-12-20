@@ -45,7 +45,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     clearAllFilters,
     isImporting
 }) => {
-    const { settings, setSettings, collections, recentSearches, loadMoreImages, hasMoreImages } = useLibraryContext();
+    const { settings, setSettings, collections, recentSearches, loadMoreImages, hasMoreImages, isLiveWatching, setIsLiveWatching } = useLibraryContext();
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -127,7 +127,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         <button onClick={searchProps.toggleAiSearch} className={`p-2 rounded-xl transition-all border ${searchProps.isAiSearchEnabled ? 'bg-amethyst-100 dark:bg-amethyst-600/20 border-amethyst-500/50 text-amethyst-600 dark:text-amethyst-300 shadow-[0_0_15px_rgba(139,92,246,0.2)]' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 dark:text-zinc-500 hover:text-sage-600 dark:hover:text-sage-400 hover:border-gray-300 dark:hover:border-white/10'}`} title={searchProps.isAiSearchEnabled ? "Disable AI Search" : "Enable AI Search"}><Sparkles className="w-4 h-4" /></button>
                     </div>
 
-                    <button onClick={onImport} className={`p-2 rounded-xl transition-all border relative group ${isImporting ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`} title="Import Images"><Import className="w-4 h-4" /></button>
+                    <div className="flex items-center gap-1">
+                        <button onClick={onImport} className={`p-2 rounded-xl transition-all border relative group ${isImporting ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`} title="Import Images"><Import className="w-4 h-4" /></button>
+                        <button
+                            onClick={() => setIsLiveWatching(!isLiveWatching)}
+                            className={`p-2 rounded-xl transition-all border relative group ${isLiveWatching ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/20 animate-pulse' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500'}`}
+                            title={isLiveWatching ? "Live Watch Active" : "Enable Live Watch"}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+                        </button>
+                    </div>
 
                     <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
 

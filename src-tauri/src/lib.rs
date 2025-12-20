@@ -251,6 +251,36 @@ fn collect_images_recursive(root: &std::path::Path, current: &std::path::Path, f
     }
 }
 
+fn collect_images_recursive_absolute(root: &std::path::Path, current: &std::path::Path, files: &mut Vec<String>) {
+    if files.len() > 300_000 { return; }
+
+    if let Ok(entries) = std::fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                collect_images_recursive_absolute(root, &p, files);
+            } else if p.is_file() {
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                     files.push(p.to_string_lossy().replace("\\", "/"));
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn scan_directory_recursive(path: String) -> Result<Vec<String>, String> {
+    let root_path = PathBuf::from(&path);
+    let mut files = Vec::new();
+
+    if root_path.exists() && root_path.is_dir() {
+        collect_images_recursive_absolute(&root_path, &root_path, &mut files);
+    }
+    
+    Ok(files)
+}
+
 fn scan_image_internal(path: String, thumbnail_dir: Option<String>, skip_thumbnail: bool) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
     
@@ -632,7 +662,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::init_db()).build())
         .plugin(tauri_plugin_log::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images, save_images_batch, refresh_boards_native])
+        .invoke_handler(tauri::generate_handler![scan_image, scan_images_bulk, audit_invokeai_folder, list_invokeai_images, save_images_batch, refresh_boards_native, scan_directory_recursive])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

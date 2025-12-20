@@ -143,7 +143,7 @@ export const useFileOperations = ({
                         fileSize,
                         timestamp,
                         thumbnail
-                    } = await scanImageNative(path, thumbnailDir);
+                    } = await scanImageNative(path, thumbnailDir, true);
 
                     if (isIntermediate) {
                         skippedCount++;
@@ -266,7 +266,8 @@ export const useFileOperations = ({
 
         for (let i = 0; i < paths.length; i += BATCH_SIZE) {
             const chunk = paths.slice(i, i + BATCH_SIZE);
-            const results = await scanImagesBulk(chunk, thumbnailDir);
+            // Optimization: Skip thumbnails for bulk import (Lazy Load / Browser Scale)
+            const results = await scanImagesBulk(chunk, thumbnailDir, true);
 
             for (let j = 0; j < results.length; j++) {
                 const result = results[j];
@@ -337,25 +338,11 @@ export const useFileOperations = ({
 
     const scanDirectory = async (dirPath: string, silent = false) => {
         try {
-            const { readDir } = await import('@tauri-apps/plugin-fs');
-            const entries = await readDir(dirPath);
+            const { invoke } = await import('@tauri-apps/api/core');
+            // Use the recursive Rust scanner which returns absolute paths
+            const imagePaths = await invoke<string[]>('scan_directory_recursive', { path: dirPath });
 
-            const imageExtensions = ['.png', '.jpg', '.jpeg', '.webp'];
-            const imagePaths: string[] = [];
-
-            for (const entry of entries) {
-                if (entry.isFile && entry.name) {
-                    const lowerName = entry.name.toLowerCase();
-                    if (imageExtensions.some(ext => lowerName.endsWith(ext))) {
-                        const separator = dirPath.includes('\\') ? '\\' : '/';
-                        const cleanDirPath = dirPath.endsWith(separator) ? dirPath.slice(0, -1) : dirPath;
-                        const fullPath = `${cleanDirPath}${separator}${entry.name}`;
-                        imagePaths.push(fullPath);
-                    }
-                }
-            }
-
-            if (imagePaths.length > 0) {
+            if (imagePaths && imagePaths.length > 0) {
                 await handleImportPaths(imagePaths, silent);
             } else {
                 if (!silent) addToast(`No images found in ${dirPath}`, 'info');

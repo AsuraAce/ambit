@@ -48,10 +48,10 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
 
 // -- Public API --
 
-export const scanImageNative = async (path: string, thumbnailDir?: string): Promise<ParseResult> => {
+export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false): Promise<ParseResult> => {
     try {
         // 1. Rust Side (Fast I/O & Basic Parse & Thumbnail Gen)
-        const info = await invoke('scan_image', { path, thumbnailDir }) as any;
+        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail }) as any;
 
         // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
         if (info.metadata) {
@@ -59,6 +59,21 @@ export const scanImageNative = async (path: string, thumbnailDir?: string): Prom
                 metadata: info.metadata,
                 extra: {},
                 isIntermediate: info.metadata.isIntermediate,
+                width: info.width,
+                height: info.height,
+                fileSize: info.size,
+                timestamp: info.modified,
+                thumbnail: info.thumbnail
+            };
+        }
+
+        // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
+        if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
+            // It's likely an intermediate or raw save
+            return {
+                metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
+                extra: {},
+                isIntermediate: true, // Mark as intermediate to allow filtering
                 width: info.width,
                 height: info.height,
                 fileSize: info.size,
@@ -95,10 +110,10 @@ export const scanImageNative = async (path: string, thumbnailDir?: string): Prom
     }
 };
 
-export const scanImagesBulk = async (paths: string[], thumbnailDir?: string): Promise<ParseResult[]> => {
+export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false): Promise<ParseResult[]> => {
     try {
         // 1. Bulk Scan in Rust
-        const results = await invoke('scan_images_bulk', { paths, thumbnailDir }) as any[];
+        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail }) as any[];
 
         // 2. Process results
         // We map each result to a promise that resolves to the final ParseResult
@@ -126,6 +141,20 @@ export const scanImagesBulk = async (paths: string[], thumbnailDir?: string): Pr
                     metadata: info.metadata,
                     extra: {},
                     isIntermediate: info.metadata.isIntermediate,
+                    width: info.width,
+                    height: info.height,
+                    fileSize: info.size,
+                    timestamp: info.modified,
+                    thumbnail: info.thumbnail
+                };
+            }
+
+            // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
+            if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
+                return {
+                    metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
+                    extra: {},
+                    isIntermediate: true,
                     width: info.width,
                     height: info.height,
                     fileSize: info.size,

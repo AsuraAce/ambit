@@ -18,7 +18,7 @@ export class WatcherService {
                 // watch returns a promise that resolves to an unwatch function
                 const unwatch = await watch(folder.path, (event) => {
                     onEvent(event);
-                }, { recursive: false });
+                }, { recursive: true });
 
                 if (this.isWatching) {
                     this.unwatchFns.set(folder.id, unwatch);
