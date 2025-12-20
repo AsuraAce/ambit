@@ -98,6 +98,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const PAGE_SIZE = 1000;
 
   const isFetchingRef = useRef(false);
+  const isLiveSyncingRef = useRef(false); // Guard for background live syncs
 
   // --- SQL Generation Effect ---
   useEffect(() => {
@@ -235,10 +236,25 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Sync Logic
   const startInvokeSync = useCallback(async (path: string, options: { syncFavorites?: boolean, syncBoards?: boolean, mode?: 'manual' | 'live' } = { syncFavorites: true, syncBoards: true, mode: 'manual' }) => {
-    if (syncStatus === 'syncing' && options.mode === 'manual') return; // Don't block live syncs if possible, or queue them? For now, simple block if busy.
+    // Concurrency Guard:
+    // 1. If Manual Sync is active, block everything (user expects feedback)
+    if (syncStatus === 'syncing' && options.mode === 'manual') return;
 
-    setSyncStatus('syncing');
-    setSyncProgress({ current: 0, total: 0 });
+    // 2. If Live Sync is active, block concurrent Live request (drop it, one is already running)
+    //    We do NOT block Manual if Live is running; Manual should take over (handled below?)
+    //    Actually, simpler: If *any* sync is running, we drop 'live' requests.
+    if ((syncStatus === 'syncing' || isLiveSyncingRef.current) && options.mode === 'live') {
+      console.log('[Live Sync] Skipped: Sync already in progress.');
+      return;
+    }
+
+    if (options.mode === 'live') {
+      isLiveSyncingRef.current = true;
+    } else {
+      setSyncStatus('syncing');
+      setSyncProgress({ current: 0, total: 0 });
+    }
+
     abortControllerRef.current = new AbortController();
 
     try {
@@ -302,10 +318,17 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
     } finally {
       abortControllerRef.current = null;
-      // If live sync finishes quickly, we might want to reset status to idle after a moment so user doesn't see 'Complete' forever
       if (options.mode === 'live') {
-        setTimeout(() => setSyncStatus('idle'), 2000);
+        isLiveSyncingRef.current = false;
+        // Check if we need to reset status if it was set? Reference logic above didn't set status for live
+      } else {
+        // Manual mode cleanup
+        // If live sync finishes quickly, we might want to reset status to idle after a moment so user doesn't see 'Complete' forever
       }
+
+      // Legacy cleanup logic or if we decided to show status for live?
+      // For now, if mode was live we didn't touch syncStatus (to avoid UI flicker), so we don't need to unset it.
+      // IF we decide to show live sync status, we handle it here.
     }
   }, [syncStatus, fetchData, settings.lastSyncedAt, settings.importIntermediates, addToast]);
 
