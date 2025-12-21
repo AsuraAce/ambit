@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Monitor, Folder, Plus, Trash2, FolderSearch, AlertTriangle, Shield, Eye, Lock, FlaskConical, Clock, Zap, Palette, Save, Loader2, XCircle, Moon, Sun, Key } from 'lucide-react';
+import { Monitor, Folder, Plus, Trash2, FolderSearch, AlertTriangle, Shield, Eye, Lock, FlaskConical, Clock, Zap, Palette, Save, Loader2, XCircle, Moon, Sun, Key, Activity, Database, Search, Files, LayoutGrid, CheckCircle2, Layers, Settings2, Globe, DatabaseZap, RefreshCw, BarChart3, Info, FolderOpen, History, Boxes, ZapOff } from 'lucide-react';
 import { useLibrary } from '../../contexts/LibraryContext';
 import { AppSettings, MonitoredFolder } from '../../types';
 
@@ -370,62 +370,81 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
 
   return (
     <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-blue-500"></div> InvokeAI Integration
+      {/* Description Header */}
+      <div className="px-1">
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+          Integrations
+        </h3>
+        <p className="text-sm text-gray-500">
+          Connect and manage external AI generation tools with your library.
+        </p>
+      </div>
+
+      <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+        {/* Subtle background glow */}
+        <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[80px] rounded-full group-hover:bg-blue-500/15 transition-colors duration-700"></div>
+
+        <h4 className="text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+          <DatabaseZap className="w-4 h-4" /> InvokeAI Integration
         </h4>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">
-              Root Folder Path
+        <div className="space-y-6">
+          <div className="relative">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
+              Root Installation Path
             </label>
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={settings.invokeAiPath || ''}
-                onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
-                placeholder="e.g. C:\Users\Name\invokeai"
-                className="flex-1 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm focus:border-sage-500 outline-none text-gray-900 dark:text-white font-mono"
-              />
+              <div className="flex-1 relative group">
+                <input
+                  type="text"
+                  value={settings.invokeAiPath || ''}
+                  onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
+                  placeholder="e.g. C:\AI\invokeai"
+                  className="w-full bg-black/5 dark:bg-black/40 border border-black/10 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
+                />
+                <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+              </div>
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="px-3 py-2 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-white/20 transition-colors text-sm font-medium"
+                className="px-4 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-xl hover:opacity-90 active:scale-95 transition-all text-sm font-bold shadow-lg shadow-black/10"
               >
                 Browse
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Select the folder containing <code>databases/invokeai.db</code>.
+            <p className="text-[10px] text-gray-500 mt-3 flex items-center gap-1.5 opacity-80">
+              <Info className="w-3 h-3" /> Select the folder containing <code>databases/invokeai.db</code>.
             </p>
           </div>
 
-          <div className="pt-2 border-t border-gray-100 dark:border-white/5 mt-4">
+          <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
             <button
               onClick={handleTestConnection}
               disabled={isTesting || !settings.invokeAiPath}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${!settings.invokeAiPath
+              className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.invokeAiPath
                 ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl shadow-blue-500/20 active:scale-95'
                 }`}
             >
               {isTesting ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Connecting...
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying...
                 </>
               ) : (
-                'Test Connection'
+                <>
+                  <Globe className="w-4 h-4" />
+                  Test Connection
+                </>
               )}
             </button>
 
             {testResult && (
-              <div className={`mt-3 p-3 rounded-lg text-sm flex items-start gap-2 ${testResult.success
-                ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800/30'
-                : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800/30'
+              <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                 }`}>
-                <div className={`mt-0.5 w-2 h-2 rounded-full ${testResult.success ? 'bg-green-500' : 'bg-red-500'}`} />
+                {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                 {testResult.message}
               </div>
             )}
@@ -434,130 +453,122 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
       </section>
 
       {/* Diagnostics Section */}
-      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center justify-between">
-          <span>Troubleshooting</span>
+      <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+        <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 blur-[80px] rounded-full group-hover:bg-emerald-500/15 transition-colors duration-700"></div>
+
+        <h4 className="text-[10px] font-black text-emerald-500 dark:text-emerald-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Activity className="w-4 h-4" /> System Audit
+          </div>
           <button
             type="button"
             onClick={runDiagnostics}
             disabled={isDiagLoading || !settings.invokeAiPath}
-            className="text-[10px] bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 px-2 py-1 rounded transition-colors"
+            className="text-[10px] bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 font-black uppercase tracking-widest flex items-center gap-2"
           >
-            {isDiagLoading ? 'Running Audit...' : 'Audit Library'}
+            {isDiagLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart3 className="w-3 h-3" />}
+            {isDiagLoading ? 'Analyzing...' : 'Run Audit'}
           </button>
         </h4>
 
         {!diagData ? (
-          <p className="text-xs text-gray-500">Run an audit to compare the database entries with files in the outputs folder.</p>
+          <div className="flex items-center gap-4 p-4 bg-black/5 dark:bg-black/20 rounded-xl border border-black/5 dark:border-white/5">
+            <div className="p-3 bg-white dark:bg-white/5 rounded-xl shadow-sm">
+              <Search className="w-5 h-5 text-gray-400" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Ready for Scan</p>
+              <p className="text-[10px] text-gray-500">Run an audit to compare database entries with local output files.</p>
+            </div>
+          </div>
         ) : (
-          <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-2 relative z-10">
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
-                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">InvokeAI DB</div>
-                <div className="text-xl font-mono text-blue-500">{diagData.totalInDb.toLocaleString()}</div>
-                <div className="text-[10px] text-gray-400">Records in 'images' table</div>
+              <div className="p-4 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 group/stat">
+                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                  <Database className="w-3 h-3 text-blue-500" /> InvokeAI Database
+                </div>
+                <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
+                <div className="text-[9px] text-gray-500 font-medium">Synced Records</div>
               </div>
-              <div className="p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
-                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Outputs Folder</div>
-                <div className="text-xl font-mono text-green-500">{diagData.folder.imageFiles.toLocaleString()}</div>
-                <div className="text-[10px] text-gray-400">Images in /outputs/images</div>
+              <div className="p-4 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 group/stat">
+                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                  <Files className="w-3 h-3 text-emerald-500" /> Image Repository
+                </div>
+                <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
+                <div className="text-[9px] text-gray-500 font-medium">Files on Disk</div>
               </div>
             </div>
 
             {diagData.totalInDb !== diagData.folder.imageFiles && (
-              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
-                <div className="font-bold flex items-center gap-2 mb-1">
-                  <AlertTriangle className="w-3 h-3" />
+              <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-700 dark:text-amber-400 shadow-lg shadow-amber-500/5">
+                <div className="font-black uppercase tracking-widest flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4" />
                   Count Discrepancy Found
                 </div>
-                There are {Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()} more {diagData.totalInDb > diagData.folder.imageFiles ? 'records in DB than files' : 'files than DB records'}.
+                <p className="opacity-90 leading-normal">
+                  There are <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong> {diagData.totalInDb > diagData.folder.imageFiles ? 'extra records in the database' : 'extra files in the outputs folder'}.
+                </p>
                 {diagData.totalInDb > diagData.folder.imageFiles && (
-                  <p className="mt-1 opacity-80 leading-relaxed font-medium">This suggests orphaned database entries (files were deleted manually or are on another drive).</p>
-                )}
-                {diagData.folder.imageFiles > diagData.totalInDb && (
-                  <p className="mt-1 opacity-80 leading-relaxed font-medium">This suggests untracked images in the folder that InvokeAI is not aware of.</p>
+                  <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: Run "Reset Cursor" to re-validate image availability.</p>
                 )}
               </div>
             )}
 
-            <div className="space-y-2">
-              <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Category Breakdown (DB)</div>
-              <div className="grid grid-cols-2 gap-2">
-                {diagData.categories.map((c: any) => (
-                  <div key={c.image_category} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
-                    <span className="text-gray-500 capitalize">{c.image_category}</span>
-                    <span className="font-mono font-bold">{c.count.toLocaleString()}</span>
-                  </div>
-                ))}
+            <div className="grid grid-cols-2 gap-6 pt-2">
+              <div className="space-y-3">
+                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
+                  {diagData.categories.map((c: any) => (
+                    <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-black/5 dark:bg-white/[0.04] rounded-xl border border-black/5 dark:border-white/5 transition-colors hover:bg-black/[0.08] dark:hover:bg-white/[0.08]">
+                      <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
+                      <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
+                  {diagData.origins.map((o: any) => (
+                    <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-black/5 dark:bg-white/[0.04] rounded-xl border border-black/5 dark:border-white/5 transition-colors hover:bg-black/[0.08] dark:hover:bg-white/[0.08]">
+                      <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
+                      <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Origin Breakdown (DB)</div>
+            <div className="pt-4 border-t border-black/5 dark:border-white/5 space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest">Storage Status</div>
+                <div className="text-[9px] text-gray-500 font-medium italic">
+                  {diagData.folder.thumbnailFiles.toLocaleString()} Thumbnails active
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
-                {diagData.origins.map((o: any) => (
-                  <div key={o.image_origin} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
-                    <span className="text-gray-500 capitalize">{o.image_origin}</span>
-                    <span className="font-mono font-bold">{o.count.toLocaleString()}</span>
+                {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
+                  <div key={folder} className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FolderOpen className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      <span className="text-gray-500 dark:text-gray-400 truncate font-mono">{folder}</span>
+                    </div>
+                    <span className="font-black text-gray-700 dark:text-gray-300 pl-2 tabular-nums">{count.toLocaleString()}</span>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {diagData.intermediateStatus && diagData.intermediateStatus.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-[10px] text-gray-400 uppercase font-bold font-mono">Intermediate Status (DB)</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {diagData.intermediateStatus.map((is: any) => (
-                    <div key={String(is.is_intermediate)} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-white/5 rounded border border-gray-100 dark:border-white/5">
-                      <span className="text-gray-500 capitalize">{is.is_intermediate ? 'Intermediate' : 'Final Output'}</span>
-                      <span className="font-mono font-bold">{is.count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="pt-2 border-t border-gray-100 dark:border-white/5 space-y-4">
-              <div>
-                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Folder Structure</div>
-                <div className="grid grid-cols-1 gap-1">
-                  {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
-                    <div key={folder} className="flex justify-between text-[10px] p-1.5 bg-gray-50/50 dark:bg-white/5 rounded border border-gray-100/50 dark:border-white/5">
-                      <span className="text-gray-500 font-mono truncate">{folder}</span>
-                      <span className="font-bold">{count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                  {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
-                    <div className="text-[10px] text-gray-500 italic">No subfolders found (everything in root).</div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">All DB Tables</div>
-                <div className="grid grid-cols-2 gap-1 max-h-[200px] overflow-y-auto pr-1">
-                  {diagData.tables.map((tbl: any) => (
-                    <div key={tbl.name} className="flex justify-between text-[10px] p-1.5 bg-gray-100/30 dark:bg-black/20 rounded border border-gray-100/50 dark:border-white/5">
-                      <span className="text-gray-400 font-mono truncate">{tbl.name}</span>
-                      <span className="font-bold">{tbl.count === 'Error' ? '!' : tbl.count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-gray-100 dark:border-white/5">
-                <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 font-mono">Thumbnails Audit</div>
-                <div className="text-xs text-gray-500">
-                  Detected <span className="text-gray-900 dark:text-gray-200 font-mono font-bold">{diagData.folder.thumbnailFiles.toLocaleString()}</span> thumbnails in <code>/thumbnails</code> subfolder.
-                </div>
+                {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
+                  <div className="col-span-2 text-[10px] text-gray-500 italic p-3 bg-black/5 dark:bg-black/20 rounded-xl text-center">Output repository is flat (no sub-collections found).</div>
+                )}
               </div>
             </div>
           </div>
         )}
       </section>
 
-      {/* Sync Logic Section */}
+      {/* Synchronization Section */}
       <SyncSection settings={settings} setSettings={setSettings} />
     </div>
   );
@@ -580,183 +591,185 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
   if (!settings.invokeAiPath) return null;
 
   return (
-    <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Synchronization</h4>
+    <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
+      <div className="absolute -top-24 -left-24 w-48 h-48 bg-purple-500/10 blur-[80px] rounded-full group-hover:bg-purple-500/15 transition-colors duration-700"></div>
 
-      <div className="mb-6 space-y-3">
-        <div className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-          Sync images from InvokeAI to your Ambit library.
-        </div>
+      <h4 className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+        <RefreshCw className="w-4 h-4" /> Synchronization
+      </h4>
 
-        <div className="flex gap-6">
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${syncFavorites ? 'bg-sage-600 border-sage-600' : 'border-gray-300 dark:border-white/20'}`}>
-              {syncFavorites && <div className="w-2 h-2 bg-white rounded-sm" />}
-              <input
-                type="checkbox"
-                className="hidden"
-                checked={syncFavorites}
-                onChange={e => setSyncFavorites(e.target.checked)}
-              />
-            </div>
-            <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-sage-500 transition-colors">Sync Favorites</span>
-          </label>
+      <div className="mb-8 space-y-6 relative z-10">
+        <p className="text-sm text-gray-500 font-medium">
+          Automate the bridge between InvokeAI and your Ambit library.
+        </p>
 
-          {syncFavorites && (
-            <div className="flex items-center gap-3 pl-6 animate-in fade-in zoom-in-95 duration-200">
-              <span className="text-xs text-gray-500">Map to:</span>
-              <select
-                value={settings.starredAs || 'favorite'}
-                onChange={(e) => setSettings(prev => ({ ...prev, starredAs: e.target.value as any }))}
-                className="bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-sage-500 text-gray-700 dark:text-gray-300"
-              >
-                <option value="favorite">Favorites Only</option>
-                <option value="pin">Pins Only</option>
-                <option value="both">Both</option>
-              </select>
-            </div>
-          )}
-
-          <div className="border-l border-gray-300 dark:border-white/10 h-4 mx-2"></div>
-
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${syncBoards ? 'bg-sage-600 border-sage-600' : 'border-gray-300 dark:border-white/20'}`}>
-              {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
-              <input
-                type="checkbox"
-                className="hidden"
-                checked={syncBoards}
-                onChange={e => setSyncBoards(e.target.checked)}
-              />
-            </div>
-            <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-sage-500 transition-colors">Sync Boards (Collections)</span>
-          </label>
-        </div>
-
-        {syncBoards && (
-          <div className="pt-2 animate-in fade-in slide-in-from-top-1 space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                <input
-                  type="checkbox"
-                  className="hidden"
-                  checked={settings.syncBoardsToCollections || false}
-                  onChange={e => setSettings(prev => ({ ...prev, syncBoardsToCollections: e.target.checked }))}
-                />
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.syncBoardsToCollections ? 'left-7' : 'left-1'}`} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Favorites Group */}
+          <div className={`p-4 rounded-2xl border transition-all duration-300 ${syncFavorites ? 'bg-black/5 dark:bg-white/[0.05] border-purple-500/30' : 'bg-transparent border-black/5 dark:border-white/5 opacity-60'}`}>
+            <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
+              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${syncFavorites ? 'bg-purple-600 border-purple-600 shadow-lg shadow-purple-500/40' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+                {syncFavorites && <div className="w-2 h-2 bg-white rounded-sm" />}
+                <input type="checkbox" className="hidden" checked={syncFavorites} onChange={e => setSyncFavorites(e.target.checked)} />
               </div>
-              <div className="flex-1">
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Convert Boards to Permanent Collections</span>
-                <p className="text-[10px] text-gray-500">Allows renaming and customizing board-derived collections in Ambit.</p>
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Favorites</span>
+            </label>
+
+            {syncFavorites && (
+              <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
+                <div className="flex items-center gap-3 p-2 bg-white/50 dark:bg-black/20 rounded-xl border border-black/5 dark:border-white/5">
+                  <span className="text-[10px] uppercase font-black text-gray-400 tracking-tighter">Map to</span>
+                  <select
+                    value={settings.starredAs || 'favorite'}
+                    onChange={(e) => setSettings(prev => ({ ...prev, starredAs: e.target.value as any }))}
+                    className="flex-1 bg-transparent text-xs font-bold outline-none text-purple-600 dark:text-purple-400 cursor-pointer"
+                  >
+                    <option value="favorite">Favorites</option>
+                    <option value="pin">Pins</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Boards Group */}
+          <div className={`p-4 rounded-2xl border transition-all duration-300 ${syncBoards ? 'bg-black/5 dark:bg-white/[0.05] border-blue-500/30' : 'bg-transparent border-black/5 dark:border-white/5 opacity-60'}`}>
+            <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
+              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${syncBoards ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-500/40' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+                {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
+                <input type="checkbox" className="hidden" checked={syncBoards} onChange={e => setSyncBoards(e.target.checked)} />
+              </div>
+              <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Boards</span>
+            </label>
+
+            {syncBoards && (
+              <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
+                <label className="flex items-center gap-2 cursor-pointer group/sub">
+                  <div className={`w-8 h-4 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-blue-600' : 'bg-gray-300 dark:bg-white/10'}`}>
+                    <input type="checkbox" className="hidden" checked={settings.syncBoardsToCollections || false} onChange={e => setSettings(prev => ({ ...prev, syncBoardsToCollections: e.target.checked }))} />
+                    <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${settings.syncBoardsToCollections ? 'left-4.5' : 'left-0.5'}`} />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-500 group-hover/sub:text-blue-500 transition-colors">Persistent Collections</span>
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Advanced Options */}
+        <div className="p-5 bg-black/[0.03] dark:bg-black/20 rounded-2xl border border-black/5 dark:border-white/5 space-y-4">
+          <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-1">Advanced Control</div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <label className="flex items-start gap-3 cursor-pointer group/toggle">
+              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importIntermediates ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-white/10'}`}>
+                <input type="checkbox" className="hidden" checked={settings.importIntermediates || false} onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))} />
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${settings.importIntermediates ? 'left-5.5' : 'left-0.5'}`} />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Import Intermediates</span>
+                <span className="text-[9px] text-gray-500 leading-tight">Sync background generation steps.</span>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer group/toggle">
+              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans !== false ? 'bg-indigo-600' : 'bg-gray-300 dark:border-white/10'}`}>
+                <input type="checkbox" className="hidden" checked={settings.importOrphans !== false} onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))} />
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${settings.importOrphans !== false ? 'left-5.5' : 'left-0.5'}`} />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Orphan Recovery</span>
+                <span className="text-[9px] text-gray-500 leading-tight">Find untracked files in output folder.</span>
               </div>
             </label>
           </div>
-        )}
-
-        <div className="pt-2 border-t border-gray-100 dark:border-white/5 space-y-3">
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importIntermediates ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-              <input
-                type="checkbox"
-                className="hidden"
-                checked={settings.importIntermediates || false}
-                onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))}
-              />
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importIntermediates ? 'left-7' : 'left-1'}`} />
-            </div>
-            <div className="flex-1">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Import Intermediates</span>
-              <p className="text-[10px] text-gray-500">Import intermediate generation steps (usually hidden in InvokeAI)</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importOrphans ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-              <input
-                type="checkbox"
-                className="hidden"
-                checked={settings.importOrphans !== false} // Default true
-                onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))}
-              />
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importOrphans !== false ? 'left-7' : 'left-1'}`} />
-            </div>
-            <div className="flex-1">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Scan for Orphans</span>
-              <p className="text-[10px] text-gray-500">Find and import images in the output folder that are missing from the database (Active on Manual Sync only).</p>
-            </div>
-          </label>
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        {status === 'idle' || status === 'error' || status === 'complete' ? (
-          <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 relative z-10">
+        <div className="flex items-center justify-between">
+          {status === 'idle' || status === 'error' || status === 'complete' ? (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSync}
+                className="px-8 py-3 bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-blue-500/20 active:scale-95 flex items-center gap-3"
+              >
+                {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}
+              </button>
+
+              <div className="flex items-center p-1 bg-black/5 dark:bg-white/5 rounded-xl border border-black/5 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning.")) {
+                      setSettings(p => ({ ...p, lastSyncedAt: undefined }));
+                    }
+                  }}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-blue-500 transition-colors flex items-center gap-2"
+                >
+                  <History className="w-3 h-3" /> Reset Cursor
+                </button>
+                <div className="w-px h-3 bg-black/10 dark:bg-white/10 mx-1"></div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("DANGER: This will delete ALL images from your Ambit library (files on disk are safe). Are you sure?")) {
+                      cleanLibrary();
+                    }
+                  }}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-700 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-3 h-3" /> Purge Database
+                </button>
+              </div>
+            </div>
+          ) : (
             <button
-              onClick={handleSync}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-500/20"
+              onClick={cancelSync}
+              className="px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-black transition-all flex items-center gap-3 active:scale-95"
             >
-              {status === 'error' ? 'Retry Sync' : 'Sync Now'}
+              <XCircle className="w-5 h-5" /> Terminate Sync
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning.")) {
-                  setSettings(p => ({ ...p, lastSyncedAt: undefined }));
-                }
-              }}
-              className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-red-500 transition-colors"
-            >
-              Reset Cursor
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm("DANGER: This will delete ALL images from your Ambit library (files on disk are safe). Are you sure?")) {
-                  cleanLibrary();
-                }
-              }}
-              className="px-3 py-2 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/10 rounded transition-colors"
-            >
-              Empty Library
-            </button>
+          )}
+        </div>
+
+        {status === 'syncing' && (
+          <div className="p-5 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 space-y-3 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex justify-between items-end">
+              <div>
+                <div className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-1">Processing...</div>
+                <div className="text-xs text-gray-500 font-medium">Injecting metadata from InvokeAI repository</div>
+              </div>
+              <div className="text-xl font-black text-gray-900 dark:text-white font-mono tabular-nums">
+                {Math.round((progress.current / Math.max(progress.total, 1)) * 100)}<span className="text-xs opacity-40 ml-0.5">%</span>
+              </div>
+            </div>
+            <div className="w-full h-3 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden p-0.5 border border-black/5 dark:border-white/5">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                style={{ width: `${Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] font-bold text-gray-400 tabular-nums">
+              <span className="flex items-center gap-2"><Boxes className="w-3 h-3" /> {progress.current.toLocaleString()} units</span>
+              <span>Total: {progress.total.toLocaleString()}</span>
+            </div>
           </div>
-        ) : (
-          <button
-            onClick={cancelSync}
-            className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-          >
-            <XCircle className="w-4 h-4" /> Stop
-          </button>
+        )}
+
+        {status === 'complete' && (
+          <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-[11px] font-bold text-emerald-600 dark:text-emerald-400 animate-in fade-in slide-in-from-top-2 flex items-center gap-3 shadow-lg shadow-emerald-500/5">
+            <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/40 text-white">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="uppercase tracking-widest text-[9px] mb-0.5">Library Updated</div>
+              Repository successfully synchronized with Ambit.
+            </div>
+          </div>
         )}
       </div>
-
-      {status === 'syncing' && (
-        <div className="mt-4 space-y-2">
-          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-            <span>Importing...</span>
-            <span>{progress.current} / {progress.total} ({Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%)</span>
-          </div>
-          <div className="w-full h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-300 ease-out"
-              style={{ width: `${Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {status === 'complete' && (
-        <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 rounded-lg text-sm flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          Sync Complete! Library refreshed.
-        </div>
-      )}
-
-      {status === 'error' && (
-        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-sm">
-          Sync failed. Check console for details.
-        </div>
-      )}
     </section>
   );
 };
