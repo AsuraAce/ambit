@@ -292,7 +292,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       // Phase 2: Orphan Scanning (Only run on Manual Sync to save resources)
       let orphansImported = 0;
-      if (options.mode === 'manual' && settings.importOrphans) {
+      if (options.mode === 'manual' && settings.importOrphans !== false) {
         orphansImported = await scanForOrphans(
           path,
           syncedIds,

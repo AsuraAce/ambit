@@ -448,13 +448,14 @@ export const scanForOrphans = async (
             // Re-connect to Invoke DB just to get the intermediates list
             // We use a simplified connection here since we assume checkConnection passed
             const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
+            console.log(`[Hybrid Sync] Loading intermediates from: ${dbPath}`);
             const invokeDb = await Database.load(`sqlite:${dbPath.replace(/\\/g, '/')}`);
             const interRows = await (invokeDb as any).select("SELECT image_name FROM images WHERE is_intermediate = 1");
             knownIntermediates = new Set(interRows.map((r: any) => r.image_name));
             console.log(`[Hybrid Sync] Loaded ${knownIntermediates.size} known intermediates to ignore.`);
-            // Close not strictly necessary as plugin manages valid pool, but good practice if API supported it
+            // Close not strictly necessary as plugin manages valid pool
         } catch (e) {
-            console.warn("[Hybrid Sync] Failed to load intermediates list from Invoke DB, falling back to metadata check.", e);
+            console.error("[Hybrid Sync] ERROR loading intermediates from Invoke DB:", e);
         }
     }
 
