@@ -10,6 +10,7 @@ interface ConfirmDialogProps {
   isDangerous?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  zIndex?: number;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -19,7 +20,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmLabel = "Confirm",
   isDangerous = false,
   onConfirm,
-  onCancel
+  onCancel,
+  zIndex = 60
 }) => {
   if (!isOpen) return null;
 
@@ -30,7 +32,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          style={{ zIndex }}
+          className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm"
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}

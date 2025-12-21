@@ -5,6 +5,8 @@ import { Monitor, Folder, Plus, Trash2, FolderSearch, AlertTriangle, Shield, Eye
 import { useLibrary } from '../../contexts/LibraryContext';
 import { AppSettings, MonitoredFolder } from '../../types';
 
+import { ConfirmDialog } from '../ConfirmDialog';
+
 interface TabProps {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
@@ -577,6 +579,9 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
   // Local state for sync options
   const [syncFavorites, setSyncFavorites] = useState(true);
   const [syncBoards, setSyncBoards] = useState(true);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
+
+  const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
 
   const handleSync = () => {
     if (!settings.invokeAiPath) return;
@@ -694,11 +699,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
               <div className="flex items-center p-1 bg-black/5 dark:bg-white/5 rounded-xl border border-black/5 dark:border-white/5">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm("Reset sync progress? Next sync will scan ALL images from the beginning.")) {
-                      setSettings(p => ({ ...p, lastSyncedAt: undefined }));
-                    }
-                  }}
+                  onClick={() => setConfirmAction({ type: 'reset', isOpen: true })}
                   className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-sage-600 transition-colors flex items-center gap-2"
                 >
                   <History className="w-3 h-3" /> Reset Cursor
@@ -706,11 +707,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
                 <div className="w-px h-3 bg-black/10 dark:bg-white/10 mx-1"></div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm("DANGER: This will delete ALL images from your Ambit library (files on disk are safe). Are you sure?")) {
-                      cleanLibrary();
-                    }
-                  }}
+                  onClick={() => setConfirmAction({ type: 'purge', isOpen: true })}
                   className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-700 transition-colors flex items-center gap-2"
                 >
                   <Trash2 className="w-3 h-3" /> Purge Database
@@ -726,6 +723,34 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             </button>
           )}
         </div>
+
+        {/* Confirmation Dialogs */}
+        <ConfirmDialog
+          isOpen={confirmAction.isOpen && confirmAction.type === 'reset'}
+          title="Reset Sync Cursor?"
+          message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE InvokeAI library from the beginning. This process may take some time.`}
+          confirmLabel="Reset Cursor"
+          onConfirm={() => {
+            setSettings(p => ({ ...p, lastSyncedAt: undefined }));
+            closeConfirm();
+          }}
+          onCancel={closeConfirm}
+          zIndex={220}
+        />
+
+        <ConfirmDialog
+          isOpen={confirmAction.isOpen && confirmAction.type === 'purge'}
+          title="Purge Application Database?"
+          message="DANGER: This will delete ALL images and metadata from your Ambit library. Your actual image files on disk will NOT be touched, but you will lose all Ambit-specific data (collections, tags, favorites). Are you sure?"
+          confirmLabel="Purge Database"
+          isDangerous={true}
+          onConfirm={() => {
+            cleanLibrary();
+            closeConfirm();
+          }}
+          onCancel={closeConfirm}
+          zIndex={220}
+        />
 
         {status === 'syncing' && (
           <div className="p-5 bg-sage-50 dark:bg-sage-500/5 rounded-xl border border-sage-500/10 space-y-3 animate-in fade-in zoom-in-95 duration-500">
