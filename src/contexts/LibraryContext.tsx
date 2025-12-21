@@ -235,7 +235,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [collections, smartCollections, settings, recentSearches, isLoaded]);
 
   // Sync Logic
-  const startInvokeSync = useCallback(async (path: string, options: { syncFavorites?: boolean, syncBoards?: boolean, mode?: 'manual' | 'live' } = { syncFavorites: true, syncBoards: true, mode: 'manual' }) => {
+  const startInvokeSync = useCallback(async (path: string, optionsInput?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, mode?: 'manual' | 'live' }) => {
+    const options = {
+      syncFavorites: true,
+      syncBoards: true,
+      mode: 'manual' as const,
+      ...optionsInput
+    };
+
     // Concurrency Guard:
     // 1. If Manual Sync is active, block everything (user expects feedback)
     if (syncStatus === 'syncing' && options.mode === 'manual') return;
@@ -268,6 +275,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         scanTimestamp = Date.now() - (120 * 1000); // Look back 2 minutes
       }
 
+      console.log(`[LibraryContext] Starting Sync (Mode: ${options.mode}). Path: ${path}, Scan Timestamp: ${scanTimestamp}`);
+
       // Phase 1: DB Sync
       const { imported, updated, maxTimestamp, syncedIds } = await syncImages(
         path,
@@ -280,9 +289,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       );
 
+      console.log('[LibraryContext] Phase 1 Complete. Imported:', imported, 'Updated:', updated);
+
       // Phase 2: Orphan Scanning (Only run on Manual Sync to save resources)
       let orphansImported = 0;
       if (options.mode === 'manual') {
+        console.log('[LibraryContext] Starting Phase 2: Orphan Scan');
         orphansImported = await scanForOrphans(
           path,
           syncedIds,
@@ -291,6 +303,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           },
           { importIntermediates: settings.importIntermediates }
         );
+        console.log('[LibraryContext] Phase 2 Complete. Orphans:', orphansImported);
+      } else {
+        console.log('[LibraryContext] Skipping Phase 2 (Mode is not manual):', options.mode);
       }
 
       setSyncStatus('complete');
@@ -298,16 +313,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSyncProgress({ current: totalProcessed, total: totalProcessed });
 
       if (options.mode === 'manual') {
-        const message = `Sync complete: ${imported} from DB, ${orphansImported} orphans recovered, ${updated} updated.`;
-        addToast(message, 'success');
+        fetchData(false); // Immediate refresh
       }
-      // specific toast for live? Maybe silent is better or just a small "New image imported"
-
-      if (maxTimestamp && options.mode === 'manual') {
-        setSettings(prev => ({ ...prev, lastSyncedAt: maxTimestamp }));
-      }
-
-      fetchData(false);
 
     } catch (e: any) {
       if (e.message === 'Aborted') setSyncStatus('idle');

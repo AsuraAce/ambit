@@ -464,13 +464,36 @@ export const scanForOrphans = async (
 
     // 3. Identify REAL Orphans (Phase 3)
     // We only care about files that are NOT in Ambit's database already.
-    const orphans = allFiles.filter(f => {
+    let skippedIntermediates = 0;
+    let skippedExisting = 0;
+
+    console.log(`[Hybrid Sync Debug] Starting orphan filter. Total disk files: ${allFiles.length}`);
+    console.log(`[Hybrid Sync Debug] Ambit Known IDs: ${ambitExistingIds.size}`);
+    console.log(`[Hybrid Sync Debug] Invoke Known Intermediates: ${knownIntermediates.size}`);
+
+    const orphans = allFiles.filter((f, index) => {
         // Filter out known intermediates first
-        if (!options.importIntermediates && knownIntermediates.has(f)) return false;
+        if (!options.importIntermediates && knownIntermediates.has(f)) {
+            skippedIntermediates++;
+            return false;
+        }
 
         const absPath = `${imagesRoot}/outputs/images/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
-        return !ambitExistingIds.has(absPath);
+
+        if (ambitExistingIds.has(absPath)) {
+            skippedExisting++;
+            if (index < 5) console.log(`[Hybrid Sync Debug] Skipped Existing: ${f} -> ${absPath}`);
+            return false;
+        }
+
+        if (index < 5) console.log(`[Hybrid Sync Debug] Found Candidate: ${f} -> ${absPath}`);
+        return true;
     });
+
+    console.log(`[Hybrid Sync Debug] Filter Results:`);
+    console.log(`- Skipped (Intermediate): ${skippedIntermediates}`);
+    console.log(`- Skipped (Already in Ambit): ${skippedExisting}`);
+    console.log(`- Final Orphans: ${orphans.length}`);
 
     console.log(`[Hybrid Sync] Found ${orphans.length} genuine orphans out of ${allFiles.length} files.`);
 
