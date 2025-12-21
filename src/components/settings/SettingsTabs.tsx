@@ -380,11 +380,8 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
         </p>
       </div>
 
-      <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
-        {/* Subtle background glow */}
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-500/10 blur-[80px] rounded-full group-hover:bg-blue-500/15 transition-colors duration-700"></div>
-
-        <h4 className="text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+        <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
           <DatabaseZap className="w-4 h-4" /> InvokeAI Integration
         </h4>
 
@@ -400,14 +397,14 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
                   value={settings.invokeAiPath || ''}
                   onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
                   placeholder="e.g. C:\AI\invokeai"
-                  className="w-full bg-black/5 dark:bg-black/40 border border-black/10 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
+                  className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
                 />
-                <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-sage-500 transition-colors" />
               </div>
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="px-4 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-xl hover:opacity-90 active:scale-95 transition-all text-sm font-bold shadow-lg shadow-black/10"
+                className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
               >
                 Browse
               </button>
@@ -423,7 +420,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
               disabled={isTesting || !settings.invokeAiPath}
               className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.invokeAiPath
                 ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl shadow-blue-500/20 active:scale-95'
+                : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
                 }`}
             >
               {isTesting ? (
@@ -453,10 +450,8 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
       </section>
 
       {/* Diagnostics Section */}
-      <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
-        <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 blur-[80px] rounded-full group-hover:bg-emerald-500/15 transition-colors duration-700"></div>
-
-        <h4 className="text-[10px] font-black text-emerald-500 dark:text-emerald-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
+      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+        <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Activity className="w-4 h-4" /> System Audit
           </div>
@@ -464,7 +459,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
             type="button"
             onClick={runDiagnostics}
             disabled={isDiagLoading || !settings.invokeAiPath}
-            className="text-[10px] bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 font-black uppercase tracking-widest flex items-center gap-2"
+            className="text-[10px] bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 font-black uppercase tracking-widest flex items-center gap-2 text-gray-600 dark:text-gray-300"
           >
             {isDiagLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart3 className="w-3 h-3" />}
             {isDiagLoading ? 'Analyzing...' : 'Run Audit'}
@@ -472,7 +467,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
         </h4>
 
         {!diagData ? (
-          <div className="flex items-center gap-4 p-4 bg-black/5 dark:bg-black/20 rounded-xl border border-black/5 dark:border-white/5">
+          <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5">
             <div className="p-3 bg-white dark:bg-white/5 rounded-xl shadow-sm">
               <Search className="w-5 h-5 text-gray-400" />
             </div>
@@ -484,18 +479,18 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-top-2 relative z-10">
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 group/stat">
-                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
-                  <Database className="w-3 h-3 text-blue-500" /> InvokeAI Database
+              <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
+                <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                  <Database className="w-3 h-3 text-sage-500" /> InvokeAI Database
                 </div>
-                <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
                 <div className="text-[9px] text-gray-500 font-medium">Synced Records</div>
               </div>
-              <div className="p-4 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 group/stat">
-                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
-                  <Files className="w-3 h-3 text-emerald-500" /> Image Repository
+              <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
+                <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                  <Files className="w-3 h-3 text-sage-500" /> Image Repository
                 </div>
-                <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
                 <div className="text-[9px] text-gray-500 font-medium">Files on Disk</div>
               </div>
             </div>
@@ -520,7 +515,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
                 <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
                   {diagData.categories.map((c: any) => (
-                    <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-black/5 dark:bg-white/[0.04] rounded-xl border border-black/5 dark:border-white/5 transition-colors hover:bg-black/[0.08] dark:hover:bg-white/[0.08]">
+                    <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
                       <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
                       <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
                     </div>
@@ -532,7 +527,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
                 <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
                   {diagData.origins.map((o: any) => (
-                    <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-black/5 dark:bg-white/[0.04] rounded-xl border border-black/5 dark:border-white/5 transition-colors hover:bg-black/[0.08] dark:hover:bg-white/[0.08]">
+                    <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
                       <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
                       <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
                     </div>
@@ -591,10 +586,8 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
   if (!settings.invokeAiPath) return null;
 
   return (
-    <section className="bg-white/40 dark:bg-white/[0.03] backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden group">
-      <div className="absolute -top-24 -left-24 w-48 h-48 bg-purple-500/10 blur-[80px] rounded-full group-hover:bg-purple-500/15 transition-colors duration-700"></div>
-
-      <h4 className="text-[10px] font-black text-purple-500 dark:text-purple-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+    <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+      <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
         <RefreshCw className="w-4 h-4" /> Synchronization
       </h4>
 
@@ -605,11 +598,11 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Favorites Group */}
-          <div className={`p-4 rounded-2xl border transition-all duration-300 ${syncFavorites ? 'bg-black/5 dark:bg-white/[0.05] border-purple-500/30' : 'bg-transparent border-black/5 dark:border-white/5 opacity-60'}`}>
+          <div className={`p-4 rounded-xl border transition-all duration-300 ${syncFavorites ? 'bg-sage-50 dark:bg-sage-500/5 border-sage-500/20' : 'bg-transparent border-gray-100 dark:border-white/5 opacity-60'}`}>
             <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
-              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${syncFavorites ? 'bg-purple-600 border-purple-600 shadow-lg shadow-purple-500/40' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncFavorites ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                 {syncFavorites && <div className="w-2 h-2 bg-white rounded-sm" />}
-                <input type="checkbox" className="hidden" checked={syncFavorites} onChange={e => setSyncFavorites(e.target.checked)} />
+                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncFavorites} onChange={e => setSyncFavorites(e.target.checked)} />
               </div>
               <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Favorites</span>
             </label>
@@ -621,7 +614,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
                   <select
                     value={settings.starredAs || 'favorite'}
                     onChange={(e) => setSettings(prev => ({ ...prev, starredAs: e.target.value as any }))}
-                    className="flex-1 bg-transparent text-xs font-bold outline-none text-purple-600 dark:text-purple-400 cursor-pointer"
+                    className="flex-1 bg-gray-100 dark:bg-zinc-800 text-xs font-bold outline-none text-sage-600 dark:text-sage-300 cursor-pointer py-1.5 px-2 rounded-lg"
                   >
                     <option value="favorite">Favorites</option>
                     <option value="pin">Pins</option>
@@ -633,11 +626,11 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
           </div>
 
           {/* Boards Group */}
-          <div className={`p-4 rounded-2xl border transition-all duration-300 ${syncBoards ? 'bg-black/5 dark:bg-white/[0.05] border-blue-500/30' : 'bg-transparent border-black/5 dark:border-white/5 opacity-60'}`}>
+          <div className={`p-4 rounded-xl border transition-all duration-300 ${syncBoards ? 'bg-sage-50 dark:bg-sage-500/5 border-sage-500/20' : 'bg-transparent border-gray-100 dark:border-white/5 opacity-60'}`}>
             <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
-              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${syncBoards ? 'bg-blue-600 border-blue-600 shadow-lg shadow-blue-500/40' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+              <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncBoards ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                 {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
-                <input type="checkbox" className="hidden" checked={syncBoards} onChange={e => setSyncBoards(e.target.checked)} />
+                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncBoards} onChange={e => setSyncBoards(e.target.checked)} />
               </div>
               <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Boards</span>
             </label>
@@ -645,11 +638,11 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             {syncBoards && (
               <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
                 <label className="flex items-center gap-2 cursor-pointer group/sub">
-                  <div className={`w-8 h-4 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-blue-600' : 'bg-gray-300 dark:bg-white/10'}`}>
-                    <input type="checkbox" className="hidden" checked={settings.syncBoardsToCollections || false} onChange={e => setSettings(prev => ({ ...prev, syncBoardsToCollections: e.target.checked }))} />
-                    <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${settings.syncBoardsToCollections ? 'left-4.5' : 'left-0.5'}`} />
+                  <div className={`w-8 h-4 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-sage-600' : 'bg-gray-300 dark:bg-white/10'}`}>
+                    <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.syncBoardsToCollections || false} onChange={e => setSettings(prev => ({ ...prev, syncBoardsToCollections: e.target.checked }))} />
+                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full pointer-events-none transition-transform ${settings.syncBoardsToCollections ? 'translate-x-4' : 'translate-x-0'}`} />
                   </div>
-                  <span className="text-[10px] font-bold text-gray-500 group-hover/sub:text-blue-500 transition-colors">Persistent Collections</span>
+                  <span className="text-[10px] font-bold text-gray-500 group-hover/sub:text-sage-600 transition-colors">Persistent Collections</span>
                 </label>
               </div>
             )}
@@ -662,9 +655,9 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <label className="flex items-start gap-3 cursor-pointer group/toggle">
-              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importIntermediates ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-white/10'}`}>
-                <input type="checkbox" className="hidden" checked={settings.importIntermediates || false} onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))} />
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${settings.importIntermediates ? 'left-5.5' : 'left-0.5'}`} />
+              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importIntermediates ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importIntermediates || false} onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))} />
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importIntermediates ? 'translate-x-5' : 'translate-x-0'}`} />
               </div>
               <div>
                 <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Import Intermediates</span>
@@ -673,9 +666,9 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             </label>
 
             <label className="flex items-start gap-3 cursor-pointer group/toggle">
-              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans !== false ? 'bg-indigo-600' : 'bg-gray-300 dark:border-white/10'}`}>
-                <input type="checkbox" className="hidden" checked={settings.importOrphans !== false} onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))} />
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${settings.importOrphans !== false ? 'left-5.5' : 'left-0.5'}`} />
+              <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans !== false ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans !== false} onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))} />
+                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans !== false ? 'translate-x-5' : 'translate-x-0'}`} />
               </div>
               <div>
                 <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Orphan Recovery</span>
@@ -692,7 +685,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSync}
-                className="px-8 py-3 bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-blue-500/20 active:scale-95 flex items-center gap-3"
+                className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3"
               >
                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}
@@ -706,7 +699,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
                       setSettings(p => ({ ...p, lastSyncedAt: undefined }));
                     }
                   }}
-                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-blue-500 transition-colors flex items-center gap-2"
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-sage-600 transition-colors flex items-center gap-2"
                 >
                   <History className="w-3 h-3" /> Reset Cursor
                 </button>
@@ -735,19 +728,19 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
         </div>
 
         {status === 'syncing' && (
-          <div className="p-5 bg-black/5 dark:bg-black/40 rounded-2xl border border-black/5 dark:border-white/5 space-y-3 animate-in fade-in zoom-in-95 duration-500">
+          <div className="p-5 bg-sage-50 dark:bg-sage-500/5 rounded-xl border border-sage-500/10 space-y-3 animate-in fade-in zoom-in-95 duration-500">
             <div className="flex justify-between items-end">
               <div>
-                <div className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-1">Processing...</div>
+                <div className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-1">Processing...</div>
                 <div className="text-xs text-gray-500 font-medium">Injecting metadata from InvokeAI repository</div>
               </div>
               <div className="text-xl font-black text-gray-900 dark:text-white font-mono tabular-nums">
                 {Math.round((progress.current / Math.max(progress.total, 1)) * 100)}<span className="text-xs opacity-40 ml-0.5">%</span>
               </div>
             </div>
-            <div className="w-full h-3 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden p-0.5 border border-black/5 dark:border-white/5">
+            <div className="w-full h-3 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden p-0.5 border border-gray-200 dark:border-white/5">
               <div
-                className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 rounded-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                className="h-full bg-sage-500 rounded-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(110,121,107,0.3)]"
                 style={{ width: `${Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%` }}
               />
             </div>
