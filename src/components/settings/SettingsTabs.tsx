@@ -602,6 +602,23 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
             <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-sage-500 transition-colors">Sync Favorites</span>
           </label>
 
+          {syncFavorites && (
+            <div className="flex items-center gap-3 pl-6 animate-in fade-in zoom-in-95 duration-200">
+              <span className="text-xs text-gray-500">Map to:</span>
+              <select
+                value={settings.starredAs || 'favorite'}
+                onChange={(e) => setSettings(prev => ({ ...prev, starredAs: e.target.value as any }))}
+                className="bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded px-2 py-1 text-xs outline-none focus:border-sage-500 text-gray-700 dark:text-gray-300"
+              >
+                <option value="favorite">Favorites Only</option>
+                <option value="pin">Pins Only</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+          )}
+
+          <div className="border-l border-gray-300 dark:border-white/10 h-4 mx-2"></div>
+
           <label className="flex items-center gap-2 cursor-pointer group">
             <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${syncBoards ? 'bg-sage-600 border-sage-600' : 'border-gray-300 dark:border-white/20'}`}>
               {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
@@ -633,24 +650,42 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
                 <p className="text-[10px] text-gray-500">Allows renaming and customizing board-derived collections in Ambit.</p>
               </div>
             </label>
-
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importIntermediates ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                <input
-                  type="checkbox"
-                  className="hidden"
-                  checked={settings.importIntermediates || false}
-                  onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))}
-                />
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importIntermediates ? 'left-7' : 'left-1'}`} />
-              </div>
-              <div className="flex-1">
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Import intermediates</span>
-                <p className="text-[10px] text-gray-500">Import intermediate generation steps (usually hidden in InvokeAI)</p>
-              </div>
-            </label>
           </div>
         )}
+
+        <div className="pt-2 border-t border-gray-100 dark:border-white/5 space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importIntermediates ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={settings.importIntermediates || false}
+                onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))}
+              />
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importIntermediates ? 'left-7' : 'left-1'}`} />
+            </div>
+            <div className="flex-1">
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Import Intermediates</span>
+              <p className="text-[10px] text-gray-500">Import intermediate generation steps (usually hidden in InvokeAI)</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <div className={`w-12 h-6 rounded-full relative transition-colors ${settings.importOrphans ? 'bg-blue-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={settings.importOrphans !== false} // Default true
+                onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))}
+              />
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.importOrphans !== false ? 'left-7' : 'left-1'}`} />
+            </div>
+            <div className="flex-1">
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-500 transition-colors">Scan for Orphans</span>
+              <p className="text-[10px] text-gray-500">Find and import images in the output folder that are missing from the database (Active on Manual Sync only).</p>
+            </div>
+          </label>
+        </div>
       </div>
 
       <div className="flex items-center justify-between">

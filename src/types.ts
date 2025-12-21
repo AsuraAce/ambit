@@ -142,6 +142,8 @@ export interface AppSettings {
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
   lastSyncedAt?: number; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
+  importOrphans?: boolean; // New: Option to scan for files not in DB
+  starredAs?: 'favorite' | 'pin' | 'both'; // New: Map starred images to favorites, pins, or both
 }
 
 export interface ToastMessage {

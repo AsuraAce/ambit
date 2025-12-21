@@ -189,7 +189,7 @@ export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean } = { syncFavorites: true, syncBoards: true, importIntermediates: false }
+    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
 ): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string> }> => {
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set() };
 
@@ -346,9 +346,15 @@ export const syncImages = async (
                 }
 
                 let isFavorite = false;
+                let isPinned = false;
+
                 if (options.syncFavorites) {
-                    if (hasStarred && row.starred) isFavorite = true;
-                    else if (hasIsStarred && row.is_starred) isFavorite = true;
+                    const isStarredInInvoke = (hasStarred && row.starred) || (hasIsStarred && row.is_starred);
+                    if (isStarredInInvoke) {
+                        const mode = options.starredAs || 'favorite';
+                        if (mode === 'favorite' || mode === 'both') isFavorite = true;
+                        if (mode === 'pin' || mode === 'both') isPinned = true;
+                    }
                 }
 
                 let boardId: string | undefined = undefined;
@@ -374,6 +380,7 @@ export const syncImages = async (
                     width: row.width || 0,
                     height: row.height || 0,
                     isFavorite: isFavorite,
+                    isPinned: isPinned,
                     isDeleted: false,
                     isMissing: false,
                     groupId: undefined,
@@ -464,36 +471,13 @@ export const scanForOrphans = async (
 
     // 3. Identify REAL Orphans (Phase 3)
     // We only care about files that are NOT in Ambit's database already.
-    let skippedIntermediates = 0;
-    let skippedExisting = 0;
-
-    console.log(`[Hybrid Sync Debug] Starting orphan filter. Total disk files: ${allFiles.length}`);
-    console.log(`[Hybrid Sync Debug] Ambit Known IDs: ${ambitExistingIds.size}`);
-    console.log(`[Hybrid Sync Debug] Invoke Known Intermediates: ${knownIntermediates.size}`);
-
-    const orphans = allFiles.filter((f, index) => {
+    const orphans = allFiles.filter(f => {
         // Filter out known intermediates first
-        if (!options.importIntermediates && knownIntermediates.has(f)) {
-            skippedIntermediates++;
-            return false;
-        }
+        if (!options.importIntermediates && knownIntermediates.has(f)) return false;
 
         const absPath = `${imagesRoot}/outputs/images/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
-
-        if (ambitExistingIds.has(absPath)) {
-            skippedExisting++;
-            if (index < 5) console.log(`[Hybrid Sync Debug] Skipped Existing: ${f} -> ${absPath}`);
-            return false;
-        }
-
-        if (index < 5) console.log(`[Hybrid Sync Debug] Found Candidate: ${f} -> ${absPath}`);
-        return true;
+        return !ambitExistingIds.has(absPath);
     });
-
-    console.log(`[Hybrid Sync Debug] Filter Results:`);
-    console.log(`- Skipped (Intermediate): ${skippedIntermediates}`);
-    console.log(`- Skipped (Already in Ambit): ${skippedExisting}`);
-    console.log(`- Final Orphans: ${orphans.length}`);
 
     console.log(`[Hybrid Sync] Found ${orphans.length} genuine orphans out of ${allFiles.length} files.`);
 

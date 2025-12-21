@@ -67,7 +67,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     maskingMode: 'blur',
     enableAI: false,
     hasCompletedOnboarding: false,
-    syncBoardsToCollections: false
+    syncBoardsToCollections: false,
+    importOrphans: true,
+    starredAs: 'favorite'
   });
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [privacyEnabled, setPrivacyEnabled] = useState(true);
@@ -275,8 +277,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         scanTimestamp = Date.now() - (120 * 1000); // Look back 2 minutes
       }
 
-      console.log(`[LibraryContext] Starting Sync (Mode: ${options.mode}). Path: ${path}, Scan Timestamp: ${scanTimestamp}`);
-
       // Phase 1: DB Sync
       const { imported, updated, maxTimestamp, syncedIds } = await syncImages(
         path,
@@ -285,16 +285,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         {
           afterTimestamp: scanTimestamp,
           importIntermediates: settings.importIntermediates,
+          starredAs: settings.starredAs,
           ...options
         }
       );
 
-      console.log('[LibraryContext] Phase 1 Complete. Imported:', imported, 'Updated:', updated);
-
       // Phase 2: Orphan Scanning (Only run on Manual Sync to save resources)
       let orphansImported = 0;
-      if (options.mode === 'manual') {
-        console.log('[LibraryContext] Starting Phase 2: Orphan Scan');
+      if (options.mode === 'manual' && settings.importOrphans) {
         orphansImported = await scanForOrphans(
           path,
           syncedIds,
@@ -303,9 +301,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           },
           { importIntermediates: settings.importIntermediates }
         );
-        console.log('[LibraryContext] Phase 2 Complete. Orphans:', orphansImported);
-      } else {
-        console.log('[LibraryContext] Skipping Phase 2 (Mode is not manual):', options.mode);
       }
 
       setSyncStatus('complete');
