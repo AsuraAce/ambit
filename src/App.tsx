@@ -629,6 +629,7 @@ export default function App() {
                                                 }}
                                                 onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                 thumbnailSize={settings.thumbnailSize}
+                                                activeThumbnailUrl={activeCollection?.thumbnail}
                                             />
                                             <VirtualGrid<AIImage>
                                                 ref={gridRef}

@@ -17,6 +17,7 @@ interface PinnedShelfProps {
     onTogglePin: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     thumbnailSize: number;
+    activeThumbnailUrl?: string;
 }
 
 export const PinnedShelf: React.FC<PinnedShelfProps> = ({
@@ -31,7 +32,8 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     onToggleSelection,
     onTogglePin,
     onContextMenu,
-    thumbnailSize
+    thumbnailSize,
+    activeThumbnailUrl
 }) => {
     if (images.length === 0) return null;
 
@@ -99,7 +101,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                                     onToggleSelection={onToggleSelection}
                                     onTogglePin={onTogglePin}
                                     onContextMenu={onContextMenu}
-                                    isThumbnail={false}
+                                    isThumbnail={activeThumbnailUrl ? activeThumbnailUrl === img.thumbnailUrl : false}
                                 />
                             </div>
                         );
