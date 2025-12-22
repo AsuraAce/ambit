@@ -423,8 +423,21 @@ export default function App() {
                         }}
                         onTogglePin={() => {
                             const id = contextMenu.imageId;
-                            setImages(prev => prev.map(img => img.id === id ? { ...img, isPinned: !img.isPinned } : img));
-                            addToast("Pin toggled", "info");
+                            const img = images.find(i => i.id === id);
+                            if (img) {
+                                const newPinned = !img.isPinned;
+                                setImages(prev => {
+                                    const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
+                                    // Local re-sort to move pinned items to top immediately
+                                    return [...updated].sort((a, b) => {
+                                        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                                        // Then by timestamp DESC as a tie-breaker
+                                        return (b.timestamp || 0) - (a.timestamp || 0);
+                                    });
+                                });
+                                import('./services/db').then(db => db.toggleImagePin(id, newPinned));
+                                addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+                            }
                             setContextMenu(null);
                         }}
                         onToggleMask={() => { handleBulkMask(contextMenu.imageId); setContextMenu(null); }}
@@ -600,6 +613,20 @@ export default function App() {
                                                     setImages={setImages}
                                                     onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
+                                                    onTogglePin={(e, id) => {
+                                                        const img = images.find(i => i.id === id);
+                                                        if (img) {
+                                                            const newPinned = !img.isPinned;
+                                                            setImages(prev => {
+                                                                const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
+                                                                return [...updated].sort((a, b) => {
+                                                                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                                                                    return (b.timestamp || 0) - (a.timestamp || 0);
+                                                                });
+                                                            });
+                                                            import('./services/db').then(db => db.toggleImagePin(id, newPinned));
+                                                        }
+                                                    }}
                                                     onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                     isThumbnail={activeCollection ? activeCollection.thumbnail === img.thumbnailUrl : false}
                                                 />

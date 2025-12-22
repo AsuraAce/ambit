@@ -136,7 +136,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     className="h-full w-full relative group rounded-xl overflow-hidden border-2 border-transparent hover:border-orange-300 dark:hover:border-orange-500/50 cursor-pointer bg-gray-100 dark:bg-slate-800"
                 >
                     <div className="relative w-full h-full">
-                        <img src={img.thumbnailUrl} loading="lazy" className="w-full h-full object-cover" alt="" />
+                        <img src={img.thumbnailUrl} className="w-full h-full object-cover" alt="" />
                         <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
                             <span className="opacity-0 group-hover:opacity-100 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
                                 <Wand2 className="w-3 h-3" /> Recover

@@ -191,14 +191,34 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections);
 
     setActiveSqlWhere(where);
-    setActiveSqlParams(params);
 
-    // Reset Pagination
-    setImages([]);
-    setHasMoreImages(true);
-    setTotalImages(0);
-    // Note: fetching happens in next effect via dependency on activeSqlWhere
-  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]);
+    // Deep equality check for params to prevent unnecessary re-fetches
+    setActiveSqlParams(prev => {
+      if (prev.length === params.length && prev.every((v, i) => v === params[i])) {
+        return prev;
+      }
+      return params;
+    });
+
+    // Only reset pagination if the query actually changed
+    // We can check against the *current* state values before updating
+    // However, setActiveSqlParams updater runs after this render cycle potentially? 
+    // Actually, we need to know if we *are* updating. 
+    // Let's use a flag or check current state here.
+    // Ideally we'd move the setImages([]) into the effect that watches activeSqlWhere/Params, 
+    // but that effect also handles 'sortOption'. 
+
+    // A heuristic: If where clause changed OR params changed (checked above), we reset.
+    // Since we can't easily peek "next" state of params inside the setter, let's do the check explicitly here.
+
+    const paramsChanged = activeSqlParams.length !== params.length || !activeSqlParams.every((v, i) => v === params[i]);
+
+    if (where !== activeSqlWhere || paramsChanged) {
+      setImages([]);
+      setHasMoreImages(true);
+      setTotalImages(0);
+    }
+  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]); // Keep deps, but logic inside is smarter
 
   // --- Data Fetching Logic (Debounced slightly or immediate) ---
   const fetchData = useCallback(async (isLoadMore: boolean) => {
@@ -271,7 +291,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       const envKey = process.env.API_KEY;
       if (envKey) state.settings.googleGeminiApiKey = envKey;
 
-      const { normalizeAllPaths } = await import('../services/db');
+      const { normalizeAllPaths, migrateSchema } = await import('../services/db');
+      await migrateSchema();
       await normalizeAllPaths();
 
       // Migration for Collections: Ensure all stored IDs (paths) are normalized

@@ -18,6 +18,7 @@ interface GridItemProps {
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     onClick: (e: React.MouseEvent, id: string, index: number) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
+    onTogglePin: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     isThumbnail?: boolean;
     layoutPos?: { x: number, y: number, width: number, height: number };
@@ -34,6 +35,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     setImages,
     onClick,
     onToggleSelection,
+    onTogglePin,
     onContextMenu,
     isThumbnail,
     layoutPos
@@ -122,7 +124,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                     }}
                     onTogglePin={(e) => {
                         e.stopPropagation();
-                        setImages(p => p.map(i => i.id === image.id ? { ...i, isPinned: !i.isPinned } : i));
+                        onTogglePin(e, image.id);
                     }}
                     onContextMenu={(e) => {
                         e.preventDefault();

@@ -430,3 +430,29 @@ export const hydrateCollections = async (): Promise<Record<string, { count: numb
         return {};
     }
 };
+export const toggleImagePin = async (id: string, isPinned: boolean) => {
+    const db = await getDb();
+    const normalizedId = id.replace(/\\/g, '/');
+    // Ensure the column exists and use integer 1/0
+    await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+};
+
+// Add a migration check to ensure is_pinned exists and is initialized
+export const migrateSchema = async () => {
+    const db = await getDb();
+    try {
+        // Try to select the column to see if it exists
+        await db.select('SELECT is_pinned FROM images LIMIT 1');
+    } catch (e) {
+        console.log('[DB] Adding is_pinned column...');
+        try {
+            await db.execute('ALTER TABLE images ADD COLUMN is_pinned INTEGER DEFAULT 0');
+            await db.execute('CREATE INDEX idx_images_pinned ON images(is_pinned)');
+        } catch (inner) {
+            console.error('[DB] Migration failed', inner);
+        }
+    }
+
+    // Also ensure all NULLs are 0 for correct sorting
+    await db.execute('UPDATE images SET is_pinned = 0 WHERE is_pinned IS NULL');
+};

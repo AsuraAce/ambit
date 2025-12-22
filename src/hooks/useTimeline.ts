@@ -77,6 +77,10 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         // ALWAYS Newest -> Oldest for Timeline View structure (Fixed)
         groupList.sort((a, b) => b.timestamp - a.timestamp);
 
+        // Debug Pinning
+        // console.log('[useTimeline] Groups:', groupList.map(g => `${g.id} (${g.images.length}) TS:${g.timestamp}`)); 
+
+
         // 3. Sort Images WITHIN Groups based on user selection
         groupList.forEach(group => {
             group.images.sort((a, b) => {

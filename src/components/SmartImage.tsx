@@ -33,9 +33,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    setCurrentSrc(src);
-    setStatus('loading');
-    setRetryCount(0);
+    if (src !== currentSrc) {
+      setCurrentSrc(src);
+      setStatus('loading');
+      setRetryCount(0);
+    }
   }, [src]);
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -43,18 +45,27 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     if (onLoad) onLoad(e);
   };
 
+  // Fix: Check if image is already loaded from cache (common issue with re-mounts)
+  React.useEffect(() => {
+    if (imgRef.current && imgRef.current.complete) {
+      if (imgRef.current.naturalWidth > 0) {
+        setStatus('loaded');
+      }
+    }
+  }, []);
+
   const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     if (retryCount < 3) {
       setTimeout(() => {
         setRetryCount(c => c + 1);
       }, Math.pow(2, retryCount) * 500);
     } else if (fallbackSrc && currentSrc !== fallbackSrc) {
-      console.log('[SmartImage] Retries failed, switching to fallbackSrc:', fallbackSrc);
+      console.warn('[SmartImage] Retries failed, switching to fallbackSrc:', fallbackSrc);
       setCurrentSrc(fallbackSrc);
       setRetryCount(0);
       setStatus('loading');
     } else {
-      console.error('[SmartImage] Final failure for:', currentSrc);
+      console.error('[SmartImage] Final failure for URL:', currentSrc);
       setStatus('error');
       if (onImageError) onImageError();
     }
@@ -70,16 +81,21 @@ export const SmartImage: React.FC<SmartImageProps> = ({
         const rawPath = decodeURIComponent(currentSrc.replace('http://asset.localhost/', ''));
         // Normalize all backslashes to forward slashes
         const normalizedPath = rawPath.replace(/\\/g, '/');
-        return convertFileSrc(normalizedPath);
+        const finalUrl = convertFileSrc(normalizedPath);
+        if (finalUrl.includes('undefined') || finalUrl.includes('null')) {
+          console.error('[SmartImage] Path processing resulted in invalid URL:', { currentSrc, normalizedPath, finalUrl });
+        }
+        return finalUrl;
       }
 
       // Handle local paths that aren't yet converted
       if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:') && !currentSrc.startsWith('asset:')) {
-        // Also normalize untransformed paths
-        return convertFileSrc(currentSrc.replace(/\\/g, '/'));
+        const normalizedPath = currentSrc.replace(/\\/g, '/');
+        const finalUrl = convertFileSrc(normalizedPath);
+        return finalUrl;
       }
     } catch (e) {
-      console.warn('[SmartImage] Error normalizing URL:', e);
+      console.warn('[SmartImage] Error normalizing URL:', e, { currentSrc });
     }
 
     return currentSrc;
@@ -121,7 +137,6 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           onError={handleError}
           style={{ objectFit }}
           className={finalImgClass}
-          loading="lazy"
           decoding="async"
           {...props}
         />

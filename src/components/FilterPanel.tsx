@@ -317,7 +317,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 </form>
             ) : (
                 <div
-                    onClick={() => setFilters(prev => ({ ...prev, collectionId: col.id }))}
+                    onClick={() => {
+                        if (filters.collectionId !== col.id) {
+                            setFilters(prev => ({ ...prev, collectionId: col.id }));
+                        }
+                    }}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id
                         ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
                         : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
@@ -404,16 +408,23 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 <div className="space-y-6">
                     {/* View All Reset */}
                     <button
-                        onClick={() => setFilters(prev => ({
-                            ...prev,
-                            collectionId: null,
-                            favoritesOnly: false,
-                            minSteps: undefined,
-                            maxSteps: undefined,
-                            minCfg: undefined,
-                            maxCfg: undefined,
-                            loras: [] // Reset LoRAs too
-                        }))}
+                        onClick={() => {
+                            // Only reset if something is active
+                            if (filters.collectionId || filters.favoritesOnly || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || filters.loras.length > 0 || filters.models.length > 0 || filters.tools.length > 0) {
+                                setFilters(prev => ({
+                                    ...prev,
+                                    collectionId: null,
+                                    favoritesOnly: false,
+                                    minSteps: undefined,
+                                    maxSteps: undefined,
+                                    minCfg: undefined,
+                                    maxCfg: undefined,
+                                    loras: [],
+                                    models: [],
+                                    tools: []
+                                }));
+                            }
+                        }}
                         className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all shadow-sm font-medium flex items-center justify-between group ease-spring duration-300 ${!filters.collectionId && !filters.favoritesOnly && !filters.minSteps && filters.loras.length === 0
                             ? 'bg-sage-600 text-white shadow-sage-500/20'
                             : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
@@ -781,7 +792,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             {(['all', 'today', 'week', 'month'] as const).map((range) => (
                                 <button
                                     key={range}
-                                    onClick={() => setFilters(prev => ({ ...prev, dateRange: range }))}
+                                    onClick={() => {
+                                        if (filters.dateRange !== range) {
+                                            setFilters(prev => ({ ...prev, dateRange: range }));
+                                        }
+                                    }}
                                     className={`px-3 py-2 text-xs rounded-lg capitalize transition-all ease-spring duration-300 border ${filters.dateRange === range
                                         ? 'bg-sage-600 text-white border-sage-600 shadow-md shadow-sage-500/20'
                                         : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200'
