@@ -254,10 +254,29 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]); // Keep deps, but logic inside is smarter
 
+  // Refs for stable callback access to prevent re-creation of handleWatcherEvent
+  const activeSqlWhereRef = useRef(activeSqlWhere);
+  useEffect(() => { activeSqlWhereRef.current = activeSqlWhere; }, [activeSqlWhere]);
+
+  const activeSqlParamsRef = useRef(activeSqlParams);
+  useEffect(() => { activeSqlParamsRef.current = activeSqlParams; }, [activeSqlParams]);
+
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
   // --- Data Fetching Logic (Debounced slightly or immediate) ---
   const fetchData = useCallback(async (isLoadMore: boolean) => {
-    if (isFetchingRef.current) return;
+    // Race Condition Fix:
+    // If this is a Load More (infinite scroll), we strictly respect the lock.
+    // If this is a NEW filter (not load more), we allow it to proceed even if a fetch is running,
+    // effectively "racing" it, but the Stale Check below will discard the old fetch's results.
+    if (isFetchingRef.current && isLoadMore) return;
+
     isFetchingRef.current = true;
+
+    // Capture "Request Context" to detect staleness later
+    const requestingWhere = activeSqlWhereRef.current;
+    const requestingParams = activeSqlParamsRef.current; // access ref active value
 
     try {
       const { searchImages, countImages } = await import('../services/db');
@@ -275,7 +294,16 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       // If New Filter -> Get Count First
       if (!isLoadMore) {
-        const count = await countImages(activeSqlWhere, activeSqlParams);
+        const count = await countImages(requestingWhere, requestingParams);
+
+        // STALE CHECK 1: Before setting total
+        const currentParams = activeSqlParamsRef.current;
+        const isStale = requestingWhere !== activeSqlWhereRef.current ||
+          requestingParams.length !== currentParams.length ||
+          !requestingParams.every((v, i) => v === currentParams[i]);
+
+        if (isStale) return;
+
         setTotalImages(count);
 
         // Refresh dynamic stats whenever filter changes
@@ -291,7 +319,18 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       // Fetch Page
       const offset = isLoadMore ? images.length : 0;
-      const newBatch = await searchImages(activeSqlWhere, activeSqlParams, PAGE_SIZE, offset, sortField, sortOrder);
+      const newBatch = await searchImages(requestingWhere, requestingParams, PAGE_SIZE, offset, sortField, sortOrder);
+
+      // STALE CHECK 2: Before updating images
+      const currentParams = activeSqlParamsRef.current;
+      const isStale = requestingWhere !== activeSqlWhereRef.current ||
+        requestingParams.length !== currentParams.length ||
+        !requestingParams.every((v, i) => v === currentParams[i]);
+
+      if (isStale) {
+        // console.log("Discarding stale fetch result");
+        return;
+      }
 
       if (newBatch.length < PAGE_SIZE) {
         setHasMoreImages(false);
@@ -304,6 +343,10 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     } catch (e) {
       console.error("Failed to fetch images", e);
     } finally {
+      // Only release lock if we are still matching the context? 
+      // Actually, valid to just release. If we were stale, well, we are done.
+      // If a newer request took over, it might have its own lock or share this one. 
+      // Since 'isFetchingRef' is a simple boolean, clearing it is fine.
       isFetchingRef.current = false;
     }
   }, [activeSqlWhere, activeSqlParams, sortOption, images.length, refreshMetadata]);
@@ -530,13 +573,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, []);
 
   const debouncedSyncRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Refs for stable callback access to prevent re-creation of handleWatcherEvent
-  const activeSqlWhereRef = useRef(activeSqlWhere);
-  useEffect(() => { activeSqlWhereRef.current = activeSqlWhere; }, [activeSqlWhere]);
-
-  const settingsRef = useRef(settings);
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   const startInvokeSyncRef = useRef(startInvokeSync);
   useEffect(() => { startInvokeSyncRef.current = startInvokeSync; }, [startInvokeSync]);
