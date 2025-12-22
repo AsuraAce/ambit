@@ -622,8 +622,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     return validImages[0].thumbnailUrl;
   }, []);
 
-  // Legacy function removed
-  // const updateCollectionThumbnails = ...
+
 
   const cleanLibrary = useCallback(async () => {
     try {

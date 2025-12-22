@@ -246,7 +246,7 @@ export const syncImages = async (
         boards = result.boards;
     }
 
-    console.log('[InvokeAI Schema]', { columns, hasBoardsTable, hasStarred, hasIsStarred, hasThumbnailName });
+
 
     console.log('[InvokeAI Sync] Using root:', imagesRoot);
 
