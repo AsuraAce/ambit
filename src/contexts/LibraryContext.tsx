@@ -136,19 +136,40 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     } catch (e) { console.error("Failed to refresh metadata", e); }
   }, [activeSqlWhere, activeSqlParams]);
 
-  const updateCollThumbs = async (currentCollections: Collection[]) => {
+  // Helper: Refresh thumbs for Manual Collections (those without a board_id link in DB)
+  const refreshManualCollectionThumbs = async (currentCollections: Collection[]) => {
     const { getCollectionThumbnail } = await import('../services/db');
     let changed = false;
-    const newCols = await Promise.all(currentCollections.map(async (col) => {
-      if (col.customThumbnail) return col;
-      const thumb = await getCollectionThumbnail(col.imageIds);
-      if (thumb && thumb !== col.thumbnail) {
-        changed = true;
-        return { ...col, thumbnail: thumb };
+
+    // We only need to check collections that are NOT boards (ids don't look like UUIDs usually, or we can check simple property?)
+    // Actually, simple check: If it has imageIds, check them. 
+    // Boards also have imageIds temporarily or during sync? 
+    // Best logic: Check ALL. If getCollectionThumbnail returns something different, update it.
+    // getCollectionThumbnail respects Pinned > Newest.
+
+    // Process in parallel
+    const updates = await Promise.all(currentCollections.map(async (col) => {
+      // Optimization: If it's a board (presumed if count is managed by DB hydration), maybe skip?
+      // But for consistency let's check all if imageIds are present.
+      if (col.imageIds && col.imageIds.length > 0 && !col.customThumbnail) {
+        const newThumb = await getCollectionThumbnail(col.imageIds);
+        if (newThumb && newThumb !== col.thumbnail) {
+          return { id: col.id, thumbnail: newThumb };
+        }
       }
-      return col;
+      return null;
     }));
-    if (changed) setCollections(newCols);
+
+    const updateMap = new Map(updates.filter(u => u !== null).map(u => [u!.id, u!.thumbnail]));
+
+    if (updateMap.size > 0) {
+      setCollections(prev => prev.map(c => {
+        if (updateMap.has(c.id)) {
+          return { ...c, thumbnail: updateMap.get(c.id)! };
+        }
+        return c;
+      }));
+    }
   };
 
   // Hydrate Collections from DB (Optimized O(1) + Count)
@@ -156,14 +177,13 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     const { hydrateCollections } = await import('../services/db');
     const boardMap = await hydrateCollections();
 
+    // 1. Update Boards (Fast)
     setCollections(prevCols => {
       let hasChange = false;
       const nextCols = prevCols.map(col => {
         const dbData = boardMap[col.id]; // Map uses board_id, which is col.id for boards
         if (dbData) {
-          // Check Count Delta
           const countChanged = dbData.count !== (col.count ?? col.imageIds.length);
-          // Check Thumbnail Delta
           const thumbChanged = dbData.thumbnail && dbData.thumbnail !== col.thumbnail;
 
           if (countChanged || thumbChanged) {
@@ -178,7 +198,21 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
         return col;
       });
-      return hasChange ? nextCols : prevCols;
+
+      // 2. Trigger Manual Update (Slow, Async) for non-boards or manual collections
+      // We do this by side-effect or chaining?
+      // Since we can't easily chain strictly after setState, we call the helper function
+      // with the *calculated* next state if we want immediate effect, 
+      // OR we just trigger it independently. 
+      // Let's trigger it independently using the current state ref or just passing nextCols.
+      if (hasChange) {
+        // Fire and forget manual update for the NEW state
+        refreshManualCollectionThumbs(nextCols);
+        return nextCols;
+      } else {
+        refreshManualCollectionThumbs(prevCols);
+        return prevCols;
+      }
     });
   }, []);
 

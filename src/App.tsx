@@ -258,9 +258,27 @@ export default function App() {
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
     };
 
-    const handleBulkPin = () => {
+    const handleBulkPin = async () => {
         const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
-        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img));
+        setImages(prev => {
+            const updated = prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img);
+            // Local re-sort to move pinned items to top immediately
+            return [...updated].sort((a, b) => {
+                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                return (b.timestamp || 0) - (a.timestamp || 0);
+            });
+        });
+
+        // Clean up Custom Thumbnail if we are in a collection (restore dynamic behavior)
+        if (filters.collectionId) {
+            setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c));
+        }
+
+        const ids = Array.from(selectedIds);
+        const db = await import('./services/db');
+        await Promise.all(ids.map(id => db.toggleImagePin(id, anyUnpinned)));
+
+        refreshCollectionThumbnails();
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
@@ -301,6 +319,27 @@ export default function App() {
     };
 
     // --- Shortcut Action Wrappers ---
+    // --- Consolidated Pin Handler ---
+    const handlePinImage = async (id: string, newPinned: boolean) => {
+        setImages(prev => {
+            const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
+            return [...updated].sort((a, b) => {
+                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                return (b.timestamp || 0) - (a.timestamp || 0);
+            });
+        });
+
+        // Clean up Custom Thumbnail if we are in a collection (restore dynamic behavior)
+        if (filters.collectionId) {
+            setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c));
+        }
+
+        await import('./services/db').then(db => db.toggleImagePin(id, newPinned));
+        refreshCollectionThumbnails();
+        addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+    };
+
+    // --- Shortcut Action Wrappers ---
     const handleShortcutFavorite = () => {
         if (selectedImageIndex !== null && images[selectedImageIndex]) {
             const id = images[selectedImageIndex].id;
@@ -310,11 +349,9 @@ export default function App() {
         }
     };
 
-    const handleShortcutPin = () => {
+    const handleShortcutPin = async () => {
         if (selectedImageIndex !== null && images[selectedImageIndex]) {
-            const id = images[selectedImageIndex].id;
-            setImages(prev => prev.map(i => i.id === id ? { ...i, isPinned: !i.isPinned } : i));
-            addToast("Pin toggled", "info");
+            await handlePinImage(images[selectedImageIndex].id, !images[selectedImageIndex].isPinned);
         } else {
             handleBulkPin();
         }
@@ -421,22 +458,11 @@ export default function App() {
                                 setContextMenu(null);
                             }
                         }}
-                        onTogglePin={() => {
+                        onTogglePin={async () => {
                             const id = contextMenu.imageId;
                             const img = images.find(i => i.id === id);
                             if (img) {
-                                const newPinned = !img.isPinned;
-                                setImages(prev => {
-                                    const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
-                                    // Local re-sort to move pinned items to top immediately
-                                    return [...updated].sort((a, b) => {
-                                        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                                        // Then by timestamp DESC as a tie-breaker
-                                        return (b.timestamp || 0) - (a.timestamp || 0);
-                                    });
-                                });
-                                import('./services/db').then(db => db.toggleImagePin(id, newPinned));
-                                addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+                                await handlePinImage(id, !img.isPinned);
                             }
                             setContextMenu(null);
                         }}
@@ -613,18 +639,10 @@ export default function App() {
                                                     setImages={setImages}
                                                     onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
-                                                    onTogglePin={(e, id) => {
+                                                    onTogglePin={async (e, id) => {
                                                         const img = images.find(i => i.id === id);
                                                         if (img) {
-                                                            const newPinned = !img.isPinned;
-                                                            setImages(prev => {
-                                                                const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
-                                                                return [...updated].sort((a, b) => {
-                                                                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                                                                    return (b.timestamp || 0) - (a.timestamp || 0);
-                                                                });
-                                                            });
-                                                            import('./services/db').then(db => db.toggleImagePin(id, newPinned));
+                                                            await handlePinImage(id, !img.isPinned);
                                                         }
                                                     }}
                                                     onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}

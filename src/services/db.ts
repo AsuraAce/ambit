@@ -378,22 +378,48 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
     try {
         // We ensure IDs are normalized just in case
-        const safeIds = imageIds.slice(0, 900).map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
+        // Logic: SQLite limits variable counts (default 999 or 32k depending on build, safest < 990).
+        // We chunk the IDs and query in batches.
+        const BATCH_SIZE = 900;
+        const normalizedIds = imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
 
-        const placeholders = safeIds.map(() => '?').join(',');
+        let candidates: Array<{ path: string, timestamp: number, is_pinned: number }> = [];
 
-        // Query both ID and Path. The ID column is what we usually use.
-        const query = `
-            SELECT thumbnail_path, timestamp 
-            FROM images 
-            WHERE (id IN (${placeholders}) OR path IN (${placeholders}))
-            AND is_deleted = 0 
-            ORDER BY timestamp DESC 
-            LIMIT 1
-        `;
+        for (let i = 0; i < normalizedIds.length; i += BATCH_SIZE) {
+            const batch = normalizedIds.slice(i, i + BATCH_SIZE);
+            const placeholders = batch.map(() => '?').join(',');
 
-        const res = await db.select<any[]>(query, [...safeIds, ...safeIds]);
-        return res[0]?.thumbnail_path;
+            // We select top 1 from EACH batch. 
+            // Note: Ideally we want global top 1. But querying partials is okay as long as we pick best of candidates.
+            const query = `
+                SELECT thumbnail_path as path, timestamp, is_pinned
+                FROM images 
+                WHERE (id IN (${placeholders}) OR path IN (${placeholders}))
+                AND is_deleted = 0 
+                ORDER BY is_pinned DESC, timestamp DESC 
+                LIMIT 1
+            `;
+
+            // We pass batch twice (once for id, once for path)
+            const res = await db.select<any[]>(query, [...batch, ...batch]);
+            if (res && res.length > 0) {
+                candidates.push({
+                    path: res[0].path,
+                    timestamp: res[0].timestamp || 0,
+                    is_pinned: res[0].is_pinned ? 1 : 0
+                });
+            }
+        }
+
+        if (candidates.length === 0) return undefined;
+
+        // Sort candidates to find the global winner
+        candidates.sort((a, b) => {
+            if (a.is_pinned !== b.is_pinned) return b.is_pinned - a.is_pinned; // Pinned first
+            return b.timestamp - a.timestamp; // Newest first
+        });
+
+        return candidates[0].path;
 
     } catch (e) {
         console.error('[DB] Fail collection thumb', e);
@@ -406,24 +432,55 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 export const hydrateCollections = async (): Promise<Record<string, { count: number, thumbnail: string }>> => {
     const db = await getDb();
     try {
-        // SQLite optimization: MAX(timestamp) forces selection of the row with that max value for other columns
-        const rows = await db.select<any[]>(`
-            SELECT board_id, COUNT(*) as count, thumbnail_path, MAX(timestamp) 
+        // Strategy: Use Window Functions to find the "Best" Thumbnail per Board
+        // Priority: 1. Pinned (is_pinned DESC), 2. Newest (timestamp DESC)
+
+        // 1. Get Counts (Simple Group By) - Most robust way to get accurate counts
+        const countRows = await db.select<any[]>(`
+            SELECT board_id, COUNT(*) as count 
             FROM images 
             WHERE board_id IS NOT NULL AND is_deleted = 0 
             GROUP BY board_id
         `);
 
-        // Map: BoardID -> { count, thumbnail }
+        // 2. Get Best Thumbnail (CTE + Window Function)
+        const thumbRows = await db.select<any[]>(`
+            WITH RankedImages AS (
+                SELECT 
+                    board_id, 
+                    thumbnail_path, 
+                    ROW_NUMBER() OVER (
+                        PARTITION BY board_id 
+                        ORDER BY is_pinned DESC, timestamp DESC
+                    ) as rn
+                FROM images 
+                WHERE board_id IS NOT NULL AND is_deleted = 0
+            )
+            SELECT board_id, thumbnail_path
+            FROM RankedImages
+            WHERE rn = 1
+        `);
+
+        // 3. Merge Results
         const map: Record<string, { count: number, thumbnail: string }> = {};
-        rows.forEach(row => {
+
+        // Initialize with counts
+        countRows.forEach(row => {
             if (row.board_id) {
-                map[row.board_id] = {
-                    count: row.count,
-                    thumbnail: row.thumbnail_path
-                };
+                map[row.board_id] = { count: row.count, thumbnail: '' };
             }
         });
+
+        // Add thumbnails
+        thumbRows.forEach(row => {
+            if (row.board_id && map[row.board_id]) {
+                map[row.board_id].thumbnail = row.thumbnail_path;
+            } else if (row.board_id) {
+                // Should overlap, but just in case
+                map[row.board_id] = { count: 0, thumbnail: row.thumbnail_path };
+            }
+        });
+
         return map;
     } catch (e) {
         console.error('[DB] Failed to hydrate collections', e);
