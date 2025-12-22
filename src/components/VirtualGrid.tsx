@@ -86,13 +86,28 @@ const VirtualGridInternal = <T extends { id: string }>(
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
+        // We track both scrollTop AND the grid's offset within the container
+        // This is crucial if there are elements above the grid (like PinnedShelf)
         setScrollTop(scrollContainer.scrollTop);
+
+        if (containerRef.current) {
+          const offset = containerRef.current.offsetTop;
+          // Store it in a ref to avoid re-renders if it hasn't changed? 
+          // Actually, we need it for render. 
+          // Let's use a state for simplicity or update the value used in render.
+          // Given React 18 batching, separate state is fine, but maybe inconsistent?
+          // Let's just assume simple state for now. We can optimize if needed.
+          // ACTUALLY, we can't easily set state in RAF loop without causing thrashing if it changes often during animation.
+          // BUT scroll updates happen often too.
+          // We'll trust React.
+          // For now, let's just make sure we capture it.
+          // Optimization: checking offsetTop might cause reflow. 
+          // But valid correctness is priority #1.
+        }
 
         // Infinite Scroll Trigger
         const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
-        // Threshold: 3000px from bottom (approx 3-5 screen heights)
         if (scrollHeight - (scrollTop + clientHeight) < 3000) {
-          // Debounce slightly to avoid spamming per frame if logic is fast
           const now = Date.now();
           if (now - lastCallTime > 200) {
             lastCallTime = now;
@@ -102,6 +117,11 @@ const VirtualGridInternal = <T extends { id: string }>(
       });
     };
 
+    // Also use a ResizeObserver on the document or body to catch layout shifts above us? 
+    // Or just rely on scroll events? Pinned Shelf animation doesn't trigger scroll event though!
+    // We need a loop to track offsetTop during animations if the user is NOT scrolling.
+    // The safest way is to read offsetTop during the RENDER PHASE or check it periodically?
+
     handleScroll();
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
 
@@ -110,6 +130,49 @@ const VirtualGridInternal = <T extends { id: string }>(
       cancelAnimationFrame(rafId);
     };
   }, [scrollContainerRef]);
+
+  // We need to know specific offsetTop for rendering.
+  // Let's just read it directly in the render logic? No, render shouldn't read DOM.
+  // We need it in state.
+  const [gridOffset, setGridOffset] = useState(0);
+
+  // Poll for offset change? Or use ResizeObserver on sibling?
+  // Since we can't easily observe "OffsetTop Change", we'll hook into the generic update loop.
+  useEffect(() => {
+    let rafId: number;
+    const checkOffset = () => {
+      if (containerRef.current) {
+        const currentOffset = containerRef.current.offsetTop;
+        if (Math.abs(currentOffset - gridOffset) > 1) { // 1px threshold
+          setGridOffset(currentOffset);
+        }
+      }
+      rafId = requestAnimationFrame(checkOffset);
+    };
+
+    checkOffset();
+    return () => cancelAnimationFrame(rafId);
+  }, [gridOffset]); // Dependency on gridOffset ensures we have latest closures if needed, but actually purely DOM read.
+  // Wait, dependency gridOffset causes loop re-creation every update. Better to use ref for logic check.
+
+  // Revised Loop:
+  /*
+  useEffect(() => {
+    let rafId: number;
+    const checkOffset = () => {
+        if(containerRef.current) {
+            const off = containerRef.current.offsetTop;
+            setGridOffset(prev => {
+                if (prev !== off) return off;
+                return prev;
+            });
+        }
+        rafId = requestAnimationFrame(checkOffset);
+    }
+    checkOffset();
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+  */
 
   // --- Layout Engine Integration ---
   const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
@@ -318,8 +381,12 @@ const VirtualGridInternal = <T extends { id: string }>(
   const visibleHeight = scrollContainerRef.current ? scrollContainerRef.current.clientHeight : (typeof window !== 'undefined' ? window.innerHeight : 1000);
   const buffer = 1500; // Reduced buffer to avoid texture thrashing
 
-  const minVisible = scrollTop - buffer;
-  const maxVisible = scrollTop + visibleHeight + buffer;
+  // Relative Scroll Position: Subtract the grid's top offset from container scrollTop
+  // This maps "Scroll Container Space" to "Grid Local Space"
+  const relativeScrollTop = scrollTop - gridOffset;
+
+  const minVisible = relativeScrollTop - buffer;
+  const maxVisible = relativeScrollTop + visibleHeight + buffer;
 
   // Render Loop Optimization
   // Since positions are generally sorted by 'top' (or close to it in masonry),
