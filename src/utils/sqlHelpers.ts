@@ -63,6 +63,9 @@ export const buildSqlWhereClause = (
     // 5. Tools (Array)
     if (filters.tools.length > 0) {
         const toolConditions = filters.tools.map(t => {
+            if (t === 'Unknown') {
+                return `(json_extract(metadata_json, '$.tool') = 'Unknown' OR json_extract(metadata_json, '$.tool') IS NULL)`;
+            }
             params.push(t);
             return `json_extract(metadata_json, '$.tool') = ?`;
         });

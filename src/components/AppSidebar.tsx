@@ -44,7 +44,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         <div className="h-px w-8 bg-gray-300 dark:bg-white/10 my-2" />
 
         <NavButton active={isFilterPanelOpen && (viewMode === 'grid' || viewMode === 'timeline' || viewMode === 'dashboard')} onClick={() => setIsFilterPanelOpen(p => !p)} icon={<Filter />} tooltip="Toggle Filters" />
-        <NavButton active={filters.favoritesOnly} onClick={() => setFilters(prev => ({ ...prev, favoritesOnly: !prev.favoritesOnly, collectionId: null }))} icon={<Heart className={filters.favoritesOnly ? "fill-red-500 text-red-500" : ""} />} tooltip="Favorites Only" />
+        <NavButton active={filters.favoritesOnly} onClick={() => setFilters(prev => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))} icon={<Heart className={filters.favoritesOnly ? "fill-red-500 text-red-500" : ""} />} tooltip="Favorites Only" />
 
         <button onClick={onOpenSlideshow} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative text-gray-500 dark:text-zinc-400 hover:text-sage-600 dark:hover:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/20 mt-2" title="Zen Mode / Slideshow">
           <Compass className="w-5 h-5" />

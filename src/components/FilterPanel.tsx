@@ -70,7 +70,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const [isCollectionSearchOpen, setIsCollectionSearchOpen] = useState(false);
     const [collectionSearchQuery, setCollectionSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
-    const [collectionSort, setCollectionSort] = useState<'name' | 'date'>('date');
+    const [collectionSort, setCollectionSort] = useState<'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc'>('date_desc');
+    const [showCollectionSortMenu, setShowCollectionSortMenu] = useState(false);
     const collectionSearchInputRef = useRef<HTMLInputElement>(null);
 
     // Model & LoRA Search
@@ -250,10 +251,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             return matchesSearch && matchesArchive;
         })
         .sort((a, b) => {
-            if (collectionSort === 'name') {
-                return a.name.localeCompare(b.name);
-            } else {
-                return b.createdAt - a.createdAt; // Newest first
+            switch (collectionSort) {
+                case 'name_asc': return a.name.localeCompare(b.name);
+                case 'name_desc': return b.name.localeCompare(a.name);
+                case 'count_asc': return (a.count ?? a.imageIds.length) - (b.count ?? b.imageIds.length);
+                case 'count_desc': return (b.count ?? b.imageIds.length) - (a.count ?? a.imageIds.length);
+                case 'date_asc': return a.createdAt - b.createdAt;
+                case 'date_desc':
+                default:
+                    return b.createdAt - a.createdAt;
             }
         });
 
@@ -432,13 +438,40 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     >
                                         <Archive className="w-3 h-3" />
                                     </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setCollectionSort(prev => prev === 'name' ? 'date' : 'name'); }}
-                                        className={`transition-colors p-1 rounded-md text-gray-400 hover:text-sage-500 dark:hover:text-sage-400`}
-                                        title={collectionSort === 'name' ? "Sorted by Name (A-Z)" : "Sorted by Date (Newest)"}
-                                    >
-                                        <ArrowUpDown className="w-3 h-3" />
-                                    </button>
+                                    <div className="relative">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setShowCollectionSortMenu(!showCollectionSortMenu); }}
+                                            className={`transition-colors p-1 rounded-md ${showCollectionSortMenu ? 'text-sage-600 dark:text-sage-400 bg-sage-100 dark:bg-sage-900/30' : 'text-gray-400 hover:text-sage-500 dark:hover:text-sage-400'}`}
+                                            title="Sort Collections"
+                                        >
+                                            <ArrowUpDown className="w-3 h-3" />
+                                        </button>
+                                        {showCollectionSortMenu && (
+                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                                                {[
+                                                    { id: 'date_desc', label: 'Newest Created' },
+                                                    { id: 'date_asc', label: 'Oldest Created' },
+                                                    { id: 'name_asc', label: 'Name (A-Z)' },
+                                                    { id: 'name_desc', label: 'Name (Z-A)' },
+                                                    { id: 'count_desc', label: 'Most Images' },
+                                                    { id: 'count_asc', label: 'Fewest Images' },
+                                                ].map(opt => (
+                                                    <button
+                                                        key={opt.id}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setCollectionSort(opt.id as any);
+                                                            setShowCollectionSortMenu(false);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-gray-100 dark:hover:bg-white/5 transition-colors ${collectionSort === opt.id ? 'text-sage-600 dark:text-sage-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}
+                                                    >
+                                                        {opt.label}
+                                                        {collectionSort === opt.id && <Check className="w-3 h-3" />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -617,14 +650,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         <SectionHeader title="Generator" isOpen={expanded.generator} onToggle={() => toggleSection('generator')} />
                         {expanded.generator && (
                             <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
-                                {Object.values(GeneratorTool).map(tool => (
+                                {facets.tools.length > 0 ? facets.tools.map(tool => (
                                     <SelectableRow
                                         key={tool}
                                         label={tool}
-                                        isSelected={filters.tools.includes(tool)}
-                                        onClick={() => toggleTool(tool)}
+                                        isSelected={filters.tools.includes(tool as GeneratorTool)}
+                                        onClick={() => toggleTool(tool as GeneratorTool)}
                                     />
-                                ))}
+                                )) : (
+                                    <div className="text-xs text-gray-400 text-center py-2 italic">No specific tools found</div>
+                                )}
                             </div>
                         )}
                     </div>

@@ -15,6 +15,7 @@ import { LibraryStats } from '../services/db';
 interface Facets {
   models: string[];
   loras: { name: string; count: number }[];
+  tools: string[];
 }
 
 interface LibraryContextType {
@@ -85,7 +86,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [isLiveWatching, setIsLiveWatching] = useState(false);
 
   // Stats & Facets
-  const [facets, setFacets] = useState<Facets>({ models: [], loras: [] });
+  const [facets, setFacets] = useState<Facets>({ models: [], loras: [], tools: [] });
   const [stats, setStats] = useState<LibraryStats>({
     totalImages: 0,
     totalGenerations: 0,

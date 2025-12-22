@@ -353,14 +353,22 @@ export const getFacets = async (whereClause: string = '', params: any[] = []) =>
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count);
 
+        // 3. Tools
+        const tools = await db.select<any[]>(`
+            SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as name 
+            FROM images ${finalWhere} 
+            ORDER BY name ASC
+        `, params);
+
         return {
             models: models.map(m => m.name).filter(Boolean),
-            loras: loraStats
+            loras: loraStats,
+            tools: tools.map(t => t.name).filter(Boolean)
         };
 
     } catch (e) {
         console.error('[DB] Failed to get facets', e);
-        return { models: [], loras: [] };
+        return { models: [], loras: [], tools: [] };
     }
 };
 
