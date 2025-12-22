@@ -101,6 +101,7 @@ export interface Collection {
   name: string;
   description?: string;
   imageIds: string[];
+  count?: number; // Optimized: Store count directly to avoid loading all IDs
   thumbnail?: string;
   customThumbnail?: string; // Explicit user choice
   color?: string; // Hex or tailwind color name for organization

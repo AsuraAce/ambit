@@ -48,7 +48,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     isVisible = true,
     className
 }) => {
-    const { collections, smartCollections, images } = useLibraryContext();
+    // setFilters passed via Props
+    const { collections, smartCollections, stats, facets } = useLibraryContext(); // stats unused here but available if needed
 
     const [expanded, setExpanded] = useState<Record<FilterSection, boolean>>({
         collections: true,
@@ -83,32 +84,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, collectionId: string } | null>(null);
 
-    // Compute LoRA Stats from Images (Context Sensitive if filteredImages is provided)
-    const loraStats = useMemo(() => {
-        // If we have filteredImages (context), use them. 
-        // NOTE: If user selects a LoRA, filteredImages will narrow down to that LoRA.
-        // This is expected "Drill Down" behavior.
-        const sourceImages = (filteredImages && filteredImages.length > 0) ? filteredImages : images;
-
-        const counts: Record<string, number> = {};
-        sourceImages.forEach(img => {
-            if (img.metadata.loras && !img.isDeleted) {
-                img.metadata.loras.forEach(l => {
-                    // Normalize name: Remove extension and weight parens
-                    // e.g. "my_lora.safetensors (0.8)" -> "my_lora"
-                    let name = l.replace(/\.(safetensors|pt|ckpt)$/i, '');
-                    name = name.replace(/\s+\(-?\d+(\.\d+)?\)$/, '').trim();
-
-                    if (name) {
-                        counts[name] = (counts[name] || 0) + 1;
-                    }
-                });
-            }
-        });
-        return Object.entries(counts)
-            .sort((a, b) => b[1] - a[1]) // Sort by frequency desc
-            .map(([name, count]) => ({ name, count }));
-    }, [images, filteredImages]);
+    // NOTE: Removed client-side loraStats calculation. Using DB-backed facets.loras
 
     useEffect(() => {
         if (isCollectionSearchOpen && collectionSearchInputRef.current) {
@@ -284,11 +260,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const pinnedCollections = filteredCollections.filter(c => c.isPinned);
     const otherCollections = filteredCollections.filter(c => !c.isPinned);
 
-    const filteredModels = Object.values(ModelType).filter(m =>
+    // Use DB Facets (Dynamic) instead of hardcoded Enum
+    const filteredModels = facets.models.filter(m =>
         m.toLowerCase().includes(modelSearchQuery.toLowerCase())
     );
 
-    const filteredLoras = loraStats.filter(l =>
+    const filteredLoras = facets.loras.filter(l =>
         l.name.toLowerCase().includes(loraSearchQuery.toLowerCase())
     );
 
@@ -368,7 +345,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {/* Count Badge */}
                     <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none transition-opacity duration-200 ${filters.collectionId === col.id ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500'
                         }`}>
-                        {col.imageIds.length}
+                        {col.count ?? col.imageIds.length}
                     </span>
                 </div>
             )}
@@ -749,7 +726,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     {filteredLoras.map(lora => renderLoraRow(lora))}
                                     {filteredLoras.length === 0 && (
                                         <div className="text-xs text-gray-400 text-center py-2 italic">
-                                            {loraStats.length === 0 ? "No LoRAs found in library" : "No matching LoRAs"}
+                                            {facets.loras.length === 0 ? "No LoRAs found in library" : "No matching LoRAs"}
                                         </div>
                                     )}
                                 </div>

@@ -10,6 +10,12 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { scanImageNative } from '../services/metadataParser';
 import { GeneratorTool } from '../types';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
+import { LibraryStats } from '../services/db';
+
+interface Facets {
+  models: string[];
+  loras: { name: string; count: number }[];
+}
 
 interface LibraryContextType {
   isLoaded: boolean;
@@ -23,7 +29,10 @@ interface LibraryContextType {
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   recentSearches: string[];
   setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
-  updateCollectionThumbnails: (updatedImages: AIImage[]) => void;
+  refreshCollectionThumbnails: () => Promise<void>;
+  // New Data Sources
+  facets: Facets;
+  stats: LibraryStats;
   // Sync State
   syncState: {
     status: 'idle' | 'syncing' | 'complete' | 'error';
@@ -75,6 +84,16 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [privacyEnabled, setPrivacyEnabled] = useState(true);
   const [isLiveWatching, setIsLiveWatching] = useState(false);
 
+  // Stats & Facets
+  const [facets, setFacets] = useState<Facets>({ models: [], loras: [] });
+  const [stats, setStats] = useState<LibraryStats>({
+    totalImages: 0,
+    totalGenerations: 0,
+    avgSteps: 0,
+    estSizeMB: '0',
+    modelStats: []
+  });
+
   // Filtering & Sorting State
   const [filters, setFilters] = useState<FilterState>({
     searchQuery: '',
@@ -102,6 +121,70 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const isFetchingRef = useRef(false);
   const isLiveSyncingRef = useRef(false); // Guard for background live syncs
 
+  // --- Helper: Refresh Global Data (Stats, Facets) ---
+  const refreshMetadata = useCallback(async () => {
+    try {
+      const { getFacets, getLibraryStats } = await import('../services/db');
+      // Dynamic Facets: Use current filters.
+      const [newFacets, newStats] = await Promise.all([
+        getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),
+        getLibraryStats(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams)
+      ]);
+      setFacets(newFacets);
+      setStats(newStats);
+    } catch (e) { console.error("Failed to refresh metadata", e); }
+  }, [activeSqlWhere, activeSqlParams]);
+
+  const updateCollThumbs = async (currentCollections: Collection[]) => {
+    const { getCollectionThumbnail } = await import('../services/db');
+    let changed = false;
+    const newCols = await Promise.all(currentCollections.map(async (col) => {
+      if (col.customThumbnail) return col;
+      const thumb = await getCollectionThumbnail(col.imageIds);
+      if (thumb && thumb !== col.thumbnail) {
+        changed = true;
+        return { ...col, thumbnail: thumb };
+      }
+      return col;
+    }));
+    if (changed) setCollections(newCols);
+  };
+
+  // Hydrate Collections from DB (Optimized O(1) + Count)
+  const refreshCollectionsFromDb = useCallback(async () => {
+    const { hydrateCollections } = await import('../services/db');
+    const boardMap = await hydrateCollections();
+
+    setCollections(prevCols => {
+      let hasChange = false;
+      const nextCols = prevCols.map(col => {
+        const dbData = boardMap[col.id]; // Map uses board_id, which is col.id for boards
+        if (dbData) {
+          // Check Count Delta
+          const countChanged = dbData.count !== (col.count ?? col.imageIds.length);
+          // Check Thumbnail Delta
+          const thumbChanged = dbData.thumbnail && dbData.thumbnail !== col.thumbnail;
+
+          if (countChanged || thumbChanged) {
+            hasChange = true;
+            return {
+              ...col,
+              imageIds: [], // Clear IDs to save memory/transfer limits. We rely on 'count' and board_id queries.
+              count: dbData.count,
+              thumbnail: dbData.thumbnail || col.thumbnail
+            };
+          }
+        }
+        return col;
+      });
+      return hasChange ? nextCols : prevCols;
+    });
+  }, []);
+
+  const refreshCollectionThumbnails = useCallback(async () => {
+    refreshCollectionsFromDb();
+  }, [refreshCollectionsFromDb]);
+
   // --- SQL Generation Effect ---
   useEffect(() => {
     const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections);
@@ -113,7 +196,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     setImages([]);
     setHasMoreImages(true);
     setTotalImages(0);
-  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]); // Re-run when filters change
+    // Note: fetching happens in next effect via dependency on activeSqlWhere
+  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]);
 
   // --- Data Fetching Logic (Debounced slightly or immediate) ---
   const fetchData = useCallback(async (isLoadMore: boolean) => {
@@ -138,6 +222,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (!isLoadMore) {
         const count = await countImages(activeSqlWhere, activeSqlParams);
         setTotalImages(count);
+
+        // Refresh dynamic stats whenever filter changes
+        refreshMetadata();
 
         if (count === 0) {
           setImages([]);
@@ -164,12 +251,14 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     } finally {
       isFetchingRef.current = false;
     }
-  }, [activeSqlWhere, activeSqlParams, sortOption, images.length]);
+  }, [activeSqlWhere, activeSqlParams, sortOption, images.length, refreshMetadata]);
 
   // Trigger Fetch when SQL/Sort changes (Initial Load)
   useEffect(() => {
     if (!isLoaded) return; // Wait for init
     fetchData(false);
+    // Note: We do NOT refresh collections here anymore to prevent CPU spikes.
+    // Collections are loaded from persistence or refreshed after Sync.
   }, [activeSqlWhere, activeSqlParams, sortOption, isLoaded]);
 
 
@@ -194,6 +283,16 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSmartCollections(state.smartCollections);
       setSettings(state.settings);
       setRecentSearches(state.recentSearches);
+
+      setRecentSearches(state.recentSearches);
+
+      // Refresh Stats & Facets
+      await refreshMetadata();
+
+      // Refresh Collections (Optimized O(1)) 
+      // This MUST run on startup to validate the cached state against the DB.
+      await refreshCollectionsFromDb();
+
       setIsLoaded(true);
     };
     init();
@@ -278,23 +377,52 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
 
       // Phase 1: DB Sync
-      const { imported, updated, maxTimestamp, syncedIds } = await syncImages(
-        path,
-        (current, total) => setSyncProgress({ current, total }),
+      const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
+        settingsRef.current.invokeAiPath!,
+        (c, t) => setSyncProgress({ current: c, total: t }),
         abortControllerRef.current.signal,
         {
-          afterTimestamp: scanTimestamp,
+          syncFavorites: true,
+          syncBoards: settingsRef.current.syncBoardsToCollections,
+          afterTimestamp: (options as any).fullReset ? 0 : settings.lastSyncedAt,
           importIntermediates: settings.importIntermediates,
-          starredAs: settings.starredAs,
-          ...options
+          starredAs: settings.starredAs
         }
       );
+
+      // 4. Sync Boards to Collections (Vital for consistency)
+      if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
+        setCollections(prev => {
+          const next = [...prev];
+          let changed = false;
+          boardMapping.forEach((name, id) => {
+            const existing = next.find(c => c.id === id);
+            if (!existing) {
+              // Create new collection for board
+              next.push({
+                id: id,
+                name: name,
+                imageIds: [], // Hydrated later
+                count: 0,
+                createdAt: Date.now()
+              });
+              changed = true;
+            } else if (existing.name !== name) {
+              // Update name if changed
+              const idx = next.indexOf(existing);
+              next[idx] = { ...existing, name };
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+      }
 
       // Phase 2: Orphan Scanning (Only run on Manual Sync to save resources)
       let orphansImported = 0;
       if (options.mode === 'manual' && settings.importOrphans !== false) {
         orphansImported = await scanForOrphans(
-          path,
+          settingsRef.current.invokeAiPath!,
           syncedIds,
           (phase, current, total) => {
             setSyncProgress({ current, total });
@@ -309,6 +437,13 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       if (options.mode === 'manual') {
         fetchData(false); // Immediate refresh
+        refreshMetadata(); // Refresh stats/facets
+        // collection counts update
+        // We delay slightly to allow setCollections above to settle? 
+        // Actually, refreshCollectionsFromDb uses the 'prev' state inside its callback usually?
+        // No, it calls DB then sets `prev`. 
+        // We should run this after a short tick or rely on the state update to be "eventual".
+        setTimeout(() => refreshCollectionsFromDb(), 100);
       }
 
     } catch (e: any) {
@@ -487,22 +622,18 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     return validImages[0].thumbnailUrl;
   }, []);
 
-  const updateCollectionThumbnails = useCallback((updatedImages: AIImage[]) => {
-    setCollections(prev => prev.map(col => {
-      const newThumb = recalculateCollectionThumbnail(col, updatedImages);
-      if (newThumb === col.thumbnail) return col;
-      return { ...col, thumbnail: newThumb };
-    }));
-  }, [recalculateCollectionThumbnail]);
+  // Legacy function removed
+  // const updateCollectionThumbnails = ...
 
   const cleanLibrary = useCallback(async () => {
     try {
       const { clearLibrary } = await import('../services/db');
       await clearLibrary();
       setImages([]);
+      setCollections([]); // Clear Collections from State & Persistence
       setTotalImages(0);
       setSettings(prev => ({ ...prev, lastSyncedAt: undefined }));
-      addToast('Library cleared successfully.', 'success');
+      addToast('Library and Collections cleared successfully.', 'success');
     } catch (e) {
       console.error(e);
       addToast('Failed to clear library.', 'error');
@@ -522,7 +653,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSettings,
       recentSearches,
       setRecentSearches,
-      updateCollectionThumbnails,
+      refreshCollectionThumbnails,
+      facets,
+      stats,
       syncState: {
         status: syncStatus,
         progress: syncProgress,

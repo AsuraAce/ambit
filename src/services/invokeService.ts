@@ -67,22 +67,24 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
 }
 
 // --- Helper to fetch Boards Mapping ---
-async function fetchBoardMappings(db: Database): Promise<Map<string, string>> {
-    const mapping = new Map<string, string>();
+// --- Helper to fetch Boards Mapping ---
+async function fetchBoardMappings(db: Database): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, string> }> {
+    const imageToBoardId = new Map<string, string>();
+    const boards = new Map<string, string>(); // ID -> Name
+
     try {
-        const boards = await (db as any).select("SELECT board_id, board_name FROM boards");
-        const boardMap = new Map(boards.map(b => [b.board_id, b.board_name]));
+        const boardsRows = await (db as any).select("SELECT board_id, board_name FROM boards");
+        boardsRows.forEach((b: any) => boards.set(b.board_id, b.board_name));
 
         const images = await (db as any).select("SELECT image_name, board_id FROM board_images");
-
         for (const img of images as any[]) {
-            const name = boardMap.get(img.board_id) as string | undefined;
-            if (name) mapping.set(String(img.image_name), name);
+            // Only map if board exists? Or map anyway? Map anyway is safer for consistency.
+            if (img.board_id) imageToBoardId.set(String(img.image_name), img.board_id);
         }
     } catch (e) {
         console.warn('Failed to fetch boards/collections mapping:', e);
     }
-    return mapping;
+    return { imageToBoardId, boards };
 }
 
 export const testConnection = async (rootPath: string): Promise<{ success: boolean, count: number, message: string }> => {
@@ -190,8 +192,8 @@ export const syncImages = async (
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
     options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string> }> => {
-    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set() };
+): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, string> }> => {
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -236,9 +238,12 @@ export const syncImages = async (
     } catch (e) { }
 
     // Pre-fetch Boards if requested
-    let boardMapping = new Map<string, string>();
+    let imageToBoardId = new Map<string, string>();
+    let boards = new Map<string, string>(); // ID -> Name
     if (options.syncBoards && hasBoardsTable) {
-        boardMapping = await fetchBoardMappings(invokeDb);
+        const result = await fetchBoardMappings(invokeDb);
+        imageToBoardId = result.imageToBoardId;
+        boards = result.boards;
     }
 
     console.log('[InvokeAI Schema]', { columns, hasBoardsTable, hasStarred, hasIsStarred, hasThumbnailName });
@@ -278,13 +283,13 @@ export const syncImages = async (
     const syncedIds = new Set<string>();
 
     if (totalToImport === 0) {
-        if (options.syncBoards && boardMapping.size > 0) {
+        if (options.syncBoards && imageToBoardId.size > 0) {
             console.log('[InvokeAI Sync] Refreshing board associations natively...');
             const { invoke } = await import('@tauri-apps/api/core');
             try {
                 // Convert Map to plain object for Rust HashMap compatibility
                 const mappingObj: Record<string, string> = {};
-                boardMapping.forEach((val, key) => { mappingObj[key] = val; });
+                imageToBoardId.forEach((val, key) => { mappingObj[key] = val; });
 
                 const updatedCount = await invoke<number>('refresh_boards_native', { boardMapping: mappingObj });
                 console.log(`[InvokeAI Sync] Native board mapping complete. Updated ${updatedCount} images.`);
@@ -292,7 +297,8 @@ export const syncImages = async (
                 console.error('[InvokeAI Sync] Native board refresh failed', e);
             }
         }
-        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds };
+        // Return boards map so LibraryContext can still sync collection names/existence even if no images changed
+        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map() };
     }
 
     // 5. Batch Process
@@ -359,7 +365,7 @@ export const syncImages = async (
 
                 let boardId: string | undefined = undefined;
                 if (options.syncBoards) {
-                    boardId = boardMapping.get(row.image_name);
+                    boardId = imageToBoardId.get(row.image_name);
                 }
 
                 let thumbnailUrl = convertFileSrc(fullPath);
@@ -413,7 +419,7 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
-    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds };
+    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds, boardMapping: boards };
 };
 
 export const scanForOrphans = async (

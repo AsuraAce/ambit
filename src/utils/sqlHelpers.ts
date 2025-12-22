@@ -26,19 +26,19 @@ export const buildSqlWhereClause = (
     // 2. Collection ID
     if (filters.collectionId) {
         const manualCol = collections?.find(c => c.id === filters.collectionId);
+        // Only use IN (...) if we actually have IDs populated (Manual Collection)
         if (manualCol && manualCol.imageIds && manualCol.imageIds.length > 0) {
-            // Manual Collection: Filter by paths (Ambit IDs are paths)
-            // Normalize requested IDs to match DB format
             const ids = manualCol.imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
             const placeholders = ids.map(() => '?').join(',');
             conditions.push(`path IN (${placeholders})`);
             params.push(...ids);
         } else {
-            // Board ID from InvokeAI
+            // Default: Filter by Board ID (Efficient)
             conditions.push('board_id = ?');
             params.push(filters.collectionId);
         }
     }
+
 
     // 3. Favorites
     if (filters.favoritesOnly) {
