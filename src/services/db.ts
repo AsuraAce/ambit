@@ -177,8 +177,8 @@ export const isImageNew = async (id: string): Promise<boolean> => {
 export const getAllImages = async (limit?: number, offset: number = 0): Promise<AIImage[]> => {
     const db = await getDb();
     const query = limit
-        ? `SELECT * FROM images WHERE is_deleted = 0 ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-        : 'SELECT * FROM images WHERE is_deleted = 0 ORDER BY timestamp DESC';
+        ? `SELECT * FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC LIMIT ${limit} OFFSET ${offset}`
+        : 'SELECT * FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC';
 
     const rows = await db.select<any[]>(query);
 
@@ -212,7 +212,7 @@ export const searchImages = async (
     const query = `
         SELECT * FROM images 
         ${finalWhere} 
-        ORDER BY ${sortField} ${sortOrder} 
+        ORDER BY is_pinned DESC, ${sortField} ${sortOrder} 
         LIMIT ${limit} OFFSET ${offset}
     `;
 
