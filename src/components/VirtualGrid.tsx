@@ -461,6 +461,9 @@ const VirtualGridInternal = <T extends { id: string }>(
     }
   }
 
+  // Debug Log (Throttled?)
+  // console.log('[VirtualGrid] Render', { items: items.length, visibleItems: visibleItems.length, scrollTop, gridOffset, relativeScrollTop });
+
   return (
     <div
       ref={containerRef}

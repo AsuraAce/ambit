@@ -71,16 +71,23 @@ export const GridItem: React.FC<GridItemProps> = memo(({
             animate={{
                 x: layoutPos?.x || 0,
                 y: layoutPos?.y || 0,
-                zIndex: isSelected ? 10 : 1
+                zIndex: isSelected ? 10 : 1,
+                opacity: 1,
+                scale: 1
             }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
             transition={{
-                layout: { type: "spring", stiffness: 350, damping: 25, mass: 1 }, // Bouncy for reordering
+                layout: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
                 x: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
                 y: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                opacity: { duration: 0.4, ease: "easeOut" }, // Smooth fade for scroll
-                scale: { duration: 0.4, ease: "easeOut" } // Smooth scale for scroll
+                opacity: { duration: 0.4, ease: "easeOut" },
+                scale: { duration: 0.4, ease: "easeOut" }
+            }}
+            transition={{
+                layout: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
+                x: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
+                y: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
+                opacity: { duration: 0.4, ease: "easeOut" },
+                scale: { duration: 0.4, ease: "easeOut" }
             }}
             whileHover={{ transition: { duration: 0.2, ease: "easeOut" } }}
             className="group/griditem absolute top-0 left-0" // Force absolute here as we stripped it or rely on style
