@@ -67,7 +67,8 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         <motion.div
             style={{ ...restStyle }}
             layoutId={`card-${image.id}`}
-            initial={{ opacity: 0, scale: 0.9 }}
+            // initial={{ opacity: 0, scale: 0.9 }} // Disabled to prevent flicker during scroll
+            initial={false}
             animate={{
                 x: layoutPos?.x || 0,
                 y: layoutPos?.y || 0,
@@ -82,13 +83,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                 opacity: { duration: 0.4, ease: "easeOut" },
                 scale: { duration: 0.4, ease: "easeOut" }
             }}
-            transition={{
-                layout: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                x: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                y: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                opacity: { duration: 0.4, ease: "easeOut" },
-                scale: { duration: 0.4, ease: "easeOut" }
-            }}
+
             whileHover={{ transition: { duration: 0.2, ease: "easeOut" } }}
             className="group/griditem absolute top-0 left-0" // Force absolute here as we stripped it or rely on style
         >

@@ -581,7 +581,7 @@ export default function App() {
 
                         <div
                             ref={scrollContainerRef}
-                            className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto custom-scrollbar px-2' : 'overflow-hidden'}`}
+                            className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar px-2' : 'overflow-hidden'}`}
                         >
                             <ErrorBoundary>
                                 {viewMode === 'dashboard' ? (
