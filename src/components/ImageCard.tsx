@@ -66,6 +66,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
     >
       <SmartImage
         src={image.thumbnailUrl}
+        fallbackSrc={image.url}
         alt={image.filename}
         onImageError={onImageError}
         loading="eager"

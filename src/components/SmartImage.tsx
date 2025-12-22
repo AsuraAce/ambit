@@ -29,27 +29,14 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 }) => {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [retryCount, setRetryCount] = useState(0);
+  const [currentSrc, setCurrentSrc] = useState(src);
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (!src) {
-      setStatus('error');
-      return;
-    }
-    // DEBUG: Inspect unsafe URLs
-    console.log('SmartImage Loading:', src);
-
+    setCurrentSrc(src);
     setStatus('loading');
-    // Reset retry count when src changes
     setRetryCount(0);
   }, [src]);
-
-  // Effect for retrying image load
-  useEffect(() => {
-    if (status === 'loading' && retryCount > 0) {
-      // Retry logic handled by onError triggering re-render if needed
-    }
-  }, [retryCount, status]);
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     setStatus('loaded');
@@ -58,11 +45,16 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     if (retryCount < 3) {
-      // Exponential backoff for retries
       setTimeout(() => {
         setRetryCount(c => c + 1);
-      }, Math.pow(2, retryCount) * 1000);
+      }, Math.pow(2, retryCount) * 500);
+    } else if (fallbackSrc && currentSrc !== fallbackSrc) {
+      console.log('[SmartImage] Retries failed, switching to fallbackSrc:', fallbackSrc);
+      setCurrentSrc(fallbackSrc);
+      setRetryCount(0);
+      setStatus('loading');
     } else {
+      console.error('[SmartImage] Final failure for:', currentSrc);
       setStatus('error');
       if (onImageError) onImageError();
     }
@@ -70,19 +62,34 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   };
 
   const processedSrc = React.useMemo(() => {
-    if (!src) return '';
-    // Only convert if it's likely a local path (not http, blob, data, or asset)
-    if (!src.startsWith('http') && !src.startsWith('blob:') && !src.startsWith('data:') && !src.startsWith('asset:')) {
-      return convertFileSrc(src);
+    if (!currentSrc) return '';
+
+    try {
+      // Runtime Fix: Repair malformed asset URLs with mixed slashes
+      if (currentSrc.startsWith('http://asset.localhost/')) {
+        const rawPath = decodeURIComponent(currentSrc.replace('http://asset.localhost/', ''));
+        // Normalize all backslashes to forward slashes
+        const normalizedPath = rawPath.replace(/\\/g, '/');
+        return convertFileSrc(normalizedPath);
+      }
+
+      // Handle local paths that aren't yet converted
+      if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:') && !currentSrc.startsWith('asset:')) {
+        // Also normalize untransformed paths
+        return convertFileSrc(currentSrc.replace(/\\/g, '/'));
+      }
+    } catch (e) {
+      console.warn('[SmartImage] Error normalizing URL:', e);
     }
-    return src;
-  }, [src]);
+
+    return currentSrc;
+  }, [currentSrc]);
 
   const finalWrapperClass = wrapperClassName || className || '';
-  // Default to w-full h-full if no specific img class provided (maintains existing grid behavior)
   const finalImgClass = imgClassName || `w-full h-full transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`;
 
-  if (!src && status === 'error') {
+  // Allow empty src to be handled gracefully
+  if (!src && !fallbackSrc) {
     return (
       <div className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${finalWrapperClass}`}>
         <ImageOff className="w-1/3 h-1/3" />
@@ -105,10 +112,11 @@ export const SmartImage: React.FC<SmartImageProps> = ({
         </div>
       ) : (
         <img
+          key={`${currentSrc}-${retryCount}`}
           ref={imgRef}
           src={processedSrc}
           alt={alt}
-          draggable="false" // Disable inner drag so parent GridItem handles it cleanly
+          draggable="false"
           onLoad={handleLoad}
           onError={handleError}
           style={{ objectFit }}

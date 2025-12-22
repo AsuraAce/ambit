@@ -42,7 +42,7 @@ export default function App() {
     const {
         isLoaded, images, setImages, collections, setCollections,
         smartCollections, setSmartCollections, settings, setSettings,
-        setRecentSearches, updateCollectionThumbnails,
+        setRecentSearches, refreshCollectionThumbnails,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, loadMoreImages,
         privacyEnabled, setPrivacyEnabled
@@ -128,7 +128,7 @@ export default function App() {
     const fileOps = useFileOperations({
         images,
         setImages,
-        updateCollectionThumbnails,
+        refreshCollectionThumbnails,
         settings
     });
 
@@ -138,7 +138,7 @@ export default function App() {
         smartCollections,
         setSmartCollections,
         images,
-        updateCollectionThumbnails,
+        refreshCollectionThumbnails,
         setFilters,
         activeCollectionId: filters.collectionId
     });
@@ -443,7 +443,7 @@ export default function App() {
                             }
                             setContextMenu(null);
                         }}
-                        onUnsetThumbnail={() => { if (filters.collectionId) { setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c)); updateCollectionThumbnails(images); addToast("Thumbnail reset", "info"); } setContextMenu(null); }}
+                        onUnsetThumbnail={() => { if (filters.collectionId) { setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c)); refreshCollectionThumbnails(); addToast("Thumbnail reset", "info"); } setContextMenu(null); }}
                     />
                 )}
 
@@ -489,7 +489,7 @@ export default function App() {
                             onSetCollectionColor={colOps.setCollectionColor}
                             onResetCollectionThumbnail={(id) => {
                                 setCollections(prev => prev.map(c => c.id === id ? { ...c, customThumbnail: undefined } : c));
-                                updateCollectionThumbnails(images);
+                                refreshCollectionThumbnails();
                                 addToast("Thumbnail reset", "info");
                             }}
                             onPlayCollection={(id) => {

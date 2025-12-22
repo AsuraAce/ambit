@@ -13,14 +13,14 @@ import { appLocalDataDir, join } from '@tauri-apps/api/path';
 interface UseFileOperationsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    updateCollectionThumbnails: (images: AIImage[]) => void;
+    refreshCollectionThumbnails: () => void;
     settings: AppSettings;
 }
 
 export const useFileOperations = ({
     images,
     setImages,
-    updateCollectionThumbnails,
+    refreshCollectionThumbnails,
     settings
 }: UseFileOperationsProps) => {
     const { addToast } = useToast();
@@ -103,7 +103,7 @@ export const useFileOperations = ({
             setIsImporting(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
-    }, [images, setImages, updateCollectionThumbnails, addToast]);
+    }, [images, setImages, refreshCollectionThumbnails, addToast]);
 
     // Native Tauri Import
     const handleNativeImport = async () => {
@@ -201,7 +201,7 @@ export const useFileOperations = ({
 
         if (uniqueNewImages.length > 0) {
             setImages(prev => [...uniqueNewImages, ...prev]);
-            updateCollectionThumbnails([...uniqueNewImages, ...images]);
+            refreshCollectionThumbnails();
 
             let msg = `Imported ${uniqueNewImages.length} images.`;
             if (dupeCount > 0) msg += ` (Skipped ${dupeCount} duplicates)`;
