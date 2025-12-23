@@ -30,7 +30,7 @@ struct ImageRecord {
     #[serde(rename = "isMissing")]
     is_missing: bool,
     #[serde(rename = "userMasked")]
-    user_masked: bool,
+    user_masked: Option<bool>,
     #[serde(rename = "groupId")]
     group_id: Option<String>,
     #[serde(rename = "boardId")]

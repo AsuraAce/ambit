@@ -389,6 +389,7 @@ export const syncImages = async (
                     isPinned: isPinned,
                     isDeleted: false,
                     isMissing: false,
+                    userMasked: undefined,
                     groupId: undefined,
                     boardId: boardId,
                     metadata: metadata
@@ -554,8 +555,10 @@ export const scanForOrphans = async (
                     width: meta.width,
                     height: meta.height,
                     isFavorite: false,
+                    isPinned: false,
                     isDeleted: false,
                     isMissing: false,
+                    userMasked: undefined,
                     metadata: finalMeta
                 };
 
