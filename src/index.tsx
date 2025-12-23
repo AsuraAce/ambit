@@ -5,6 +5,8 @@ import './index.css';
 import { ToastProvider } from './contexts/ToastContext';
 import { LibraryProvider } from './contexts/LibraryContext';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -15,7 +17,9 @@ root.render(
   <React.StrictMode>
     <ToastProvider>
       <LibraryProvider>
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </LibraryProvider>
     </ToastProvider>
   </React.StrictMode>

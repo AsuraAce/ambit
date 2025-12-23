@@ -79,9 +79,16 @@ export default {
                 spring: 'cubic-bezier(0.16, 1, 0.3, 1)'
             },
             animation: {
-                'spring-enter': 'enter 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
+                'spring-enter': 'enter 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+                'shimmer': 'shimmer 2s linear infinite'
+            },
+            keyframes: {
+                shimmer: {
+                    '0%': { transform: 'translateX(-100%)' },
+                    '100%': { transform: 'translateX(100%)' }
+                }
             }
-        }
+        },
     },
     plugins: [require("tailwindcss-animate")],
 }

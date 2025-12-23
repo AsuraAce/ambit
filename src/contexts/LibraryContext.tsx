@@ -57,6 +57,7 @@ interface LibraryContextType {
   cleanLibrary: () => Promise<void>;
   isLiveWatching: boolean;
   setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
+  isFiltering: boolean;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -122,6 +123,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const isFetchingRef = useRef(false);
   const isLiveSyncingRef = useRef(false); // Guard for background live syncs
 
+  // Filtering State
+  const [isFiltering, setIsFiltering] = useState(false);
+
   // --- Helper: Refresh Global Data (Stats, Facets) ---
   const refreshMetadata = useCallback(async () => {
     try {
@@ -141,16 +145,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     const { getCollectionThumbnail } = await import('../services/db');
     let changed = false;
 
-    // We only need to check collections that are NOT boards (ids don't look like UUIDs usually, or we can check simple property?)
-    // Actually, simple check: If it has imageIds, check them. 
-    // Boards also have imageIds temporarily or during sync? 
-    // Best logic: Check ALL. If getCollectionThumbnail returns something different, update it.
-    // getCollectionThumbnail respects Pinned > Newest.
-
     // Process in parallel
     const updates = await Promise.all(currentCollections.map(async (col) => {
-      // Optimization: If it's a board (presumed if count is managed by DB hydration), maybe skip?
-      // But for consistency let's check all if imageIds are present.
       if (col.imageIds && col.imageIds.length > 0 && !col.customThumbnail) {
         const newThumb = await getCollectionThumbnail(col.imageIds);
         if (newThumb && newThumb !== col.thumbnail) {
@@ -199,14 +195,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         return col;
       });
 
-      // 2. Trigger Manual Update (Slow, Async) for non-boards or manual collections
-      // We do this by side-effect or chaining?
-      // Since we can't easily chain strictly after setState, we call the helper function
-      // with the *calculated* next state if we want immediate effect, 
-      // OR we just trigger it independently. 
-      // Let's trigger it independently using the current state ref or just passing nextCols.
       if (hasChange) {
-        // Fire and forget manual update for the NEW state
         refreshManualCollectionThumbs(nextCols);
         return nextCols;
       } else {
@@ -234,17 +223,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       return params;
     });
 
-    // Only reset pagination if the query actually changed
-    // We can check against the *current* state values before updating
-    // However, setActiveSqlParams updater runs after this render cycle potentially? 
-    // Actually, we need to know if we *are* updating. 
-    // Let's use a flag or check current state here.
-    // Ideally we'd move the setImages([]) into the effect that watches activeSqlWhere/Params, 
-    // but that effect also handles 'sortOption'. 
-
-    // A heuristic: If where clause changed OR params changed (checked above), we reset.
-    // Since we can't easily peek "next" state of params inside the setter, let's do the check explicitly here.
-
     const paramsChanged = activeSqlParams.length !== params.length || !activeSqlParams.every((v, i) => v === params[i]);
 
     if (where !== activeSqlWhere || paramsChanged) {
@@ -252,7 +230,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setHasMoreImages(true);
       setTotalImages(0);
     }
-  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]); // Keep deps, but logic inside is smarter
+  }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]);
 
   // Refs for stable callback access to prevent re-creation of handleWatcherEvent
   const activeSqlWhereRef = useRef(activeSqlWhere);
@@ -273,6 +251,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (isFetchingRef.current && isLoadMore) return;
 
     isFetchingRef.current = true;
+    if (!isLoadMore) setIsFiltering(true);
 
     // Capture "Request Context" to detect staleness later
     const requestingWhere = activeSqlWhereRef.current;
@@ -313,6 +292,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           setImages([]);
           setHasMoreImages(false);
           isFetchingRef.current = false;
+          setIsFiltering(false);
           return;
         }
       }
@@ -343,11 +323,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     } catch (e) {
       console.error("Failed to fetch images", e);
     } finally {
-      // Only release lock if we are still matching the context? 
-      // Actually, valid to just release. If we were stale, well, we are done.
-      // If a newer request took over, it might have its own lock or share this one. 
-      // Since 'isFetchingRef' is a simple boolean, clearing it is fine.
       isFetchingRef.current = false;
+      if (!isLoadMore) {
+        // Add a small artificial delay to prevent flickering on super fast loads?
+        // Or just set it false immediately.
+        setIsFiltering(false);
+      }
     }
   }, [activeSqlWhere, activeSqlParams, sortOption, images.length, refreshMetadata]);
 
@@ -766,7 +747,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setPrivacyEnabled,
       cleanLibrary,
       isLiveWatching,
-      setIsLiveWatching
+      setIsLiveWatching,
+      isFiltering
     }}>
       {children}
     </LibraryContext.Provider>

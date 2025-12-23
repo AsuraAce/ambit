@@ -18,6 +18,11 @@ import { AppSidebar } from './components/AppSidebar';
 import { AppHeader } from './components/AppHeader';
 import { TitleBar } from './components/TitleBar';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SelectionBar } from './components/SelectionBar';
+import { PinnedShelf } from './components/PinnedShelf';
+import { LoadingScreen } from './components/LoadingScreen';
+import { GridSkeleton } from './components/GridSkeleton';
+import { DragOverlay } from './components/DragOverlay';
 import { useToast } from './hooks/useToast';
 import { useLibraryContext } from './hooks/useLibraryContext';
 
@@ -31,12 +36,6 @@ import { useTheme } from './hooks/useTheme';
 import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 
-// UI
-import { DragOverlay } from './components/DragOverlay';
-import { SelectionBar } from './components/SelectionBar';
-import { PinnedShelf } from './components/PinnedShelf';
-import { LoadingScreen } from './components/LoadingScreen';
-
 export default function App() {
     const { addToast } = useToast();
 
@@ -47,7 +46,8 @@ export default function App() {
         setRecentSearches, refreshCollectionThumbnails,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, loadMoreImages,
-        privacyEnabled, setPrivacyEnabled
+        privacyEnabled, setPrivacyEnabled,
+        isFiltering
     } = useLibraryContext();
 
     // --- Theme Hook ---
@@ -632,55 +632,61 @@ export default function App() {
                                                 thumbnailSize={settings.thumbnailSize}
                                                 activeThumbnailUrl={activeCollection?.thumbnail}
                                             />
-                                            <VirtualGrid<AIImage>
-                                                ref={gridRef}
-                                                items={images.filter(i => !i.isPinned)}
-                                                layout={layoutMode}
-                                                minItemWidth={settings.thumbnailSize}
-                                                gap={16}
-                                                padding={24}
-                                                scrollContainerRef={scrollContainerRef}
-                                                onEndReached={loadMoreImages} // Infinite Scroll connection
-                                                getItemRatio={(img) => {
-                                                    const w = img.width || 1;
-                                                    const h = img.height || 1;
-                                                    return w / h;
-                                                }}
-                                                onLayoutChange={handleLayoutChange}
-                                                onRangeSelection={handleRangeSelection}
-                                                onBackgroundClick={clearSelection}
-                                                renderItem={(img, style, index, layout) => (
-                                                    <GridItem
-                                                        key={img.id}
-                                                        image={img}
-                                                        style={style}
-                                                        layoutPos={layout}
-                                                        index={index + (images.filter(i => i.isPinned).length)} // OFFSET INDEX for global navigation
-                                                        isSelected={selectedIds.has(img.id)}
-                                                        selectedIds={selectedIds}
-                                                        maskedKeywords={settings.maskedKeywords}
-                                                        privacyEnabled={privacyEnabled}
-                                                        setImages={setImages}
-                                                        onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
-                                                        onToggleSelection={handleSelectionToggle}
-                                                        onTogglePin={async (e, id) => {
-                                                            const img = images.find(i => i.id === id);
-                                                            if (img) {
-                                                                await handlePinImage(id, !img.isPinned);
-                                                            }
-                                                        }}
-                                                        onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                        isThumbnail={activeCollection ? activeCollection.thumbnail === img.thumbnailUrl : false}
-                                                    />
-                                                )}
-                                            />
+                                            {isFiltering ? (
+                                                <GridSkeleton />
+                                            ) : (
+                                                <VirtualGrid<AIImage>
+                                                    ref={gridRef}
+                                                    items={images.filter(i => !i.isPinned)}
+                                                    layout={layoutMode}
+                                                    minItemWidth={settings.thumbnailSize}
+                                                    gap={16}
+                                                    padding={24}
+                                                    scrollContainerRef={scrollContainerRef}
+                                                    onEndReached={loadMoreImages} // Infinite Scroll connection
+                                                    getItemRatio={(img) => {
+                                                        const w = img.width || 1;
+                                                        const h = img.height || 1;
+                                                        return w / h;
+                                                    }}
+                                                    onLayoutChange={handleLayoutChange}
+                                                    onRangeSelection={handleRangeSelection}
+                                                    onBackgroundClick={clearSelection}
+                                                    renderItem={(img, style, index, layout) => (
+                                                        <GridItem
+                                                            key={img.id}
+                                                            image={img}
+                                                            style={style}
+                                                            layoutPos={layout}
+                                                            index={index + (images.filter(i => i.isPinned).length)} // OFFSET INDEX for global navigation
+                                                            isSelected={selectedIds.has(img.id)}
+                                                            selectedIds={selectedIds}
+                                                            maskedKeywords={settings.maskedKeywords}
+                                                            privacyEnabled={privacyEnabled}
+                                                            setImages={setImages}
+                                                            onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
+                                                            onToggleSelection={handleSelectionToggle}
+                                                            onTogglePin={async (e, id) => {
+                                                                const img = images.find(i => i.id === id);
+                                                                if (img) {
+                                                                    await handlePinImage(id, !img.isPinned);
+                                                                }
+                                                            }}
+                                                            onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                                                            isThumbnail={activeCollection ? activeCollection.thumbnail === img.thumbnailUrl : false}
+                                                        />
+                                                    )}
+                                                />
+                                            )}
                                         </>
                                     )
                                 ) : (
-                                    <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                                        {/* TODO: Better Empty Status checking using totalImages instead of images.length */}
-                                        {images.length === 0 ? <><div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500"><Import className="w-12 h-12 text-sage-500 opacity-50" /></div><h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-300">Your Ambit is empty</h3><button onClick={() => fileOps.fileInputRef.current?.click()} className="px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl font-bold shadow-lg shadow-sage-500/20 transition-all hover:scale-105">Import Images</button></> : <><Search className="w-12 h-12 mb-4 opacity-20" /><p className="text-gray-500 dark:text-gray-400">No images match your current filters.</p><button onClick={clearAllFilters} className="mt-4 text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 text-sm underline">Clear all filters</button></>}
-                                    </div>
+                                    isFiltering ? <GridSkeleton /> : (
+                                        <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                                            {/* TODO: Better Empty Status checking using totalImages instead of images.length */}
+                                            {images.length === 0 ? <><div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500"><Import className="w-12 h-12 text-sage-500 opacity-50" /></div><h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-300">Your Ambit is empty</h3><button onClick={() => fileOps.fileInputRef.current?.click()} className="px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl font-bold shadow-lg shadow-sage-500/20 transition-all hover:scale-105">Import Images</button></> : <><Search className="w-12 h-12 mb-4 opacity-20" /><p className="text-gray-500 dark:text-gray-400">No images match your current filters.</p><button onClick={clearAllFilters} className="mt-4 text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 text-sm underline">Clear all filters</button></>}
+                                        </div>
+                                    )
                                 )}
                             </ErrorBoundary>
                         </div>
