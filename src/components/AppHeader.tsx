@@ -158,10 +158,38 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     {showMiddleSection && <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />}
 
                     <div className="relative">
-                        <button onClick={() => setShowSortMenu(!showSortMenu)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5"><ArrowUpDown className="w-3 h-3 text-gray-500" /><span className="text-xs font-medium text-gray-700 dark:text-gray-300">{sortOption === 'date_desc' ? 'Newest' : 'Sort'}</span></button>
+                        <button onClick={() => setShowSortMenu(!showSortMenu)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                            <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {{
+                                    'date_desc': 'Newest',
+                                    'date_asc': 'Oldest',
+                                    'name_asc': 'Name (A-Z)',
+                                    'name_desc': 'Name (Z-A)',
+                                    'size_desc': 'Largest (Size)',
+                                    'size_asc': 'Smallest (Size)'
+                                }[sortOption] || 'Sort'}
+                            </span>
+                        </button>
                         {showSortMenu && (
-                            <div className="absolute top-full right-0 mt-2 w-40 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden" onClick={() => setShowSortMenu(false)}>
-                                {[{ val: 'date_desc', label: 'Newest' }, { val: 'date_asc', label: 'Oldest' }, { val: 'name_asc', label: 'Name (A-Z)' }].map(opt => <button key={opt.val} onClick={() => setSortOption(opt.val as SortOption)} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-white/5 text-gray-700 dark:text-gray-300 flex justify-between">{opt.label} {sortOption === opt.val && <Check className="w-3 h-3" />}</button>)}
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" onClick={() => setShowSortMenu(false)}>
+                                {[
+                                    { val: 'date_desc', label: 'Newest' },
+                                    { val: 'date_asc', label: 'Oldest' },
+                                    { val: 'name_asc', label: 'Name (A-Z)' },
+                                    { val: 'name_desc', label: 'Name (Z-A)' },
+                                    { val: 'size_desc', label: 'Largest (Size)' },
+                                    { val: 'size_asc', label: 'Smallest (Size)' }
+                                ].map(opt => (
+                                    <button
+                                        key={opt.val}
+                                        onClick={() => setSortOption(opt.val as SortOption)}
+                                        className={`w-full text-left px-3 py-2 text-xs transition-colors flex justify-between items-center ${sortOption === opt.val ? 'bg-sage-50 text-sage-600 dark:bg-sage-900/40 dark:text-sage-300' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                                    >
+                                        {opt.label}
+                                        {sortOption === opt.val && <Check className="w-3 h-3" />}
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>

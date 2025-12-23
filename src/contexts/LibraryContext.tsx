@@ -272,8 +272,10 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       switch (sortOption) {
         case 'date_asc': sortField = 'timestamp'; sortOrder = 'ASC'; break;
-        case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break; // 'path' or 'filename'? DB col is path
+        case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break;
         case 'name_desc': sortField = 'path'; sortOrder = 'DESC'; break;
+        case 'size_desc': sortField = 'file_size'; sortOrder = 'DESC'; break;
+        case 'size_asc': sortField = 'file_size'; sortOrder = 'ASC'; break;
         case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
       }
 

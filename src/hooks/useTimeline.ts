@@ -87,6 +87,8 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
                 switch (sortOption) {
                     case 'name_asc': return a.filename.localeCompare(b.filename);
                     case 'name_desc': return b.filename.localeCompare(a.filename);
+                    case 'size_desc': return (b.fileSize || 0) - (a.fileSize || 0);
+                    case 'size_asc': return (a.fileSize || 0) - (b.fileSize || 0);
                     case 'date_asc': return a.timestamp - b.timestamp; // Oldest first within the group
                     case 'date_desc':
                     default: return b.timestamp - a.timestamp; // Newest first within the group

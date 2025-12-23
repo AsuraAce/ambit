@@ -819,6 +819,7 @@ export default function App() {
                             onUpdateModel={handleUpdateModel}
                             onUpdateTool={handleUpdateTool}
                             onToggleFavorite={(id) => toggleFavorite(id)}
+                            onTogglePin={handlePinImage}
                             onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); openModal('settings'); } else { openModal('recovery'); } }}
                             onRevertMetadata={(id) => { setImages(p => p.map(i => i.id === id && i.originalMetadata ? { ...i, metadata: i.originalMetadata, originalMetadata: undefined } : i)); addToast('Reverted', 'success'); }}
                             onOpenSettings={() => { setInitialSettingsTab('experiments'); openModal('settings'); }}

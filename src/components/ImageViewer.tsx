@@ -24,6 +24,7 @@ interface ImageViewerProps {
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (imageId: string, tool: GeneratorTool) => void;
     onToggleFavorite: (id: string) => void;
+    onTogglePin?: (id: string, isPinned: boolean) => void;
     onRecoverMetadata?: () => void;
     onRevertMetadata?: (imageId: string) => void;
     onOpenSettings: () => void;
@@ -78,6 +79,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onUpdateModel,
     onUpdateTool,
     onToggleFavorite,
+    onTogglePin,
     onRecoverMetadata,
     onRevertMetadata,
     onOpenSettings,
@@ -145,17 +147,30 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (!isOpen) return;
+            // Don't trigger shortcuts if user is typing in a field
             if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+
+            const key = e.key.toLowerCase();
+
+            // Navigation
+            if (e.key === 'ArrowRight') onNext();
+            if (e.key === 'ArrowLeft') onPrev();
+
+            // Actions
+            if (key === 'f') onToggleFavorite(displayImage.id);
+            if (key === 'p') onTogglePin?.(displayImage.id, !displayImage.isPinned);
+            if (key === 'i') onToggleSidebar?.();
 
             if (e.key === 'Escape') {
                 if (ai.modalOpen) ai.closeModal();
                 else if (isZenMode) setIsZenMode(false);
+                else onClose();
             }
-            if (e.key === 'z') setIsZenMode(p => !p);
+            if (key === 'z') setIsZenMode(p => !p);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, isZenMode]);
+    }, [isOpen, ai.modalOpen, isZenMode, onNext, onPrev, onToggleFavorite, onTogglePin, onToggleSidebar, displayImage, onClose]);
 
     if (!isOpen) return null;
 

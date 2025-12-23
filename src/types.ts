@@ -117,7 +117,7 @@ export interface SmartCollection {
   icon?: string;
 }
 
-export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc';
+export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';
 
 export interface MonitoredFolder {
   id: string;
