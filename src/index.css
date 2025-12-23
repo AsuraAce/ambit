@@ -98,6 +98,17 @@
     overflow-y: hidden;
   }
 
+  /* Responsive Hiding Utility */
+  .hide-on-narrow {
+    display: block;
+  }
+
+  @container (max-width: 120px) {
+    .hide-on-narrow {
+      display: none;
+    }
+  }
+
   [draggable="true"],
   [data-draggable="true"] {
     -webkit-user-drag: element;

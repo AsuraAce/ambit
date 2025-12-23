@@ -88,12 +88,14 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {/* Content Masking Overlay */}
       {shouldBlur && !isMissing && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm animate-in fade-in duration-300">
-          <EyeOff className="w-8 h-8 text-sage-500 dark:text-sage-400 mb-2 drop-shadow-md" />
-          <span className="text-xs font-bold text-sage-600 dark:text-sage-200 uppercase tracking-wider drop-shadow-md">Hidden Content</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm animate-in fade-in duration-300 p-2 text-center overflow-hidden [container-type:size]">
+          <EyeOff className="w-8 h-8 text-sage-500 dark:text-sage-400 mb-2 drop-shadow-md shrink-0" />
+          <span className="text-[10px] sm:text-xs font-bold text-sage-600 dark:text-sage-200 uppercase tracking-widest drop-shadow-md whitespace-nowrap px-1 w-full truncate hide-on-narrow">
+            Hidden Content
+          </span>
           <button
             onClick={(e) => { e.stopPropagation(); setIsRevealed(true); }}
-            className="mt-2 px-4 py-1.5 bg-black/50 hover:bg-black/80 text-white text-xs font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer"
+            className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
           >
             Reveal
           </button>
