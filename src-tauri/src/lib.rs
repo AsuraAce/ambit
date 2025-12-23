@@ -164,6 +164,19 @@ async fn scan_images_bulk(
 
     Ok(results)
 }
+ 
+#[tauri::command]
+async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
+    let sizes: Vec<u64> = paths
+        .par_iter()
+        .map(|path| {
+            std::fs::metadata(path)
+                .map(|m| m.len())
+                .unwrap_or(0)
+        })
+        .collect();
+    Ok(sizes)
+}
 
 #[tauri::command]
 async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
@@ -913,7 +926,8 @@ pub fn run() {
             save_images_batch,
             refresh_boards_native,
             scan_directory_recursive,
-            start_live_link_watcher
+            start_live_link_watcher,
+            get_file_sizes_bulk
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

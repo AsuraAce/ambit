@@ -326,9 +326,28 @@ export const syncImages = async (
         const rows = await (invokeDb as any).select(query);
         if (rows.length === 0) break;
 
+        // Fetch file sizes in bulk for this batch
+        const batchPaths = rows.map((row: any) => {
+            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
+            return rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
+        });
+
+        let sizes: number[] = [];
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            sizes = await invoke<number[]>('get_file_sizes_bulk', { paths: batchPaths });
+        } catch (e) {
+            console.warn('[InvokeAI Sync] Failed to fetch file sizes', e);
+            sizes = new Array(rows.length).fill(0);
+        }
+
         const currentBatch: any[] = [];
 
-        for (const row of rows) {
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const fullPath = batchPaths[i];
+            const fileSize = sizes[i] || 0;
+
             if (signal?.aborted) throw new Error('Aborted');
 
             // Force UTC parsing as InvokeAI SQLite uses UTC
@@ -339,9 +358,6 @@ export const syncImages = async (
             if (timestamp > maxTimestampNum) {
                 maxTimestampNum = timestamp;
             }
-
-            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
-            const fullPath = rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
 
             try {
                 const metadata = mapInvokeMetadata(row, metaCol);
@@ -381,7 +397,7 @@ export const syncImages = async (
                     url: convertFileSrc(fullPath),
                     thumbnailUrl: thumbnailUrl,
                     filename: row.image_name,
-                    fileSize: 0,
+                    fileSize: fileSize,
                     timestamp: timestamp || Date.now(),
                     width: row.width || 0,
                     height: row.height || 0,

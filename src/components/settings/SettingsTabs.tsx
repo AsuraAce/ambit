@@ -731,7 +731,8 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
           message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE InvokeAI library from the beginning. This process may take some time.`}
           confirmLabel="Reset Cursor"
           onConfirm={() => {
-            setSettings(p => ({ ...p, lastSyncedAt: undefined }));
+            console.log('[Settings] Resetting lastSyncedAt to NULL');
+            setSettings(p => ({ ...p, lastSyncedAt: null }));
             closeConfirm();
           }}
           onCancel={closeConfirm}

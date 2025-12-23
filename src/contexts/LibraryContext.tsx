@@ -464,6 +464,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         scanTimestamp = Date.now() - (120 * 1000); // Look back 2 minutes
       }
 
+      console.log('[LibraryContext] Starting Sync. Settings lastSyncedAt:', settingsRef.current.lastSyncedAt);
+
+      // Determine correct timestamp: Explicit option > Settings Ref > 0 default
+      const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
+
       // Phase 1: DB Sync
       const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
         settingsRef.current.invokeAiPath!,
@@ -472,9 +477,9 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         {
           syncFavorites: true,
           syncBoards: settingsRef.current.syncBoardsToCollections,
-          afterTimestamp: (options as any).fullReset ? 0 : settings.lastSyncedAt,
-          importIntermediates: settings.importIntermediates,
-          starredAs: settings.starredAs
+          afterTimestamp: effectiveTimestamp,
+          importIntermediates: settingsRef.current.importIntermediates,
+          starredAs: settingsRef.current.starredAs
         }
       );
 
@@ -716,7 +721,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setImages([]);
       setCollections([]); // Clear Collections from State & Persistence
       setTotalImages(0);
-      setSettings(prev => ({ ...prev, lastSyncedAt: undefined }));
+      setSettings(prev => ({ ...prev, lastSyncedAt: null }));
       addToast('Library and Collections cleared successfully.', 'success');
     } catch (e) {
       addToast('Failed to clear library.', 'error');
