@@ -319,6 +319,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         images={activeImages.filter(i => !i.groupId)}
                         onResolve={onResolveDuplicate}
                         onStack={onGroupImages}
+                        maskedKeywords={maskedKeywords}
+                        privacyEnabled={privacyEnabled}
                     />
                 )}
 
