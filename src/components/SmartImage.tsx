@@ -116,8 +116,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   return (
     <div className={`relative overflow-hidden ${finalWrapperClass}`}>
       {status === 'loading' && (
-        <div className="absolute inset-0 bg-gray-200 dark:bg-white/5 animate-pulse flex items-center justify-center">
-          <ImageIcon className="w-8 h-8 text-gray-400 dark:text-gray-600 opacity-50" />
+        <div className="absolute inset-0 bg-gray-200 dark:bg-white/5 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
         </div>
       )}
 

@@ -633,7 +633,7 @@ export default function App() {
                                                 activeThumbnailUrl={activeCollection?.thumbnail}
                                             />
                                             {isFiltering ? (
-                                                <GridSkeleton />
+                                                <GridSkeleton layout={layoutMode} />
                                             ) : (
                                                 <VirtualGrid<AIImage>
                                                     ref={gridRef}
@@ -681,7 +681,7 @@ export default function App() {
                                         </>
                                     )
                                 ) : (
-                                    isFiltering ? <GridSkeleton /> : (
+                                    isFiltering ? <GridSkeleton layout={layoutMode} /> : (
                                         <div className="h-full flex flex-col items-center justify-center text-gray-500">
                                             {/* TODO: Better Empty Status checking using totalImages instead of images.length */}
                                             {/* Logic: If we have NO active filters, it's an empty library. 
