@@ -296,15 +296,11 @@ export default function App() {
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
-    const handleBulkMask = (targetId?: string) => {
+    const handleBulkMask = async (targetId?: string) => {
         let idsToToggle = new Set<string>();
 
         if (targetId) {
-            if (selectedIds.has(targetId)) {
-                idsToToggle = new Set(selectedIds);
-            } else {
-                idsToToggle = new Set([targetId]);
-            }
+            idsToToggle = new Set([targetId]);
         } else {
             if (selectedIds.size > 0) idsToToggle = new Set(selectedIds);
             else if (lastSelectedId) idsToToggle.add(lastSelectedId);
@@ -312,12 +308,35 @@ export default function App() {
 
         if (idsToToggle.size === 0) return;
 
+        // 1. Optimistic Update (Immediate UI Feedback)
         setImages(prev => prev.map(img => {
             if (idsToToggle.has(img.id)) {
                 return { ...img, userMasked: !img.userMasked };
             }
             return img;
         }));
+
+        // 2. Persist to DB
+        const db = await import('./services/db');
+        const currentImagesMap = new Map(images.map(i => [i.id, i])); // inefficient for large sets, but safe for correct state
+
+        // We need to know the *new* state. Since we just flipped it in setImages, 
+        // we can look up the *current* state and flip it for the DB call.
+        // Or better, just check what we are aiming for. 
+        // Note: setImages is async, so `images` here is still stale.
+        // Let's rely on the fact we know what we want to do.
+
+        // Actually, since we might toggle a mix (some masked, some not), we should toggle each individually relative to their previous state.
+        const promises: Promise<void>[] = [];
+        idsToToggle.forEach(id => {
+            const img = images.find(i => i.id === id);
+            if (img) {
+                promises.push(db.toggleImageMask(id, !img.userMasked));
+            }
+        });
+
+        await Promise.all(promises);
+
         addToast(`${idsToToggle.size} images mask toggled`, 'info');
     };
 
@@ -615,6 +634,8 @@ export default function App() {
                                         onGroupImages={handleGroupImages}
                                         onViewImage={(id) => setViewingImageId(id)}
                                         onRegenerateThumbnails={fileOps.regenerateThumbnails}
+                                        maskedKeywords={settings.maskedKeywords}
+                                        privacyEnabled={privacyEnabled}
                                     />
                                 ) : images.length > 0 ? (
                                     viewMode === 'timeline' ? (
@@ -623,6 +644,8 @@ export default function App() {
                                             selectedIds={selectedIds}
                                             thumbnailSize={settings.thumbnailSize}
                                             sortOption={sortOption}
+                                            maskedKeywords={settings.maskedKeywords}
+                                            privacyEnabled={privacyEnabled}
                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}

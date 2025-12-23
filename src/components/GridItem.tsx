@@ -6,6 +6,7 @@ import { motion, MotionProps } from 'framer-motion';
 import { AIImage } from '../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
+import { isImageMasked } from '../utils/maskingUtils';
 
 interface GridItemProps {
     image: AIImage;
@@ -28,9 +29,10 @@ interface GridItemProps {
 export const GridItem: React.FC<GridItemProps> = memo(({
     image,
     style,
+    layoutPos,
     index,
     isSelected,
-    selectedIds,
+    selectedIds, // Passed for multi-select logic if needed
     maskedKeywords,
     privacyEnabled,
     setImages,
@@ -39,19 +41,11 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     onTogglePin,
     onToggleFavorite,
     onContextMenu,
-    isThumbnail,
-    layoutPos
+    isThumbnail = false
 }) => {
-    // Determine if this specific image should be masked
-    // 1. Matches keyword?
-    const matchesKeyword = maskedKeywords.length > 0 &&
-        maskedKeywords.some(kw => String(image.metadata.positivePrompt || '').toLowerCase().includes(kw.toLowerCase()));
 
-    // 2. Is manually masked?
-    const isManuallyMasked = !!image.userMasked;
-
-    // 3. Apply mask if Privacy is enabled AND (Matched Keyword OR Manual Mask)
-    const isMasked = privacyEnabled && (matchesKeyword || isManuallyMasked);
+    // Unified Masking Logic
+    const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
 
     // Error Handler: If image fails to load, mark it as missing in global state
     const handleImageError = () => {

@@ -6,6 +6,7 @@ import { AIImage, SortOption } from '../types';
 import { ImageCard } from './ImageCard';
 import { Clock } from 'lucide-react';
 import { useTimeline } from '../hooks/useTimeline';
+import { isImageMasked } from '../utils/maskingUtils';
 
 interface TimelineViewProps {
     images: AIImage[];
@@ -16,7 +17,17 @@ interface TimelineViewProps {
     onSelectionToggle: (e: React.MouseEvent, id: string) => void;
     onToggleFavorite: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
+
+    // Privacy Props
+    maskedKeywords: string[];
+    privacyEnabled: boolean;
 }
+// ... (keep chunk helper if inside range, wait, my target content starts at imports)
+
+// Actually I will target the imports and interface specifically to be safe, then a second chunk for usage? 
+// No I can do it in two calls or one big replace if I'm careful.
+// Let's do imports and interface first.
+
 
 // Helper to chunk arrays
 const chunk = <T,>(arr: T[], size: number): T[][] => {
@@ -33,7 +44,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onImageClick,
     onSelectionToggle,
     onToggleFavorite,
-    onContextMenu
+    onContextMenu,
+    maskedKeywords,
+    privacyEnabled
 }) => {
     const { groups } = useTimeline(images, sortOption);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -275,6 +288,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                             <ImageCard
                                                 image={subItem.image}
                                                 isSelected={selectedIds.has(subItem.image.id)}
+                                                isMasked={isImageMasked(subItem.image, privacyEnabled, maskedKeywords)}
                                                 onClick={(e) => onImageClick(e, subItem.image.id, subItem.globalIndex)}
                                                 onToggleSelection={(e) => onSelectionToggle(e, subItem.image.id)}
                                                 onToggleFavorite={(e) => onToggleFavorite(e, subItem.image.id)}

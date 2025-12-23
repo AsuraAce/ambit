@@ -4,8 +4,9 @@ import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
 import { useStacking } from '../hooks/useStacking';
-import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag } from 'lucide-react';
+import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff } from 'lucide-react';
 import { VirtualGrid } from './VirtualGrid';
+import { isImageMasked } from '../utils/maskingUtils';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -16,6 +17,10 @@ interface MaintenanceViewProps {
     onGroupImages?: (ids: string[]) => void;
     onViewImage?: (id: string) => void;
     onRegenerateThumbnails?: () => void;
+
+    // Privacy
+    maskedKeywords: string[];
+    privacyEnabled: boolean;
 }
 
 export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
@@ -26,7 +31,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onEmptyTrash,
     onGroupImages,
     onViewImage,
-    onRegenerateThumbnails
+    onRegenerateThumbnails,
+    maskedKeywords,
+    privacyEnabled
 }) => {
     // 1. Memoize basic filters (Fast O(N))
     const deletedImages = useMemo(() => images.filter(img => img.isDeleted), [images]);
@@ -101,6 +108,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const renderTrashItem = useCallback((img: AIImage, style: React.CSSProperties) => {
         const isSelected = selectedTrashIds.has(img.id);
+        const isMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
+
         return (
             <div key={img.id} style={style} className="p-1">
                 <div
@@ -111,24 +120,31 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         <img
                             src={img.thumbnailUrl}
                             loading="lazy"
-                            className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-70 grayscale'}`}
+                            className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-70 grayscale'} ${isMasked ? 'blur-xl scale-110' : ''}`}
                             alt=""
                         />
+                        {isMasked && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10 pointer-events-none">
+                                <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md" />
+                            </div>
+                        )}
                         {isSelected && (
-                            <div className="absolute top-2 left-2 w-5 h-5 bg-sage-500 rounded-full flex items-center justify-center shadow-md z-10">
+                            <div className="absolute top-2 left-2 w-5 h-5 bg-sage-500 rounded-full flex items-center justify-center shadow-md z-20">
                                 <CheckSquare className="w-3 h-3 text-white" />
                             </div>
                         )}
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[10px] text-white truncate">
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[10px] text-white truncate z-20">
                             {img.filename}
                         </div>
                     </div>
                 </div>
             </div>
         );
-    }, [selectedTrashIds, toggleTrashSelection]);
+    }, [selectedTrashIds, toggleTrashSelection, privacyEnabled, maskedKeywords]);
 
     const renderUntaggedItem = useCallback((img: AIImage, style: React.CSSProperties) => {
+        const isMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
+
         return (
             <div key={img.id} style={style} className="p-1">
                 <div
@@ -136,20 +152,29 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     className="h-full w-full relative group rounded-xl overflow-hidden border-2 border-transparent hover:border-orange-300 dark:hover:border-orange-500/50 cursor-pointer bg-gray-100 dark:bg-slate-800"
                 >
                     <div className="relative w-full h-full">
-                        <img src={img.thumbnailUrl} className="w-full h-full object-cover" alt="" />
-                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <img
+                            src={img.thumbnailUrl}
+                            className={`w-full h-full object-cover ${isMasked ? 'blur-xl scale-110' : ''}`}
+                            alt=""
+                        />
+                        {isMasked && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10 pointer-events-none">
+                                <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md" />
+                            </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center z-20">
                             <span className="opacity-0 group-hover:opacity-100 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
                                 <Wand2 className="w-3 h-3" /> Recover
                             </span>
                         </div>
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-slate-900 text-[10px] text-gray-500 truncate border-t border-gray-100 dark:border-white/5">
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-slate-900 text-[10px] text-gray-500 truncate border-t border-gray-100 dark:border-white/5 z-20">
                             {img.filename}
                         </div>
                     </div>
                 </div>
             </div>
         );
-    }, [onViewImage]);
+    }, [onViewImage, privacyEnabled, maskedKeywords]);
 
     const renderMissingItem = useCallback((img: AIImage, style: React.CSSProperties) => {
         return (
