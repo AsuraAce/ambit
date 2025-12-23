@@ -229,6 +229,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setImages([]);
       setHasMoreImages(true);
       setTotalImages(0);
+      setIsFiltering(true);
     }
   }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]);
 
