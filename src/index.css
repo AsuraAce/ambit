@@ -67,6 +67,12 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  .dark body {
+    background-image: radial-gradient(circle at 50% 0%, hsl(240 5% 20%) 0%, transparent 60%);
+    background-color: hsl(var(--background));
+    background-attachment: fixed;
+  }
 }
 
 /* Custom Scrollbar */
