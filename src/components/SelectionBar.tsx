@@ -44,27 +44,52 @@ export function SelectionBar({
     if (selectedIds.size === 0) return null;
 
     // Logic for Tri-State Mask Cycling in Bulk:
-    // Determine the "base" state from the first selected item to decide the next step in the cycle.
-    // Cycle: Auto (null) -> Masked (true) -> Unmasked (false) -> Auto (null)
+    // Determine the "base" state to decide the next step in the cycle.
     const selectedImages = filteredImages.filter(img => selectedIds.has(img.id));
-    const firstImg = selectedImages[0];
-    const currentUserMasked = firstImg?.userMasked;
+
+    const allUserMasked = selectedImages.every(img => img.userMasked === true);
+    const allUserUnmasked = selectedImages.every(img => img.userMasked === false);
+    const allAuto = selectedImages.every(img => img.userMasked === undefined || img.userMasked === null);
+
+    // Check if ALL are already masked (either by override or by keywords)
+    const allCurrentlyMasked = selectedImages.every(img => isImageMasked(img, privacyEnabled, maskedKeywords));
 
     let nextState: boolean | null = null;
-    let nextLabel = "Reset to Auto Mask";
+    let nextLabel = "Reset All to Auto Mask";
     let nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
     let buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10";
 
-    if (currentUserMasked === undefined || currentUserMasked === null) {
-        nextState = true;
-        nextLabel = "Mask All Content";
-        nextIcon = <EyeOff className="w-5 h-5 text-amethyst-400" />;
-        buttonClass = "text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20";
-    } else if (currentUserMasked === true) {
+    if (allAuto) {
+        // From Auto -> Mask (Skip if already masked by keyword)
+        if (allCurrentlyMasked) {
+            nextState = false;
+            nextLabel = "Force Unmask All Content";
+            nextIcon = <Eye className="w-5 h-5 text-green-400" />;
+            buttonClass = "text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20";
+        } else {
+            nextState = true;
+            nextLabel = "Force Mask All Content";
+            nextIcon = <EyeOff className="w-5 h-5 text-amethyst-400" />;
+            buttonClass = "text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20";
+        }
+    } else if (allUserMasked) {
+        // From Masked -> Unmasked
         nextState = false;
         nextLabel = "Unmask All Content";
         nextIcon = <Eye className="w-5 h-5 text-green-400" />;
         buttonClass = "text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20";
+    } else if (allUserUnmasked) {
+        // From Unmasked -> Auto
+        nextState = null;
+        nextLabel = "Reset All to Auto Mask";
+        nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
+        buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10";
+    } else {
+        // Mixed State -> Consolidate to Auto first
+        nextState = null;
+        nextLabel = "Consolidate: Reset All to Auto Mask";
+        nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
+        buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-all border border-dashed border-gray-300 dark:border-white/20";
     }
 
     return (
