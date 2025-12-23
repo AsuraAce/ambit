@@ -117,26 +117,41 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             currentY += headerHeight;
 
-            // 2. Rows
-            const rows = chunk(group.images, cols);
-            rows.forEach(rowImages => {
-                const rowItems = rowImages.map((img, colIndex) => ({
-                    image: img,
-                    x: padding + colIndex * (itemWidth + gap),
-                    width: itemWidth,
-                    height: rowHeight,
-                    globalIndex: globalImageIndex++
-                }));
-
+            if (group.id === 'pinned') {
+                // SPECIAL CASE: Horizontal Shelf for Pinned Items
+                const shelfHeight = thumbnailSize * 0.8; // Slightly smaller height for shelf
                 items.push({
-                    type: 'row',
-                    items: rowItems,
+                    type: 'shelf',
+                    id: 'pinned-shelf',
+                    images: group.images,
                     y: currentY,
-                    height: rowHeight
+                    height: shelfHeight,
+                    globalStartIndex: globalImageIndex
                 });
+                globalImageIndex += group.images.length;
+                currentY += shelfHeight + gap;
+            } else {
+                // 2. Rows (Default Grid)
+                const rows = chunk(group.images, cols);
+                rows.forEach(rowImages => {
+                    const rowItems = rowImages.map((img, colIndex) => ({
+                        image: img,
+                        x: padding + colIndex * (itemWidth + gap),
+                        width: itemWidth,
+                        height: rowHeight,
+                        globalIndex: globalImageIndex++
+                    }));
 
-                currentY += rowHeight + gap;
-            });
+                    items.push({
+                        type: 'row',
+                        items: rowItems,
+                        y: currentY,
+                        height: rowHeight
+                    });
+
+                    currentY += rowHeight + gap;
+                });
+            }
 
             currentY += 24;
         });
@@ -375,6 +390,52 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                         <div className="text-[10px] text-gray-400 font-medium">{item.count} images</div>
                                     </div>
                                     <div className="flex-1 h-px bg-gray-200 dark:bg-white/5 ml-4" />
+                                </div>
+                            );
+                        } else if (item.type === 'shelf') {
+                            return (
+                                <div
+                                    key={item.id}
+                                    className="absolute w-full px-6 flex gap-4 overflow-x-auto custom-scrollbar no-scrollbar-y pb-2 group/shelf"
+                                    style={{ top: item.y, height: item.height }}
+                                >
+                                    {item.images.map((img: AIImage, idx: number) => {
+                                        const globalIndex = item.globalStartIndex + idx;
+                                        return (
+                                            <div
+                                                key={img.id}
+                                                className="flex-shrink-0"
+                                                style={{
+                                                    width: item.height,
+                                                    height: item.height
+                                                }}
+                                            >
+                                                <ImageCard
+                                                    image={img}
+                                                    isSelected={selectedIds.has(img.id)}
+                                                    isMasked={isImageMasked(img, privacyEnabled, maskedKeywords)}
+                                                    onDragStart={(e) => {
+                                                        const idsToDrag = selectedIds.has(img.id) ? Array.from(selectedIds) : [img.id];
+                                                        e.dataTransfer.effectAllowed = 'copyMove';
+                                                        e.dataTransfer.setData('text/plain', JSON.stringify(idsToDrag));
+                                                        e.dataTransfer.setData('application/json', JSON.stringify(idsToDrag));
+
+                                                        const dragImg = (e.currentTarget as HTMLElement).querySelector('img');
+                                                        if (dragImg && e.dataTransfer.setDragImage) {
+                                                            e.dataTransfer.setDragImage(dragImg, 20, 20);
+                                                        }
+                                                    }}
+                                                    onClick={(e) => onImageClick(e, img.id, globalIndex)}
+                                                    onToggleSelection={(e) => onSelectionToggle(e, img.id)}
+                                                    onToggleFavorite={(e) => onToggleFavorite(e, img.id)}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        onContextMenu(e, img.id);
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             );
                         } else {
