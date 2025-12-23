@@ -17,6 +17,7 @@
     "dialog:default",
     "sql:default",
     "sql:allow-execute",
+    "window-state:default",
     {
       "identifier": "fs:allow-read-dir",
       "allow": [

@@ -102,7 +102,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   }, [currentSrc]);
 
   const finalWrapperClass = wrapperClassName || className || '';
-  const finalImgClass = imgClassName || `w-full h-full transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`;
+  const finalImgClass = imgClassName || `w-full h-full transition-all duration-700 ease-out transform ${status === 'loaded' ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`;
 
   // Allow empty src to be handled gracefully
   if (!src && !fallbackSrc) {

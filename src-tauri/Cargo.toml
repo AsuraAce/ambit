@@ -32,3 +32,6 @@ flate2 = "1.1.5"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 rusqlite = "0.31"
 notify = { version = "8.2.0", features = ["serde"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-window-state = "2"

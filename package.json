@@ -15,6 +15,7 @@
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-sql": "^2.3.1",
+    "@tauri-apps/plugin-window-state": "^2.4.1",
     "clsx": "^2.1.0",
     "framer-motion": "^12.23.26",
     "jszip": "^3.10.1",
