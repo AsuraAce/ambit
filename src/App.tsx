@@ -35,6 +35,7 @@ import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { DragOverlay } from './components/DragOverlay';
 import { SelectionBar } from './components/SelectionBar';
 import { PinnedShelf } from './components/PinnedShelf';
+import { LoadingScreen } from './components/LoadingScreen';
 
 export default function App() {
     const { addToast } = useToast();
@@ -394,7 +395,7 @@ export default function App() {
         : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
 
     // --- Render ---
-    if (!isLoaded) return <div className="h-screen w-full bg-gray-50 dark:bg-slate-950 flex items-center justify-center text-sage-500 font-bold">Initializing Ambit...</div>;
+    if (!isLoaded) return <LoadingScreen />;
 
     return (
         <HashRouter>
