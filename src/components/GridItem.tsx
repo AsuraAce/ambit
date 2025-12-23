@@ -19,6 +19,7 @@ interface GridItemProps {
     onClick: (e: React.MouseEvent, id: string, index: number) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
     onTogglePin: (e: React.MouseEvent, id: string) => void;
+    onToggleFavorite: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     isThumbnail?: boolean;
     layoutPos?: { x: number, y: number, width: number, height: number };
@@ -36,6 +37,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     onClick,
     onToggleSelection,
     onTogglePin,
+    onToggleFavorite,
     onContextMenu,
     isThumbnail,
     layoutPos
@@ -122,7 +124,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                     onToggleSelection={(e) => onToggleSelection(e, image.id)}
                     onToggleFavorite={(e) => {
                         e.stopPropagation();
-                        setImages(p => p.map(i => i.id === image.id ? { ...i, isFavorite: !i.isFavorite } : i));
+                        onToggleFavorite(e, image.id);
                     }}
                     onTogglePin={(e) => {
                         e.stopPropagation();

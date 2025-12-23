@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useEffect, useRef } from 'react';
-import { Copy, Trash2, FolderPlus, Folder, Pin, Wand2, Image as ImageIcon, ImageOff, EyeOff, FolderMinus } from 'lucide-react';
+import { Copy, Trash2, FolderPlus, Folder, Pin, Wand2, Image as ImageIcon, ImageOff, EyeOff, FolderMinus, Heart } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -19,6 +19,8 @@ interface ContextMenuProps {
   onSetThumbnail?: () => void;
   onUnsetThumbnail?: () => void;
   onToggleMask?: () => void;
+  onToggleFavorite?: () => void;
+  isFavorite?: boolean;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -37,7 +39,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onRecoverMetadata,
   onSetThumbnail,
   onUnsetThumbnail,
-  onToggleMask
+  onToggleMask,
+  onToggleFavorite,
+  isFavorite
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -59,45 +63,46 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   };
 
   return (
-    <div 
+    <div
       ref={menuRef}
       style={style}
       className="fixed z-50 w-64 bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl shadow-black overflow-hidden animate-in fade-in duration-100 py-1"
     >
       <MenuItem icon={<Copy className="w-4 h-4" />} label="Copy Prompt" onClick={onCopyPrompt} />
+      <MenuItem icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : ''}`} />} label={isFavorite ? "Unfavorite" : "Favorite"} onClick={() => onToggleFavorite && onToggleFavorite()} />
       <MenuItem icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />} label={isPinned ? "Unpin Image" : "Pin to Top"} onClick={onTogglePin} />
       <MenuItem icon={<FolderPlus className="w-4 h-4" />} label="Add to Collection..." onClick={onAddToCollection} />
-      
+
       {activeCollectionName && onRemoveFromCollection && (
-         <MenuItem 
-            icon={<FolderMinus className="w-4 h-4 text-red-500" />} 
-            label={`Remove from ${activeCollectionName}`} 
-            onClick={onRemoveFromCollection} 
-            className="hover:!bg-red-500/10 hover:!text-red-200"
-         />
+        <MenuItem
+          icon={<FolderMinus className="w-4 h-4 text-red-500" />}
+          label={`Remove from ${activeCollectionName}`}
+          onClick={onRemoveFromCollection}
+          className="hover:!bg-red-500/10 hover:!text-red-200"
+        />
       )}
-      
+
       {onToggleMask && (
-          <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Toggle Content Mask" onClick={onToggleMask} />
+        <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Toggle Content Mask" onClick={onToggleMask} />
       )}
 
       {onSetThumbnail && (
-          <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Thumbnail" onClick={onSetThumbnail} className="text-sage-200 hover:text-white" />
+        <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Thumbnail" onClick={onSetThumbnail} className="text-sage-200 hover:text-white" />
       )}
-      
+
       {onUnsetThumbnail && (
-          <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Thumbnail" onClick={onUnsetThumbnail} className="text-gray-400 hover:text-white" />
+        <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Thumbnail" onClick={onUnsetThumbnail} className="text-gray-400 hover:text-white" />
       )}
 
       {enableAI && onRecoverMetadata && (
         <>
-            <div className="h-px bg-white/10 my-1" />
-            <MenuItem 
-                icon={<Wand2 className="w-4 h-4 text-amethyst-400" />} 
-                label="Recover Metadata (AI)" 
-                onClick={onRecoverMetadata} 
-                className="text-amethyst-200 hover:text-white hover:bg-amethyst-900/30"
-            />
+          <div className="h-px bg-white/10 my-1" />
+          <MenuItem
+            icon={<Wand2 className="w-4 h-4 text-amethyst-400" />}
+            label="Recover Metadata (AI)"
+            onClick={onRecoverMetadata}
+            className="text-amethyst-200 hover:text-white hover:bg-amethyst-900/30"
+          />
         </>
       )}
 
@@ -110,10 +115,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 };
 
 const MenuItem = ({ icon, label, onClick, className = "" }: { icon: React.ReactNode, label: string, onClick: () => void, className?: string }) => (
-  <button 
+  <button
     onClick={(e) => {
-        e.stopPropagation();
-        onClick();
+      e.stopPropagation();
+      onClick();
     }}
     className={`w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors ${className}`}
   >

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Heart, CheckCircle, GripHorizontal, Pin, EyeOff, Unlink, Image as ImageIcon } from 'lucide-react';
+import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon } from 'lucide-react';
 import { AIImage } from '../types';
 import { SmartImage } from './SmartImage';
 
@@ -100,10 +100,25 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
       )}
 
-      {/* Pin Indicator */}
-      {image.isPinned && !isMissing && (
-        <div className="absolute top-2 right-2 z-20 p-1.5 bg-sage-500 text-white rounded-full shadow-lg shadow-sage-500/50 animate-in zoom-in duration-300">
-          <Pin className="w-3 h-3 fill-current" />
+      {/* Top Right Indicators Container */}
+      {!isMissing && !shouldBlur && (
+        <div className="absolute top-2 right-2 z-20 flex flex-row gap-1.5 items-start justify-end pointer-events-none">
+          {/* Pin Icon - Pointer events auto to allow interaction/tooltip */}
+          {image.isPinned && (
+            <div className="p-1.5 bg-sage-500 text-white rounded-full shadow-lg shadow-sage-500/50 animate-in zoom-in duration-300 pointer-events-auto" title="Pinned">
+              <Pin className="w-3 h-3 fill-current" />
+            </div>
+          )}
+
+          {/* Favorite Icon */}
+          {image.isFavorite && (
+            <div
+              className="transition-all duration-300 animate-in zoom-in pointer-events-auto"
+              title="Favorite"
+            >
+              <Heart className="w-5 h-5 fill-red-500 text-red-500 drop-shadow-md" />
+            </div>
+          )}
         </div>
       )}
 
@@ -156,8 +171,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 </button>
               )}
               <button
-                className="p-1.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+                className="p-1.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer active:scale-95"
                 onClick={onToggleFavorite}
+                title={image.isFavorite ? "Unfavorite" : "Favorite"}
               >
                 <Heart className={`w-4 h-4 ${image.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
               </button>
@@ -166,12 +182,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
       )}
 
-      {/* Drag Handle Indicator (Subtle) */}
-      {!shouldBlur && !isMissing && (
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto cursor-grab active:cursor-grabbing">
-          {!image.isPinned && <GripHorizontal className="w-4 h-4 text-white/50 drop-shadow-md" />}
-        </div>
-      )}
+
     </div>
   );
 };

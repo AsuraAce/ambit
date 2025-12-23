@@ -47,7 +47,7 @@ export default function App() {
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, loadMoreImages,
         privacyEnabled, setPrivacyEnabled,
-        isFiltering
+        isFiltering, toggleFavorite
     } = useLibraryContext();
 
     // --- Theme Hook ---
@@ -257,7 +257,18 @@ export default function App() {
 
     const handleBulkFavorite = () => {
         const anyUnfavorite = images.some(img => selectedIds.has(img.id) && !img.isFavorite);
+        // We iterate and call DB for each. Ideally DB should support batch update, but loop is fine for UI actions < 100 items.
+        // For optimisic UI, we can do bulk setImages here if we want, but toggleFavorite does it one by one.
+        // Let's do it manually here for batch efficiency in React State, but loop DB calls.
+
         setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
+
+        // Loop DB calls (Fire and forget)
+        selectedIds.forEach(id => {
+            // We know the target state is `anyUnfavorite`
+            import('./services/db').then(db => db.toggleImageFavorite(id, anyUnfavorite));
+        });
+
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
     };
 
@@ -346,7 +357,7 @@ export default function App() {
     const handleShortcutFavorite = () => {
         if (selectedImageIndex !== null && images[selectedImageIndex]) {
             const id = images[selectedImageIndex].id;
-            setImages(prev => prev.map(i => i.id === id ? { ...i, isFavorite: !i.isFavorite } : i));
+            toggleFavorite(id);
         } else {
             handleBulkFavorite();
         }
@@ -426,7 +437,7 @@ export default function App() {
                         setModals(p => ({ ...p, deleteCollection: false }));
                         setCollectionToDelete(null);
                     }}
-                    onToggleFavorite={(id) => setImages(prev => prev.map(i => i.id === id ? { ...i, isFavorite: !i.isFavorite } : i))}
+                    onToggleFavorite={(id) => toggleFavorite(id)}
                     onRecoverMetadata={executeMetadataRecovery}
                     onAddImagesToCollection={colOps.addImagesToCollection}
                     pendingViewerDeleteId={pendingViewerDeleteId}
@@ -450,6 +461,7 @@ export default function App() {
                     <ContextMenu
                         x={contextMenu.x} y={contextMenu.y}
                         isPinned={images.find(i => i.id === contextMenu.imageId)?.isPinned}
+                        isFavorite={images.find(i => i.id === contextMenu.imageId)?.isFavorite}
                         enableAI={settings.enableAI}
                         activeCollectionName={activeCollection?.name}
                         onClose={() => setContextMenu(null)}
@@ -458,6 +470,12 @@ export default function App() {
                         onRemoveFromCollection={() => {
                             if (filters.collectionId && contextMenu.imageId) {
                                 colOps.removeImagesFromCollection([contextMenu.imageId], filters.collectionId);
+                                setContextMenu(null);
+                            }
+                        }}
+                        onToggleFavorite={() => {
+                            if (contextMenu.imageId) {
+                                toggleFavorite(contextMenu.imageId);
                                 setContextMenu(null);
                             }
                         }}
@@ -607,7 +625,7 @@ export default function App() {
                                             sortOption={sortOption}
                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                             onSelectionToggle={handleSelectionToggle}
-                                            onToggleFavorite={(e, id) => { setImages(p => p.map(i => i.id === id ? { ...i, isFavorite: !i.isFavorite } : i)); }}
+                                            onToggleFavorite={(e, id) => { toggleFavorite(id); }}
                                             onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
                                         />
                                     ) : (
@@ -666,6 +684,7 @@ export default function App() {
                                                             setImages={setImages}
                                                             onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
                                                             onToggleSelection={handleSelectionToggle}
+                                                            onToggleFavorite={(e, id) => toggleFavorite(id)}
                                                             onTogglePin={async (e, id) => {
                                                                 const img = images.find(i => i.id === id);
                                                                 if (img) {
@@ -730,7 +749,7 @@ export default function App() {
                             onUpdatePrompt={handleUpdatePrompt}
                             onUpdateModel={handleUpdateModel}
                             onUpdateTool={handleUpdateTool}
-                            onToggleFavorite={(id) => setImages(p => p.map(i => i.id === id ? { ...i, isFavorite: !i.isFavorite } : i))}
+                            onToggleFavorite={(id) => toggleFavorite(id)}
                             onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); openModal('settings'); } else { openModal('recovery'); } }}
                             onRevertMetadata={(id) => { setImages(p => p.map(i => i.id === id && i.originalMetadata ? { ...i, metadata: i.originalMetadata, originalMetadata: undefined } : i)); addToast('Reverted', 'success'); }}
                             onOpenSettings={() => { setInitialSettingsTab('experiments'); openModal('settings'); }}

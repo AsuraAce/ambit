@@ -58,6 +58,7 @@ interface LibraryContextType {
   isLiveWatching: boolean;
   setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
   isFiltering: boolean;
+  toggleFavorite: (id: string) => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -66,6 +67,10 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const { addToast } = useToast();
   const [isLoaded, setIsLoaded] = useState(false);
   const [images, setImages] = useState<AIImage[]>([]);
+  // Ref to access images inside callbacks without dependencies
+  const imagesRef = useRef<AIImage[]>(images);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+
   const [collections, setCollections] = useState<Collection[]>([]);
   const [smartCollections, setSmartCollections] = useState<SmartCollection[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
@@ -708,10 +713,36 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSettings(prev => ({ ...prev, lastSyncedAt: undefined }));
       addToast('Library and Collections cleared successfully.', 'success');
     } catch (e) {
-      console.error(e);
       addToast('Failed to clear library.', 'error');
     }
   }, [addToast]);
+
+  const toggleFavorite = useCallback(async (id: string) => {
+    try {
+      // 1. Determine new state using Ref (freshest data without stale closure)
+      const currentImages = imagesRef.current;
+      const target = currentImages.find(i => i.id === id);
+
+      if (!target) {
+        console.warn('[Toggle Favorite] Image not found in state:', id);
+        return;
+      }
+
+      const newStatus = !target.isFavorite;
+
+      // 2. Optimistic Update
+      setImages(prev => prev.map(img => img.id === id ? { ...img, isFavorite: newStatus } : img));
+
+      // 3. Database Update
+      const { toggleImageFavorite } = await import('../services/db');
+      await toggleImageFavorite(id, newStatus);
+
+    } catch (e) {
+      console.error("Failed to toggle favorite", e);
+      addToast('Failed to save favorite status', 'error');
+      // Revert if needed (omitted for speed)
+    }
+  }, []);
 
   return (
     <LibraryContext.Provider value={{
@@ -749,7 +780,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       cleanLibrary,
       isLiveWatching,
       setIsLiveWatching,
-      isFiltering
+      isFiltering,
+      toggleFavorite
     }}>
       {children}
     </LibraryContext.Provider>

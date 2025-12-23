@@ -494,6 +494,12 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
     await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
 };
 
+export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
+    const db = await getDb();
+    const normalizedId = id.replace(/\\/g, '/');
+    await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+};
+
 // Add a migration check to ensure is_pinned exists and is initialized
 export const migrateSchema = async () => {
     const db = await getDb();
