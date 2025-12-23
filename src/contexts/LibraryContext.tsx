@@ -523,6 +523,10 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
       setSyncProgress({ current: totalProcessed, total: totalProcessed });
 
+      if (options.mode === 'manual' && newTs) {
+        setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
+      }
+
       if (options.mode === 'manual') {
         fetchData(false); // Immediate refresh
         refreshMetadata(); // Refresh stats/facets
