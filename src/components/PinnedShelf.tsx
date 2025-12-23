@@ -15,6 +15,7 @@ interface PinnedShelfProps {
     onImageClick: (e: React.MouseEvent, id: string, index: number) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
     onTogglePin: (e: React.MouseEvent, id: string) => void;
+    onToggleFavorite: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     thumbnailSize: number;
     activeThumbnailUrl?: string;
@@ -31,6 +32,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     onImageClick,
     onToggleSelection,
     onTogglePin,
+    onToggleFavorite,
     onContextMenu,
     thumbnailSize,
     activeThumbnailUrl
@@ -100,6 +102,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                                     onClick={onImageClick}
                                     onToggleSelection={onToggleSelection}
                                     onTogglePin={onTogglePin}
+                                    onToggleFavorite={onToggleFavorite}
                                     onContextMenu={onContextMenu}
                                     isThumbnail={activeThumbnailUrl ? activeThumbnailUrl === img.thumbnailUrl : false}
                                 />

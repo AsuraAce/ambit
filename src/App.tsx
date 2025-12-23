@@ -640,6 +640,7 @@ export default function App() {
                                                 setImages={setImages}
                                                 onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                 onToggleSelection={handleSelectionToggle}
+                                                onToggleFavorite={(e, id) => toggleFavorite(id)}
                                                 onTogglePin={async (e, id) => {
                                                     const img = images.find(i => i.id === id);
                                                     if (img) {
