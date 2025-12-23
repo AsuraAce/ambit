@@ -473,7 +473,7 @@ const VirtualGridInternal = <T extends { id: string }>(
         width: '100%',
         minHeight: '100%',
       }}
-      className="outline-none"
+      className="outline-none overflow-hidden"
     >
       {/* Background Selection Layer - Only catches clicks on empty space */}
       <div
@@ -485,7 +485,7 @@ const VirtualGridInternal = <T extends { id: string }>(
 
       {dragBox && (
         <div
-          className="absolute bg-accent-500/20 border border-accent-500 z-50 pointer-events-none"
+          className="absolute bg-sage-500/30 border-2 border-sage-400 z-50 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
           style={{
             left: dragBox.x,
             top: dragBox.y,

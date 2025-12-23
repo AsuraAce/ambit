@@ -685,6 +685,8 @@ export default function App() {
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
                                             onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
+                                            onRangeSelection={handleRangeSelection}
+                                            onBackgroundClick={clearSelection}
                                         />
                                     ) : (
                                         <>
@@ -708,6 +710,8 @@ export default function App() {
                                                 onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                 thumbnailSize={settings.thumbnailSize}
                                                 activeThumbnailUrl={activeCollection?.thumbnail}
+                                                onRangeSelection={handleRangeSelection}
+                                                onBackgroundClick={clearSelection}
                                             />
                                             {isFiltering ? (
                                                 <GridSkeleton layout={layoutMode} />
@@ -727,7 +731,11 @@ export default function App() {
                                                         return w / h;
                                                     }}
                                                     onLayoutChange={handleLayoutChange}
-                                                    onRangeSelection={handleRangeSelection}
+                                                    onRangeSelection={(indices, isAdditive) => {
+                                                        const pinnedCount = images.filter(i => i.isPinned).length;
+                                                        const globalIndices = indices.map(idx => idx + pinnedCount);
+                                                        handleRangeSelection(globalIndices, isAdditive);
+                                                    }}
                                                     onBackgroundClick={clearSelection}
                                                     renderItem={(img, style, index, layout) => (
                                                         <GridItem
