@@ -18,9 +18,11 @@ interface ContextMenuProps {
   onRecoverMetadata?: () => void;
   onSetThumbnail?: () => void;
   onUnsetThumbnail?: () => void;
-  onToggleMask?: () => void;
+  onToggleMask?: (override?: boolean | null) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
+  isMasked?: boolean;
+  userMasked?: boolean;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -41,7 +43,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onUnsetThumbnail,
   onToggleMask,
   onToggleFavorite,
-  isFavorite
+  isFavorite,
+  // Masking State
+  isMasked,
+  userMasked,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -83,7 +88,37 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       )}
 
       {onToggleMask && (
-        <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Toggle Content Mask" onClick={onToggleMask} />
+        <>
+          {/* Tri-State Masking Logic:
+               - If currently masked (by keyword or user), show "Unmask" (User=False).
+               - If explicitly unmasked (User=False), show "Reset to Auto" (User=Null/Undefined).
+               - If explicitly masked (User=True), show "Reset to Auto" or "Unmask".
+            */}
+          {/* Simplified UX:
+               - Toggle between: Auto -> Masked -> Unmasked -> Auto
+               - OR: Checkboxes? No, context menu.
+               - Let's show smart actions.
+           */}
+
+          {/* 1. If Explicitly set, allow clearing it ("Auto") */}
+          {userMasked !== undefined && (
+            <MenuItem
+              icon={<EyeOff className="w-4 h-4 text-amethyst-400" />}
+              label="Reset Mask to Auto"
+              onClick={() => onToggleMask(null)}
+            />
+          )}
+
+          {/* 2. If NOT masked (visible), allow Masking */}
+          {!isMasked && (
+            <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Mask Content" onClick={() => onToggleMask(true)} />
+          )}
+
+          {/* 3. If Masked, allow Unmasking (Override) */}
+          {isMasked && (
+            <MenuItem icon={<EyeOff className="w-4 h-4 text-green-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
+          )}
+        </>
       )}
 
       {onSetThumbnail && (

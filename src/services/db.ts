@@ -112,7 +112,7 @@ export const insertImage = async (image: AIImage) => {
                 image.isPinned ? 1 : 0,
                 image.isDeleted ? 1 : 0,
                 image.isMissing ? 1 : 0,
-                image.userMasked ? 1 : 0,
+                image.userMasked === true ? 1 : (image.userMasked === false ? 0 : null),
                 image.groupId,
                 image.boardId,
                 image.notes,
@@ -144,7 +144,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
             isMissing: !!img.isMissing,
-            userMasked: !!img.userMasked,
+            userMasked: img.userMasked === true ? true : (img.userMasked === false ? false : null),
             groupId: img.groupId || null,
             boardId: img.boardId || null,
             notes: img.notes || null,
@@ -166,6 +166,11 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             }
         }
     });
+
+    // AUTO-MIGRATION: Fix any '0' values in user_masked to NULL to restore "Auto" behavior for synced images
+    // This is a safety check after batch insert to ensure we don't accidentally strict-unmask
+    const db = await getDb();
+    await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
 };
 
 export const isImageNew = async (id: string): Promise<boolean> => {
@@ -236,7 +241,7 @@ function mapRowToImage(row: any): AIImage {
         isPinned: !!row.is_pinned,
         isDeleted: !!row.is_deleted,
         isMissing: !!row.is_missing,
-        userMasked: !!row.user_masked,
+        userMasked: row.user_masked === 1 ? true : (row.user_masked === 0 ? false : undefined),
         groupId: row.group_id,
         boardId: row.board_id,
         notes: row.notes,
@@ -500,10 +505,15 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
     await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
 };
 
-export const toggleImageMask = async (id: string, userMasked: boolean) => {
+export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
     const db = await getDb();
     const normalizedId = id.replace(/\\/g, '/');
-    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [userMasked ? 1 : 0, normalizedId]);
+    let value: number | null = null;
+    if (userMasked === true) value = 1;
+    if (userMasked === false) value = 0;
+
+    // SQLite can store NULL for integer columns.
+    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
 };
 
 // Add a migration check to ensure is_pinned exists and is initialized

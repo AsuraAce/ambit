@@ -4,9 +4,122 @@ import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
 import { useStacking } from '../hooks/useStacking';
-import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff } from 'lucide-react';
+import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye } from 'lucide-react';
 import { VirtualGrid } from './VirtualGrid';
 import { isImageMasked } from '../utils/maskingUtils';
+
+// --- Sub-Components for Reveal State ---
+
+const TrashItem: React.FC<{
+    img: AIImage;
+    style: React.CSSProperties;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+    privacyEnabled: boolean;
+    maskedKeywords: string[];
+}> = ({ img, style, isSelected, onToggleSelect, privacyEnabled, maskedKeywords }) => {
+    const [isRevealed, setRevealed] = useState(false);
+    const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
+
+    return (
+        <div style={style} className="p-1">
+            <div
+                onClick={() => onToggleSelect(img.id)}
+                className={`h-full w-full rounded-xl overflow-hidden border-2 transition-all cursor-pointer relative ${isSelected ? 'border-sage-500 ring-2 ring-sage-500/30' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 bg-gray-100 dark:bg-slate-800'}`}
+                onMouseLeave={() => isRevealed && setRevealed(false)}
+            >
+                <div className="relative w-full h-full">
+                    <img
+                        src={img.thumbnailUrl}
+                        loading="lazy"
+                        className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-70 grayscale'} ${isMasked ? 'blur-xl scale-110' : ''}`}
+                        alt=""
+                    />
+
+                    {/* Mask Overlay */}
+                    {isMasked && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10">
+                            <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md mb-2" />
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRevealed(true);
+                                }}
+                                className="px-3 py-1 bg-black/50 hover:bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded-full backdrop-blur-md transition-colors flex items-center gap-1"
+                            >
+                                <Eye className="w-3 h-3" /> Reveal
+                            </button>
+                        </div>
+                    )}
+
+                    {isSelected && (
+                        <div className="absolute top-2 left-2 w-5 h-5 bg-sage-500 rounded-full flex items-center justify-center shadow-md z-20">
+                            <CheckSquare className="w-3 h-3 text-white" />
+                        </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[10px] text-white truncate z-20">
+                        {img.filename}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const UntaggedItem: React.FC<{
+    img: AIImage;
+    style: React.CSSProperties;
+    onView: (id: string) => void;
+    privacyEnabled: boolean;
+    maskedKeywords: string[];
+}> = ({ img, style, onView, privacyEnabled, maskedKeywords }) => {
+    const [isRevealed, setRevealed] = useState(false);
+    const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
+
+    return (
+        <div style={style} className="p-1">
+            <div
+                onClick={() => onView(img.id)}
+                className="h-full w-full relative group rounded-xl overflow-hidden border-2 border-transparent hover:border-orange-300 dark:hover:border-orange-500/50 cursor-pointer bg-gray-100 dark:bg-slate-800"
+                onMouseLeave={() => isRevealed && setRevealed(false)}
+            >
+                <div className="relative w-full h-full">
+                    <img
+                        src={img.thumbnailUrl}
+                        className={`w-full h-full object-cover ${isMasked ? 'blur-xl scale-110' : ''}`}
+                        alt=""
+                    />
+                    {isMasked && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10">
+                            <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md mb-2" />
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRevealed(true);
+                                }}
+                                className="px-3 py-1 bg-black/50 hover:bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded-full backdrop-blur-md transition-colors flex items-center gap-1"
+                            >
+                                <Eye className="w-3 h-3" /> Reveal
+                            </button>
+                        </div>
+                    )}
+
+                    {!isMasked && (
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center z-20">
+                            <span className="opacity-0 group-hover:opacity-100 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
+                                <Wand2 className="w-3 h-3" /> Recover
+                            </span>
+                        </div>
+                    )}
+
+                    <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-slate-900 text-[10px] text-gray-500 truncate border-t border-gray-100 dark:border-white/5 z-20">
+                        {img.filename}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -107,72 +220,29 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // Memoized individually to ensure stability for the VirtualGrid engine
 
     const renderTrashItem = useCallback((img: AIImage, style: React.CSSProperties) => {
-        const isSelected = selectedTrashIds.has(img.id);
-        const isMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
-
         return (
-            <div key={img.id} style={style} className="p-1">
-                <div
-                    onClick={() => toggleTrashSelection(img.id)}
-                    className={`h-full w-full rounded-xl overflow-hidden border-2 transition-all cursor-pointer relative ${isSelected ? 'border-sage-500 ring-2 ring-sage-500/30' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 bg-gray-100 dark:bg-slate-800'}`}
-                >
-                    <div className="relative w-full h-full">
-                        <img
-                            src={img.thumbnailUrl}
-                            loading="lazy"
-                            className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-70 grayscale'} ${isMasked ? 'blur-xl scale-110' : ''}`}
-                            alt=""
-                        />
-                        {isMasked && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10 pointer-events-none">
-                                <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md" />
-                            </div>
-                        )}
-                        {isSelected && (
-                            <div className="absolute top-2 left-2 w-5 h-5 bg-sage-500 rounded-full flex items-center justify-center shadow-md z-20">
-                                <CheckSquare className="w-3 h-3 text-white" />
-                            </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-[10px] text-white truncate z-20">
-                            {img.filename}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <TrashItem
+                key={img.id}
+                img={img}
+                style={style}
+                isSelected={selectedTrashIds.has(img.id)}
+                onToggleSelect={toggleTrashSelection}
+                privacyEnabled={privacyEnabled}
+                maskedKeywords={maskedKeywords}
+            />
         );
     }, [selectedTrashIds, toggleTrashSelection, privacyEnabled, maskedKeywords]);
 
     const renderUntaggedItem = useCallback((img: AIImage, style: React.CSSProperties) => {
-        const isMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
-
         return (
-            <div key={img.id} style={style} className="p-1">
-                <div
-                    onClick={() => onViewImage && onViewImage(img.id)}
-                    className="h-full w-full relative group rounded-xl overflow-hidden border-2 border-transparent hover:border-orange-300 dark:hover:border-orange-500/50 cursor-pointer bg-gray-100 dark:bg-slate-800"
-                >
-                    <div className="relative w-full h-full">
-                        <img
-                            src={img.thumbnailUrl}
-                            className={`w-full h-full object-cover ${isMasked ? 'blur-xl scale-110' : ''}`}
-                            alt=""
-                        />
-                        {isMasked && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10 pointer-events-none">
-                                <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md" />
-                            </div>
-                        )}
-                        <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center z-20">
-                            <span className="opacity-0 group-hover:opacity-100 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md font-bold flex items-center gap-1">
-                                <Wand2 className="w-3 h-3" /> Recover
-                            </span>
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-white dark:bg-slate-900 text-[10px] text-gray-500 truncate border-t border-gray-100 dark:border-white/5 z-20">
-                            {img.filename}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <UntaggedItem
+                key={img.id}
+                img={img}
+                style={style}
+                onView={onViewImage || (() => { })}
+                privacyEnabled={privacyEnabled}
+                maskedKeywords={maskedKeywords}
+            />
         );
     }, [onViewImage, privacyEnabled, maskedKeywords]);
 

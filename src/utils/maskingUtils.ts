@@ -15,7 +15,11 @@ export const isImageMasked = (
     if (!privacyEnabled) return false;
 
     // 1. Manual User Mask (Highest Priority)
-    if (image.userMasked) return true;
+    // If explicitly set to TRUE, it is masked.
+    // If explicitly set to FALSE, it is UNMASKED (Override).
+    // If UNDEFINED/NULL, we fall back to keyword matching.
+    if (image.userMasked === true) return true;
+    if (image.userMasked === false) return false;
 
     // 2. Keyword Matching (Only if keywords exist)
     if (maskedKeywords.length === 0) return false;

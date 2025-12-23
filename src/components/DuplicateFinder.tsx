@@ -1,9 +1,85 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { AIImage } from '../types';
-import { AlertTriangle, Check, Layers, Copy, ArrowRight, Maximize2, EyeOff } from 'lucide-react';
+import { AlertTriangle, Check, Layers, Copy, ArrowRight, Maximize2, EyeOff, Eye } from 'lucide-react';
 import { useDuplicateFinder } from '../hooks/useDuplicateFinder';
 import { isImageMasked } from '../utils/maskingUtils';
+
+// --- Sub-Component for Reveal State ---
+const DuplicateItem: React.FC<{
+    img: AIImage;
+    groupType: 'exact' | 'version';
+    isLastInGroup: boolean;
+    onKeepOnly: (imgId: string) => void;
+    privacyEnabled: boolean;
+    maskedKeywords: string[];
+}> = ({ img, groupType, isLastInGroup, onKeepOnly, privacyEnabled, maskedKeywords }) => {
+    const [isRevealed, setRevealed] = useState(false);
+    const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
+
+    return (
+        <div className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0" onMouseLeave={() => isRevealed && setRevealed(false)}>
+            {/* Image Preview */}
+            <div className="relative aspect-[2/3] bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 group-hover:border-sage-500/50 transition-colors">
+                <img
+                    src={img.thumbnailUrl}
+                    alt=""
+                    className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
+                />
+
+                {isMasked && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10">
+                        <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md mb-2" />
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setRevealed(true);
+                            }}
+                            className="px-3 py-1 bg-black/50 hover:bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded-full backdrop-blur-md transition-colors flex items-center gap-1"
+                        >
+                            <Eye className="w-3 h-3" /> Reveal
+                        </button>
+                    </div>
+                )}
+
+                {/* Resolution Badge */}
+                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-[10px] font-mono text-white px-2 py-0.5 rounded border border-white/10 shadow-sm z-20">
+                    {img.width}x{img.height}
+                </div>
+
+                {/* Arrow for Sequence (Versions only) */}
+                {groupType === 'version' && !isLastInGroup && (
+                    <div className="absolute top-1/2 -right-6 z-10 text-gray-400 dark:text-gray-600">
+                        <ArrowRight className="w-6 h-6" />
+                    </div>
+                )}
+
+                {/* Overlay Actions (Only show if UNMASKED) */}
+                {!isMasked && (
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 backdrop-blur-[1px] z-30">
+                        <button
+                            onClick={() => onKeepOnly(img.id)}
+                            className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-full font-bold text-xs shadow-lg transform hover:scale-105 transition-all flex items-center gap-2"
+                        >
+                            <Check className="w-3 h-3" /> Keep Only This
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Metadata Details */}
+            <div className="mt-2 px-1">
+                <div className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate" title={img.filename}>
+                    {img.filename}
+                </div>
+                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 flex justify-between">
+                    <span>{new Date(img.timestamp).toLocaleDateString()}</span>
+                    {isLastInGroup && groupType === 'version' && <span className="text-amethyst-500 font-bold">Newest</span>}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface DuplicateFinderProps {
     images: AIImage[];
@@ -106,60 +182,17 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = ({
                         <div className="p-5 flex flex-col gap-4 flex-1">
                             {/* Horizontal Scroll Container */}
                             <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar scroll-px-0">
-                                {group.images.map((img, idx) => {
-                                    const isMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
-                                    return (
-                                        <div key={img.id} className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0">
-                                            {/* Image Preview */}
-                                            <div className="relative aspect-[2/3] bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 group-hover:border-sage-500/50 transition-colors">
-                                                <img
-                                                    src={img.thumbnailUrl}
-                                                    alt=""
-                                                    className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
-                                                />
-
-                                                {isMasked && (
-                                                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10 pointer-events-none">
-                                                        <EyeOff className="w-8 h-8 text-gray-500 dark:text-gray-400 drop-shadow-md" />
-                                                    </div>
-                                                )}
-
-                                                {/* Resolution Badge */}
-                                                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-[10px] font-mono text-white px-2 py-0.5 rounded border border-white/10 shadow-sm z-20">
-                                                    {img.width}x{img.height}
-                                                </div>
-
-                                                {/* Arrow for Sequence (Versions only) */}
-                                                {group.type === 'version' && idx < group.images.length - 1 && (
-                                                    <div className="absolute top-1/2 -right-6 z-10 text-gray-400 dark:text-gray-600">
-                                                        <ArrowRight className="w-6 h-6" />
-                                                    </div>
-                                                )}
-
-                                                {/* Overlay Actions */}
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 backdrop-blur-[1px] z-30">
-                                                    <button
-                                                        onClick={() => handleResolve(group.id, img.id, group.images.map(i => i.id))}
-                                                        className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-full font-bold text-xs shadow-lg transform hover:scale-105 transition-all flex items-center gap-2"
-                                                    >
-                                                        <Check className="w-3 h-3" /> Keep Only This
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Metadata Details */}
-                                            <div className="mt-2 px-1">
-                                                <div className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate" title={img.filename}>
-                                                    {img.filename}
-                                                </div>
-                                                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 flex justify-between">
-                                                    <span>{new Date(img.timestamp).toLocaleDateString()}</span>
-                                                    {idx === group.images.length - 1 && group.type === 'version' && <span className="text-amethyst-500 font-bold">Newest</span>}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                {group.images.map((img, idx) => (
+                                    <DuplicateItem
+                                        key={img.id}
+                                        img={img}
+                                        groupType={group.type}
+                                        isLastInGroup={idx === group.images.length - 1}
+                                        onKeepOnly={(imgId) => handleResolve(group.id, imgId, group.images.map(i => i.id))}
+                                        privacyEnabled={privacyEnabled}
+                                        maskedKeywords={maskedKeywords}
+                                    />
+                                ))}
                             </div>
                         </div>
 

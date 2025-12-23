@@ -25,6 +25,7 @@ import { GridSkeleton } from './components/GridSkeleton';
 import { DragOverlay } from './components/DragOverlay';
 import { useToast } from './hooks/useToast';
 import { useLibraryContext } from './hooks/useLibraryContext';
+import { isImageMasked } from './utils/maskingUtils';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -296,7 +297,8 @@ export default function App() {
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
-    const handleBulkMask = async (targetId?: string) => {
+    // Updated for Tri-State Masking (Auto/Mask/Unmask)
+    const handleBulkMask = async (targetId?: string, overrideValue?: boolean | null) => {
         let idsToToggle = new Set<string>();
 
         if (targetId) {
@@ -308,36 +310,60 @@ export default function App() {
 
         if (idsToToggle.size === 0) return;
 
-        // 1. Optimistic Update (Immediate UI Feedback)
+        // 1. Optimistic Update
+        // If overrideValue is provided (true/false/null), use it.
+        // If NOT provided (legacy toggle behavior), just flip true/false.
+        // Note: Legacy toggle doesn't handle 'null' well, so we assume if undefined, flip boolean.
+
         setImages(prev => prev.map(img => {
             if (idsToToggle.has(img.id)) {
-                return { ...img, userMasked: !img.userMasked };
+                let newValue = overrideValue;
+                if (newValue === undefined) {
+                    // Toggle Logic: If masked (true), go to false. If anything else, go to true.
+                    // Or cycle? Simple toggle usually means on/off.
+                    // Let's stick to: If currently UserMasked=true -> false. Else -> true.
+                    newValue = !img.userMasked;
+                }
+                return { ...img, userMasked: newValue !== null ? newValue : undefined };
             }
             return img;
         }));
 
         // 2. Persist to DB
         const db = await import('./services/db');
-        const currentImagesMap = new Map(images.map(i => [i.id, i])); // inefficient for large sets, but safe for correct state
-
-        // We need to know the *new* state. Since we just flipped it in setImages, 
-        // we can look up the *current* state and flip it for the DB call.
-        // Or better, just check what we are aiming for. 
-        // Note: setImages is async, so `images` here is still stale.
-        // Let's rely on the fact we know what we want to do.
-
-        // Actually, since we might toggle a mix (some masked, some not), we should toggle each individually relative to their previous state.
         const promises: Promise<void>[] = [];
+
         idsToToggle.forEach(id => {
-            const img = images.find(i => i.id === id);
-            if (img) {
-                promises.push(db.toggleImageMask(id, !img.userMasked));
+            if (overrideValue !== undefined) {
+                // Explicit set
+                promises.push(db.toggleImageMask(id, overrideValue));
+            } else {
+                // Toggle fallback
+                const img = images.find(i => i.id === id);
+                if (img) {
+                    promises.push(db.toggleImageMask(id, !img.userMasked));
+                }
             }
         });
 
         await Promise.all(promises);
 
-        addToast(`${idsToToggle.size} images mask toggled`, 'info');
+        // 3. Descriptive Toast
+        let message = '';
+        const count = idsToToggle.size;
+        const s = count === 1 ? '' : 's';
+
+        if (overrideValue === true) {
+            message = `${count} image${s} Manually Masked`;
+        } else if (overrideValue === false) {
+            message = `${count} image${s} Unmasked`;
+        } else if (overrideValue === null) {
+            message = `${count} image${s} Reset to Auto Mask`;
+        } else {
+            message = `${count} image${s} Mask Toggled`;
+        }
+
+        addToast(message, 'info');
     };
 
     const handleTogglePrivacy = () => {
@@ -481,10 +507,19 @@ export default function App() {
                         x={contextMenu.x} y={contextMenu.y}
                         isPinned={images.find(i => i.id === contextMenu.imageId)?.isPinned}
                         isFavorite={images.find(i => i.id === contextMenu.imageId)?.isFavorite}
+                        isMasked={isImageMasked(images.find(i => i.id === contextMenu.imageId)!, privacyEnabled, settings.maskedKeywords)}
+                        userMasked={images.find(i => i.id === contextMenu.imageId)?.userMasked}
                         enableAI={settings.enableAI}
                         activeCollectionName={activeCollection?.name}
                         onClose={() => setContextMenu(null)}
-                        onCopyPrompt={() => { navigator.clipboard.writeText(images.find(i => i.id === contextMenu.imageId)?.metadata.positivePrompt || ''); addToast('Prompt copied', 'success'); setContextMenu(null); }}
+                        onCopyPrompt={() => {
+                            const img = images.find(i => i.id === contextMenu.imageId);
+                            if (img?.metadata.positivePrompt) {
+                                navigator.clipboard.writeText(img.metadata.positivePrompt);
+                                addToast('Prompt copied', 'success');
+                            }
+                            setContextMenu(null);
+                        }}
                         onAddToCollection={() => { openModal('addToCollection'); setContextMenu(null); }}
                         onRemoveFromCollection={() => {
                             if (filters.collectionId && contextMenu.imageId) {
@@ -506,7 +541,7 @@ export default function App() {
                             }
                             setContextMenu(null);
                         }}
-                        onToggleMask={() => { handleBulkMask(contextMenu.imageId); setContextMenu(null); }}
+                        onToggleMask={(val) => { handleBulkMask(contextMenu.imageId, val); setContextMenu(null); }}
                         onDelete={() => { settings.confirmDelete ? openModal('deleteConfirm') : executeDelete(); setContextMenu(null); }}
                         onShowInFolder={() => { addToast('Opening folder...', 'info'); setContextMenu(null); }}
                         onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI first", "error"); openModal('settings'); } else { openModal('recovery'); } setContextMenu(null); }}
