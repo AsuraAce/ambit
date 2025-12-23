@@ -1,5 +1,6 @@
-import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, Edit3, Share, Trash2, X } from 'lucide-react';
+import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
 import { AIImage } from '../types';
+import { isImageMasked } from '../utils/maskingUtils';
 
 interface SelectionBarProps {
     selectedIds: Set<string>;
@@ -7,6 +8,8 @@ interface SelectionBarProps {
     lastSelectedId: string | null;
     isExporting: boolean;
     confirmDelete: boolean;
+    privacyEnabled: boolean;
+    maskedKeywords: string[];
 
     // Actions
     onClearSelection: () => void;
@@ -16,16 +19,18 @@ interface SelectionBarProps {
     onAddToCollection: () => void;
     onToggleFavorite: () => void;
     onTogglePin: () => void;
-    onToggleMask: (targetId?: string) => void;
+    onToggleMask: (targetId?: string, overrideValue?: boolean | null) => void;
     onCompare: () => void;
 }
 
 export function SelectionBar({
     selectedIds,
     filteredImages,
-    lastSelectedId, // Kept for logic if needed inside handleMask
+    lastSelectedId,
     isExporting,
     confirmDelete,
+    privacyEnabled,
+    maskedKeywords,
     onClearSelection,
     onDelete,
     onExport,
@@ -37,6 +42,30 @@ export function SelectionBar({
     onCompare
 }: SelectionBarProps) {
     if (selectedIds.size === 0) return null;
+
+    // Logic for Tri-State Mask Cycling in Bulk:
+    // Determine the "base" state from the first selected item to decide the next step in the cycle.
+    // Cycle: Auto (null) -> Masked (true) -> Unmasked (false) -> Auto (null)
+    const selectedImages = filteredImages.filter(img => selectedIds.has(img.id));
+    const firstImg = selectedImages[0];
+    const currentUserMasked = firstImg?.userMasked;
+
+    let nextState: boolean | null = null;
+    let nextLabel = "Reset to Auto Mask";
+    let nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
+    let buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10";
+
+    if (currentUserMasked === undefined || currentUserMasked === null) {
+        nextState = true;
+        nextLabel = "Mask All Content";
+        nextIcon = <EyeOff className="w-5 h-5 text-amethyst-400" />;
+        buttonClass = "text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20";
+    } else if (currentUserMasked === true) {
+        nextState = false;
+        nextLabel = "Unmask All Content";
+        nextIcon = <Eye className="w-5 h-5 text-green-400" />;
+        buttonClass = "text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20";
+    }
 
     return (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
@@ -58,8 +87,12 @@ export function SelectionBar({
                 <button onClick={onTogglePin} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Pin All">
                     <Pin className="w-5 h-5" />
                 </button>
-                <button onClick={() => onToggleMask()} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Toggle Mask">
-                    <EyeOff className="w-5 h-5" />
+                <button
+                    onClick={() => onToggleMask(undefined, nextState)}
+                    className={`p-2 rounded-full transition-colors ${buttonClass}`}
+                    title={nextLabel}
+                >
+                    {nextIcon}
                 </button>
 
                 <button onClick={onAddToCollection} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Add to Collection">

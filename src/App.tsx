@@ -782,6 +782,8 @@ export default function App() {
                             lastSelectedId={lastSelectedId}
                             isExporting={fileOps.isExporting}
                             confirmDelete={settings.confirmDelete}
+                            privacyEnabled={privacyEnabled}
+                            maskedKeywords={settings.maskedKeywords}
                             onClearSelection={clearSelection}
                             onDelete={settings.confirmDelete ? () => openModal('deleteConfirm') : executeDelete}
                             onExport={() => openModal('export')}
