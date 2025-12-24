@@ -59,8 +59,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     return (
         <header className="flex-shrink-0 pl-6 pr-8 pb-4 sticky top-0 z-50 transition-colors duration-200">
             <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring">
-                <div className="flex items-center gap-4 flex-1 max-w-3xl">
-                    <div className="relative w-full max-w-2xl group z-30 flex items-center gap-2">
+                <div className="flex items-center gap-4 flex-1">
+                    <div className="relative w-full max-w-lg group z-30 flex items-center gap-2">
                         <div className="relative flex-1">
                             <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${searchProps.isSearchingAi ? 'text-amethyst-600 dark:text-amethyst-400 animate-pulse' : 'text-gray-400 dark:text-zinc-500 group-focus-within:text-sage-600 dark:group-focus-within:text-sage-400'}`} />
                             <input
