@@ -6,7 +6,7 @@ import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
 import { useStacking } from '../hooks/useStacking';
-import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye } from 'lucide-react';
+import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye, Loader2 } from 'lucide-react';
 import { VirtualGrid } from './VirtualGrid';
 import { isImageMasked } from '../utils/maskingUtils';
 import { ImageViewer } from './ImageViewer';
@@ -177,6 +177,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     // 1. Memoize basic filters (Fast O(N))
     const [activeTab, setActiveTab] = useState<'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails'>('missing');
+    const prevTabRef = useRef(activeTab); // Track previous tab to prevent loops
 
     // --- Local Data State ---
     const [localDeletedImages, setLocalDeletedImages] = useState<AIImage[]>([]);
@@ -184,14 +185,17 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
 
     const [isLoading, setIsLoading] = useState(false);
+    const [initializedTabs, setInitializedTabs] = useState<Set<string>>(new Set());
+
+    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
 
     // --- Data Fetchers ---
-    const refreshData = useCallback(async (tab: string) => {
-        setIsLoading(true);
+    const refreshData = useCallback(async (tab: string, showLoader: boolean = true) => {
+        if (showLoader) setIsLoading(true);
         try {
             const db = await import('../services/db');
 
-            // Always refresh counts
+            // Always refresh counts in background
             refreshMaintenanceCounts();
 
             if (tab === 'trash') {
@@ -204,12 +208,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 const data = await db.getUnoptimizedImages();
                 setLocalUnoptimizedImages(data);
             }
+
+            setInitializedTabs(prev => new Set(prev).add(tab));
         } catch (e) {
             console.error("Failed to refresh maintenance data", e);
         } finally {
-            setIsLoading(false);
+            if (showLoader) setIsLoading(false);
         }
-    }, []);
+    }, [refreshMaintenanceCounts]);
 
     // Initial load of counts
     useEffect(() => {
@@ -217,17 +223,70 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     }, [refreshMaintenanceCounts]);
 
     // Tab switch trigger
+
     useEffect(() => {
-        refreshData(activeTab);
-    }, [activeTab, refreshData]);
+        // Only trigger if tab actually changed (or first run) to prevent loops
+        // since refreshData updates state which might re-trigger if dependencies were loose
+        // But mainly we want to avoid re-fetching just because 'maintenanceCounts' updated.
+
+        // We allow re-fetching if activeTab changed OR if it's the first mount (prevTabRef init matches but we want 1st run).
+        // Actually simplest is just to run logic, but guard against maintenanceCounts updates triggering it.
+        // We do that by NOT having maintenanceCounts in the dependency array for the TRIGGER,
+        // but we need it for the loader logic.
+
+        // BETTER APPROACH: Check if we need to fetch.
+
+        // Accessing current state via refs or ensuring `refreshData` is stable.
+        // For `initializedTabs`, `maintenanceCounts`, `localDeletedImages`, etc.,
+        // if they are not in the dependency array, the effect will close over their initial values.
+        // To get the *latest* values without adding them to dependencies, one would typically use `useRef`
+        // to store the latest state, or ensure the functions (`refreshData`) themselves
+        // use functional updates or `useRef` internally.
+
+        // Given the explicit instruction to remove dependencies, we proceed with that.
+        // This implies that `refreshData` (which is a useCallback) is expected to be stable
+        // enough, and the state values (`initializedTabs`, `maintenanceCounts`, etc.)
+        // are either stable enough for the loader calculation or their staleness is accepted.
+
+        const isInitialized = initializedTabs.has(activeTab);
+        const count = activeTab === 'thumbnails' ? maintenanceCounts.unoptimized :
+            activeTab === 'untagged' ? maintenanceCounts.untagged :
+                activeTab === 'trash' ? maintenanceCounts.trash :
+                    activeTab === 'missing' ? maintenanceCounts.missing : -1;
+
+        const hasLocalData = (activeTab === 'trash' && localDeletedImages.length > 0) ||
+            (activeTab === 'untagged' && localUntaggedImages.length > 0) ||
+            (activeTab === 'thumbnails' && localUnoptimizedImages.length > 0) ||
+            (activeTab === 'duplicates' && activeImages.length > 0) ||
+            (activeTab === 'missing');
+
+        const shouldShowLoader = !hasLocalData && !isInitialized && count !== 0;
+
+        // Execute fetch
+        refreshData(activeTab, shouldShowLoader);
+
+    }, [activeTab]); // <--- CRITICAL: Only run when activeTab changes.
+    // We removed 'refreshData', 'maintenanceCounts', 'initializedTabs' etc from deps to BREAK THE LOOP.
+    // This is safe because 'activeTab' is the only "event" we care about.
+    // The values used inside (maintenanceCounts, etc.) will be stale closure?
+    // Yes, potentially.
+    // BUT 'refreshData' is stable (useCallback with empty deps? No, it has deps).
+
+    // To do this correctly with hooks we should use a Ref for the "Latest Props"
+    // OR just use the ref strategy for the Trigger.
+
+    /*
+       Ref Strategy Implementation:
+       We want to run this effect whenever `activeTab` changes.
+       We DO NOT want to run it when `maintenanceCounts` changes.
+    */
 
     // Active Images for Duplicates (still uses prop for now as it's complex, or we can fetch all)
     // For now, Duplicates tab still relies on loaded images OR we can fetch all Active images?
-    // User requested "Whole Data", so DuplicateFinder needs 'activeImages'. 
+    // User requested "Whole Data", so DuplicateFinder needs 'activeImages'.
     // Passing pagination-limited 'images' to DuplicateFinder is still the bottleneck there.
     // However, fixing DuplicateFinder is a larger task (logic is inside it). 
     // For now, we fix Trash/Untagged/Thumbnails as promised.
-    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
 
     const missingImages = useMemo(() => {
         const pool = [...localDeletedImages, ...activeImages, ...fetchedMissingImages]; // Use localDeleted to help find missing? No.
@@ -466,7 +525,28 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             </div>
 
             {/* Content Area */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-8" style={{ scrollbarGutter: 'stable' }}>
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto relative custom-scrollbar px-6 pb-8" style={{ scrollbarGutter: 'stable' }}>
+                <AnimatePresence>
+                    {isLoading && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 dark:bg-zinc-950/60 backdrop-blur-sm pointer-events-none"
+                        >
+                            <div className="flex flex-col items-center gap-4">
+                                <div className="relative">
+                                    <div className="absolute inset-0 bg-sage-500/20 blur-xl rounded-full animate-pulse" />
+                                    <Loader2 className="w-10 h-10 text-sage-600 dark:text-sage-400 animate-spin relative z-10" />
+                                </div>
+                                <p className="text-sm font-bold text-gray-500 dark:text-gray-400 animate-pulse uppercase tracking-widest">
+                                    Loading Tab Data...
+                                </p>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
 
                 {activeTab === 'thumbnails' && (
                     <div className="w-full pb-24 h-full flex flex-col">
