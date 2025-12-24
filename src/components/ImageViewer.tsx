@@ -116,7 +116,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // --- UI State ---
     const [activeTab, setActiveTab] = useState<'info' | 'edit' | 'workflow'>('info');
-    const [isZenMode, setIsZenMode] = useState(false);
+    const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -134,14 +134,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // Theater Mode Controls Auto-Hide
     useEffect(() => {
-        if (isSidebarOpen && !isZenMode) {
+        if (isSidebarOpen && !isTheaterMode) {
             setShowControls(true);
             if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         } else {
             controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
         }
         return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
-    }, [isSidebarOpen, isZenMode, scale]);
+    }, [isSidebarOpen, isTheaterMode, scale]);
 
     // Global Key Handlers for Viewer
     useEffect(() => {
@@ -163,14 +163,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
             if (e.key === 'Escape') {
                 if (ai.modalOpen) ai.closeModal();
-                else if (isZenMode) setIsZenMode(false);
+                else if (isTheaterMode) setIsTheaterMode(false);
                 else onClose();
             }
-            if (key === 'z') setIsZenMode(p => !p);
+            if (key === 'z') setIsTheaterMode(p => !p);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, isZenMode, onNext, onPrev, onToggleFavorite, onTogglePin, onToggleSidebar, displayImage, onClose]);
+    }, [isOpen, ai.modalOpen, isTheaterMode, onNext, onPrev, onToggleFavorite, onTogglePin, onToggleSidebar, displayImage, onClose]);
 
     if (!isOpen) return null;
 
@@ -179,7 +179,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            className={`fixed inset-0 z-50 flex bg-gray-950/95 ${isZenMode ? 'bg-black' : 'backdrop-blur-md'}`}
+            className={`fixed inset-0 z-50 flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
         >
 
             {/* Left Area: Canvas */}
@@ -236,14 +236,52 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                         >
                             <ExternalLink className="w-5 h-5" />
                         </button>
-                        <button onClick={() => setIsZenMode(!isZenMode)} className={`p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full transition-all backdrop-blur-md shadow-lg ${isZenMode ? 'text-sage-400 border-sage-500/50' : 'text-white/50 hover:text-white'}`}>
+                        <button
+                            onClick={() => setIsTheaterMode(!isTheaterMode)}
+                            className={`p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full transition-all backdrop-blur-md shadow-lg ${isTheaterMode ? 'text-sage-400 border-sage-500/50' : 'text-white/50 hover:text-white'}`}
+                            title="Theater Mode (Z)"
+                        >
                             <Layout className="w-5 h-5" />
                         </button>
-                        <button onClick={() => { if (navigator.share) navigator.share({ title: displayImage.filename, url: displayImage.url }); }} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"><Share2 className="w-5 h-5" /></button>
-                        <button onClick={() => onToggleFavorite(displayImage.id)} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"><Heart className={`w-5 h-5 ${displayImage.isFavorite ? 'fill-red-500 text-red-500' : ''}`} /></button>
-                        {onDelete && <button onClick={() => onDelete(displayImage.id)} className="p-2.5 bg-black/50 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-full text-white/50 hover:text-red-400 transition-all backdrop-blur-md shadow-lg"><Trash2 className="w-5 h-5" /></button>}
-                        {onToggleSidebar && !isZenMode && <button onClick={onToggleSidebar} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg">{isSidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}</button>}
-                        <button onClick={onClose} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"><X className="w-5 h-5" /></button>
+                        <button
+                            onClick={() => { if (navigator.share) navigator.share({ title: displayImage.filename, url: displayImage.url }); }}
+                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                            title="Share"
+                        >
+                            <Share2 className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={() => onToggleFavorite(displayImage.id)}
+                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                            title={`Favorite (F)${displayImage.isFavorite ? ' - Remove' : ''}`}
+                        >
+                            <Heart className={`w-5 h-5 ${displayImage.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
+                        </button>
+                        {onDelete && (
+                            <button
+                                onClick={() => onDelete(displayImage.id)}
+                                className="p-2.5 bg-black/50 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-full text-white/50 hover:text-red-400 transition-all backdrop-blur-md shadow-lg"
+                                title="Delete"
+                            >
+                                <Trash2 className="w-5 h-5" />
+                            </button>
+                        )}
+                        {onToggleSidebar && !isTheaterMode && (
+                            <button
+                                onClick={onToggleSidebar}
+                                className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                                title={isSidebarOpen ? "Hide Sidebar (I)" : "Show Sidebar (I)"}
+                            >
+                                {isSidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                            title="Close (Esc)"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
                     </div>
                 </div>
 
@@ -259,8 +297,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onZoomIn={() => handlers.onWheel({ deltaY: -100 } as any)}
                     onZoomOut={() => handlers.onWheel({ deltaY: 100 } as any)}
                     onResetZoom={resetZoom}
-                    isZenMode={isZenMode}
-                    onToggleZen={() => setIsZenMode(!isZenMode)}
+                    isTheaterMode={isTheaterMode}
+                    onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
                     handlers={handlers}
                 />
 
@@ -298,7 +336,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             </div>
 
             {/* Right Area: Sidebar */}
-            <div className={`h-full z-30 transition-all duration-500 ease-spring overflow-hidden ${isSidebarOpen && !isZenMode ? 'w-[420px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-20'}`}>
+            <div className={`h-full z-30 transition-all duration-500 ease-spring overflow-hidden ${isSidebarOpen && !isTheaterMode ? 'w-[420px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-20'}`}>
                 <MetadataSidebar
                     image={displayImage} // Pass active version
                     activeTab={activeTab}

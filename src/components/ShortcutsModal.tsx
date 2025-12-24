@@ -69,7 +69,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 { key: 'Arrow Keys', desc: 'Navigate grid' },
                 { key: 'Enter', desc: 'Open details / Save search' },
                 { key: 'Space', desc: 'Toggle Quick View' },
-                { key: 'Z', desc: 'Toggle Zen Mode (in Viewer)' },
+                { key: 'Z', desc: 'Toggle Theater Mode (in Viewer)' },
             ]
         },
         {

@@ -16,8 +16,8 @@ interface ImageCanvasProps {
     onZoomIn: () => void;
     onZoomOut: () => void;
     onResetZoom: () => void;
-    isZenMode: boolean;
-    onToggleZen: () => void;
+    isTheaterMode: boolean;
+    onToggleTheater: () => void;
     handlers: {
         onWheel: (e: React.WheelEvent) => void;
         onMouseDown: (e: React.MouseEvent) => void;
@@ -40,8 +40,8 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
     onZoomIn,
     onZoomOut,
     onResetZoom,
-    isZenMode,
-    onToggleZen,
+    isTheaterMode,
+    onToggleTheater,
     handlers
 }) => {
     return (
@@ -53,11 +53,11 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
             <div
                 className={`absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-xl rounded-full px-4 py-2 border border-white/10 pointer-events-auto transition-opacity duration-500 shadow-2xl ${showControls ? 'opacity-100' : 'opacity-0'}`}
             >
-                <button onClick={onZoomOut} className="p-1.5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white">
+                <button onClick={onZoomOut} className="p-1.5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white" title="Zoom Out">
                     <ZoomOut className="w-4 h-4" />
                 </button>
                 <span className="text-xs font-mono text-sage-400 min-w-[3ch] text-center">{Math.round(scale * 100)}%</span>
-                <button onClick={onZoomIn} className="p-1.5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white">
+                <button onClick={onZoomIn} className="p-1.5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white" title="Zoom In">
                     <ZoomIn className="w-4 h-4" />
                 </button>
                 <div className="w-px h-4 bg-white/10 mx-1" />
@@ -71,7 +71,7 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 className="flex-1 flex items-center justify-center relative group overflow-hidden cursor-grab active:cursor-grabbing"
                 onClick={(e) => {
                     if (scale === 1 && e.target === e.currentTarget) {
-                        isZenMode ? onToggleZen() : onClose();
+                        isTheaterMode ? onToggleTheater() : onClose();
                     }
                 }}
                 onDoubleClick={handlers.onDoubleClick}
@@ -84,6 +84,7 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 <button
                     onClick={(e) => { e.stopPropagation(); onPrev(); }}
                     className={`absolute left-4 z-30 p-4 bg-black/20 hover:bg-black/40 text-white/50 hover:text-white rounded-full backdrop-blur-sm transition-all pointer-events-auto border border-white/5 hover:border-white/10 ${showControls ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}
+                    title="Previous Image (Left Arrow)"
                 >
                     <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -118,6 +119,7 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 <button
                     onClick={(e) => { e.stopPropagation(); onNext(); }}
                     className={`absolute right-4 z-30 p-4 bg-black/20 hover:bg-black/40 text-white/50 hover:text-white rounded-full backdrop-blur-sm transition-all pointer-events-auto border border-white/5 hover:border-white/10 ${showControls ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}
+                    title="Next Image (Right Arrow)"
                 >
                     <ChevronRight className="w-6 h-6" />
                 </button>
