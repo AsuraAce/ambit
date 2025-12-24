@@ -27,6 +27,7 @@ export const useSearch = ({
   const [isSearchingAi, setIsSearchingAi] = useState(false);
   const [pendingAiActivation, setPendingAiActivation] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,6 +37,14 @@ export const useSearch = ({
       setIsAiSearchEnabled(false);
     }
   }, [settings.enableAI]);
+
+  // Sync state: Clear suggestions if searchQuery is empty (handled externally like clear button)
+  useEffect(() => {
+    if (!filters.searchQuery) {
+      setSuggestions([]);
+      setActiveSuggestionIndex(-1);
+    }
+  }, [filters.searchQuery]);
 
   useEffect(() => {
     if (pendingAiActivation && settings.enableAI) {
@@ -70,6 +79,7 @@ export const useSearch = ({
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setFilters(prev => ({ ...prev, searchQuery: val }));
+    setActiveSuggestionIndex(-1);
 
     // Autocomplete Logic
     const lastToken = val.split(' ').pop()?.toLowerCase() || '';
@@ -80,6 +90,57 @@ export const useSearch = ({
       setSuggestions([...opMatches, ...tagMatches]);
     } else {
       setSuggestions([]);
+    }
+  };
+
+  const selectSuggestion = (index: number) => {
+    if (index < 0 || index >= suggestions.length) return;
+
+    const s = suggestions[index];
+    const current = filters.searchQuery;
+    const lastSpace = current.lastIndexOf(' ');
+    const prefix = lastSpace >= 0 ? current.substring(0, lastSpace + 1) : '';
+
+    setFilters(f => ({ ...f, searchQuery: prefix + s + ' ' }));
+    // Suggestions will be cleared by the effect above
+  };
+
+  const clearSearch = () => {
+    setFilters(f => ({ ...f, searchQuery: '' }));
+    setSuggestions([]);
+    setActiveSuggestionIndex(-1);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length === 0) {
+      if (e.key === 'Enter') submitSearch();
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setActiveSuggestionIndex(prev => (prev + 1) % suggestions.length);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setActiveSuggestionIndex(prev => (prev - 1 + suggestions.length) % suggestions.length);
+        break;
+      case 'Enter':
+      case 'Tab':
+        if (activeSuggestionIndex >= 0) {
+          e.preventDefault();
+          selectSuggestion(activeSuggestionIndex);
+        } else if (e.key === 'Enter') {
+          submitSearch();
+        }
+        break;
+      case 'Escape':
+        setSuggestions([]);
+        setActiveSuggestionIndex(-1);
+        inputRef.current?.blur();
+        break;
     }
   };
 
@@ -118,10 +179,14 @@ export const useSearch = ({
     isAiSearchEnabled: isAiSearchEnabled && settings.enableAI, // Double check
     isSearchingAi,
     suggestions,
+    activeSuggestionIndex,
     setSuggestions,
     inputRef,
     toggleAiSearch,
     handleSearchChange,
-    submitSearch
+    handleKeyDown,
+    submitSearch,
+    selectSuggestion,
+    clearSearch
   };
 };

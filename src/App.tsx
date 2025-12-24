@@ -636,8 +636,12 @@ export default function App() {
                                     inputRef: search.inputRef,
                                     toggleAiSearch: search.toggleAiSearch,
                                     handleSearchChange: search.handleSearchChange,
+                                    handleKeyDown: search.handleKeyDown,
                                     submitSearch: search.submitSearch,
-                                    suggestions: search.suggestions
+                                    suggestions: search.suggestions,
+                                    activeSuggestionIndex: search.activeSuggestionIndex,
+                                    selectSuggestion: search.selectSuggestion,
+                                    clearSearch: search.clearSearch
                                 }}
                                 layoutMode={layoutMode}
                                 setLayoutMode={setLayoutMode}

@@ -14,8 +14,12 @@ interface AppHeaderProps {
         inputRef: React.RefObject<HTMLInputElement>;
         toggleAiSearch: () => void;
         handleSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+        handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
         submitSearch: () => void;
         suggestions: string[];
+        activeSuggestionIndex: number;
+        selectSuggestion: (index: number) => void;
+        clearSearch: () => void;
     };
     layoutMode: LayoutMode;
     setLayoutMode: (mode: LayoutMode) => void;
@@ -72,10 +76,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                 onChange={searchProps.handleSearchChange}
                                 onFocus={() => setIsSearchFocused(true)}
                                 onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') searchProps.submitSearch(); }}
+                                onKeyDown={searchProps.handleKeyDown}
                                 autoComplete="off"
                             />
-                            {filters.searchQuery && <button onClick={() => { setFilters(p => ({ ...p, searchQuery: '' })); searchProps.inputRef.current?.focus(); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"><X className="w-3.5 h-3.5" /></button>}
+                            {filters.searchQuery && <button onClick={searchProps.clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"><X className="w-3.5 h-3.5" /></button>}
 
                             {/* Search Dropdown: Suggestions & History */}
                             {isSearchFocused && (
@@ -83,19 +87,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                     {searchProps.suggestions.length > 0 && (
                                         <div className="py-2">
                                             <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Suggestions</div>
-                                            {searchProps.suggestions.map(s => (
+                                            {searchProps.suggestions.map((s, idx) => (
                                                 <button
                                                     key={s}
                                                     onMouseDown={(e) => {
                                                         e.preventDefault();
-                                                        // Append suggestion to current query if it ends in space, else replace last token
-                                                        const current = filters.searchQuery;
-                                                        const lastSpace = current.lastIndexOf(' ');
-                                                        const prefix = lastSpace >= 0 ? current.substring(0, lastSpace + 1) : '';
-                                                        setFilters(f => ({ ...f, searchQuery: prefix + s + ' ' }));
-                                                        searchProps.inputRef.current?.focus();
+                                                        searchProps.selectSuggestion(idx);
                                                     }}
-                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                                                    className={`w-full text-left px-4 py-2 text-sm transition-colors ${searchProps.activeSuggestionIndex === idx ? 'bg-sage-100 dark:bg-sage-900/40 text-sage-900 dark:text-sage-100' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`}
                                                 >
                                                     {s}
                                                 </button>
