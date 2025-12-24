@@ -49,7 +49,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     clearAllFilters,
     isImporting
 }) => {
-    const { settings, setSettings, collections, recentSearches, loadMoreImages, hasMoreImages, isLiveWatching, setIsLiveWatching } = useLibraryContext();
+    const { settings, setSettings, collections, recentSearches, setRecentSearches, loadMoreImages, hasMoreImages, isLiveWatching, setIsLiveWatching } = useLibraryContext();
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -103,7 +103,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                     )}
                                     {!filters.searchQuery && recentSearches.length > 0 && (
                                         <div className="py-2 border-t border-gray-100 dark:border-white/5 first:border-0">
-                                            <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Recent</div>
+                                            <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+                                                <span>Recent Searches</span>
+                                                <button
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        setRecentSearches([]);
+                                                    }}
+                                                    className="hover:text-red-500 transition-colors uppercase"
+                                                >
+                                                    Clear
+                                                </button>
+                                            </div>
                                             {recentSearches.map(s => (
                                                 <button
                                                     key={s}
