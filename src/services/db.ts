@@ -613,3 +613,66 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
 
     return ids.length;
 };
+// Permanent Delete (Single)
+export const deleteImage = async (id: string) => {
+    const db = await getDb();
+    await db.execute('DELETE FROM images WHERE id = $1', [id]);
+};
+
+// Toggle Soft Delete (Batch or Single)
+export const markAsDeleted = async (ids: string[], isDeleted: boolean) => {
+    const db = await getDb();
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+    await db.execute(`UPDATE images SET is_deleted = $1 WHERE id IN (${placeholders})`, [isDeleted ? 1 : 0, ...ids]);
+};
+
+// --- Maintenance Queries ---
+
+export const getMaintenanceCounts = async () => {
+    const db = await getDb();
+    const result = await db.select<any[]>(`
+        SELECT 
+            (SELECT COUNT(*) FROM images WHERE is_deleted = 1) as trash_count,
+            (SELECT COUNT(*) FROM images WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') AND is_deleted = 0) as untagged_count,
+            (SELECT COUNT(*) FROM images WHERE is_missing = 1 AND is_deleted = 0) as missing_count,
+            (SELECT COUNT(*) FROM images WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '') AND path NOT LIKE 'blob:%' AND path NOT LIKE 'data:%' AND is_deleted = 0) as unoptimized_count
+    `);
+
+    return {
+        trash: result[0]?.trash_count || 0,
+        untagged: result[0]?.untagged_count || 0,
+        missing: result[0]?.missing_count || 0,
+        unoptimized: result[0]?.unoptimized_count || 0
+    };
+};
+
+export const getDeletedImages = async (): Promise<AIImage[]> => {
+    const db = await getDb();
+    const rows = await db.select<any[]>('SELECT * FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC');
+    return rows.map(mapRowToImage);
+};
+
+export const getUntaggedImages = async (): Promise<AIImage[]> => {
+    const db = await getDb();
+    const rows = await db.select<any[]>(`
+        SELECT * FROM images 
+        WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
+        AND is_deleted = 0 
+        ORDER BY timestamp DESC
+    `);
+    return rows.map(mapRowToImage);
+};
+
+export const getUnoptimizedImages = async (): Promise<AIImage[]> => {
+    const db = await getDb();
+    // Heuristic: Check where path equals thumbnail_path OR thumbnail_path is missing
+    const rows = await db.select<any[]>(`
+        SELECT * FROM images 
+        WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')
+        AND path NOT LIKE 'blob:%' 
+        AND path NOT LIKE 'data:%'
+        AND is_deleted = 0
+        ORDER BY timestamp DESC
+    `);
+    return rows.map(mapRowToImage);
+};

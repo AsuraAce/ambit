@@ -8,7 +8,7 @@ interface LibraryHealthProps {
     onScanComplete?: (missingIds: string[]) => void;
 }
 
-export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
+const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
     const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
@@ -226,3 +226,5 @@ export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed',
         </div>
     );
 };
+
+export const LibraryHealth = React.memo(LibraryHealthBase);

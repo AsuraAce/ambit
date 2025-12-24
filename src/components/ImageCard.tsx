@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon } from 'lucide-react';
+import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { AIImage } from '../types';
 import { SmartImage } from './SmartImage';
 
@@ -72,7 +72,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         loading="eager"
         className={`w-full h-full transition-all duration-700 ease-spring 
             ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'} 
-            ${isMissing ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
+            ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
         `}
       />
 
@@ -83,6 +83,16 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             <Unlink className="w-6 h-6 text-red-500 dark:text-red-400" />
           </div>
           <span className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded">File Not Found</span>
+        </div>
+      )}
+
+      {/* Deleted (Trash) Overlay */}
+      {image.isDeleted && !isMissing && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gray-100/10 dark:bg-black/40 backdrop-grayscale">
+          <div className="p-3 bg-sage-100 dark:bg-sage-900/50 rounded-full mb-2 backdrop-blur-sm border border-sage-200 dark:border-sage-500/30">
+            <Trash2 className="w-6 h-6 text-sage-600 dark:text-sage-400" />
+          </div>
+          <span className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded">Trash</span>
         </div>
       )}
 

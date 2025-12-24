@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AIImage } from '../types';
@@ -126,7 +126,7 @@ const UntaggedItem: React.FC<{
 };
 
 interface MaintenanceViewProps {
-    images: AIImage[];
+    images: AIImage[]; // Prop still used for general context or fallback
     onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
     onRestoreImages: (ids: string[]) => void;
     onDeleteForever: (ids: string[]) => void;
@@ -139,6 +139,9 @@ interface MaintenanceViewProps {
     maskedKeywords: string[];
     privacyEnabled: boolean;
 }
+
+// Lazy load LibraryHealth outside component to prevent re-creation on render
+const LibraryHealth = React.lazy(() => import('./maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
 
 export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     images,
@@ -173,50 +176,94 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     };
 
     // 1. Memoize basic filters (Fast O(N))
-    const deletedImages = useMemo(() => images.filter(img => img.isDeleted), [images]);
-    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
-    const missingImages = useMemo(() => {
-        // Combine props images and manually fetched images for the missing tab
-        const pool = [...images, ...fetchedMissingImages];
-        // Unique by ID
-        const uniquePool = Array.from(new Map(pool.map(item => [item.id, item])).values());
+    const [activeTab, setActiveTab] = useState<'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails'>('missing');
 
+    // --- Local Data State ---
+    const [localDeletedImages, setLocalDeletedImages] = useState<AIImage[]>([]);
+    const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
+    const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
+    const [maintenanceCounts, setMaintenanceCounts] = useState({ trash: 0, untagged: 0, missing: 0, unoptimized: 0 });
+
+    const [isLoading, setIsLoading] = useState(false);
+
+    // --- Data Fetchers ---
+    const refreshData = useCallback(async (tab: string) => {
+        setIsLoading(true);
+        try {
+            const db = await import('../services/db');
+
+            // Always refresh counts
+            const counts = await db.getMaintenanceCounts();
+            setMaintenanceCounts(counts);
+
+            if (tab === 'trash') {
+                const data = await db.getDeletedImages();
+                setLocalDeletedImages(data);
+            } else if (tab === 'untagged') {
+                const data = await db.getUntaggedImages();
+                setLocalUntaggedImages(data);
+            } else if (tab === 'thumbnails') {
+                const data = await db.getUnoptimizedImages();
+                setLocalUnoptimizedImages(data);
+            }
+        } catch (e) {
+            console.error("Failed to refresh maintenance data", e);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    // Initial load of counts
+    useEffect(() => {
+        import('../services/db').then(db => db.getMaintenanceCounts()).then(setMaintenanceCounts);
+    }, []);
+
+    // Tab switch trigger
+    useEffect(() => {
+        refreshData(activeTab);
+    }, [activeTab, refreshData]);
+
+    // Active Images for Duplicates (still uses prop for now as it's complex, or we can fetch all)
+    // For now, Duplicates tab still relies on loaded images OR we can fetch all Active images?
+    // User requested "Whole Data", so DuplicateFinder needs 'activeImages'. 
+    // Passing pagination-limited 'images' to DuplicateFinder is still the bottleneck there.
+    // However, fixing DuplicateFinder is a larger task (logic is inside it). 
+    // For now, we fix Trash/Untagged/Thumbnails as promised.
+    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
+
+    const missingImages = useMemo(() => {
+        const pool = [...localDeletedImages, ...activeImages, ...fetchedMissingImages]; // Use localDeleted to help find missing? No.
+        // Actually missing logic is separate.
+        // We rely on 'fetchedMissingImages' from the scan mainly.
+        // But let's keep the existing logic:
+        const uniquePool = Array.from(new Map([...images, ...fetchedMissingImages].map(item => [item.id, item])).values());
         if (scanMissingIds.size > 0) {
             return uniquePool.filter(img => scanMissingIds.has(img.id) && !img.isDeleted);
         }
         return uniquePool.filter(img => img.isMissing && !img.isDeleted);
-    }, [images, fetchedMissingImages, scanMissingIds]);
+    }, [images, fetchedMissingImages, scanMissingIds, localDeletedImages, activeImages]);
 
     // Safe accessor for viewer image - Defined AFTER missingImages
+    // Safe accessor for viewer image - Dynamic based on active tab
+    // This ensures we always show the image from the locally fetched list without relying on global state.
     const targetImage = useMemo(() => {
         if (!viewingImageId) return null;
-        return missingImages.find(i => i.id === viewingImageId) || null;
-    }, [viewingImageId, missingImages]);
 
-    const untaggedImages = useMemo(() => activeImages.filter(img => !img.metadata.positivePrompt || (typeof img.metadata.positivePrompt === 'string' && img.metadata.positivePrompt.trim() === '')), [activeImages]);
+        // Search in all local lists order by likelihood
+        const allPool = [
+            ...missingImages,
+            ...localUntaggedImages,
+            ...localDeletedImages,
+            ...localUnoptimizedImages
+            // Active images if needed?
+        ];
+        return allPool.find(i => i.id === viewingImageId) || null;
+    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages]);
 
-    // Heuristic for unoptimized images: where thumbnail url equals full url (and isn't a web blob)
-    // We only care about active images
-    const unoptimizedImages = useMemo(() => activeImages.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:')), [activeImages]);
-
-    // 2. Default Tab Logic - Simplified to avoid scans
-    // We prioritize "Known Bad" states (Missing/Trash) over "Potential Optimizations" (Stacks/Dupes)
-    // to avoid running heavy stacking logic on mount.
-    const defaultTab = missingImages.length > 0 ? 'missing' :
-        (untaggedImages.length > 0 ? 'untagged' :
-            (unoptimizedImages.length > 0 ? 'thumbnails' :
-                (deletedImages.length > 0 ? 'trash' : 'stacks')));
-
-    const [activeTab, setActiveTab] = useState<'duplicates' | 'trash' | 'missing' | 'stacks' | 'untagged' | 'thumbnails'>(defaultTab);
-
-    // 3. Lazy Stacking Calculation
-    // Only run the heavy useStacking hook if the User explicitly goes to the 'stacks' tab.
-    // This prevents the "Freeze on Open" issue for the Trash tab.
-    const shouldCalculateStacks = activeTab === 'stacks';
-    // We pass 'activeImages' only if we should calculate, else empty array to skip processing.
-    // Use a stable empty array reference to prevent useStacking from infinite looping
-    const emptyImages = useMemo<AIImage[]>(() => [], []);
-    const { suggestedStacks } = useStacking(shouldCalculateStacks ? activeImages : emptyImages);
+    // 3. Removed Lazy Stacking Calculation
+    // const shouldCalculateStacks = activeTab === 'stacks';
+    // const emptyImages = useMemo<AIImage[]>(() => [], []);
+    // const { suggestedStacks } = useStacking(shouldCalculateStacks ? activeImages : emptyImages);
 
     // 4. Trash Selection State
     const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
@@ -231,21 +278,24 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     }, []);
 
     const selectAllTrash = () => {
-        setSelectedTrashIds(new Set(deletedImages.map(i => i.id)));
+        setSelectedTrashIds(new Set(localDeletedImages.map(i => i.id)));
     };
 
-    const handleRestoreSelected = () => {
-        onRestoreImages(Array.from(selectedTrashIds));
+    const handleRestoreSelected = async () => {
+        await onRestoreImages(Array.from(selectedTrashIds));
         setSelectedTrashIds(new Set());
+        refreshData('trash'); // Refresh local list
     };
 
-    const handleDeleteSelected = () => {
-        onDeleteForever(Array.from(selectedTrashIds));
+    const handleDeleteSelected = async () => {
+        await onDeleteForever(Array.from(selectedTrashIds));
         setSelectedTrashIds(new Set());
+        refreshData('trash'); // Refresh local list
     };
 
     const handlePurgeMissing = () => {
         onDeleteForever(missingImages.map(i => i.id));
+        // Missing list updates via scan, but we can trigger a refresh if needed
     };
 
     const handleGroupConfirm = (baseId: string, relatedIds: string[]) => {
@@ -280,12 +330,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 key={img.id}
                 img={img}
                 style={style}
-                onView={onViewImage || (() => { })}
+                onView={(id) => setViewingImageId(id)}
                 privacyEnabled={privacyEnabled}
                 maskedKeywords={maskedKeywords}
             />
         );
-    }, [onViewImage, privacyEnabled, maskedKeywords]);
+    }, [privacyEnabled, maskedKeywords]);
 
     const renderMissingItem = useCallback((img: AIImage, style: React.CSSProperties) => {
         return (
@@ -347,27 +397,30 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
                     <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">
                         <button onClick={() => setActiveTab('thumbnails')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'thumbnails' ? 'bg-white dark:bg-zinc-700 text-blue-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Thumbnails {unoptimizedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'thumbnails' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{unoptimizedImages.length}</span>}
+                            Thumbnails {maintenanceCounts.unoptimized > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'thumbnails' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.unoptimized}</span>}
                         </button>
 
+                        {/* Stacks Tab Hidden as requested */}
+                        {/* 
                         <button onClick={() => setActiveTab('stacks')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'stacks' ? 'bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
                             Stacks
                         </button>
+                        */}
 
                         <button onClick={() => setActiveTab('duplicates')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === 'duplicates' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
                             Duplicates
                         </button>
 
                         <button onClick={() => setActiveTab('untagged')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'untagged' ? 'bg-white dark:bg-zinc-700 text-orange-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Untagged {untaggedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'untagged' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{untaggedImages.length}</span>}
+                            Untagged {maintenanceCounts.untagged > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'untagged' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.untagged}</span>}
                         </button>
 
                         <button onClick={() => setActiveTab('missing')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'missing' ? 'bg-white dark:bg-zinc-700 text-red-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Missing {missingImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'missing' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{missingImages.length}</span>}
+                            Missing {maintenanceCounts.missing > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'missing' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.missing}</span>}
                         </button>
 
                         <button onClick={() => setActiveTab('trash')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'trash' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Trash {deletedImages.length > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'trash' ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{deletedImages.length}</span>}
+                            Trash {maintenanceCounts.trash > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'trash' ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.trash}</span>}
                         </button>
                     </div>
                 </div>
@@ -383,23 +436,23 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 <Layers className="w-5 h-5 text-blue-500" /> Optimize Thumbnails
                             </h3>
                             <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-                                Found {unoptimizedImages.length} images using full-resolution files as thumbnails.
+                                Found {maintenanceCounts.unoptimized} images using full-resolution files as thumbnails.
                                 Regenerating them will significantly improve gallery scroll smoothness.
                             </p>
-                            {unoptimizedImages.length > 0 && onRegenerateThumbnails && (
+                            {localUnoptimizedImages.length > 0 && onRegenerateThumbnails && (
                                 <button onClick={() => onRegenerateThumbnails()} className="mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
                                     <Wand2 className="w-4 h-4" /> Generate All Thumbnails
                                 </button>
                             )}
                         </div>
-                        {unoptimizedImages.length === 0 ? (
+                        {localUnoptimizedImages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                                 <p>All items optimized!</p>
                             </div>
                         ) : (
                             <div className="flex-1 min-h-[500px]">
                                 <VirtualGrid
-                                    items={unoptimizedImages}
+                                    items={localUnoptimizedImages}
                                     layout="masonry"
                                     minItemWidth={200}
                                     gap={16}
@@ -414,40 +467,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 )}
 
 
-                {activeTab === 'stacks' && (
-                    <div className="w-full pb-24 animate-in fade-in">
-                        <div className="flex flex-col gap-6 max-w-5xl mx-auto">
-                            {/* Explanation Banner */}
-                            <div className="p-4 bg-amethyst-50 dark:bg-amethyst-900/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl flex gap-4">
-                                <div className="p-2 bg-white dark:bg-amethyst-900/30 rounded-lg h-fit text-amethyst-600">
-                                    <Wand2 className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">Intelligent Grouping</h3>
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
-                                        Ambit detected these images might be part of the same generation workflow (e.g. Upscales, Hires Fix, or Variations).
-                                        Grouping them will clean up your grid by stacking them under a single card.
-                                    </p>
-                                </div>
-                            </div>
 
-                            {/* Content */}
-                            {suggestedStacks.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                                    <div className="p-4 bg-amethyst-100 dark:bg-amethyst-900/20 rounded-full mb-4">
-                                        <Layers className="w-10 h-10 text-amethyst-500 dark:text-amethyst-400" />
-                                    </div>
-                                    <p className="font-medium text-gray-900 dark:text-white">No Stacks Detected</p>
-                                    <p className="text-sm mt-1 max-w-sm text-center">Your library looks flat! We couldn't find sequential workflows (like Base -&gt; Upscale) based on time and prompts.</p>
-                                </div>
-                            ) : (
-                                suggestedStacks.map(group => (
-                                    <StackGroup key={group.id} group={group} onConfirm={handleGroupConfirm} />
-                                ))
-                            )}
-                        </div>
-                    </div>
-                )}
+                {/* Stacks removed (hidden) */}
+                {/* 
+                {activeTab === 'stacks' && ( ... )} 
+                */}
 
                 {activeTab === 'duplicates' && (
                     <DuplicateFinder
@@ -469,14 +493,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 These images have no generation metadata.
                             </p>
                         </div>
-                        {untaggedImages.length === 0 ? (
+                        {localUntaggedImages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                                 <p>All Metadata Present!</p>
                             </div>
                         ) : (
                             <div className="flex-1 min-h-[500px]">
                                 <VirtualGrid
-                                    items={untaggedImages}
+                                    items={localUntaggedImages}
                                     layout="masonry"
                                     minItemWidth={200}
                                     gap={16}
@@ -495,10 +519,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         <div className="flex-shrink-0 flex flex-col gap-6 mb-6">
                             {/* Proactive Health Scan */}
                             <React.Suspense fallback={<div className="h-32 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />}>
-                                {(() => {
-                                    const LibraryHealth = React.lazy(() => import('./maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
-                                    return <LibraryHealth mode="detailed" onScanComplete={handleScanComplete} />;
-                                })()}
+                                <LibraryHealth mode="detailed" onScanComplete={handleScanComplete} />
                             </React.Suspense>
                         </div>
 
@@ -548,8 +569,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         </button>
                                     </>
                                 ) : (
-                                    deletedImages.length > 0 && (
-                                        <button onClick={onEmptyTrash} className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-red-200 dark:hover:bg-red-900/50">
+                                    localDeletedImages.length > 0 && (
+                                        <button onClick={async () => { await onEmptyTrash(); refreshData('trash'); }} className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-red-200 dark:hover:bg-red-900/50">
                                             <Trash2 className="w-4 h-4" /> Empty All Trash
                                         </button>
                                     )
@@ -557,7 +578,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             </div>
                         </div>
 
-                        {deletedImages.length === 0 ? (
+                        {localDeletedImages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                                 <Trash2 className="w-10 h-10 opacity-30 mb-4" />
                                 <p>Trash is empty.</p>
@@ -565,7 +586,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         ) : (
                             <div className="flex-1 min-h-[500px]">
                                 <VirtualGrid
-                                    items={deletedImages}
+                                    items={localDeletedImages}
                                     layout="masonry"
                                     minItemWidth={180}
                                     gap={16}
@@ -589,18 +610,38 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             isOpen={true}
                             onClose={() => setViewingImageId(null)}
                             onNext={() => {
-                                const idx = missingImages.findIndex(i => i.id === viewingImageId);
-                                if (idx !== -1 && idx < missingImages.length - 1) setViewingImageId(missingImages[idx + 1].id);
+                                // Determine current list based on active tab
+                                let list: AIImage[] = [];
+                                if (activeTab === 'missing') list = missingImages;
+                                else if (activeTab === 'untagged') list = localUntaggedImages;
+                                else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
+                                else if (activeTab === 'trash') list = localDeletedImages;
+
+                                const idx = list.findIndex(i => i.id === viewingImageId);
+                                if (idx !== -1 && idx < list.length - 1) setViewingImageId(list[idx + 1].id);
                             }}
                             onPrev={() => {
-                                const idx = missingImages.findIndex(i => i.id === viewingImageId);
-                                if (idx > 0) setViewingImageId(missingImages[idx - 1].id);
+                                let list: AIImage[] = [];
+                                if (activeTab === 'missing') list = missingImages;
+                                else if (activeTab === 'untagged') list = localUntaggedImages;
+                                else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
+                                else if (activeTab === 'trash') list = localDeletedImages;
+
+                                const idx = list.findIndex(i => i.id === viewingImageId);
+                                if (idx > 0) setViewingImageId(list[idx - 1].id);
                             }}
                             onAddToCollection={() => { }}
                             onSearch={() => { }} // No-op
                             onToggleFavorite={() => { }}
                             onOpenSettings={() => { }}
-                        // Missing images generally don't support full editing
+                            // Actions for Maintenance
+                            onDelete={() => {
+                                if (viewingImageId) {
+                                    onDeleteForever([viewingImageId]);
+                                    setViewingImageId(null);
+                                    refreshData(activeTab); // Immediately refresh list
+                                }
+                            }}
                         />
                     )}
                 </AnimatePresence>,
