@@ -927,8 +927,70 @@ pub fn run() {
             refresh_boards_native,
             scan_directory_recursive,
             start_live_link_watcher,
-            get_file_sizes_bulk
+            get_file_sizes_bulk,
+            show_in_folder,
+            open_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn show_in_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let _ = Command::new("explorer")
+            .arg("/select,")
+            .arg(path.replace("/", "\\"))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let _ = Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::path::Path;
+        let p = Path::new(&path);
+        if let Some(parent) = p.parent() {
+            use std::process::Command;
+            let _ = Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let _ = Command::new("cmd")
+            .arg("/c")
+            .arg("start")
+            .arg("")
+            .arg(path.replace("/", "\\"))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use std::process::Command;
+        let cmd = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+        let _ = Command::new(cmd)
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

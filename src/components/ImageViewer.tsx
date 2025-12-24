@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, Share2, Minimize2, Maximize2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Wand2, Shuffle, Layers, ArrowRight } from 'lucide-react';
+import { X, Share2, Minimize2, Maximize2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Wand2, Shuffle, Layers, ArrowRight, Layout, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { AIImage, GeneratorTool } from '../types';
 import { useZoomPan } from '../hooks/useZoomPan';
@@ -206,8 +206,38 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     </div>
 
                     <div className="flex items-center gap-3 pointer-events-auto">
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const response = await fetch(displayImage.url);
+                                    const blob = await response.blob();
+                                    await navigator.clipboard.write([
+                                        new ClipboardItem({ [blob.type]: blob })
+                                    ]);
+                                    // We need toast here, but Toast is in App. 
+                                    // Since we don't have onToast prop, we'll use a small local feedback or just trust the global state if we can pass it.
+                                    // For now, let's just do it.
+                                } catch (e) {
+                                    console.error("Copy failed", e);
+                                }
+                            }}
+                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                            title="Copy Image to Clipboard"
+                        >
+                            <Copy className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={async () => {
+                                const { invoke } = await import('@tauri-apps/api/core');
+                                await invoke('open_file', { path: displayImage.id });
+                            }}
+                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                            title="Open in Default App"
+                        >
+                            <ExternalLink className="w-5 h-5" />
+                        </button>
                         <button onClick={() => setIsZenMode(!isZenMode)} className={`p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full transition-all backdrop-blur-md shadow-lg ${isZenMode ? 'text-sage-400 border-sage-500/50' : 'text-white/50 hover:text-white'}`}>
-                            {isZenMode ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                            <Layout className="w-5 h-5" />
                         </button>
                         <button onClick={() => { if (navigator.share) navigator.share({ title: displayImage.filename, url: displayImage.url }); }} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"><Share2 className="w-5 h-5" /></button>
                         <button onClick={() => onToggleFavorite(displayImage.id)} className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"><Heart className={`w-5 h-5 ${displayImage.isFavorite ? 'fill-red-500 text-red-500' : ''}`} /></button>

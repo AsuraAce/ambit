@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useEffect, useRef } from 'react';
-import { Copy, Trash2, FolderPlus, Folder, Pin, Wand2, Image as ImageIcon, ImageOff, EyeOff, FolderMinus, Heart } from 'lucide-react';
+import { Copy, Heart, Pin, FolderPlus, FolderMinus, Trash2, Folder, Wand2, Eye, EyeOff, MinusCircle, ImageIcon, ExternalLink, ImageOff } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -10,6 +10,11 @@ interface ContextMenuProps {
   activeCollectionName?: string;
   onClose: () => void;
   onCopyPrompt: () => void;
+  onCopySeed?: () => void;
+  onCopyGenerationInfo?: () => void;
+  onCopyImage?: () => void;
+  onCopyFilePath?: () => void;
+  onOpenInDefaultApp?: () => void;
   onAddToCollection: () => void;
   onRemoveFromCollection?: () => void;
   onTogglePin: () => void;
@@ -33,6 +38,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   activeCollectionName,
   onClose,
   onCopyPrompt,
+  onCopySeed,
+  onCopyGenerationInfo,
+  onCopyImage,
+  onCopyFilePath,
+  onOpenInDefaultApp,
   onAddToCollection,
   onRemoveFromCollection,
   onTogglePin,
@@ -44,7 +54,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onToggleMask,
   onToggleFavorite,
   isFavorite,
-  // Masking State
   isMasked,
   userMasked,
 }) => {
@@ -63,8 +72,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // Keep menu within viewport
   const style = {
-    top: Math.min(y, window.innerHeight - 350),
-    left: Math.min(x, window.innerWidth - 270), // Adjusted for wider menu
+    top: Math.min(y, window.innerHeight - 450), // Increased buffer for new options
+    left: Math.min(x, window.innerWidth - 270),
   };
 
   return (
@@ -73,9 +82,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       style={style}
       className="fixed z-50 w-64 bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl shadow-black overflow-hidden animate-in fade-in duration-100 py-1"
     >
+      <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-white/5 mb-1">Generation</div>
       <MenuItem icon={<Copy className="w-4 h-4" />} label="Copy Prompt" onClick={onCopyPrompt} />
-      <MenuItem icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : ''}`} />} label={isFavorite ? "Unfavorite" : "Favorite"} onClick={() => onToggleFavorite && onToggleFavorite()} />
-      <MenuItem icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />} label={isPinned ? "Unpin Image" : "Pin to Top"} onClick={onTogglePin} />
+      {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-amethyst-400" />} label="Copy Seed" onClick={onCopySeed} />}
+      {onCopyGenerationInfo && <MenuItem icon={<Copy className="w-4 h-4 text-sage-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />}
+
+      <div className="h-px bg-white/5 my-1" />
+      <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-white/5 mb-1">Library</div>
+      <MenuItem
+        icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : ''}`} />}
+        label={isFavorite ? "Unfavorite" : "Favorite"}
+        onClick={() => onToggleFavorite && onToggleFavorite()}
+      />
+      <MenuItem
+        icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-current' : ''}`} />}
+        label={isPinned ? "Unpin Image" : "Pin to Top"}
+        onClick={onTogglePin}
+      />
       <MenuItem icon={<FolderPlus className="w-4 h-4" />} label="Add to Collection..." onClick={onAddToCollection} />
 
       {activeCollectionName && onRemoveFromCollection && (
@@ -87,51 +110,41 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         />
       )}
 
-      {onToggleMask && (
+      {(onSetThumbnail || onUnsetThumbnail) && (
         <>
-          {/* Tri-State Masking Logic:
-               - If currently masked (by keyword or user), show "Unmask" (User=False).
-               - If explicitly unmasked (User=False), show "Reset to Auto" (User=Null/Undefined).
-               - If explicitly masked (User=True), show "Reset to Auto" or "Unmask".
-            */}
-          {/* Simplified UX:
-               - Toggle between: Auto -> Masked -> Unmasked -> Auto
-               - OR: Checkboxes? No, context menu.
-               - Let's show smart actions.
-           */}
-
-          {/* 1. If Explicitly set, allow clearing it ("Auto") */}
-          {userMasked !== undefined && (
-            <MenuItem
-              icon={<EyeOff className="w-4 h-4 text-amethyst-400" />}
-              label="Reset Mask to Auto"
-              onClick={() => onToggleMask(null)}
-            />
+          <div className="h-px bg-white/5 my-1" />
+          {onSetThumbnail && (
+            <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Thumbnail" onClick={onSetThumbnail} className="text-sage-200 hover:text-white" />
           )}
-
-          {/* 2. If NOT masked (visible), allow Masking */}
-          {!isMasked && (
-            <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Mask Content" onClick={() => onToggleMask(true)} />
-          )}
-
-          {/* 3. If Masked, allow Unmasking (Override) */}
-          {isMasked && (
-            <MenuItem icon={<EyeOff className="w-4 h-4 text-green-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
+          {onUnsetThumbnail && (
+            <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Thumbnail" onClick={onUnsetThumbnail} className="text-gray-400 hover:text-white" />
           )}
         </>
       )}
 
-      {onSetThumbnail && (
-        <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Thumbnail" onClick={onSetThumbnail} className="text-sage-200 hover:text-white" />
-      )}
-
-      {onUnsetThumbnail && (
-        <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Thumbnail" onClick={onUnsetThumbnail} className="text-gray-400 hover:text-white" />
+      {onToggleMask && (
+        <>
+          <div className="h-px bg-white/5 my-1" />
+          <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-white/5 mb-1">Privacy</div>
+          {userMasked !== undefined && (
+            <MenuItem
+              icon={<MinusCircle className="w-4 h-4 text-amethyst-400" />}
+              label="Reset Mask to Auto"
+              onClick={() => onToggleMask(null)}
+            />
+          )}
+          {!isMasked && (
+            <MenuItem icon={<EyeOff className="w-4 h-4" />} label="Mask Content" onClick={() => onToggleMask(true)} />
+          )}
+          {isMasked && (
+            <MenuItem icon={<Eye className="w-4 h-4 text-sage-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
+          )}
+        </>
       )}
 
       {enableAI && onRecoverMetadata && (
         <>
-          <div className="h-px bg-white/10 my-1" />
+          <div className="h-px bg-white/5 my-1" />
           <MenuItem
             icon={<Wand2 className="w-4 h-4 text-amethyst-400" />}
             label="Recover Metadata (AI)"
@@ -141,7 +154,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         </>
       )}
 
+      <div className="h-px bg-white/5 my-1" />
+      <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-white/5 mb-1">File</div>
+      {onCopyImage && <MenuItem icon={<ImageIcon className="w-4 h-4" />} label="Copy Image" onClick={onCopyImage} />}
+      {onCopyFilePath && <MenuItem icon={<Copy className="w-4 h-4 text-zinc-500" />} label="Copy File Path" onClick={onCopyFilePath} />}
+
       <div className="h-px bg-white/10 my-1" />
+
+      {onOpenInDefaultApp && <MenuItem icon={<ExternalLink className="w-4 h-4 text-sage-400" />} label="Open in Default App" onClick={onOpenInDefaultApp} />}
       <MenuItem icon={<Folder className="w-4 h-4" />} label="Show in Folder" onClick={onShowInFolder} />
       <div className="h-px bg-white/10 my-1" />
       <MenuItem icon={<Trash2 className="w-4 h-4 text-red-400" />} label="Delete" onClick={onDelete} className="text-red-400 hover:bg-red-900/30" />

@@ -543,7 +543,69 @@ export default function App() {
                         }}
                         onToggleMask={(val) => { handleBulkMask(contextMenu.imageId, val); setContextMenu(null); }}
                         onDelete={() => { settings.confirmDelete ? openModal('deleteConfirm') : executeDelete(); setContextMenu(null); }}
-                        onShowInFolder={() => { addToast('Opening folder...', 'info'); setContextMenu(null); }}
+                        onShowInFolder={async () => {
+                            const id = contextMenu.imageId;
+                            const { invoke } = await import('@tauri-apps/api/core');
+                            await invoke('show_in_folder', { path: id });
+                            addToast('Opening folder...', 'info');
+                            setContextMenu(null);
+                        }}
+                        onOpenInDefaultApp={async () => {
+                            const id = contextMenu.imageId;
+                            const { invoke } = await import('@tauri-apps/api/core');
+                            await invoke('open_file', { path: id });
+                            addToast('Opening in default app...', 'info');
+                            setContextMenu(null);
+                        }}
+                        onCopySeed={() => {
+                            const img = images.find(i => i.id === contextMenu.imageId);
+                            if (img && img.metadata.seed !== undefined) {
+                                navigator.clipboard.writeText(String(img.metadata.seed));
+                                addToast('Seed copied', 'success');
+                            }
+                            setContextMenu(null);
+                        }}
+                        onCopyGenerationInfo={() => {
+                            const img = images.find(i => i.id === contextMenu.imageId);
+                            if (img) {
+                                const m = img.metadata;
+                                const info = [
+                                    m.positivePrompt ? `Prompt: ${m.positivePrompt}` : '',
+                                    m.negativePrompt ? `Negative: ${m.negativePrompt}` : '',
+                                    `Steps: ${m.steps}`,
+                                    `CFG: ${m.cfg}`,
+                                    `Seed: ${m.seed}`,
+                                    `Sampler: ${m.sampler}`,
+                                    `Model: ${m.model}`
+                                ].filter(Boolean).join('\n');
+                                navigator.clipboard.writeText(info);
+                                addToast('Generation info copied', 'success');
+                            }
+                            setContextMenu(null);
+                        }}
+                        onCopyImage={async () => {
+                            const img = images.find(i => i.id === contextMenu.imageId);
+                            if (img) {
+                                try {
+                                    const response = await fetch(img.url);
+                                    const blob = await response.blob();
+                                    await navigator.clipboard.write([
+                                        new ClipboardItem({ [blob.type]: blob })
+                                    ]);
+                                    addToast('Image copied', 'success');
+                                } catch (e) {
+                                    addToast('Failed to copy image', 'error');
+                                }
+                            }
+                            setContextMenu(null);
+                        }}
+                        onCopyFilePath={() => {
+                            if (contextMenu.imageId) {
+                                navigator.clipboard.writeText(contextMenu.imageId);
+                                addToast('File path copied', 'success');
+                            }
+                            setContextMenu(null);
+                        }}
                         onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI first", "error"); openModal('settings'); } else { openModal('recovery'); } setContextMenu(null); }}
                         onSetThumbnail={() => {
                             if (filters.collectionId) {
