@@ -106,6 +106,7 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                     >
                         <SmartImage
                             src={image.url}
+                            fallbackSrc={image.thumbnailUrl}
                             alt={image.metadata.positivePrompt}
                             draggable={false}
                             objectFit="contain"

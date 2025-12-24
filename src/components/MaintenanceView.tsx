@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { useState, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence } from 'framer-motion';
 import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
@@ -7,6 +9,8 @@ import { useStacking } from '../hooks/useStacking';
 import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye } from 'lucide-react';
 import { VirtualGrid } from './VirtualGrid';
 import { isImageMasked } from '../utils/maskingUtils';
+import { ImageViewer } from './ImageViewer';
+import { useLibraryContext } from '../hooks/useLibraryContext';
 
 // --- Sub-Components for Reveal State ---
 
@@ -148,10 +152,47 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     maskedKeywords,
     privacyEnabled
 }) => {
+    const { settings } = useLibraryContext();
+    const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
+    const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
+    const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+
+    const handleScanComplete = async (ids: string[]) => {
+        setScanMissingIds(new Set(ids));
+        if (ids.length > 0) {
+            try {
+                const { getImagesByIds } = await import('../services/db');
+                const fetched = await getImagesByIds(ids);
+                setFetchedMissingImages(fetched);
+            } catch (e) {
+                console.error('Failed to fetch missing images', e);
+            }
+        } else {
+            setFetchedMissingImages([]);
+        }
+    };
+
     // 1. Memoize basic filters (Fast O(N))
     const deletedImages = useMemo(() => images.filter(img => img.isDeleted), [images]);
     const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
-    const missingImages = useMemo(() => images.filter(img => img.isMissing && !img.isDeleted), [images]);
+    const missingImages = useMemo(() => {
+        // Combine props images and manually fetched images for the missing tab
+        const pool = [...images, ...fetchedMissingImages];
+        // Unique by ID
+        const uniquePool = Array.from(new Map(pool.map(item => [item.id, item])).values());
+
+        if (scanMissingIds.size > 0) {
+            return uniquePool.filter(img => scanMissingIds.has(img.id) && !img.isDeleted);
+        }
+        return uniquePool.filter(img => img.isMissing && !img.isDeleted);
+    }, [images, fetchedMissingImages, scanMissingIds]);
+
+    // Safe accessor for viewer image - Defined AFTER missingImages
+    const targetImage = useMemo(() => {
+        if (!viewingImageId) return null;
+        return missingImages.find(i => i.id === viewingImageId) || null;
+    }, [viewingImageId, missingImages]);
+
     const untaggedImages = useMemo(() => activeImages.filter(img => !img.metadata.positivePrompt || (typeof img.metadata.positivePrompt === 'string' && img.metadata.positivePrompt.trim() === '')), [activeImages]);
 
     // Heuristic for unoptimized images: where thumbnail url equals full url (and isn't a web blob)
@@ -249,19 +290,43 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const renderMissingItem = useCallback((img: AIImage, style: React.CSSProperties) => {
         return (
             <div key={img.id} style={style} className="p-2">
-                <div className="h-full w-full flex flex-col items-center justify-center gap-2 p-3 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/30 rounded-xl shadow-sm relative group hover:shadow-md transition-shadow">
-                    <div className="w-12 h-12 bg-gray-100 dark:bg-black rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/10 shrink-0">
-                        <FileWarning className="w-6 h-6 text-gray-400" />
+                <div
+                    onClick={() => setViewingImageId(img.id)}
+                    className="h-full w-full flex flex-col bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/30 rounded-xl shadow-sm relative group hover:shadow-md transition-all cursor-pointer overflow-hidden"
+                >
+                    <div className="relative flex-1 bg-gray-100 dark:bg-black/50 overflow-hidden">
+                        {img.thumbnailUrl ? (
+                            <img
+                                src={img.thumbnailUrl}
+                                loading="lazy"
+                                className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"
+                                alt={img.filename}
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                                <FileWarning className="w-8 h-8 text-gray-400 opacity-50" />
+                            </div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 backdrop-blur-[2px]">
+                            <button className="px-3 py-1.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-2 transform scale-90 group-hover:scale-100 transition-transform">
+                                <Eye className="w-3 h-3" /> Inspect Metadata
+                            </button>
+                        </div>
                     </div>
-                    <div className="text-center w-full min-w-0">
-                        <div className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate w-full" title={img.filename}>{img.filename}</div>
-                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">{new Date(img.timestamp).toLocaleDateString()}</div>
-                        <div className="text-[10px] text-red-500 mt-1 font-medium">Source Not Found</div>
+
+                    <div className="p-3 border-t border-red-100 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/10">
+                        <div className="flex items-start gap-2">
+                            <FileWarning className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                                <div className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate" title={img.filename}>{img.filename}</div>
+                                <div className="text-[10px] text-red-500 font-medium">Source File Missing</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         );
-    }, []);
+    }, [onViewImage]);
 
 
     return (
@@ -432,7 +497,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <React.Suspense fallback={<div className="h-32 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />}>
                                 {(() => {
                                     const LibraryHealth = React.lazy(() => import('./maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
-                                    return <LibraryHealth mode="detailed" />;
+                                    return <LibraryHealth mode="detailed" onScanComplete={handleScanComplete} />;
                                 })()}
                             </React.Suspense>
                         </div>
@@ -514,6 +579,33 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     </div>
                 )}
             </div>
+
+            {/* Local ImageViewer via Portal */}
+            {createPortal(
+                <AnimatePresence>
+                    {targetImage && (
+                        <ImageViewer
+                            image={targetImage}
+                            isOpen={true}
+                            onClose={() => setViewingImageId(null)}
+                            onNext={() => {
+                                const idx = missingImages.findIndex(i => i.id === viewingImageId);
+                                if (idx !== -1 && idx < missingImages.length - 1) setViewingImageId(missingImages[idx + 1].id);
+                            }}
+                            onPrev={() => {
+                                const idx = missingImages.findIndex(i => i.id === viewingImageId);
+                                if (idx > 0) setViewingImageId(missingImages[idx - 1].id);
+                            }}
+                            onAddToCollection={() => { }}
+                            onSearch={() => { }} // No-op
+                            onToggleFavorite={() => { }}
+                            onOpenSettings={() => { }}
+                        // Missing images generally don't support full editing
+                        />
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </div>
     );
 };

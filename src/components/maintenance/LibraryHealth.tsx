@@ -5,9 +5,10 @@ import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, Extern
 interface LibraryHealthProps {
     mode?: 'compact' | 'detailed';
     onNavigateToMaintenance?: () => void;
+    onScanComplete?: (missingIds: string[]) => void;
 }
 
-export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance }) => {
+export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
     const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
@@ -18,6 +19,7 @@ export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed',
         setPruningStatus('idle');
         setResult(null);
         setProgress(0);
+        if (onScanComplete) onScanComplete([]);
         try {
             const { verifyLibraryIntegrity } = await import('../../services/db');
             const res = await verifyLibraryIntegrity((curr, total) => {
@@ -25,6 +27,7 @@ export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed',
             });
             setResult(res);
             setStatus('done');
+            if (onScanComplete) onScanComplete(res.missingIds);
         } catch (e) {
             console.error(e);
             setStatus('idle');
@@ -177,14 +180,14 @@ export const LibraryHealth: React.FC<LibraryHealthProps> = ({ mode = 'detailed',
                                         <span className="text-xs font-black uppercase tracking-widest">Action Required</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
-                                        Purging these records will hide them from your library. This is recommended to fix 500 loading errors and flickering issues.
+                                        Purging these records will hide them from your library. This is recommended to maintain database consistency.
                                     </p>
                                     <button
                                         onClick={handlePrune}
                                         disabled={pruningStatus !== 'idle'}
                                         className={`w-full flex items-center justify-center gap-3 py-4 rounded-xl text-sm font-black transition-all active:scale-95 shadow-lg ${pruningStatus === 'done'
-                                                ? 'bg-emerald-500 text-white shadow-emerald-500/20'
-                                                : 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/20'
+                                            ? 'bg-emerald-500 text-white shadow-emerald-500/20'
+                                            : 'bg-red-600 hover:bg-red-500 text-white shadow-red-500/20'
                                             }`}
                                     >
                                         {pruningStatus === 'running' ? (

@@ -226,6 +226,25 @@ export const searchImages = async (
     return rows.map(mapRowToImage);
 };
 
+export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
+    if (ids.length === 0) return [];
+    const db = await getDb();
+
+    // Chunking to avoid parameter limits (SQLite limit default is often 999)
+    const CHUNK_SIZE = 900;
+    let allImages: AIImage[] = [];
+
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+        const query = `SELECT * FROM images WHERE id IN (${placeholders})`;
+        const rows = await db.select<any[]>(query, chunk);
+        allImages = [...allImages, ...rows.map(mapRowToImage)];
+    }
+
+    return allImages;
+};
+
 // Helper to keep mapping consistent
 function mapRowToImage(row: any): AIImage {
     const normalizedPath = row.path.replace(/\\/g, '/');
