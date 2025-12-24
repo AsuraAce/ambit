@@ -85,34 +85,86 @@ export const buildSqlWhereClause = (
 
     // 7. Search Query (Advanced)
     if (filters.searchQuery) {
-        const terms = filters.searchQuery.split(' ');
-        terms.forEach(term => {
+        // Regex to handle quoted phrases or single terms, optionally prefixed with - or !
+        const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
+        let match;
+
+        while ((match = termRegex.exec(filters.searchQuery)) !== null) {
+            const prefix = match[1]; // - or !
+            const isNegative = !!prefix;
+            let term = match[2];
+
+            // Remove quotes if present
+            if (term.startsWith('"') && term.endsWith('"')) {
+                term = term.slice(1, -1).replace(/\\"/g, '"');
+            }
+
             const lowerTerm = term.toLowerCase();
-            if (lowerTerm.includes(':')) {
+            if (lowerTerm.includes(':') && !lowerTerm.startsWith(':')) {
                 const [key, val] = lowerTerm.split(':');
+                const isNumeric = ['steps', 'cfg', 'w', 'width', 'h', 'height'].includes(key);
+
+                let sql = '';
+                let param: any = val;
+
                 if (key === 'steps') {
-                    if (val.startsWith('>')) { conditions.push("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?"); params.push(Number(val.slice(1))); }
-                    else if (val.startsWith('<')) { conditions.push("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) < ?"); params.push(Number(val.slice(1))); }
-                    else { conditions.push("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) = ?"); params.push(Number(val)); }
+                    if (val.startsWith('>')) { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) < ?"; param = Number(val.slice(1)); }
+                    else { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) = ?"; param = Number(val); }
                 } else if (key === 'cfg') {
-                    if (val.startsWith('>')) { conditions.push("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) > ?"); params.push(Number(val.slice(1))); }
-                    else if (val.startsWith('<')) { conditions.push("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) < ?"); params.push(Number(val.slice(1))); }
-                    else { conditions.push("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) = ?"); params.push(Number(val)); }
+                    if (val.startsWith('>')) { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) < ?"; param = Number(val.slice(1)); }
+                    else { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) = ?"; param = Number(val); }
+                } else if (key === 'w' || key === 'width') {
+                    if (val.startsWith('>')) { sql = "width > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "width < ?"; param = Number(val.slice(1)); }
+                    else { sql = "width = ?"; param = Number(val); }
+                } else if (key === 'h' || key === 'height') {
+                    if (val.startsWith('>')) { sql = "height > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "height < ?"; param = Number(val.slice(1)); }
+                    else { sql = "height = ?"; param = Number(val); }
                 } else if (key === 'model') {
-                    conditions.push(`metadata_json LIKE ?`);
-                    params.push(`%${val}%`);
+                    sql = `metadata_json LIKE ?`;
+                    param = `%${val}%`;
                 } else if (key === 'seed') {
-                    conditions.push(`json_extract(metadata_json, '$.seed') LIKE ?`);
-                    params.push(`%${val}%`);
+                    sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'neg' || key === 'negative') {
+                    sql = `json_extract(metadata_json, '$.negativePrompt') LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'sampler') {
+                    sql = `json_extract(metadata_json, '$.sampler') LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'tool') {
+                    sql = `json_extract(metadata_json, '$.tool') LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'lora') {
+                    sql = `json_extract(metadata_json, '$.loras') LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'upscaled') {
+                    sql = `json_extract(metadata_json, '$.upscaled') = ?`;
+                    param = val === 'true' ? 1 : 0;
+                }
+
+                if (sql) {
+                    if (isNegative) {
+                        conditions.push(`NOT (${sql})`);
+                    } else {
+                        conditions.push(sql);
+                    }
+                    params.push(param);
                 }
             } else {
                 // General text search (Prompts, Filename)
-                // We search: path (filename) OR metadata_json
-                conditions.push(`(path LIKE ? OR metadata_json LIKE ?)`);
+                if (isNegative) {
+                    conditions.push(`(path NOT LIKE ? AND metadata_json NOT LIKE ?)`);
+                } else {
+                    conditions.push(`(path LIKE ? OR metadata_json LIKE ?)`);
+                }
                 params.push(`%${term}%`);
                 params.push(`%${term}%`);
             }
-        });
+        }
     }
 
     // 8. Range Sliders
