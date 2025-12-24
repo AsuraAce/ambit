@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock, Maximize2, Info } from 'lucide-react';
 import { AIImage } from '../types';
+import { SmartImage } from './SmartImage';
 
 interface SlideshowModalProps {
   isOpen: boolean;
@@ -158,11 +159,13 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
       />
 
       {/* Main Image */}
-      <img
+      <SmartImage
         key={currentImage.id}
         src={currentImage.url}
         alt="slideshow"
-        className="max-w-full max-h-full object-contain shadow-2xl animate-in fade-in zoom-in-95 duration-700 ease-spring relative z-10"
+        wrapperClassName="relative z-10 w-full h-full flex items-center justify-center pointer-events-none"
+        imgClassName="max-w-full max-h-full object-contain shadow-2xl animate-in fade-in zoom-in-95 duration-700 ease-spring"
+        objectFit="contain"
       />
 
       {/* Progress Bar */}

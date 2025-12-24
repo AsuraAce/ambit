@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Workflow, Wand2, Undo2, Copy, Check, Palette, Tag, Settings2, ClipboardList, Pencil, X, Sparkles, Shuffle, Layout, Search, Plus, FileText, Save, FileJson, Code, Eye, Puzzle, Target, Link, AlertCircle } from 'lucide-react';
 import { AIImage, Collection, ModelType, ImageMetadata, GeneratorTool } from '../../types';
 import { WorkflowInspector } from './WorkflowInspector';
+import { getFilename } from '../../utils/pathUtils';
 
 interface MetadataSidebarProps {
     image: AIImage;
@@ -257,7 +258,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             {/* Header */}
             <div className="p-6 border-b border-gray-200 dark:border-white/5 shrink-0 bg-gray-50 dark:bg-zinc-900/20">
                 <h2 className="text-xl font-bold text-gray-300 dark:text-gray-300 mb-2 leading-tight line-clamp-2 font-sans tracking-tight">
-                    {image.filename.replace(/\.[^/.]+$/, "")}
+                    {getFilename(image.filename).replace(/\.[^/.]+$/, "")}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-zinc-400 mt-3">
                     <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-800 border border-gray-300 dark:border-white/10 text-sage-700 dark:text-sage-200 font-mono">

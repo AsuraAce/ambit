@@ -10,6 +10,7 @@ import { MetadataSidebar } from './viewer/MetadataSidebar';
 import { usePalette } from '../hooks/usePalette';
 import { useImageAI } from '../hooks/useImageAI';
 import { useLibraryContext } from '../hooks/useLibraryContext';
+import { getFilename } from '../utils/pathUtils';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -195,7 +196,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 <div className={`absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black via-black/50 to-transparent pointer-events-none transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                     <div className="flex flex-col items-start pointer-events-auto">
                         <div className="text-gray-300 text-sm font-mono bg-black/50 px-3 py-1.5 rounded-lg border border-white/10 backdrop-blur-md shadow-xl">
-                            {displayImage.filename}
+                            {getFilename(displayImage.filename)}
                         </div>
                         {versions.length > 0 && (
                             <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-sage-400 bg-sage-900/30 px-2 py-1 rounded border border-sage-500/20">

@@ -13,3 +13,24 @@ export const normalizePath = (path: string): string => {
 export const toWindowsPath = (path: string): string => {
     return path.replace(/\//g, '\\');
 };
+
+/**
+ * Extracts the filename from a path (handles both / and \).
+ */
+export const getFilename = (path: string): string => {
+    if (!path) return '';
+    return path.split(/[\\/]/).pop() || path;
+};
+
+/**
+ * Tauri's convertFileSrc on Windows can sometimes double-encode or use %2F 
+ * which the internal asset handler might fail to parse (500 error).
+ * This repairs it by ensuring standard slashes and colons.
+ */
+export const repairAssetUrl = (url: string): string => {
+    if (!url) return '';
+    if (url.startsWith('http://asset.localhost/') || url.startsWith('asset:')) {
+        return url.replace(/%2F/g, '/').replace(/%3A/g, ':');
+    }
+    return url;
+};

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { ImageOff, ImageIcon, AlertCircle } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { repairAssetUrl } from '../utils/pathUtils';
 
 interface SmartImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
@@ -27,32 +28,48 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   objectFit = 'cover',
   ...props
 }) => {
+  // Use a ref to track the last source to avoid useEffect delays for loading state
+  const lastSrcRef = useRef(src);
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [retryCount, setRetryCount] = useState(0);
   const [currentSrc, setCurrentSrc] = useState(src);
+  const [showShimmer, setShowShimmer] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  useEffect(() => {
-    if (src !== currentSrc) {
-      setCurrentSrc(src);
+  // Sync state if src changes
+  if (src !== lastSrcRef.current) {
+    const isInitial = lastSrcRef.current === undefined;
+    lastSrcRef.current = src;
+    setCurrentSrc(src);
+    // Only reset to loading if it's the very first load or if we were in an error state
+    // We DON'T reset status to 'loading' if it was already 'loaded' to prevent flicker
+    // instead we let the browser swap the src and handleLoad update it when ready.
+    if (status === 'error' || isInitial) {
       setStatus('loading');
-      setRetryCount(0);
     }
-  }, [src]);
+    setRetryCount(0);
+    setShowShimmer(false);
+  }
+
+  // Only show shimmer if loading takes more than 50ms to prevent flicker on cached images
+  useEffect(() => {
+    if (status === 'loading') {
+      const timer = setTimeout(() => setShowShimmer(true), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [status, currentSrc]);
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     setStatus('loaded');
     if (onLoad) onLoad(e);
   };
 
-  // Fix: Check if image is already loaded from cache (common issue with re-mounts)
+  // Check if image is already loaded (cache)
   React.useEffect(() => {
-    if (imgRef.current && imgRef.current.complete) {
-      if (imgRef.current.naturalWidth > 0) {
-        setStatus('loaded');
-      }
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setStatus('loaded');
     }
-  }, []);
+  }, [currentSrc]);
 
   const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     if (retryCount < 3) {
@@ -76,23 +93,17 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     if (!currentSrc) return '';
 
     try {
-      // Runtime Fix: Repair malformed asset URLs with mixed slashes
-      if (currentSrc.startsWith('http://asset.localhost/')) {
-        const rawPath = decodeURIComponent(currentSrc.replace('http://asset.localhost/', ''));
-        // Normalize all backslashes to forward slashes
-        const normalizedPath = rawPath.replace(/\\/g, '/');
-        const finalUrl = convertFileSrc(normalizedPath);
-        if (finalUrl.includes('undefined') || finalUrl.includes('null')) {
-          console.error('[SmartImage] Path processing resulted in invalid URL:', { currentSrc, normalizedPath, finalUrl });
-        }
-        return finalUrl;
+      // If it's already an asset URL, use it directly to avoid double-encoding
+      if (currentSrc.startsWith('http://asset.localhost/') || currentSrc.startsWith('asset:')) {
+        return repairAssetUrl(currentSrc);
       }
 
       // Handle local paths that aren't yet converted
-      if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:') && !currentSrc.startsWith('asset:')) {
+      if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:')) {
+        // Normalize slashes but DO NOT encode them before convertFileSrc
         const normalizedPath = currentSrc.replace(/\\/g, '/');
-        const finalUrl = convertFileSrc(normalizedPath);
-        return finalUrl;
+        const url = convertFileSrc(normalizedPath);
+        return repairAssetUrl(url);
       }
     } catch (e) {
       console.warn('[SmartImage] Error normalizing URL:', e, { currentSrc });
@@ -102,9 +113,20 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   }, [currentSrc]);
 
   const finalWrapperClass = wrapperClassName || className || '';
-  const finalImgClass = imgClassName || `w-full h-full transition-all duration-700 ease-out transform ${status === 'loaded' ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`;
+  // Removed scale-95 and opacity-0 from loading state to prevent flicker
+  // The image will simply arrive and fade in slightly if it takes time.
+  const finalImgClass = imgClassName || `w-full h-full transition-opacity duration-300 ease-out ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`;
 
-  // Allow empty src to be handled gracefully
+  // Extract filename for display in error state
+  const displayFilename = React.useMemo(() => {
+    try {
+      const path = currentSrc.startsWith('http') ? decodeURIComponent(currentSrc.split('/').pop() || '') : currentSrc.split(/[\\/]/).pop();
+      return path || 'Unknown Image';
+    } catch {
+      return 'Unknown Image';
+    }
+  }, [currentSrc]);
+
   if (!src && !fallbackSrc) {
     return (
       <div className={`flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 ${finalWrapperClass}`}>
@@ -115,24 +137,27 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   return (
     <div className={`relative overflow-hidden ${finalWrapperClass}`}>
-      {status === 'loading' && (
+      {status === 'loading' && showShimmer && (
         <div className="absolute inset-0 bg-gray-200 dark:bg-white/5 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
         </div>
       )}
 
       {status === 'error' ? (
-        <div className="absolute inset-0 bg-gray-100 dark:bg-white/5 flex flex-col items-center justify-center text-gray-300 dark:text-gray-600 p-4 border border-gray-200 dark:border-white/5">
-          <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
+        <div className="absolute inset-0 bg-gray-100 dark:bg-zinc-900 flex flex-col items-center justify-center text-gray-400 dark:text-gray-600 p-4 border border-gray-200 dark:border-white/5">
+          <AlertCircle className="w-8 h-8 mb-2 opacity-50 text-red-500/50" />
           <span className="text-xs text-center font-medium">Failed to load</span>
+          <span className="text-[10px] text-center opacity-70 mt-1 truncate max-w-full font-mono">{displayFilename}</span>
         </div>
       ) : (
         <img
-          key={`${currentSrc}-${retryCount}`}
+          // Removed key={`${currentSrc}-${retryCount}`} to prevent remounting the img element
+          // This allows the browser to keep the old image visible while the new one loads,
+          // preventing a flicker. The src attribute change itself triggers the load.
           ref={imgRef}
           src={processedSrc}
           alt={alt}
-          draggable="false"
+          draggable={draggable}
           onLoad={handleLoad}
           onError={handleError}
           style={{ objectFit }}

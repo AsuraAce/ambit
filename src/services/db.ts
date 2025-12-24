@@ -228,11 +228,12 @@ export const searchImages = async (
 
 // Helper to keep mapping consistent
 function mapRowToImage(row: any): AIImage {
+    const normalizedPath = row.path.replace(/\\/g, '/');
     return {
         id: row.id,
-        url: convertFileSrc(row.path),
+        url: convertFileSrc(normalizedPath),
         thumbnailUrl: row.thumbnail_path,
-        filename: row.path.split(/[\\/]/).pop() || row.path, // Re-derive filename for safety
+        filename: normalizedPath.split('/').pop() || row.path,
         fileSize: row.file_size,
         timestamp: row.timestamp,
         width: row.width,
@@ -534,4 +535,62 @@ export const migrateSchema = async () => {
 
     // Also ensure all NULLs are 0 for correct sorting
     await db.execute('UPDATE images SET is_pinned = 0 WHERE is_pinned IS NULL');
+};
+export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
+    const db = await getDb();
+
+    // 1. Get all paths that are currently NOT marked as missing and NOT deleted
+    const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
+    const total = allImages.length;
+
+    if (total === 0) return { scanned: 0, missingIds: [], sampleMissingPaths: [] };
+
+    // 2. Process in chunks to avoid IPC limits
+    const CHUNK_SIZE = 1000;
+    let missingIds: string[] = [];
+    let sampleMissingPaths: string[] = [];
+    let processed = 0;
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = allImages.slice(i, i + CHUNK_SIZE);
+        const paths = chunk.map(img => img.path);
+
+        try {
+            // Returns path strings that are missing
+            const missingPaths = await invoke<string[]>('verify_image_paths', { paths });
+
+            // Map back to IDs
+            const missingChunk = chunk.filter(img => missingPaths.includes(img.path));
+            const missingChunkIds = missingChunk.map(img => img.id);
+
+            missingIds = [...missingIds, ...missingChunkIds];
+
+            // Keep first 10 for sample
+            if (sampleMissingPaths.length < 10) {
+                sampleMissingPaths = [...sampleMissingPaths, ...missingPaths.slice(0, 10 - sampleMissingPaths.length)];
+            }
+        } catch (e) {
+            console.error('[Verify] Chunk check failed', e);
+        }
+
+        processed += chunk.length;
+        if (onProgress) onProgress(processed, total);
+    }
+
+    return { scanned: total, missingIds, sampleMissingPaths };
+};
+
+export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
+    const db = await getDb();
+    if (ids.length === 0) return 0;
+
+    console.log(`[Verify] Marking ${ids.length} images as missing`);
+    // Update in batches
+    for (let i = 0; i < ids.length; i += 500) {
+        const batch = ids.slice(i, i + 500);
+        const placeholders = batch.map(() => '?').join(',');
+        await db.execute(`UPDATE images SET is_missing = 1 WHERE id IN (${placeholders})`, batch);
+    }
+
+    return ids.length;
 };

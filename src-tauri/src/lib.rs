@@ -179,6 +179,17 @@ async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
 }
 
 #[tauri::command]
+async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    // Returns a list of paths that check out as "not existing"
+    let missing_paths: Vec<String> = paths
+        .par_iter()
+        .filter(|path| !std::path::Path::new(path).exists())
+        .map(|path| path.clone())
+        .collect();
+    Ok(missing_paths)
+}
+
+#[tauri::command]
 async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
     let images_path = path_buf.join("outputs").join("images");
@@ -921,6 +932,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_image,
             scan_images_bulk,
+            get_file_sizes_bulk,
+            verify_image_paths,
             audit_invokeai_folder,
             list_invokeai_images,
             save_images_batch,

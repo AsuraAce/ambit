@@ -3,6 +3,8 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Columns, Layers, PanelLeft, ChevronRight, Sidebar, SplitSquareHorizontal, Heart, GitCompare, Eye, EyeOff } from 'lucide-react';
 import { AIImage } from '../types';
+import { SmartImage } from './SmartImage';
+import { getFilename } from '../utils/pathUtils';
 
 interface CompareModalProps {
     imageA: AIImage;
@@ -33,7 +35,7 @@ const ImageContainer = ({
     <div className="relative w-full h-full flex items-center justify-center bg-zinc-950">
         {/* Filename Tag */}
         <div className={`absolute top-6 ${side === 'left' ? 'left-6' : 'right-6'} z-20 bg-black/70 backdrop-blur-md px-4 py-2 rounded-lg border border-white/10 shadow-xl pointer-events-none`}>
-            <div className="text-white text-xs font-bold">{img.filename}</div>
+            <div className="text-white text-xs font-bold">{getFilename(img.filename)}</div>
             <div className="text-[10px] text-gray-400 font-mono mt-0.5">{img.width}x{img.height} • {img.metadata.model}</div>
         </div>
 
@@ -53,7 +55,14 @@ const ImageContainer = ({
 
         {/* Image Transform */}
         <div style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDraggingCanvas ? 'none' : 'transform 0.1s ease-out' }}>
-            <img src={img.url} className="max-w-none max-h-[80vh] object-contain shadow-2xl" draggable={false} alt="" />
+            <SmartImage
+                src={img.url}
+                alt={img.filename}
+                className="max-w-none max-h-[80vh]"
+                imgClassName="object-contain shadow-2xl"
+                draggable={false}
+                objectFit="contain"
+            />
         </div>
     </div>
 );
@@ -322,7 +331,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                 <ImageContainer img={imageB} side="right" {...commonImageProps} />
                             </div>
                             <div className="absolute bottom-12 bg-black/80 text-white px-4 py-2 rounded-full text-xs pointer-events-none border border-white/10 backdrop-blur-md">
-                                Hover to reveal <span className="font-bold text-sage-400">{imageB.filename}</span>
+                                Hover to reveal <span className="font-bold text-sage-400">{getFilename(imageB.filename)}</span>
                             </div>
                         </div>
                     )}
@@ -349,8 +358,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar min-w-[300px]">
                         <div className="grid grid-cols-2 gap-4 px-4 py-4 bg-zinc-900/20 border-b border-white/10 text-xs font-mono text-gray-500">
-                            <div className="truncate text-center" title={imageA.filename}>{imageA.filename}</div>
-                            <div className="truncate text-center" title={imageB.filename}>{imageB.filename}</div>
+                            <div className="truncate text-center" title={imageA.filename}>{getFilename(imageA.filename)}</div>
+                            <div className="truncate text-center" title={imageB.filename}>{getFilename(imageB.filename)}</div>
                         </div>
 
                         <DiffRow label="Model" valA={imageA.metadata.model} valB={imageB.metadata.model} />
