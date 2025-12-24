@@ -733,22 +733,28 @@ export default function App() {
                                             const db = await import('./services/db');
                                             await db.markAsDeleted(d, true);
                                             setImages(p => p.map(i => d.includes(i.id) ? { ...i, isDeleted: true } : i));
-                                            addToast(`Resolved ${d.length} duplicates`, 'success');
+                                            addToast(`Moved ${d.length} duplicates to trash`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onRestoreImages={async (ids) => {
                                             const db = await import('./services/db');
                                             await db.markAsDeleted(ids, false);
                                             setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i));
-                                            addToast('Restored', 'success');
+                                            addToast(`Restored ${ids.length} images`, 'success');
+                                            refreshMaintenanceCounts();
+                                        }}
+                                        onMoveToTrash={async (ids) => {
+                                            const db = await import('./services/db');
+                                            await db.markAsDeleted(ids, true);
+                                            setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: true } : i));
+                                            addToast(`Moved ${ids.length} images to trash`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onDeleteForever={async (ids) => {
-                                            // Handle permanent delete via fileOps to handle physical files if needed (usually just DB prune here)
                                             const db = await import('./services/db');
                                             for (const id of ids) await db.deleteImage(id);
                                             setImages(p => p.filter(i => !ids.includes(i.id)));
-                                            addToast('Deleted forever', 'success');
+                                            addToast(`Removed ${ids.length} records from library`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onEmptyTrash={async () => {

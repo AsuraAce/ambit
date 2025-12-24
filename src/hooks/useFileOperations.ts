@@ -440,17 +440,22 @@ export const useFileOperations = ({
         }
     };
 
-    const regenerateThumbnails = async (onProgress?: (current: number, total: number) => void) => {
+    const regenerateThumbnails = useCallback(async (arg?: string[] | ((current: number, total: number) => void)) => {
         const thumbDir = await getThumbnailDir();
         if (!thumbDir) return;
 
+        const targetIds = Array.isArray(arg) ? arg : undefined;
+        const onProgress = typeof arg === 'function' ? arg : undefined;
+
         // Find images that need optimization (where thumb == url or thumb is missing)
-        // We also check if it's already a blob/data uri (imported from web) - we might skip those for now unless we save them to disk.
-        // But for local files: url starts with asset:// or https://asset.localhost
-        const candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+        let candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+
+        if (targetIds) {
+            candidates = candidates.filter(img => targetIds.includes(img.id));
+        }
 
         if (candidates.length === 0) {
-            addToast("All images already have thumbnails!", "success");
+            if (!targetIds) addToast("All images already have thumbnails!", "success");
             return;
         }
 
@@ -460,21 +465,9 @@ export const useFileOperations = ({
         const total = candidates.length;
         const updates: AIImage[] = [];
 
-        // Chunking to avoid UI freeze? 
-        // We'll update state in chunks or at the end.
-
-        // Parallel or Serial? Rust scan_image is async but CPU bound on image resize.
-        // Serial is safer for now.
         for (const img of candidates) {
             try {
-                // We need the original OS path. 
-                // We stored `id` as normalized path. Using `id` is best guess.
-                // But we need to ensure it works on Windows. 
-                // `scanImageNative` takes OS path usually? 
-                // Actually `id` is forward slashes. `scanImageNative` handles it? 
-                // Rust `PathBuf::from` usually handles forward slashes on Windows.
                 const path = img.id;
-
                 const { thumbnail } = await scanImageNative(path, thumbDir);
 
                 if (thumbnail) {
@@ -491,13 +484,13 @@ export const useFileOperations = ({
 
         if (updates.length > 0) {
             setImages(prev => {
-                // Create map for O(1) lookup
                 const updateMap = new Map(updates.map(u => [u.id, u]));
                 return prev.map(p => updateMap.get(p.id) || p);
             });
             addToast(`Generated ${updates.length} thumbnails`, "success");
+            refreshCollectionThumbnails();
         }
-    };
+    }, [images, setImages, addToast, refreshCollectionThumbnails]);
 
     return {
         isImporting,
