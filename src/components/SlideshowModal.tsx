@@ -23,6 +23,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isShuffle, setIsShuffle] = useState(isShuffleDefault);
   const [duration, setDuration] = useState(5000); // ms
+  const nextIndexRef = useRef<number | null>(null);
 
   // UI State
   const [showHud, setShowHud] = useState(true);
@@ -60,16 +61,34 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
     };
   }, [isOpen]);
 
+  // Pre-calculate and Pre-load Next Image
+  useEffect(() => {
+    if (!isOpen || images.length <= 1) return;
+
+    // Calculate next index
+    let next: number;
+    if (isShuffle) {
+      next = Math.floor(Math.random() * images.length);
+      if (next === currentIndex) next = (next + 1) % images.length;
+    } else {
+      next = (currentIndex + 1) % images.length;
+    }
+    nextIndexRef.current = next;
+
+    // Pre-load
+    const img = new Image();
+    img.src = images[next].url;
+  }, [currentIndex, isShuffle, images.length, isOpen]); // Stable images.length instead of images array
+
   // Navigation Logic
   const nextImage = useCallback(() => {
-    setCurrentIndex(prev => {
-      if (isShuffle) {
-        const nextRandom = Math.floor(Math.random() * images.length);
-        return nextRandom === prev ? (nextRandom + 1) % images.length : nextRandom;
-      }
-      return (prev + 1) % images.length;
-    });
-  }, [images.length, isShuffle]);
+    if (nextIndexRef.current !== null) {
+      setCurrentIndex(nextIndexRef.current);
+    } else {
+      // Fallback if ref isn't ready
+      setCurrentIndex(prev => (prev + 1) % images.length);
+    }
+  }, [images.length]); // Stable: only depends on length
 
   const prevImage = useCallback(() => {
     setCurrentIndex(prev => {
@@ -149,7 +168,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
       {/* Progress Bar */}
       {isPlaying && (
         <div
-          key={`${currentIndex}-${duration}-${isShuffle}-${isPlaying}`}
+          key={`${currentIndex}-${duration}-${isPlaying}`}
           className="absolute top-0 left-0 h-1 bg-sage-500 z-50 transition-all ease-linear shadow-[0_0_10px_rgba(99,102,241,0.8)]"
           style={{
             width: '100%',
