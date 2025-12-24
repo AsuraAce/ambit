@@ -48,7 +48,8 @@ export default function App() {
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, loadMoreImages,
         privacyEnabled, setPrivacyEnabled,
-        isFiltering, toggleFavorite
+        isFiltering, toggleFavorite,
+        refreshMaintenanceCounts
     } = useLibraryContext();
 
     // --- Theme Hook ---
@@ -728,10 +729,37 @@ export default function App() {
                                 ) : viewMode === 'maintenance' ? (
                                     <MaintenanceView
                                         images={images}
-                                        onResolveDuplicate={(k, d) => { setImages(p => p.map(i => d.includes(i.id) ? { ...i, isDeleted: true } : i)); addToast(`Resolved ${d.length} duplicates`, 'success'); }}
-                                        onRestoreImages={(ids) => { setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i)); addToast('Restored', 'success'); }}
-                                        onDeleteForever={(ids) => { setImages(p => p.filter(i => !ids.includes(i.id))); addToast('Deleted forever', 'success'); }}
-                                        onEmptyTrash={() => { setImages(p => p.filter(i => !i.isDeleted)); addToast('Trash emptied', 'success'); }}
+                                        onResolveDuplicate={async (k, d) => {
+                                            const db = await import('./services/db');
+                                            await db.markAsDeleted(d, true);
+                                            setImages(p => p.map(i => d.includes(i.id) ? { ...i, isDeleted: true } : i));
+                                            addToast(`Resolved ${d.length} duplicates`, 'success');
+                                            refreshMaintenanceCounts();
+                                        }}
+                                        onRestoreImages={async (ids) => {
+                                            const db = await import('./services/db');
+                                            await db.markAsDeleted(ids, false);
+                                            setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i));
+                                            addToast('Restored', 'success');
+                                            refreshMaintenanceCounts();
+                                        }}
+                                        onDeleteForever={async (ids) => {
+                                            // Handle permanent delete via fileOps to handle physical files if needed (usually just DB prune here)
+                                            const db = await import('./services/db');
+                                            for (const id of ids) await db.deleteImage(id);
+                                            setImages(p => p.filter(i => !ids.includes(i.id)));
+                                            addToast('Deleted forever', 'success');
+                                            refreshMaintenanceCounts();
+                                        }}
+                                        onEmptyTrash={async () => {
+                                            const db = await import('./services/db');
+                                            const deleted = await db.getDeletedImages();
+                                            const ids = deleted.map(i => i.id);
+                                            for (const id of ids) await db.deleteImage(id);
+                                            setImages(p => p.filter(i => !i.isDeleted));
+                                            addToast('Trash emptied', 'success');
+                                            refreshMaintenanceCounts();
+                                        }}
                                         onGroupImages={handleGroupImages}
                                         onViewImage={(id) => setViewingImageId(id)}
                                         onRegenerateThumbnails={fileOps.regenerateThumbnails}

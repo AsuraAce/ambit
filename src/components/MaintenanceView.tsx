@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
@@ -155,7 +155,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     maskedKeywords,
     privacyEnabled
 }) => {
-    const { settings } = useLibraryContext();
+    const { settings, maintenanceCounts, refreshMaintenanceCounts } = useLibraryContext();
     const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
@@ -182,7 +182,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [localDeletedImages, setLocalDeletedImages] = useState<AIImage[]>([]);
     const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
-    const [maintenanceCounts, setMaintenanceCounts] = useState({ trash: 0, untagged: 0, missing: 0, unoptimized: 0 });
 
     const [isLoading, setIsLoading] = useState(false);
 
@@ -193,8 +192,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             const db = await import('../services/db');
 
             // Always refresh counts
-            const counts = await db.getMaintenanceCounts();
-            setMaintenanceCounts(counts);
+            refreshMaintenanceCounts();
 
             if (tab === 'trash') {
                 const data = await db.getDeletedImages();
@@ -215,8 +213,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     // Initial load of counts
     useEffect(() => {
-        import('../services/db').then(db => db.getMaintenanceCounts()).then(setMaintenanceCounts);
-    }, []);
+        refreshMaintenanceCounts();
+    }, [refreshMaintenanceCounts]);
 
     // Tab switch trigger
     useEffect(() => {
@@ -397,30 +395,71 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
                     <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">
                         <button onClick={() => setActiveTab('thumbnails')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'thumbnails' ? 'bg-white dark:bg-zinc-700 text-blue-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Thumbnails {maintenanceCounts.unoptimized > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'thumbnails' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.unoptimized}</span>}
+                            Thumbnails
+                            <AnimatePresence>
+                                {maintenanceCounts.unoptimized > 0 && (
+                                    <motion.span
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.8 }}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'thumbnails' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}
+                                    >
+                                        {maintenanceCounts.unoptimized}
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
                         </button>
-
-                        {/* Stacks Tab Hidden as requested */}
-                        {/* 
-                        <button onClick={() => setActiveTab('stacks')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'stacks' ? 'bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Stacks
-                        </button>
-                        */}
 
                         <button onClick={() => setActiveTab('duplicates')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 whitespace-nowrap ${activeTab === 'duplicates' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
                             Duplicates
                         </button>
 
                         <button onClick={() => setActiveTab('untagged')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'untagged' ? 'bg-white dark:bg-zinc-700 text-orange-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Untagged {maintenanceCounts.untagged > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'untagged' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.untagged}</span>}
+                            Untagged
+                            <AnimatePresence>
+                                {maintenanceCounts.untagged > 0 && (
+                                    <motion.span
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.8 }}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'untagged' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}
+                                    >
+                                        {maintenanceCounts.untagged}
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
                         </button>
 
                         <button onClick={() => setActiveTab('missing')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'missing' ? 'bg-white dark:bg-zinc-700 text-red-500 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Missing {maintenanceCounts.missing > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'missing' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.missing}</span>}
+                            Missing
+                            <AnimatePresence>
+                                {maintenanceCounts.missing > 0 && (
+                                    <motion.span
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.8 }}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'missing' ? 'bg-red-100 dark:bg-red-900/30 text-red-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}
+                                    >
+                                        {maintenanceCounts.missing}
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
                         </button>
 
                         <button onClick={() => setActiveTab('trash')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === 'trash' ? 'bg-white dark:bg-zinc-700 text-sage-600 dark:text-sage-400 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
-                            Trash {maintenanceCounts.trash > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'trash' ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}>{maintenanceCounts.trash}</span>}
+                            Trash
+                            <AnimatePresence>
+                                {maintenanceCounts.trash > 0 && (
+                                    <motion.span
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.8 }}
+                                        className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'trash' ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-600' : 'bg-gray-200 dark:bg-zinc-900 text-gray-500'}`}
+                                    >
+                                        {maintenanceCounts.trash}
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
                         </button>
                     </div>
                 </div>
