@@ -427,22 +427,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
                 {activeTab === 'missing' && (
                     <div className="w-full pb-24 h-full flex flex-col">
-                        <div className="flex-shrink-0 flex items-center justify-between mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm gap-4">
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                    <Unlink className="w-5 h-5 text-red-500" /> Missing Files
-                                </h3>
-                                <p className="text-sm text-gray-500 mt-1">Files in library but not on disk.</p>
-                            </div>
-                            {missingImages.length > 0 && (
-                                <button onClick={handlePurgeMissing} className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
-                                    <Trash2 className="w-4 h-4" /> Purge {missingImages.length} Entries
-                                </button>
-                            )}
+                        <div className="flex-shrink-0 flex flex-col gap-6 mb-6">
+                            {/* Proactive Health Scan */}
+                            <React.Suspense fallback={<div className="h-32 bg-gray-100 dark:bg-white/5 rounded-2xl animate-pulse" />}>
+                                {(() => {
+                                    const LibraryHealth = React.lazy(() => import('./maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
+                                    return <LibraryHealth mode="detailed" />;
+                                })()}
+                            </React.Suspense>
                         </div>
+
                         {missingImages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                                <p>No missing files.</p>
+                                <p>No missing files detected in current view.</p>
                             </div>
                         ) : (
                             <div className="flex-1 min-h-[500px]">

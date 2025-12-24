@@ -56,158 +56,20 @@ export const GeneralTab: React.FC<TabProps> = ({ settings, setSettings }) => (
       </label>
 
       <div className="pt-6 border-t border-gray-100 dark:border-white/5">
-        <VerifyLibrarySection />
+        <React.Suspense fallback={<div className="h-20 bg-gray-100 dark:bg-white/5 rounded-xl animate-pulse" />}>
+          {(() => {
+            const LibraryHealth = React.lazy(() => import('../maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
+            // We'll need a way to navigate to maintenance, ideally passed as prop or handled via global nav
+            // For now, we'll assume the user finds the maintenance tab or we wire it up globally later.
+            // A simple reload to maintenance view isn't trivial without context access here, 
+            // so we can rely on text instruction or future wiring.
+            return <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />;
+          })()}
+        </React.Suspense>
       </div>
     </section>
   </div>
 );
-
-const VerifyLibrarySection: React.FC = () => {
-  const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
-  const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
-  const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
-  const [progress, setProgress] = useState(0);
-
-  const handleVerify = async () => {
-    setStatus('running');
-    setPruningStatus('idle');
-    setResult(null);
-    setProgress(0);
-    try {
-      const { verifyLibraryIntegrity } = await import('../../services/db');
-      const res = await verifyLibraryIntegrity((curr, total) => {
-        setProgress(Math.round((curr / total) * 100));
-      });
-      setResult(res);
-      setStatus('done');
-    } catch (e) {
-      console.error(e);
-      setStatus('idle');
-    }
-  };
-
-  const handlePrune = async () => {
-    if (!result || result.missingIds.length === 0) return;
-    setPruningStatus('running');
-    try {
-      const { pruneMissingLinks } = await import('../../services/db');
-      await pruneMissingLinks(result.missingIds);
-      setPruningStatus('done');
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (e) {
-      console.error(e);
-      setPruningStatus('idle');
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-base font-medium text-gray-900 dark:text-gray-200">Verify Library Integrity</div>
-          <div className="text-sm text-gray-500">Scan for missing files and handle broken links</div>
-        </div>
-
-        {status === 'running' ? (
-          <div className="flex items-center gap-3 bg-gray-100 dark:bg-white/10 px-4 py-2 rounded-lg">
-            <Loader2 className="w-4 h-4 animate-spin text-sage-500" />
-            <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Checking {progress}%</span>
-          </div>
-        ) : (
-          <button
-            onClick={handleVerify}
-            disabled={pruningStatus === 'running'}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
-          >
-            {status === 'done' ? <RefreshCw className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-            {status === 'done' ? 'Re-Scan' : 'Verify Now'}
-          </button>
-        )}
-      </div>
-
-      {status === 'done' && result && (
-        <div className="animate-in fade-in slide-in-from-top-2 duration-300 bg-gray-50 dark:bg-black/20 rounded-xl p-4 border border-gray-100 dark:border-white/5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Scan Summary</div>
-              <div className="flex gap-6">
-                <div className="text-sm">
-                  <span className="text-gray-500">Total Scanned:</span>{' '}
-                  <span className="font-mono font-bold text-gray-900 dark:text-white">{result.scanned}</span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-500">Broken Links:</span>{' '}
-                  <span className={`font-mono font-bold ${result.missingIds.length > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                    {result.missingIds.length}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {result.missingIds.length > 0 && (
-              <button
-                onClick={handlePrune}
-                disabled={pruningStatus !== 'idle'}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 ${pruningStatus === 'done'
-                    ? 'bg-emerald-500/10 text-emerald-500'
-                    : 'bg-red-500/10 hover:bg-red-500/20 text-red-500'
-                  }`}
-              >
-                {pruningStatus === 'running' ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Pruning...
-                  </>
-                ) : pruningStatus === 'done' ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    Success
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3 h-3" />
-                    Prune {result.missingIds.length} Links
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-
-          {result.missingIds.length > 0 && (
-            <div className="p-3 bg-red-500/5 dark:bg-white/5 rounded-lg border border-red-500/10 dark:border-white/5">
-              <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Example Missing Files</div>
-              <div className="space-y-1 max-h-[100px] overflow-y-auto pr-2 scrollbar-thin">
-                {result.sampleMissingPaths.map((path, idx) => (
-                  <div key={idx} className="text-[10px] font-mono text-gray-500 dark:text-gray-400 truncate flex items-center gap-2">
-                    <div className="w-1 h-1 rounded-full bg-red-500 shrink-0" />
-                    {path}
-                  </div>
-                ))}
-                {result.missingIds.length > 10 && (
-                  <div className="text-[10px] text-gray-400 italic pl-3">... and {result.missingIds.length - 10} more.</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {result.missingIds.length > 0 && pruningStatus === 'idle' && (
-            <p className="text-[10px] text-gray-500 font-medium flex items-center gap-1.5 italic">
-              <AlertTriangle className="w-3 h-3 text-amber-500" />
-              Marking these as missing will hide them from the library but won't delete any files.
-            </p>
-          )}
-
-          {result.missingIds.length === 0 && (
-            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
-              <CheckCircle2 className="w-3 h-3" />
-              Your library is healthy! No broken links found.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 // --- FOLDERS TAB ---
 export const FoldersTab: React.FC<TabProps> = ({ settings, setSettings }) => {
