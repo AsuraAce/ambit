@@ -52,6 +52,7 @@ interface LibraryContextType {
   setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
   clearAllFilters: () => void;
   activeSqlWhere: string;
+  activeSqlParams: any[];
   privacyEnabled: boolean;
   setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   cleanLibrary: () => Promise<void>;
@@ -801,6 +802,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSortOption,
       clearAllFilters,
       activeSqlWhere,
+      activeSqlParams,
       privacyEnabled,
       setPrivacyEnabled,
       cleanLibrary,

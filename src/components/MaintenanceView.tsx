@@ -155,7 +155,13 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     maskedKeywords,
     privacyEnabled
 }) => {
-    const { settings, maintenanceCounts, refreshMaintenanceCounts } = useLibraryContext();
+    const {
+        settings,
+        maintenanceCounts,
+        refreshMaintenanceCounts,
+        activeSqlWhere,
+        activeSqlParams
+    } = useLibraryContext();
     const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
@@ -193,6 +199,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [localDeletedImages, setLocalDeletedImages] = useState<AIImage[]>([]);
     const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
+    const [localDuplicateCandidates, setLocalDuplicateCandidates] = useState<AIImage[]>([]);
 
     const [isLoading, setIsLoading] = useState(false);
     const [initializedTabs, setInitializedTabs] = useState<Set<string>>(new Set());
@@ -200,7 +207,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
 
     // --- Data Fetchers ---
-    const refreshData = useCallback(async (tab: string, showLoader: boolean = true) => {
+    const refreshData = useCallback(async (tab: string, showLoader: boolean = true, options: { scope?: 'global' | 'filtered' } = {}) => {
         if (showLoader) setIsLoading(true);
         try {
             const db = await import('../services/db');
@@ -217,6 +224,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             } else if (tab === 'thumbnails') {
                 const data = await db.getUnoptimizedImages();
                 setLocalUnoptimizedImages(data);
+            } else if (tab === 'duplicates') {
+                // Fetch potential duplicates
+                // If scope is 'filtered', we use the context's SQL
+                const where = options.scope === 'filtered' ? activeSqlWhere : '';
+                const params = options.scope === 'filtered' ? activeSqlParams : [];
+
+                const data = await db.getDuplicateCandidates(where, params);
+                setLocalDuplicateCandidates(data);
             }
 
             setInitializedTabs(prev => new Set(prev).add(tab));
@@ -225,7 +240,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         } finally {
             if (showLoader) setIsLoading(false);
         }
-    }, [refreshMaintenanceCounts]);
+    }, [refreshMaintenanceCounts, activeSqlWhere, activeSqlParams]);
 
     // Initial load of counts
     useEffect(() => {
@@ -267,7 +282,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         const hasLocalData = (activeTab === 'trash' && localDeletedImages.length > 0) ||
             (activeTab === 'untagged' && localUntaggedImages.length > 0) ||
             (activeTab === 'thumbnails' && localUnoptimizedImages.length > 0) ||
-            (activeTab === 'duplicates' && activeImages.length > 0) ||
+            (activeTab === 'duplicates' && localDuplicateCandidates.length > 0) ||
             (activeTab === 'missing');
 
         const shouldShowLoader = !hasLocalData && !isInitialized && count !== 0;
@@ -321,11 +336,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             ...missingImages,
             ...localUntaggedImages,
             ...localDeletedImages,
-            ...localUnoptimizedImages
+            ...localUnoptimizedImages,
+            ...localDuplicateCandidates
             // Active images if needed?
         ];
         return allPool.find(i => i.id === viewingImageId) || null;
-    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages]);
+    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates]);
 
     // 3. Removed Lazy Stacking Calculation
     // const shouldCalculateStacks = activeTab === 'stacks';
@@ -756,10 +772,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
                 {activeTab === 'duplicates' && (
                     <DuplicateFinder
-                        images={activeImages.filter(i => !i.groupId)}
-                        onResolve={onResolveDuplicate}
+                        images={localDuplicateCandidates}
+                        onResolve={async (keepId, deleteIds) => {
+                            await onResolveDuplicate(keepId, deleteIds);
+                            // Refresh local candidates after resolution (keeping same scope)
+                            await refreshData('duplicates', false);
+                        }}
                         maskedKeywords={maskedKeywords}
                         privacyEnabled={privacyEnabled}
+                        onRefresh={(scope) => refreshData('duplicates', true, { scope })}
                     />
                 )}
 

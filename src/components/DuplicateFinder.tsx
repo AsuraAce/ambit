@@ -88,24 +88,54 @@ interface DuplicateFinderProps {
     // Privacy
     maskedKeywords: string[];
     privacyEnabled: boolean;
+    onRefresh?: (scope: 'global' | 'filtered') => void | Promise<any>;
 }
 
 export const DuplicateFinder: React.FC<DuplicateFinderProps> = ({
     images,
     onResolve,
     maskedKeywords,
-    privacyEnabled
+    privacyEnabled,
+    onRefresh
 }) => {
     const { groups, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
+    const [scope, setScope] = useState<'global' | 'filtered'>('global');
 
     if (groups.length === 0) {
         return (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 animate-in fade-in">
+            <div className="h-full flex flex-col items-center justify-center text-gray-500 animate-in fade-in py-20">
                 <div className="p-6 bg-sage-500/10 rounded-full mb-6 border border-sage-500/20">
                     <Check className="w-16 h-16 text-sage-500" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Library is Clean</h2>
-                <p className="max-w-md text-center text-gray-500 dark:text-gray-400">No strict duplicates (same file size and generation data) detected.</p>
+                <p className="max-w-md text-center text-gray-500 dark:text-gray-400 mb-6">
+                    No strict duplicates detected in the {scope === 'global' ? 'entire library' : 'current search results'}.
+                </p>
+                {onRefresh && (
+                    <div className="flex flex-col items-center gap-4">
+                        <button
+                            onClick={() => onRefresh(scope)}
+                            className="px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
+                        >
+                            <Zap className="w-4 h-4" /> Run {scope === 'global' ? 'Global' : 'Filtered'} Scan
+                        </button>
+
+                        <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
+                            <button
+                                onClick={() => { setScope('global'); onRefresh('global'); }}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Entire Library
+                            </button>
+                            <button
+                                onClick={() => { setScope('filtered'); onRefresh('filtered'); }}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Current Search
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -114,42 +144,76 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = ({
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4">
 
             {/* Combined Header & Bulk Actions */}
-            <div className="mb-8 p-4 bg-sage-100/30 dark:bg-sage-900/10 border border-sage-200/50 dark:border-sage-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm">
+            <div className="mb-4 p-4 bg-sage-100/30 dark:bg-sage-900/10 border border-sage-200/50 dark:border-sage-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm">
                 <div className="flex items-center gap-4 flex-1">
-                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl shadow-sm border border-sage-200/50 dark:border-white/5">
+                    <div className="p-3 bg-white dark:bg-black/20 rounded-xl shadow-sm border border-sage-200/50 dark:border-white/5 relative">
                         <AlertTriangle className="w-6 h-6 text-sage-600 dark:text-sage-400" />
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-sage-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm" />
                     </div>
                     <div>
-                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Strict Duplicate Detection</h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Duplicate Detection</h3>
+                            <span className="px-1.5 py-0.5 bg-sage-500/20 text-sage-600 dark:text-sage-400 rounded text-[9px] font-bold uppercase tracking-tighter">
+                                {scope === 'global' ? 'Global Scan' : 'Filtered Scan'}
+                            </span>
+                        </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Found {groups.length} groups of identical images matching in size, resolution, and generation metadata.
+                            Found {groups.length} groups of identical images in your {scope === 'global' ? 'whole library' : 'current search'}.
                         </p>
                     </div>
                 </div>
 
-                {groups.length > 1 && (
-                    <div className="flex flex-wrap items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-2xl">
-                        <div className="px-3 py-1 flex items-center gap-2 border-r border-sage-200/50 dark:border-white/5 mr-1">
-                            <Zap className="w-3.5 h-3.5 text-sage-500" />
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Bulk Actions</span>
-                        </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Scope Toggle */}
+                    <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-xl mr-2">
                         <button
-                            onClick={() => handleBulkResolve('newest')}
-                            className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                            onClick={() => { setScope('global'); onRefresh?.('global'); }}
+                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
                         >
-                            <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
-                            Keep Newest All
-                            <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{groups.length}</span>
+                            Global
                         </button>
                         <button
-                            onClick={() => handleBulkResolve('oldest')}
-                            className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
+                            onClick={() => { setScope('filtered'); onRefresh?.('filtered'); }}
+                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
                         >
-                            <Clock className="w-3.5 h-3.5 opacity-40 group-hover:-rotate-12 transition-transform" />
-                            Keep Oldest All
+                            Search
                         </button>
                     </div>
-                )}
+
+                    {onRefresh && (
+                        <button
+                            onClick={() => onRefresh(scope)}
+                            className="p-2.5 text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 rounded-xl transition-all border border-transparent hover:border-sage-200/50"
+                            title="Refresh results"
+                        >
+                            <Zap className="w-4 h-4" />
+                        </button>
+                    )}
+
+                    {groups.length > 1 && (
+                        <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                            <div className="px-3 py-1 flex items-center gap-2 border-r border-sage-200/50 dark:border-white/5 mr-1">
+                                <Zap className="w-3.5 h-3.5 text-sage-500" />
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Bulk</span>
+                            </div>
+                            <button
+                                onClick={() => handleBulkResolve('newest')}
+                                className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                            >
+                                <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+                                Keep Newest
+                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{groups.length}</span>
+                            </button>
+                            <button
+                                onClick={() => handleBulkResolve('oldest')}
+                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
+                            >
+                                <Clock className="w-3.5 h-3.5 opacity-40 group-hover:-rotate-12 transition-transform" />
+                                Keep Oldest
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 min-[1800px]:grid-cols-3 gap-6">

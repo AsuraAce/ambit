@@ -183,7 +183,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
         });
     };
 
-    const smartTags = image.metadata.positivePrompt
+    const smartTags = (typeof image.metadata.positivePrompt === 'string')
         ? image.metadata.positivePrompt.split(',').map(t => t.trim()).filter(t => t.length > 2 && t.length < 30 && !t.startsWith('score_')).slice(0, 15)
         : [];
 

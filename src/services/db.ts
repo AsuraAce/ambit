@@ -676,3 +676,40 @@ export const getUnoptimizedImages = async (): Promise<AIImage[]> => {
     `);
     return rows.map(mapRowToImage);
 };
+
+/**
+ * Finds potential duplicates by looking for images with identical file size and dimensions.
+ * This is a highly efficient broad-phase scan that avoids fetching the entire DB.
+ */
+export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+
+    // We aim to find groups of (file_size, width, height) that appear > 1 time.
+    // We respect the current filters (whereClause) but default to is_deleted=0 and group_id IS NULL 
+    // to avoid scanning trash or already stacked images.
+
+    const baseWhere = whereClause ? whereClause : 'WHERE is_deleted = 0 AND group_id IS NULL';
+
+    // Inner query finds the (size, w, h) triplets that are duplicated
+    const query = `
+        SELECT i.* 
+        FROM images i
+        JOIN (
+            SELECT file_size, width, height 
+            FROM images 
+            ${baseWhere}
+            GROUP BY file_size, width, height 
+            HAVING COUNT(*) > 1
+        ) dup ON i.file_size = dup.file_size AND i.width = dup.width AND i.height = dup.height
+        ${baseWhere}
+        ORDER BY i.file_size DESC, i.timestamp DESC
+    `;
+
+    try {
+        const rows = await db.select<any[]>(query, params);
+        return rows.map(mapRowToImage);
+    } catch (e) {
+        console.error('[DB] Failed to get duplicate candidates', e);
+        return [];
+    }
+};

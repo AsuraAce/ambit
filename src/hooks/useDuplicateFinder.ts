@@ -25,8 +25,11 @@ const getImageFingerprint = (img: AIImage): string => {
     } = img.metadata;
 
     // PROTECTION: Minimum Requirement Check. 
-    // If we have no prompt AND no seed (or default 0), we don't have enough data to verify equality.
-    const hasPrompt = positivePrompt && positivePrompt.trim().length > 0;
+    // Handle cases where prompt might not be a string (e.g. legacy data or corrupted JSON)
+    const pStr = typeof positivePrompt === 'string' ? positivePrompt : '';
+    const nStr = typeof negativePrompt === 'string' ? negativePrompt : '';
+
+    const hasPrompt = pStr.trim().length > 0;
     const hasSeed = seed !== undefined && seed !== 0 && seed !== -1;
 
     if (!hasPrompt && !hasSeed) {
@@ -35,8 +38,8 @@ const getImageFingerprint = (img: AIImage): string => {
 
     const core = {
         tool, model, seed, steps, cfg, sampler,
-        prompt: positivePrompt?.trim(),
-        neg: negativePrompt?.trim(),
+        prompt: pStr.trim(),
+        neg: nStr.trim(),
         hor: img.width || 0,
         ver: img.height || 0,
         size: img.fileSize || 0,
