@@ -98,9 +98,40 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
         setResolvedSignatures(prev => new Set(prev).add(groupId));
     };
 
+    const handleBulkResolve = (strategy: 'newest' | 'oldest') => {
+        const totalDeleteIds: string[] = [];
+        const resolvedIds: string[] = [];
+
+        groups.forEach(group => {
+            if (resolvedSignatures.has(group.id)) return;
+
+            // Sort images in group by timestamp
+            const sorted = [...group.images].sort((a, b) => a.timestamp - b.timestamp);
+            const keepItem = strategy === 'newest' ? sorted[sorted.length - 1] : sorted[0];
+
+            const deleteIds = group.images
+                .map(i => i.id)
+                .filter(id => id !== keepItem.id);
+
+            totalDeleteIds.push(...deleteIds);
+            resolvedIds.push(group.id);
+        });
+
+        if (totalDeleteIds.length > 0) {
+            // Pick a dummy keepId for the onResolve call (it's mainly used for toast/logging in parent)
+            onResolve('bulk', totalDeleteIds);
+            setResolvedSignatures(prev => {
+                const next = new Set(prev);
+                resolvedIds.forEach(id => next.add(id));
+                return next;
+            });
+        }
+    };
+
     return {
         groups: activeGroups,
-        handleResolve
+        handleResolve,
+        handleBulkResolve
     };
 };
 
