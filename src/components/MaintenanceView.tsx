@@ -758,7 +758,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     <DuplicateFinder
                         images={activeImages.filter(i => !i.groupId)}
                         onResolve={onResolveDuplicate}
-                        onStack={onGroupImages}
                         maskedKeywords={maskedKeywords}
                         privacyEnabled={privacyEnabled}
                     />
