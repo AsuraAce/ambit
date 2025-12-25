@@ -102,7 +102,9 @@ const DuplicateGroupCard: React.FC<{
                             Exact Duplicate Group
                         </span>
                     </div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase">{group.images.length} copies</span>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${group.images.length > 2 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50' : 'text-gray-400'}`}>
+                        {group.images.length} copies
+                    </span>
                 </div>
 
                 <div className="p-5 flex flex-col gap-4 flex-1">
@@ -155,7 +157,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     onRefresh,
     scrollContainerRef
 }) => {
-    const { groups, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
+    const { groups, totalRedundantCount, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
     const [scope, setScope] = useState<'global' | 'filtered'>('global');
 
     if (groups.length === 0) {
@@ -215,7 +217,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                             </span>
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Found {groups.length} groups of identical images in your {scope === 'global' ? 'whole library' : 'current filter'}.
+                            Found {groups.length} groups ({totalRedundantCount} redundant items) in your {scope === 'global' ? 'whole library' : 'current filter'}.
                         </p>
                     </div>
                 </div>
@@ -259,7 +261,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                             >
                                 <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
                                 Keep Newest
-                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{groups.length}</span>
+                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalRedundantCount}</span>
                             </button>
                             <button
                                 onClick={() => handleBulkResolve('oldest')}

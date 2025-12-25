@@ -95,9 +95,11 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
         return results;
     }, [images]);
 
-    const activeGroups = useMemo(() =>
-        groups.filter(g => !resolvedSignatures.has(g.id)),
-        [groups, resolvedSignatures]);
+    const { activeGroups, totalRedundantCount } = useMemo(() => {
+        const filtered = groups.filter(g => !resolvedSignatures.has(g.id));
+        const redundant = filtered.reduce((acc, g) => acc + (g.images.length - 1), 0);
+        return { activeGroups: filtered, totalRedundantCount: redundant };
+    }, [groups, resolvedSignatures]);
 
     const handleResolve = (groupId: string, keepId: string, allIds: string[]) => {
         const deleteIds = allIds.filter(id => id !== keepId);
@@ -137,6 +139,7 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
 
     return {
         groups: activeGroups,
+        totalRedundantCount,
         handleResolve,
         handleBulkResolve
     };
