@@ -107,7 +107,7 @@ export const insertImage = async (image: AIImage) => {
                 image.fileSize,
                 image.timestamp,
                 JSON.stringify(image.metadata),
-                image.thumbnailUrl,
+                image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\\\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
                 image.isFavorite ? 1 : 0,
                 image.isPinned ? 1 : 0,
                 image.isDeleted ? 1 : 0,
@@ -139,7 +139,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             fileSize: img.fileSize || 0,
             timestamp: img.timestamp,
             metadataJson: JSON.stringify(img.metadata),
-            thumbnailPath: img.thumbnailUrl || '',
+            thumbnailPath: (img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\\\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
             isFavorite: !!img.isFavorite,
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
@@ -248,10 +248,12 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
 // Helper to keep mapping consistent
 function mapRowToImage(row: any): AIImage {
     const normalizedPath = row.path.replace(/\\/g, '/');
+    const thumbPath = row.thumbnail_path ? row.thumbnail_path.replace(/\\/g, '/') : null;
+
     return {
         id: row.id,
         url: convertFileSrc(normalizedPath),
-        thumbnailUrl: row.thumbnail_path,
+        thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
         filename: normalizedPath.split('/').pop() || row.path,
         fileSize: row.file_size,
         timestamp: row.timestamp,
@@ -554,6 +556,19 @@ export const migrateSchema = async () => {
 
     // Also ensure all NULLs are 0 for correct sorting
     await db.execute('UPDATE images SET is_pinned = 0 WHERE is_pinned IS NULL');
+
+    // MIGRATION: Fix legacy protocol-prefixed thumbnail paths
+    try {
+        // Find thumbnails starting with the asset protocol and strip it
+        // Note: Tauri 2.x uses http://tauri.localhost/_up_/ for asset conversion usually
+        await db.execute(`
+            UPDATE images 
+            SET thumbnail_path = REPLACE(REPLACE(thumbnail_path, 'http://tauri.localhost/_up_/', ''), 'https://tauri.localhost/_up_/', '')
+            WHERE thumbnail_path LIKE 'http%://tauri.localhost/_up_/%'
+        `);
+    } catch (e) {
+        console.warn('[DB] Migration failed for legacy thumbnail paths', e);
+    }
 };
 export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
     const db = await getDb();

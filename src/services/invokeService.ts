@@ -384,18 +384,18 @@ export const syncImages = async (
                     boardId = imageToBoardId.get(row.image_name);
                 }
 
-                let thumbnailUrl = convertFileSrc(fullPath);
+                let thumbnailPath = fullPath;
                 if (hasThumbnailName && row.thumbnail_name) {
-                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`);
+                    thumbnailPath = `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`;
                 } else {
                     const inferredThumbName = row.image_name.replace(/\.[^/.]+$/, "") + ".webp";
-                    thumbnailUrl = convertFileSrc(`${imagesRoot}/outputs/images/thumbnails/${inferredThumbName}`);
+                    thumbnailPath = `${imagesRoot}/outputs/images/thumbnails/${inferredThumbName}`;
                 }
 
                 const newImg: any = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
-                    thumbnailUrl: thumbnailUrl,
+                    thumbnailUrl: thumbnailPath,
                     filename: row.image_name,
                     fileSize: fileSize,
                     timestamp: timestamp || Date.now(),
@@ -564,7 +564,7 @@ export const scanForOrphans = async (
                     id: absPath,
                     url: convertFileSrc(absPath),
                     // Use original image as thumbnail (Strategy #2)
-                    thumbnailUrl: meta.thumbnail ? convertFileSrc(meta.thumbnail) : convertFileSrc(absPath),
+                    thumbnailUrl: meta.thumbnail || absPath,
                     filename: relName.split('/').pop(),
                     fileSize: meta.size,
                     timestamp: meta.modified || Date.now(),

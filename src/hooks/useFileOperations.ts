@@ -155,12 +155,12 @@ export const useFileOperations = ({
                     const { normalizePath } = await import('../utils/pathUtils');
                     const normalizedPath = normalizePath(path);
                     const assetUrl = convertFileSrc(normalizedPath);
-                    const thumbUrl = thumbnail ? convertFileSrc(thumbnail) : assetUrl;
+                    const thumbPath = thumbnail || normalizedPath;
 
                     const newImg: AIImage = {
                         id: normalizedPath,
                         url: assetUrl,
-                        thumbnailUrl: thumbUrl,
+                        thumbnailUrl: thumbPath,
                         filename: filename,
                         fileSize: fileSize || 0,
                         timestamp: timestamp || Date.now(),
@@ -294,13 +294,13 @@ export const useFileOperations = ({
                 const normalizedPath = normalizePath(path);
                 const assetUrl = convertFileSrc(normalizedPath);
 
-                // Use Thumbnail if generated
-                const thumbUrl = result.thumbnail ? convertFileSrc(result.thumbnail) : assetUrl;
+                // Use Thumbnail Path if generated
+                const thumbPath = result.thumbnail || normalizedPath;
 
                 const newImg: AIImage = {
                     id: normalizedPath,
                     url: assetUrl,
-                    thumbnailUrl: thumbUrl,
+                    thumbnailUrl: thumbPath,
                     filename: filename,
                     fileSize: result.fileSize || 0,
                     timestamp: result.timestamp || Date.now(),
@@ -447,8 +447,9 @@ export const useFileOperations = ({
         const targetIds = Array.isArray(arg) ? arg : undefined;
         const onProgress = typeof arg === 'function' ? arg : undefined;
 
-        // Find images that need optimization (where thumb == url or thumb is missing)
-        let candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+        // Find images that need optimization (where thumb path == image path)
+        // Note: With our new logic, id IS the normalized absolute path.
+        let candidates = images.filter(img => img.id === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
 
         if (targetIds) {
             candidates = candidates.filter(img => targetIds.includes(img.id));
@@ -471,8 +472,7 @@ export const useFileOperations = ({
                 const { thumbnail } = await scanImageNative(path, thumbDir);
 
                 if (thumbnail) {
-                    const thumbUrl = convertFileSrc(thumbnail);
-                    updates.push({ ...img, thumbnailUrl: thumbUrl });
+                    updates.push({ ...img, thumbnailUrl: thumbnail });
                 }
             } catch (e) {
                 console.error(`Failed to gen thumb for ${img.id}`, e);
