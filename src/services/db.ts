@@ -622,8 +622,8 @@ export const deleteImage = async (id: string) => {
 // Toggle Soft Delete (Batch or Single)
 export const markAsDeleted = async (ids: string[], isDeleted: boolean) => {
     const db = await getDb();
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-    await db.execute(`UPDATE images SET is_deleted = $1 WHERE id IN (${placeholders})`, [isDeleted ? 1 : 0, ...ids]);
+    const placeholders = ids.map(() => '?').join(',');
+    await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [isDeleted ? 1 : 0, ...ids]);
 };
 
 // --- Maintenance Queries ---
