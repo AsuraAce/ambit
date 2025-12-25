@@ -107,7 +107,7 @@ export const insertImage = async (image: AIImage) => {
                 image.fileSize,
                 image.timestamp,
                 JSON.stringify(image.metadata),
-                image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\\\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
+                image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
                 image.isFavorite ? 1 : 0,
                 image.isPinned ? 1 : 0,
                 image.isDeleted ? 1 : 0,
@@ -139,7 +139,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             fileSize: img.fileSize || 0,
             timestamp: img.timestamp,
             metadataJson: JSON.stringify(img.metadata),
-            thumbnailPath: (img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\\\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
+            thumbnailPath: (img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
             isFavorite: !!img.isFavorite,
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
@@ -446,7 +446,11 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
             return b.timestamp - a.timestamp; // Newest first
         });
 
-        return candidates[0].path;
+        const rawPath = candidates[0].path;
+        if (!rawPath) return undefined;
+        return (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:'))
+            ? rawPath
+            : convertFileSrc(rawPath.replace(/\\/g, '/'));
 
     } catch (e) {
         console.error('[DB] Fail collection thumb', e);
@@ -501,10 +505,11 @@ export const hydrateCollections = async (): Promise<Record<string, { count: numb
         // Add thumbnails
         thumbRows.forEach(row => {
             if (row.board_id && map[row.board_id]) {
-                map[row.board_id].thumbnail = row.thumbnail_path;
+                const raw = row.thumbnail_path;
+                map[row.board_id].thumbnail = (raw && !raw.startsWith('http')) ? convertFileSrc(raw.replace(/\\/g, '/')) : raw;
             } else if (row.board_id) {
-                // Should overlap, but just in case
-                map[row.board_id] = { count: 0, thumbnail: row.thumbnail_path };
+                const raw = row.thumbnail_path;
+                map[row.board_id] = { count: 0, thumbnail: (raw && !raw.startsWith('http')) ? convertFileSrc(raw.replace(/\\/g, '/')) : raw };
             }
         });
 

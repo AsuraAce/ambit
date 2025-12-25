@@ -171,7 +171,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (col.imageIds && col.imageIds.length > 0 && !col.customThumbnail) {
         const newThumb = await getCollectionThumbnail(col.imageIds);
         if (newThumb && newThumb !== col.thumbnail) {
-          return { id: col.id, thumbnail: newThumb };
+          // Ensure it's a URL
+          const thumbUrl = (newThumb.startsWith('http') || newThumb.startsWith('data:') || newThumb.startsWith('blob:'))
+            ? newThumb
+            : convertFileSrc(newThumb.replace(/\\/g, '/'));
+          return { id: col.id, thumbnail: thumbUrl };
         }
       }
       return null;
@@ -209,7 +213,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
               ...col,
               imageIds: [], // Clear IDs to save memory/transfer limits. We rely on 'count' and board_id queries.
               count: dbData.count,
-              thumbnail: dbData.thumbnail || col.thumbnail
+              thumbnail: dbData.thumbnail ? (dbData.thumbnail.startsWith('http') ? dbData.thumbnail : convertFileSrc(dbData.thumbnail.replace(/\\/g, '/'))) : col.thumbnail
             };
           }
         }
