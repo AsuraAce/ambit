@@ -393,38 +393,55 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleRestoreSelected = async () => {
         await onRestoreImages(Array.from(selectedIds));
+        await refreshData('trash', false);
         setSelectedIds(new Set());
         setLastSelectedIndex(null);
-        refreshData('trash', false);
     };
 
     const handleDeleteSelected = async () => {
         const ids = Array.from(selectedIds);
+
         if (activeTab === 'untagged') {
             await onMoveToTrash(ids);
         } else if (activeTab === 'missing') {
-            await onMoveToTrash(ids); // Changed from onDeleteForever
-            // Local cleanup for Missing tab (since it relies on scan IDs)
+            await onMoveToTrash(ids);
+        } else {
+            await onDeleteForever(ids);
+        }
+
+        await refreshData(activeTab, false);
+
+        if (activeTab === 'missing') {
             setScanMissingIds(prev => {
                 const next = new Set(prev);
                 ids.forEach(id => next.delete(id));
                 return next;
             });
             setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
-        } else {
-            await onDeleteForever(ids);
         }
+
         setSelectedIds(new Set());
         setLastSelectedIndex(null);
-        refreshData(activeTab, false); // No spinner for background refresh
     };
 
     const handlePurgeMissing = async () => {
         const ids = missingImages.map(i => i.id);
-        await onMoveToTrash(ids); // Changed from onDeleteForever
+
+        await onMoveToTrash(ids);
+        await refreshData('missing', false);
         setScanMissingIds(new Set());
         setFetchedMissingImages([]);
-        refreshData('missing', false);
+    };
+
+    const handleRegenerate = async (ids?: string[]) => {
+        if (!onRegenerateThumbnails) return;
+
+        await onRegenerateThumbnails(ids);
+        if (ids) {
+            setSelectedIds(new Set());
+            setLastSelectedIndex(null);
+        }
+        await refreshData('thumbnails', false);
     };
 
     const handleGroupConfirm = (baseId: string, relatedIds: string[]) => {
@@ -690,12 +707,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             {maintenanceCounts.unoptimized > 0 ? (
                                 <div className="flex items-center gap-3 mt-4">
                                     {selectedIds.size > 0 ? (
-                                        <button onClick={() => onRegenerateThumbnails?.(Array.from(selectedIds))} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
+                                        <button onClick={() => handleRegenerate(Array.from(selectedIds))} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
                                             <Wand2 className="w-4 h-4" /> Regenerate Selected ({selectedIds.size})
                                         </button>
                                     ) : (
                                         onRegenerateThumbnails && (
-                                            <button onClick={() => onRegenerateThumbnails()} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
+                                            <button onClick={() => handleRegenerate()} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
                                                 <Wand2 className="w-4 h-4" /> Generate All Thumbnails
                                             </button>
                                         )
@@ -891,7 +908,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                     </>
                                 ) : (
                                     localDeletedImages.length > 0 && (
-                                        <button onClick={async () => { await onEmptyTrash(); refreshData('trash', false); }} className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-red-200 dark:hover:bg-red-900/50" title="Clear your library trash bin. Files remain on disk.">
+                                        <button onClick={async () => { await onEmptyTrash(); await refreshData('trash', false); }} className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg text-xs font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-red-200 dark:hover:bg-red-900/50" title="Clear your library trash bin. Files remain on disk.">
                                             <Trash2 className="w-4 h-4" /> Clear All Trash
                                         </button>
                                     )
