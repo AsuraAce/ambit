@@ -678,17 +678,32 @@ export const getUntaggedImages = async (): Promise<AIImage[]> => {
     return rows.map(mapRowToImage);
 };
 
-export const getUnoptimizedImages = async (): Promise<AIImage[]> => {
+export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
-    // Heuristic: Check where path equals thumbnail_path OR thumbnail_path is missing
-    const rows = await db.select<any[]>(`
+
+    let query = `
         SELECT * FROM images 
         WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
-        ORDER BY timestamp DESC
-    `);
+    `;
+
+    if (whereClause) {
+        // We append the provided where clause. 
+        // Important: activeSqlWhere usually starts with "WHERE" or contains "AND".
+        // In this project it typically starts with "WHERE".
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+
+    const rows = await db.select<any[]>(query, params);
     return rows.map(mapRowToImage);
 };
 

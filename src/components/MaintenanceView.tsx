@@ -6,7 +6,7 @@ import { AIImage } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { StackGroup } from './StackGroup';
 import { useStacking } from '../hooks/useStacking';
-import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye, Loader2 } from 'lucide-react';
+import { Trash2, CheckSquare, XSquare, ArchiveRestore, Eraser, Unlink, FileWarning, Layers, Wand2, Tag, EyeOff, Eye, Loader2, Zap } from 'lucide-react';
 import { VirtualGrid } from './VirtualGrid';
 import { isImageMasked } from '../utils/maskingUtils';
 import { ImageViewer } from './ImageViewer';
@@ -185,6 +185,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [activeTab, setActiveTabOriginal] = useState<'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails'>('missing');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+    const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
 
     // Wrapper to clear selection on tab change
     const setActiveTab = useCallback((tab: 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails') => {
@@ -222,7 +223,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 const data = await db.getUntaggedImages();
                 setLocalUntaggedImages(data);
             } else if (tab === 'thumbnails') {
-                const data = await db.getUnoptimizedImages();
+                const where = options.scope === 'filtered' ? activeSqlWhere : '';
+                const params = options.scope === 'filtered' ? activeSqlParams : [];
+                const data = await db.getUnoptimizedImages(where, params);
                 setLocalUnoptimizedImages(data);
             } else if (tab === 'duplicates') {
                 // Fetch potential duplicates
@@ -288,7 +291,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         const shouldShowLoader = !hasLocalData && !isInitialized && count !== 0;
 
         // Execute fetch
-        refreshData(activeTab, shouldShowLoader);
+        if (activeTab === 'thumbnails') {
+            refreshData(activeTab, shouldShowLoader, { scope: thumbnailsScope });
+        } else {
+            refreshData(activeTab, shouldShowLoader);
+        }
 
     }, [activeTab]); // <--- CRITICAL: Only run when activeTab changes.
     // We removed 'refreshData', 'maintenanceCounts', 'initializedTabs' etc from deps to BREAK THE LOOP.
@@ -457,7 +464,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             setSelectedIds(new Set());
             setLastSelectedIndex(null);
         }
-        await refreshData('thumbnails', false);
+        await refreshData('thumbnails', false, { scope: thumbnailsScope });
     };
 
     const handleGroupConfirm = (baseId: string, relatedIds: string[]) => {
@@ -697,13 +704,57 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
 
                 {activeTab === 'thumbnails' && (
-                    <div className="w-full pb-24 h-full flex flex-col">
-                        <div className="flex-shrink-0 mb-6 bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                    <Layers className="w-5 h-5 text-blue-500" /> Optimize Thumbnails
-                                </h3>
-                                {maintenanceCounts.unoptimized > 0 && (
+                    <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col h-full">
+                        {/* Combined Header & Bulk Actions - Matches DuplicateFinder style */}
+                        <div className="mb-6 p-4 bg-blue-50/30 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm shrink-0">
+                            <div className="flex items-center gap-4 flex-1">
+                                <div className="p-3 bg-white dark:bg-black/20 rounded-xl shadow-sm border border-blue-200/50 dark:border-white/5 relative">
+                                    <Layers className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                    {maintenanceCounts.unoptimized > 0 && (
+                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-white dark:border-slate-900 shadow-sm" />
+                                    )}
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Optimize Thumbnails</h3>
+                                        <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded text-[9px] font-bold uppercase tracking-tighter">
+                                            {thumbnailsScope === 'global' ? 'Global Scan' : 'Filtered Scan'}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                        Found {localUnoptimizedImages.length} unoptimized images in your {thumbnailsScope === 'global' ? 'whole library' : 'current filter'}.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Scope Toggle */}
+                                <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-blue-200/50 dark:border-white/5 rounded-xl mr-2">
+                                    <button
+                                        onClick={() => { setThumbnailsScope('global'); refreshData('thumbnails', true, { scope: 'global' }); }}
+                                        className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'global' ? 'bg-white dark:bg-zinc-800 text-blue-600 shadow-sm' : 'text-gray-400'}`}
+                                    >
+                                        Global
+                                    </button>
+                                    <button
+                                        onClick={() => { setThumbnailsScope('filtered'); refreshData('thumbnails', true, { scope: 'filtered' }); }}
+                                        className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-blue-600 shadow-sm' : 'text-gray-400'}`}
+                                    >
+                                        Filtered
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={() => refreshData('thumbnails', true, { scope: thumbnailsScope })}
+                                    className="p-2.5 text-gray-500 hover:text-blue-500 hover:bg-white dark:hover:bg-zinc-800 rounded-xl transition-all border border-transparent hover:border-blue-200/50"
+                                    title="Refresh results"
+                                >
+                                    <Zap className="w-4 h-4" />
+                                </button>
+
+                                <div className="h-8 w-[1px] bg-gray-200 dark:bg-white/5 mx-1" />
+
+                                {localUnoptimizedImages.length > 0 && (
                                     <div className="flex items-center gap-2">
                                         <button onClick={selectAll} className="text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
                                             <CheckSquare className="w-4 h-4" /> Select All
@@ -715,34 +766,36 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         )}
                                     </div>
                                 )}
-                            </div>
-                            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-                                Found {maintenanceCounts.unoptimized} images using full-resolution files as thumbnails.
-                                Regenerating them will significantly improve gallery scroll smoothness.
-                            </p>
-                            {maintenanceCounts.unoptimized > 0 ? (
-                                <div className="flex items-center gap-3 mt-4">
-                                    {selectedIds.size > 0 ? (
-                                        <button onClick={() => handleRegenerate(Array.from(selectedIds))} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
-                                            <Wand2 className="w-4 h-4" /> Regenerate Selected ({selectedIds.size})
-                                        </button>
-                                    ) : (
-                                        onRegenerateThumbnails && (
-                                            <button onClick={() => handleRegenerate()} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:scale-105 whitespace-nowrap">
-                                                <Wand2 className="w-4 h-4" /> Generate All Thumbnails
+
+                                {localUnoptimizedImages.length > 0 && (
+                                    <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-blue-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+                                        {selectedIds.size > 0 ? (
+                                            <button onClick={() => handleRegenerate(Array.from(selectedIds))} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-blue-500/20">
+                                                <Wand2 className="w-4 h-4" />
+                                                Regenerate Selected
+                                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                                             </button>
-                                        )
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="mt-4 flex items-center gap-2 text-green-600 dark:text-green-400 font-medium text-sm">
-                                    <CheckSquare className="w-4 h-4" /> All thumbnails optimized
-                                </div>
-                            )}
+                                        ) : (
+                                            <button onClick={() => handleRegenerate()} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-blue-500/20">
+                                                <Wand2 className="w-4 h-4" />
+                                                Generate All
+                                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{localUnoptimizedImages.length}</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
+
                         {localUnoptimizedImages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                                <p>All items optimized!</p>
+                                <div className="p-6 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">
+                                    <CheckSquare className="w-16 h-16 text-blue-500" />
+                                </div>
+                                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Thumbnails Optimized</h2>
+                                <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
+                                    All images in your {thumbnailsScope === 'global' ? 'entire library' : 'current filter results'} already have optimized thumbnails.
+                                </p>
                             </div>
                         ) : (
                             <div className="flex-1 min-h-[500px]">
@@ -753,7 +806,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                     gap={16}
                                     padding={0}
                                     scrollContainerRef={scrollContainerRef}
-                                    renderItem={renderUntaggedItem} // Reuse simple renderer
+                                    renderItem={renderUntaggedItem}
                                     getItemRatio={(img) => img.width / img.height}
                                     onRangeSelection={handleRangeSelection}
                                     onBackgroundClick={() => setSelectedIds(new Set())}
