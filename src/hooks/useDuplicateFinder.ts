@@ -5,6 +5,7 @@ import { AIImage } from '../types';
 export interface DuplicateGroup {
     id: string;
     images: AIImage[];
+    newestId: string;
 }
 
 /**
@@ -80,9 +81,12 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
 
             Object.entries(metaBuckets).forEach(([fp, matches]) => {
                 if (matches.length > 1) {
+                    // Pre-find newestId to save render time
+                    const newest = [...matches].sort((a, b) => b.timestamp - a.timestamp)[0];
                     results.push({
                         id: `dupe_${matches[0].id}`,
-                        images: matches
+                        images: matches,
+                        newestId: newest?.id || ''
                     });
                 }
             });

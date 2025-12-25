@@ -781,6 +781,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         maskedKeywords={maskedKeywords}
                         privacyEnabled={privacyEnabled}
                         onRefresh={(scope) => refreshData('duplicates', true, { scope })}
+                        scrollContainerRef={scrollContainerRef}
                     />
                 )}
 
