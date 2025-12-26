@@ -158,6 +158,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
     const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
+    const [duplicatesScope, setDuplicatesScope] = useState<'global' | 'filtered'>('global');
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -272,7 +273,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     };
 
     const handleRestoreSelected = async () => {
-        await onRestoreImages(Array.from(selectedIds));
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        await onRestoreImages(ids);
         await refreshData('trash', false);
         setSelectedIds(new Set());
         setLastSelectedIndex(null);
@@ -280,12 +283,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleDeleteSelected = async () => {
         const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+
         if (activeTab === 'untagged' || activeTab === 'missing') {
             await onMoveToTrash(ids);
         } else {
             await onDeleteForever(ids);
         }
-        await refreshData(activeTab, false);
+
+        const scope = activeTab === 'untagged' ? untaggedScope :
+            activeTab === 'thumbnails' ? thumbnailsScope :
+                activeTab === 'duplicates' ? duplicatesScope : 'global';
+
+        await refreshData(activeTab, false, { scope: scope as any });
 
         if (activeTab === 'missing') {
             setScanMissingIds(prev => {
@@ -315,6 +325,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             setLastSelectedIndex(null);
         }
         await refreshData('thumbnails', false, { scope: thumbnailsScope });
+    };
+
+    const handleResolveDuplicate = async (keepId: string, deleteIds: string[]) => {
+        await onResolveDuplicate(keepId, deleteIds);
+        await refreshData('duplicates', false, { scope: duplicatesScope });
     };
 
 
@@ -371,6 +386,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 <AnimatePresence mode="wait">
                     {isLoading && (
                         <motion.div
+                            key="loader"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -384,120 +400,168 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             </div>
                         </motion.div>
                     )}
+
+                    {(activeTab === 'thumbnails' && initializedTabs.has('thumbnails')) && (
+                        <motion.div
+                            key="thumbnails"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <ThumbnailsTab
+                                images={localUnoptimizedImages}
+                                selectedIds={selectedIds}
+                                onItemClick={handleItemClick}
+                                onSelectAll={selectAll}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                onRegenerate={handleRegenerate}
+                                thumbnailsScope={thumbnailsScope}
+                                onScopeChange={handleThumbnailsScopeChange}
+                                privacyEnabled={privacyEnabled}
+                                maskedKeywords={maskedKeywords}
+                                scrollContainerRef={scrollContainerRef as any}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {(activeTab === 'duplicates' && initializedTabs.has('duplicates')) && (
+                        <motion.div
+                            key="duplicates"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <DuplicateFinder
+                                images={localDuplicateCandidates}
+                                onResolve={handleResolveDuplicate}
+                                maskedKeywords={maskedKeywords}
+                                privacyEnabled={privacyEnabled}
+                                onRefresh={(scope) => {
+                                    setDuplicatesScope(scope);
+                                    refreshData('duplicates', true, { scope });
+                                }}
+                                scrollContainerRef={scrollContainerRef}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {(activeTab === 'untagged' && initializedTabs.has('untagged')) && (
+                        <motion.div
+                            key="untagged"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <UntaggedTab
+                                images={localUntaggedImages}
+                                selectedIds={selectedIds}
+                                onItemClick={handleItemClick}
+                                onSelectAll={selectAll}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                onMoveToTrash={handleDeleteSelected}
+                                onViewImage={setViewingImageId}
+                                privacyEnabled={privacyEnabled}
+                                maskedKeywords={maskedKeywords}
+                                scrollContainerRef={scrollContainerRef as any}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                                untaggedScope={untaggedScope}
+                                onScopeChange={handleUntaggedScopeChange}
+                            />
+                        </motion.div>
+                    )}
+
+                    {activeTab === 'missing' && (
+                        <motion.div
+                            key="missing"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                            className="flex flex-col gap-6"
+                        >
+                            <React.Suspense fallback={<div className="h-20 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
+                                <LibraryHealth onScanComplete={handleScanComplete} />
+                            </React.Suspense>
+
+                            <MissingTab
+                                images={missingImages}
+                                selectedIds={selectedIds}
+                                onItemClick={handleItemClick}
+                                onSelectAll={selectAll}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                onDeleteSelected={handleDeleteSelected}
+                                onPurgeMissing={handlePurgeMissing}
+                                onViewImage={setViewingImageId}
+                                scrollContainerRef={scrollContainerRef as any}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {activeTab === 'trash' && (
+                        <motion.div
+                            key="trash"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <TrashTab
+                                images={localDeletedImages}
+                                selectedIds={selectedIds}
+                                onItemClick={handleItemClick}
+                                onSelectAll={selectAll}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                onRestoreSelected={handleRestoreSelected}
+                                onDeleteSelected={handleDeleteSelected}
+                                privacyEnabled={privacyEnabled}
+                                maskedKeywords={maskedKeywords}
+                                scrollContainerRef={scrollContainerRef as any}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {/* Scan Placeholders */}
+                    {activeTab !== 'trash' && activeTab !== 'missing' && !initializedTabs.has(activeTab) && (
+                        <motion.div
+                            key={`${activeTab}-placeholder`}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                        >
+                            <ScanPlaceholder
+                                tab={activeTab}
+                                onStartScan={(tab, scope) => refreshData(tab, true, { scope })}
+                            />
+                        </motion.div>
+                    )}
                 </AnimatePresence>
-
-                {(activeTab === 'thumbnails' && initializedTabs.has('thumbnails')) && (
-                    <ThumbnailsTab
-                        images={localUnoptimizedImages}
-                        selectedIds={selectedIds}
-                        onItemClick={handleItemClick}
-                        onSelectAll={selectAll}
-                        onClearSelection={() => setSelectedIds(new Set())}
-                        onRegenerate={handleRegenerate}
-                        thumbnailsScope={thumbnailsScope}
-                        onScopeChange={handleThumbnailsScopeChange}
-                        privacyEnabled={privacyEnabled}
-                        maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef as any}
-                        onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => {
-                            setSelectedIds(new Set());
-                            setLastSelectedIndex(null);
-                        }}
-                    />
-                )}
-
-                {(activeTab === 'duplicates' && initializedTabs.has('duplicates')) && (
-                    <DuplicateFinder
-                        images={localDuplicateCandidates}
-                        onResolve={onResolveDuplicate}
-                        maskedKeywords={maskedKeywords}
-                        privacyEnabled={privacyEnabled}
-                        onRefresh={(scope) => refreshData('duplicates', true, { scope })}
-                        scrollContainerRef={scrollContainerRef}
-                        onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => {
-                            setSelectedIds(new Set());
-                            setLastSelectedIndex(null);
-                        }}
-                    />
-                )}
-
-                {(activeTab === 'untagged' && initializedTabs.has('untagged')) && (
-                    <UntaggedTab
-                        images={localUntaggedImages}
-                        selectedIds={selectedIds}
-                        onItemClick={handleItemClick}
-                        onSelectAll={selectAll}
-                        onClearSelection={() => setSelectedIds(new Set())}
-                        onMoveToTrash={handleDeleteSelected}
-                        onViewImage={setViewingImageId}
-                        privacyEnabled={privacyEnabled}
-                        maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef as any}
-                        onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => {
-                            setSelectedIds(new Set());
-                            setLastSelectedIndex(null);
-                        }}
-                        untaggedScope={untaggedScope}
-                        onScopeChange={handleUntaggedScopeChange}
-                    />
-                )}
-
-                {activeTab === 'missing' && (
-                    <div className="flex flex-col gap-6">
-                        <React.Suspense fallback={<div className="h-20 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
-                            <LibraryHealth onScanComplete={handleScanComplete} />
-                        </React.Suspense>
-
-                        <MissingTab
-                            images={missingImages}
-                            selectedIds={selectedIds}
-                            onItemClick={handleItemClick}
-                            onSelectAll={selectAll}
-                            onClearSelection={() => setSelectedIds(new Set())}
-                            onDeleteSelected={handleDeleteSelected}
-                            onPurgeMissing={handlePurgeMissing}
-                            onViewImage={setViewingImageId}
-                            scrollContainerRef={scrollContainerRef as any}
-                            onRangeSelection={handleRangeSelection}
-                            onBackgroundClick={() => {
-                                setSelectedIds(new Set());
-                                setLastSelectedIndex(null);
-                            }}
-                        />
-                    </div>
-                )}
-
-                {activeTab === 'trash' && (
-                    <TrashTab
-                        images={localDeletedImages}
-                        selectedIds={selectedIds}
-                        onItemClick={handleItemClick}
-                        onSelectAll={selectAll}
-                        onClearSelection={() => setSelectedIds(new Set())}
-                        onRestoreSelected={handleRestoreSelected}
-                        onDeleteSelected={handleDeleteSelected}
-                        privacyEnabled={privacyEnabled}
-                        maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef as any}
-                        onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => {
-                            setSelectedIds(new Set());
-                            setLastSelectedIndex(null);
-                        }}
-                    />
-                )}
-
-                {/* Scan Placeholders */}
-                {activeTab !== 'trash' && activeTab !== 'missing' && !initializedTabs.has(activeTab) && (
-                    <ScanPlaceholder
-                        key={activeTab}
-                        tab={activeTab}
-                        onStartScan={(tab, scope) => refreshData(tab, true, { scope })}
-                    />
-                )}
             </div>
 
             {/* Global Image Viewer Portal */}
