@@ -600,6 +600,22 @@ export default function App() {
                             }
                             setContextMenu(null);
                         }}
+                        isIntermediate={images.find(i => i.id === contextMenu.imageId)?.metadata.isIntermediate}
+                        onToggleIntermediate={async () => {
+                            const id = contextMenu.imageId;
+                            const img = images.find(i => i.id === id);
+                            if (!img) return;
+                            const nextValue = !img.metadata.isIntermediate;
+
+                            // Optimistic update
+                            setImages(prev => prev.map(i => i.id === id ? { ...i, metadata: { ...i.metadata, isIntermediate: nextValue } } : i));
+
+                            const { toggleImageIntermediate } = await import('./services/db');
+                            await toggleImageIntermediate(id, nextValue);
+
+                            addToast(nextValue ? "Flagged as intermediate" : "Moved to gallery", "info");
+                            setContextMenu(null);
+                        }}
                         onCopyFilePath={() => {
                             if (contextMenu.imageId) {
                                 navigator.clipboard.writeText(contextMenu.imageId);

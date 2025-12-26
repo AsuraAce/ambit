@@ -561,7 +561,7 @@ export const scanForOrphans = async (
                     sampler: meta.metadata?.sampler || '',
                     loras: meta.metadata?.loras || [],
                     controlNets: meta.metadata?.controlNets || [],
-                    isIntermediate: !!meta.isIntermediate
+                    isIntermediate: !!meta.isIntermediate || !meta.metadata // Heuristic: No metadata = Intermediate
                 };
 
                 const newImg: any = {

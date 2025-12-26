@@ -24,6 +24,8 @@ import { TrashTab } from './maintenance/TrashTab';
 import { UntaggedTab } from './maintenance/UntaggedTab';
 import { MissingTab } from './maintenance/MissingTab';
 import { ThumbnailsTab } from './maintenance/ThumbnailsTab';
+import { IntermediatesTab } from './maintenance/IntermediatesTab';
+import { Layers } from 'lucide-react';
 
 
 interface MaintenanceViewProps {
@@ -78,6 +80,12 @@ const ScanPlaceholder: React.FC<ScanPlaceholderProps> = ({
             description: "Verify that all database records point to actual files on your disk. This will scan your entire collection.",
             icon: <Search className="w-12 h-12" />,
             hasScope: false
+        },
+        intermediates: {
+            title: "Intermediate Images",
+            description: "Identify sub-steps, noise previews, or orphan images that lack InvokeAI metadata.",
+            icon: <Layers className="w-12 h-12" />,
+            hasScope: true
         }
     };
 
@@ -159,6 +167,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
     const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
     const [duplicatesScope, setDuplicatesScope] = useState<'global' | 'filtered'>('global');
+    const [intermediatesScope, setIntermediatesScope] = useState<'global' | 'filtered'>('global');
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -174,6 +183,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         localUntaggedImages,
         localUnoptimizedImages,
         localDuplicateCandidates,
+        localIntermediateImages,
         refreshData,
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
@@ -215,7 +225,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             ...localUntaggedImages,
             ...localDeletedImages,
             ...localUnoptimizedImages,
-            ...localDuplicateCandidates
+            ...localDuplicateCandidates,
+            ...localIntermediateImages
         ];
         return allPool.find(i => i.id === viewingImageId) || null;
     }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates]);
@@ -240,6 +251,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         else if (activeTab === 'untagged') currentList = localUntaggedImages;
         else if (activeTab === 'thumbnails') currentList = localUnoptimizedImages;
         else if (activeTab === 'missing') currentList = missingImages;
+        else if (activeTab === 'intermediates') currentList = localIntermediateImages;
         else if (activeTab === 'duplicates') currentList = activeImages;
 
         const idsToProcess = indexes.map(idx => currentList[idx]?.id).filter(Boolean);
@@ -269,6 +281,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         else if (activeTab === 'untagged') currentList = localUntaggedImages;
         else if (activeTab === 'thumbnails') currentList = localUnoptimizedImages;
         else if (activeTab === 'missing') currentList = missingImages;
+        else if (activeTab === 'intermediates') currentList = localIntermediateImages;
         setSelectedIds(new Set(currentList.map(i => i.id)));
     };
 
@@ -293,7 +306,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
         const scope = activeTab === 'untagged' ? untaggedScope :
             activeTab === 'thumbnails' ? thumbnailsScope :
-                activeTab === 'duplicates' ? duplicatesScope : 'global';
+                activeTab === 'duplicates' ? duplicatesScope :
+                    activeTab === 'intermediates' ? intermediatesScope : 'global';
 
         await refreshData(activeTab, false, { scope: scope as any });
 
@@ -343,6 +357,23 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         refreshData('untagged', false, { scope });
     }, [refreshData]);
 
+    const handleIntermediatesScopeChange = useCallback((scope: 'global' | 'filtered') => {
+        setIntermediatesScope(scope);
+        refreshData('intermediates', false, { scope });
+    }, [refreshData]);
+
+    const handleUnmarkIntermediates = async () => {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        const { toggleImageIntermediate } = await import('../services/db');
+        for (const id of ids) {
+            await toggleImageIntermediate(id, false);
+        }
+        await refreshData('intermediates', false, { scope: intermediatesScope });
+        setSelectedIds(new Set());
+        setLastSelectedIndex(null);
+    };
+
     return (
         <div className="h-full flex flex-col overflow-hidden">
             {/* Header */}
@@ -363,6 +394,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
                             { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
                             { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
+                            { id: 'intermediates', label: 'Intermediates', color: 'text-blue-500' },
                             { id: 'missing', label: 'Missing', color: 'text-orange-500' },
                             { id: 'trash', label: 'Trash', color: 'text-red-500' },
                         ].map((tab) => (
@@ -547,6 +579,37 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         </motion.div>
                     )}
 
+                    {(activeTab === 'intermediates' && initializedTabs.has('intermediates')) && (
+                        <motion.div
+                            key="intermediates"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <IntermediatesTab
+                                images={localIntermediateImages}
+                                selectedIds={selectedIds}
+                                onItemClick={handleItemClick}
+                                onSelectAll={selectAll}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                onDeleteSelected={handleDeleteSelected}
+                                onUnmarkSelected={handleUnmarkIntermediates}
+                                onViewImage={setViewingImageId}
+                                privacyEnabled={privacyEnabled}
+                                maskedKeywords={maskedKeywords}
+                                scrollContainerRef={scrollContainerRef as any}
+                                onRangeSelection={handleRangeSelection}
+                                onBackgroundClick={() => {
+                                    setSelectedIds(new Set());
+                                    setLastSelectedIndex(null);
+                                }}
+                                scope={intermediatesScope}
+                                onScopeChange={handleIntermediatesScopeChange}
+                            />
+                        </motion.div>
+                    )}
+
                     {/* Scan Placeholders */}
                     {activeTab !== 'trash' && activeTab !== 'missing' && !initializedTabs.has(activeTab) && (
                         <motion.div
@@ -575,6 +638,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         if (activeTab === 'missing') list = fetchedMissingImages;
                         else if (activeTab === 'untagged') list = localUntaggedImages;
                         else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
+                        else if (activeTab === 'intermediates') list = localIntermediateImages;
                         else if (activeTab === 'trash') list = localDeletedImages;
 
                         const idx = list.findIndex(i => i.id === viewingImageId);
@@ -585,6 +649,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         if (activeTab === 'missing') list = fetchedMissingImages;
                         else if (activeTab === 'untagged') list = localUntaggedImages;
                         else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
+                        else if (activeTab === 'intermediates') list = localIntermediateImages;
                         else if (activeTab === 'trash') list = localDeletedImages;
 
                         const idx = list.findIndex(i => i.id === viewingImageId);

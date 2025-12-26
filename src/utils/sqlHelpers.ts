@@ -10,8 +10,9 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // Base Condition: Not Deleted
+    // Base Condition: Not Deleted and Not Intermediate
     conditions.push('is_deleted = 0');
+    conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
 
     // 1. Privacy Logic
     if (privacyEnabled && maskingMode === 'hide' && maskedKeywords.length > 0) {

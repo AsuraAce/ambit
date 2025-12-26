@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { AIImage } from '../types';
 import { useLibraryContext } from './useLibraryContext';
 
-export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails';
+export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails' | 'intermediates';
 
 export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: 'global' | 'filtered') => {
     const {
@@ -17,6 +17,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
     const [localDuplicateCandidates, setLocalDuplicateCandidates] = useState<AIImage[]>([]);
+    const [localIntermediateImages, setLocalIntermediateImages] = useState<AIImage[]>([]);
 
     const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: { scope?: 'global' | 'filtered' } = {}) => {
         if (showLoader) setIsLoading(true);
@@ -42,6 +43,11 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
                 const data = await db.getDuplicateCandidates(where, params);
                 setLocalDuplicateCandidates(data);
+            } else if (tab === 'intermediates') {
+                const where = options.scope === 'filtered' ? activeSqlWhere : '';
+                const params = options.scope === 'filtered' ? activeSqlParams : [];
+                const data = await db.getIntermediateImages(where, params);
+                setLocalIntermediateImages(data);
             }
 
             setInitializedTabs(prev => new Set(prev).add(tab));
@@ -66,10 +72,12 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         localUntaggedImages,
         localUnoptimizedImages,
         localDuplicateCandidates,
+        localIntermediateImages,
         refreshData,
         setLocalDeletedImages,
         setLocalUntaggedImages,
         setLocalUnoptimizedImages,
-        setLocalDuplicateCandidates
+        setLocalDuplicateCandidates,
+        setLocalIntermediateImages
     };
 };

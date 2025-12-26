@@ -44,6 +44,7 @@ export interface ImageMetadata {
   // Generation Variations
   variationId?: string; // A signature (e.g. "seed:strength") for sub-noise variations
   upscaled?: boolean;
+  isIntermediate?: boolean;
 }
 
 export interface ParseResult {

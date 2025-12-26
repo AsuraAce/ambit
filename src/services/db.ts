@@ -543,6 +543,17 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
 };
 
+export const toggleImageIntermediate = async (id: string, isIntermediate: boolean) => {
+    const db = await getDb();
+    const normalizedId = id.replace(/\\/g, '/');
+
+    // We update the metadata_json field using SQLite's json_set
+    await db.execute(
+        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2",
+        [isIntermediate ? 1 : 0, normalizedId]
+    );
+};
+
 // Add a migration check to ensure is_pinned exists and is initialized
 export const migrateSchema = async () => {
     const db = await getDb();
@@ -653,6 +664,30 @@ export const markAsDeleted = async (ids: string[], deleted: boolean) => {
 export const getDeletedImages = async (): Promise<AIImage[]> => {
     const db = await getDb();
     const rows = await db.select<any[]>('SELECT * FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC');
+    return rows.map(mapRowToImage);
+};
+
+export const getIntermediateImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+
+    let query = `
+        SELECT * FROM images 
+        WHERE json_extract(metadata_json, '$.isIntermediate') = 1
+        AND is_deleted = 0
+    `;
+
+    if (whereClause) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+
+    const rows = await db.select<any[]>(query, params);
     return rows.map(mapRowToImage);
 };
 

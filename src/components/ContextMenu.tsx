@@ -32,6 +32,8 @@ interface ContextMenuProps {
   isFavorite?: boolean;
   isMasked?: boolean;
   userMasked?: boolean;
+  isIntermediate?: boolean;
+  onToggleIntermediate?: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -60,6 +62,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   isFavorite,
   isMasked,
   userMasked,
+  isIntermediate,
+  onToggleIntermediate,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -172,6 +176,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             )}
           </>
         )}
+        {onToggleIntermediate && (
+          <>
+            <div className="h-px bg-white/5 my-1" />
+            <MenuItem
+              icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-blue-400' : 'text-gray-400'}`} />}
+              label={isIntermediate ? "Unmark as Intermediate" : "Mark as Intermediate"}
+              onClick={onToggleIntermediate}
+            />
+          </>
+        )}
         {enableAI && onRecoverMetadata && (
           <>
             <div className="h-px bg-white/5 my-1" />
@@ -187,14 +201,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
       <div className="h-px bg-white/5 my-1" />
 
-      {onOpenInDefaultApp && (
-        <MenuItem
-          icon={<ExternalLink className="w-4 h-4 text-sage-400" />}
-          label="Open in Default App"
-          onClick={onOpenInDefaultApp}
-        />
-      )}
-    </div>
+      {
+        onOpenInDefaultApp && (
+          <MenuItem
+            icon={<ExternalLink className="w-4 h-4 text-sage-400" />}
+            label="Open in Default App"
+            onClick={onOpenInDefaultApp}
+          />
+        )
+      }
+    </div >
   );
 };
 
