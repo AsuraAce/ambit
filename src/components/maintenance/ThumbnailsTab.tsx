@@ -15,7 +15,6 @@ interface ThumbnailsTabProps {
     onRegenerate: (ids?: string[]) => void;
     thumbnailsScope: 'global' | 'filtered';
     onScopeChange: (scope: 'global' | 'filtered') => void;
-    unoptimizedCount: number;
     privacyEnabled: boolean;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
@@ -32,7 +31,6 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     onRegenerate,
     thumbnailsScope,
     onScopeChange,
-    unoptimizedCount,
     privacyEnabled,
     maskedKeywords,
     scrollContainerRef,
@@ -93,7 +91,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         </div>
     );
 
-    if (unoptimizedCount === 0 && images.length === 0) {
+    if (images.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                 <div className="p-6 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">

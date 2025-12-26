@@ -60,8 +60,6 @@ interface LibraryContextType {
   setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
   isFiltering: boolean;
   toggleFavorite: (id: string) => Promise<void>;
-  maintenanceCounts: { trash: number; untagged: number; missing: number; unoptimized: number };
-  refreshMaintenanceCounts: () => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -131,8 +129,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   const isFetchingRef = useRef(false);
   const isLiveSyncingRef = useRef(false); // Guard for background live syncs
 
-  // Maintenance
-  const [maintenanceCounts, setMaintenanceCounts] = useState({ trash: 0, untagged: 0, missing: 0, unoptimized: 0 });
 
   // Filtering State
   const [isFiltering, setIsFiltering] = useState(false);
@@ -140,26 +136,17 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   // --- Helper: Refresh Global Data (Stats, Facets) ---
   const refreshMetadata = useCallback(async () => {
     try {
-      const { getFacets, getLibraryStats, getMaintenanceCounts } = await import('../services/db');
+      const { getFacets, getLibraryStats } = await import('../services/db');
       // Dynamic Facets: Use current filters.
-      const [newFacets, newStats, counts] = await Promise.all([
+      const [newFacets, newStats] = await Promise.all([
         getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),
-        getLibraryStats(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),
-        getMaintenanceCounts()
+        getLibraryStats(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams)
       ]);
       setFacets(newFacets);
       setStats(newStats);
-      setMaintenanceCounts(counts);
     } catch (e) { console.error("Failed to refresh metadata", e); }
   }, [activeSqlWhere, activeSqlParams]);
 
-  const refreshMaintenanceCounts = useCallback(async () => {
-    try {
-      const { getMaintenanceCounts } = await import('../services/db');
-      const counts = await getMaintenanceCounts();
-      setMaintenanceCounts(counts);
-    } catch (e) { console.error("Failed to refresh maintenance counts", e); }
-  }, []);
 
   // Helper: Refresh thumbs for Manual Collections (those without a board_id link in DB)
   const refreshManualCollectionThumbs = async (currentCollections: Collection[]) => {
@@ -816,8 +803,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setIsLiveWatching,
       isFiltering,
       toggleFavorite,
-      maintenanceCounts,
-      refreshMaintenanceCounts
     }}>
       {children}
     </LibraryContext.Provider>

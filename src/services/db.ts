@@ -648,23 +648,6 @@ export const markAsDeleted = async (ids: string[], isDeleted: boolean) => {
 
 // --- Maintenance Queries ---
 
-export const getMaintenanceCounts = async () => {
-    const db = await getDb();
-    const result = await db.select<any[]>(`
-        SELECT 
-            (SELECT COUNT(*) FROM images WHERE is_deleted = 1) as trash_count,
-            (SELECT COUNT(*) FROM images WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') AND is_deleted = 0) as untagged_count,
-            (SELECT COUNT(*) FROM images WHERE is_missing = 1 AND is_deleted = 0) as missing_count,
-            (SELECT COUNT(*) FROM images WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '') AND path NOT LIKE 'blob:%' AND path NOT LIKE 'data:%' AND is_deleted = 0) as unoptimized_count
-    `);
-
-    return {
-        trash: result[0]?.trash_count || 0,
-        untagged: result[0]?.untagged_count || 0,
-        missing: result[0]?.missing_count || 0,
-        unoptimized: result[0]?.unoptimized_count || 0
-    };
-};
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {
     const db = await getDb();

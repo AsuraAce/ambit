@@ -149,8 +149,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     privacyEnabled
 }) => {
     const {
-        maintenanceCounts,
-        refreshMaintenanceCounts,
         activeSqlWhere,
         activeSqlParams
     } = useLibraryContext();
@@ -347,23 +345,21 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
                     <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">
                         {[
-                            { id: 'thumbnails', label: 'Thumbnails', count: maintenanceCounts.unoptimized, color: 'text-blue-500' },
+                            { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
                             { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
-                            { id: 'untagged', label: 'Untagged', count: maintenanceCounts.untagged, color: 'text-orange-500' },
-                            { id: 'missing', label: 'Missing', count: maintenanceCounts.missing, color: 'text-red-500' },
-                            { id: 'trash', label: 'Trash', count: maintenanceCounts.trash, color: 'text-sage-600 dark:text-sage-400' }
-                        ].map(tab => (
+                            { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
+                            { id: 'missing', label: 'Missing', color: 'text-orange-500' },
+                            { id: 'trash', label: 'Trash', color: 'text-red-500' },
+                        ].map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as MaintenanceTab)}
-                                className={`px-4 py-2 text-sm font-bold rounded-lg transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${activeTab === tab.id ? `bg-white dark:bg-zinc-700 ${tab.color} shadow-sm` : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-black transition-all whitespace-nowrap ${activeTab === tab.id
+                                    ? 'bg-white dark:bg-zinc-700 text-sage-600 shadow-md transform scale-105 z-10'
+                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                                    }`}
                             >
-                                {tab.label}
-                                {tab.count !== undefined && tab.count > 0 && (
-                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab.id ? 'bg-black/5 dark:bg-white/5 backdrop-blur-sm' : 'bg-gray-200 dark:bg-zinc-900'}`}>
-                                        {tab.count}
-                                    </span>
-                                )}
+                                <span className={activeTab === tab.id ? tab.color : 'text-current'}>{tab.label}</span>
                             </button>
                         ))}
                     </div>
@@ -400,12 +396,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onRegenerate={handleRegenerate}
                         thumbnailsScope={thumbnailsScope}
                         onScopeChange={handleThumbnailsScopeChange}
-                        unoptimizedCount={maintenanceCounts.unoptimized}
                         privacyEnabled={privacyEnabled}
                         maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef}
+                        scrollContainerRef={scrollContainerRef as any}
                         onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => setSelectedIds(new Set())}
+                        onBackgroundClick={() => {
+                            setSelectedIds(new Set());
+                            setLastSelectedIndex(null);
+                        }}
                     />
                 )}
 
@@ -418,7 +416,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onRefresh={(scope) => refreshData('duplicates', true, { scope })}
                         scrollContainerRef={scrollContainerRef}
                         onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => setSelectedIds(new Set())}
+                        onBackgroundClick={() => {
+                            setSelectedIds(new Set());
+                            setLastSelectedIndex(null);
+                        }}
                     />
                 )}
 
@@ -433,9 +434,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onViewImage={setViewingImageId}
                         privacyEnabled={privacyEnabled}
                         maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef}
+                        scrollContainerRef={scrollContainerRef as any}
                         onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => setSelectedIds(new Set())}
+                        onBackgroundClick={() => {
+                            setSelectedIds(new Set());
+                            setLastSelectedIndex(null);
+                        }}
                         untaggedScope={untaggedScope}
                         onScopeChange={handleUntaggedScopeChange}
                     />
@@ -456,9 +460,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             onDeleteSelected={handleDeleteSelected}
                             onPurgeMissing={handlePurgeMissing}
                             onViewImage={setViewingImageId}
-                            scrollContainerRef={scrollContainerRef}
+                            scrollContainerRef={scrollContainerRef as any}
                             onRangeSelection={handleRangeSelection}
-                            onBackgroundClick={() => setSelectedIds(new Set())}
+                            onBackgroundClick={() => {
+                                setSelectedIds(new Set());
+                                setLastSelectedIndex(null);
+                            }}
                         />
                     </div>
                 )}
@@ -474,9 +481,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onDeleteSelected={handleDeleteSelected}
                         privacyEnabled={privacyEnabled}
                         maskedKeywords={maskedKeywords}
-                        scrollContainerRef={scrollContainerRef}
+                        scrollContainerRef={scrollContainerRef as any}
                         onRangeSelection={handleRangeSelection}
-                        onBackgroundClick={() => setSelectedIds(new Set())}
+                        onBackgroundClick={() => {
+                            setSelectedIds(new Set());
+                            setLastSelectedIndex(null);
+                        }}
                     />
                 )}
 

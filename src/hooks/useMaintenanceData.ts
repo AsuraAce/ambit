@@ -6,7 +6,6 @@ export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | '
 
 export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: 'global' | 'filtered') => {
     const {
-        refreshMaintenanceCounts,
         activeSqlWhere,
         activeSqlParams
     } = useLibraryContext();
@@ -24,8 +23,6 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         try {
             const db = await import('../services/db');
 
-            // Always refresh counts in background
-            refreshMaintenanceCounts();
 
             if (tab === 'trash') {
                 const data = await db.getDeletedImages();
@@ -53,7 +50,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         } finally {
             if (showLoader) setIsLoading(false);
         }
-    }, [refreshMaintenanceCounts, activeSqlWhere, activeSqlParams]);
+    }, [activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
         // ONLY auto-trigger for trash. Everything else requires manual 'Start Scan'.
