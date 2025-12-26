@@ -204,7 +204,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     }
 
     return (
-        <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col h-full">
+        <div className="w-full pb-32 flex flex-col h-full">
 
             {/* Combined Header & Bulk Actions */}
             <div className="mb-4 p-4 bg-sage-100/30 dark:bg-sage-900/10 border border-sage-200/50 dark:border-sage-800/30 rounded-2xl flex flex-col lg:flex-row items-center justify-between gap-6 shadow-sm shrink-0">

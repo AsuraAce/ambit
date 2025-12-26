@@ -1,5 +1,5 @@
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { AIImage } from '../types';
 
 export interface DuplicateGroup {
@@ -101,13 +101,13 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
         return { activeGroups: filtered, totalRedundantCount: redundant };
     }, [groups, resolvedSignatures]);
 
-    const handleResolve = (groupId: string, keepId: string, allIds: string[]) => {
+    const handleResolve = useCallback((groupId: string, keepId: string, allIds: string[]) => {
         const deleteIds = allIds.filter(id => id !== keepId);
         onResolve(keepId, deleteIds);
         setResolvedSignatures(prev => new Set(prev).add(groupId));
-    };
+    }, [onResolve]);
 
-    const handleBulkResolve = (strategy: 'newest' | 'oldest') => {
+    const handleBulkResolve = useCallback((strategy: 'newest' | 'oldest') => {
         const totalDeleteIds: string[] = [];
         const resolvedIds: string[] = [];
 
@@ -135,7 +135,7 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
                 return next;
             });
         }
-    };
+    }, [groups, resolvedSignatures, onResolve]);
 
     return {
         groups: activeGroups,

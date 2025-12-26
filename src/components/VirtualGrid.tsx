@@ -132,27 +132,35 @@ const VirtualGridInternal = <T extends { id: string }>(
   }, [scrollContainerRef]);
 
   // We need to know specific offsetTop for rendering.
-  // Let's just read it directly in the render logic? No, render shouldn't read DOM.
-  // We need it in state.
   const [gridOffset, setGridOffset] = useState(0);
+  const gridOffsetRef = useRef(0);
 
-  // Poll for offset change? Or use ResizeObserver on sibling?
-  // Since we can't easily observe "OffsetTop Change", we'll hook into the generic update loop.
-  useEffect(() => {
-    let rafId: number;
-    const checkOffset = () => {
+  // Measure initial offset and handle shifts
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+
+    const measure = () => {
       if (containerRef.current) {
-        const currentOffset = containerRef.current.offsetTop;
-        if (Math.abs(currentOffset - gridOffset) > 1) { // 1px threshold
-          setGridOffset(currentOffset);
+        const off = containerRef.current.offsetTop;
+        if (off !== gridOffsetRef.current) {
+          gridOffsetRef.current = off;
+          setGridOffset(off);
         }
       }
-      rafId = requestAnimationFrame(checkOffset);
     };
 
-    checkOffset();
+    measure();
+
+    // Also poll for changes caused by layout shifts above us (like PinnedShelf collapsing)
+    let rafId: number;
+    const loop = () => {
+      measure();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+
     return () => cancelAnimationFrame(rafId);
-  }, [gridOffset]); // Dependency on gridOffset ensures we have latest closures if needed, but actually purely DOM read.
+  }, []);
   // Wait, dependency gridOffset causes loop re-creation every update. Better to use ref for logic check.
 
   // Revised Loop:

@@ -327,10 +327,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         await refreshData('thumbnails', false, { scope: thumbnailsScope });
     };
 
-    const handleResolveDuplicate = async (keepId: string, deleteIds: string[]) => {
+    const handleResolveDuplicate = useCallback(async (keepId: string, deleteIds: string[]) => {
         await onResolveDuplicate(keepId, deleteIds);
         await refreshData('duplicates', false, { scope: duplicatesScope });
-    };
+    }, [onResolveDuplicate, refreshData, duplicatesScope]);
 
 
     const handleThumbnailsScopeChange = useCallback((scope: 'global' | 'filtered') => {
