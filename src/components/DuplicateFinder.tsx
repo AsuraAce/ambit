@@ -147,6 +147,8 @@ interface DuplicateFinderProps {
     privacyEnabled: boolean;
     onRefresh?: (scope: 'global' | 'filtered') => void | Promise<any>;
     scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+    onRangeSelection?: (indexes: number[], isAdditive: boolean) => void;
+    onBackgroundClick?: () => void;
 }
 
 export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
@@ -155,7 +157,9 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     maskedKeywords,
     privacyEnabled,
     onRefresh,
-    scrollContainerRef
+    scrollContainerRef,
+    onRangeSelection,
+    onBackgroundClick
 }) => {
     const { groups, totalRedundantCount, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
     const [scope, setScope] = useState<'global' | 'filtered'>('global');
@@ -283,6 +287,8 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     gap={24}
                     padding={0}
                     scrollContainerRef={scrollContainerRef}
+                    onRangeSelection={onRangeSelection}
+                    onBackgroundClick={onBackgroundClick}
                     getItemRatio={() => 1.5}
                     renderItem={(group, style) => (
                         <DuplicateGroupCard
