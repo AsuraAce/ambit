@@ -40,7 +40,7 @@ interface LibraryContextType {
     progress: { current: number; total: number };
     message?: string;
   };
-  startInvokeSync: (path: string, options?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, mode?: 'manual' | 'live' }) => Promise<void>;
+  startInvokeSync: (path: string, options?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none', mode?: 'manual' | 'live' }) => Promise<void>;
   cancelSync: () => void;
   // Pagination & Filtering
   loadMoreImages: () => Promise<void>;
@@ -444,10 +444,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [collections, smartCollections, settings, recentSearches, isLoaded]);
 
   // Sync Logic
-  const startInvokeSync = useCallback(async (path: string, optionsInput?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, mode?: 'manual' | 'live' }) => {
+  const startInvokeSync = useCallback(async (path: string, optionsInput?: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: number, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none', mode?: 'manual' | 'live' }) => {
     const options = {
       syncFavorites: true,
       syncBoards: true,
+      starredAs: settingsRef.current.starredAs || 'favorite',
       mode: 'manual' as const,
       ...optionsInput
     };
@@ -495,11 +496,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         (c, t) => setSyncProgress({ current: c, total: t }),
         abortControllerRef.current.signal,
         {
-          syncFavorites: true,
-          syncBoards: settingsRef.current.syncBoardsToCollections,
+          syncFavorites: options.syncFavorites,
+          syncBoards: options.syncBoards,
           afterTimestamp: effectiveTimestamp,
-          importIntermediates: settingsRef.current.importIntermediates,
-          starredAs: settingsRef.current.starredAs
+          importIntermediates: options.importIntermediates !== undefined ? options.importIntermediates : settingsRef.current.importIntermediates,
+          starredAs: options.starredAs
         }
       );
 
@@ -508,7 +509,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
         setCollections(prev => {
           const next = [...prev];
           let changed = false;
-          boardMapping.forEach((name, id) => {
+          boardMapping.forEach((data, id) => {
+            const { name, createdAt } = data;
             const existing = next.find(c => c.id === id);
             if (!existing) {
               // Create new collection for board
@@ -517,7 +519,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
                 name: name,
                 imageIds: [], // Hydrated later
                 count: 0,
-                createdAt: Date.now()
+                createdAt: createdAt || Date.now()
               });
               changed = true;
             } else if (existing.name !== name) {
@@ -708,7 +710,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
           // Trigger Live Sync with debounce protection handled by the sync function or here?
           // Note: Rust already throttles to 1s. We can just call it.
           // We use mode 'live' which does internal logic.
-          startInvokeSync(settings.invokeAiPath, { mode: 'live', syncFavorites: true, syncBoards: true });
+          startInvokeSync(settings.invokeAiPath, { mode: 'live', syncFavorites: true, syncBoards: true, starredAs: settings.starredAs });
         }
       });
     });

@@ -598,7 +598,13 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
   const handleSync = () => {
     if (!settings.invokeAiPath) return;
-    startInvokeSync(settings.invokeAiPath, { syncFavorites, syncBoards, importIntermediates: settings.importIntermediates, afterTimestamp: settings.lastSyncedAt });
+    startInvokeSync(settings.invokeAiPath, {
+      syncFavorites,
+      syncBoards,
+      importIntermediates: settings.importIntermediates,
+      afterTimestamp: settings.lastSyncedAt,
+      starredAs: settings.starredAs
+    });
   };
 
   if (!settings.invokeAiPath) return null;
@@ -637,6 +643,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
                     <option value="favorite">Favorites</option>
                     <option value="pin">Pins</option>
                     <option value="both">Both</option>
+                    <option value="none">None (Ignore)</option>
                   </select>
                 </div>
               </div>

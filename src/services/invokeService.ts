@@ -68,17 +68,21 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
 
 // --- Helper to fetch Boards Mapping ---
 // --- Helper to fetch Boards Mapping ---
-async function fetchBoardMappings(db: Database): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, string> }> {
+async function fetchBoardMappings(db: Database): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, { name: string, createdAt: number }> }> {
     const imageToBoardId = new Map<string, string>();
-    const boards = new Map<string, string>(); // ID -> Name
+    const boards = new Map<string, { name: string, createdAt: number }>(); // ID -> {Name, Timestamp}
 
     try {
-        const boardsRows = await (db as any).select("SELECT board_id, board_name FROM boards");
-        boardsRows.forEach((b: any) => boards.set(b.board_id, b.board_name));
+        const boardsRows = await (db as any).select("SELECT board_id, board_name, created_at FROM boards");
+        boardsRows.forEach((b: any) => {
+            // Force UTC parsing as InvokeAI SQLite uses UTC
+            const timeRaw = b.created_at.includes('Z') ? b.created_at : b.created_at + ' Z';
+            const timestamp = new Date(timeRaw).getTime();
+            boards.set(b.board_id, { name: b.board_name, createdAt: timestamp });
+        });
 
         const images = await (db as any).select("SELECT image_name, board_id FROM board_images");
         for (const img of images as any[]) {
-            // Only map if board exists? Or map anyway? Map anyway is safer for consistency.
             if (img.board_id) imageToBoardId.set(String(img.image_name), img.board_id);
         }
     } catch (e) {
@@ -191,8 +195,8 @@ export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, string> }> => {
+    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
+): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }> }> => {
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
@@ -239,7 +243,7 @@ export const syncImages = async (
 
     // Pre-fetch Boards if requested
     let imageToBoardId = new Map<string, string>();
-    let boards = new Map<string, string>(); // ID -> Name
+    let boards = new Map<string, { name: string, createdAt: number }>(); // ID -> {Name, Timestamp}
     if (options.syncBoards && hasBoardsTable) {
         const result = await fetchBoardMappings(invokeDb);
         imageToBoardId = result.imageToBoardId;
@@ -370,10 +374,10 @@ export const syncImages = async (
                 let isFavorite = false;
                 let isPinned = false;
 
-                if (options.syncFavorites) {
+                if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
                     const isStarredInInvoke = (hasStarred && row.starred) || (hasIsStarred && row.is_starred);
                     if (isStarredInInvoke) {
-                        const mode = options.starredAs || 'favorite';
+                        const mode = options.starredAs; // Guaranteed to be a valid mapping mode here
                         if (mode === 'favorite' || mode === 'both') isFavorite = true;
                         if (mode === 'pin' || mode === 'both') isPinned = true;
                     }

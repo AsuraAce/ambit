@@ -145,7 +145,7 @@ export interface AppSettings {
   lastSyncedAt?: number | null; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
-  starredAs?: 'favorite' | 'pin' | 'both'; // New: Map starred images to favorites, pins, or both
+  starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
 }
 
 export interface ToastMessage {
