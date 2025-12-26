@@ -54,26 +54,15 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     }, [refreshMaintenanceCounts, activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
-        // Simple logic to determine if we should fetch
-        const isInitialized = initializedTabs.has(activeTab);
-
-        const hasLocalData = (activeTab === 'trash' && localDeletedImages.length > 0) ||
-            (activeTab === 'untagged' && localUntaggedImages.length > 0) ||
-            (activeTab === 'thumbnails' && localUnoptimizedImages.length > 0) ||
-            (activeTab === 'duplicates' && localDuplicateCandidates.length > 0) ||
-            (activeTab === 'missing');
-
-        const shouldShowLoader = !hasLocalData && !isInitialized;
-
-        if (activeTab === 'thumbnails') {
-            refreshData(activeTab, shouldShowLoader, { scope: thumbnailsScope });
-        } else if (activeTab !== 'missing') {
-            refreshData(activeTab, shouldShowLoader);
+        // ONLY auto-trigger for trash. Everything else requires manual 'Start Scan'.
+        if (activeTab === 'trash' && !initializedTabs.has('trash')) {
+            refreshData('trash', true);
         }
-    }, [activeTab, thumbnailsScope, refreshData]);
+    }, [activeTab, refreshData, initializedTabs]);
 
     return {
         isLoading,
+        initializedTabs, // Export this so the UI knows if a tab has been scanned
         localDeletedImages,
         localUntaggedImages,
         localUnoptimizedImages,
