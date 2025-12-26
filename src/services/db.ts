@@ -672,14 +672,27 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     return rows.map(mapRowToImage);
 };
 
-export const getUntaggedImages = async (): Promise<AIImage[]> => {
+export const getUntaggedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
-    const rows = await db.select<any[]>(`
+
+    let query = `
         SELECT * FROM images 
         WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
-        AND is_deleted = 0 
-        ORDER BY timestamp DESC
-    `);
+        AND is_deleted = 0
+    `;
+
+    if (whereClause) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+
+    const rows = await db.select<any[]>(query, params);
     return rows.map(mapRowToImage);
 };
 

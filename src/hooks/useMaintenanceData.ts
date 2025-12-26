@@ -31,7 +31,9 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 const data = await db.getDeletedImages();
                 setLocalDeletedImages(data);
             } else if (tab === 'untagged') {
-                const data = await db.getUntaggedImages();
+                const where = options.scope === 'filtered' ? activeSqlWhere : '';
+                const params = options.scope === 'filtered' ? activeSqlParams : [];
+                const data = await db.getUntaggedImages(where, params);
                 setLocalUntaggedImages(data);
             } else if (tab === 'thumbnails') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';

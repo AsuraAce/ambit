@@ -85,6 +85,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
     const [scanScope, setScanScope] = useState<'global' | 'filtered'>('filtered');
+    const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
 
     const setActiveTab = useCallback((tab: MaintenanceTab) => {
         setActiveTabOriginal(tab);
@@ -245,7 +246,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 title: "Untagged Images",
                 description: "Identify images that are missing prompts or relevant metadata for better organization.",
                 icon: <Tag className="w-12 h-12" />,
-                hasScope: false
+                hasScope: true
             },
             missing: {
                 title: "Missing Files Integrity",
@@ -312,6 +313,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleThumbnailsScopeChange = useCallback((scope: 'global' | 'filtered') => {
         setThumbnailsScope(scope);
         refreshData('thumbnails', true, { scope });
+    }, [refreshData]);
+
+    const handleUntaggedScopeChange = useCallback((scope: 'global' | 'filtered') => {
+        setUntaggedScope(scope);
+        refreshData('untagged', true, { scope });
     }, [refreshData]);
 
     return (
@@ -420,6 +426,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         scrollContainerRef={scrollContainerRef}
                         onRangeSelection={handleRangeSelection}
                         onBackgroundClick={() => setSelectedIds(new Set())}
+                        untaggedScope={untaggedScope}
+                        onScopeChange={handleUntaggedScopeChange}
                     />
                 )}
 

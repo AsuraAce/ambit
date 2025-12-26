@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useCallback } from 'react';
-import { Tag, Trash2, Eye, Wand2 } from 'lucide-react';
+import { Tag, Trash2, Eye, Wand2, Globe, Filter } from 'lucide-react';
 import { AIImage } from '../../types';
 import { VirtualGrid } from '../VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
@@ -19,6 +19,8 @@ interface UntaggedTabProps {
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
     onBackgroundClick: () => void;
+    untaggedScope: 'global' | 'filtered';
+    onScopeChange: (scope: 'global' | 'filtered') => void;
 }
 
 export const UntaggedTab: React.FC<UntaggedTabProps> = ({
@@ -33,7 +35,9 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
+    untaggedScope,
+    onScopeChange
 }) => {
     const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
         const isSelected = selectedIds.has(img.id);
@@ -81,8 +85,14 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">No Untagged Images</h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
-                    All your images appear to have metadata or positive prompts.
+                    All your images {untaggedScope === 'filtered' ? 'in this filter' : ''} appear to have metadata or positive prompts.
                 </p>
+                <button
+                    onClick={() => onScopeChange(untaggedScope === 'global' ? 'filtered' : 'global')}
+                    className="mt-6 text-xs font-bold text-orange-600 hover:underline"
+                >
+                    Switch to {untaggedScope === 'global' ? 'Filtered' : 'Global'} scope
+                </button>
             </div>
         );
     }
@@ -105,6 +115,23 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
         </div>
     );
 
+    const scopeSwitcher = (
+        <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-orange-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+            <button
+                onClick={() => onScopeChange('filtered')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 ${untaggedScope === 'filtered' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                <Filter className="w-3 h-3" /> Filtered
+            </button>
+            <button
+                onClick={() => onScopeChange('global')}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 ${untaggedScope === 'global' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                <Globe className="w-3 h-3" /> Global
+            </button>
+        </div>
+    );
+
     return (
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col items-stretch">
             <MaintenanceHeader
@@ -116,6 +143,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}
                 actions={actions}
+                extraControls={scopeSwitcher}
                 variant="orange"
             />
 
