@@ -2,22 +2,22 @@ import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 // --- Helper to map InvokeAI metadata to Ambit's format ---
-function mapInvokeMetadata(row: any, metaCol: string): any {
+// --- Helper to map InvokeAI metadata to Ambit's format ---
+function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): any {
     const rawVal = row[metaCol];
-    if (!rawVal) return {};
+    const sessionWorkflow = row.session_workflow; // From JOIN
+
+    if (!rawVal && !sessionWorkflow) return {};
 
     let meta: any = {};
-    try {
-        meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
-    } catch (e) { return {}; }
+    if (rawVal) {
+        try {
+            meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        } catch (e) { meta = {}; }
+    }
 
     const mapped: any = {
         tool: 'InvokeAI',
-        model: 'Unknown',
-        seed: 0,
-        steps: 20,
-        cfg: 7,
-        sampler: 'k_lms',
         positivePrompt: '',
         negativePrompt: '',
     };
@@ -36,37 +36,49 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
     }
 
     if (root.model) {
-        // Debug Log for first few images to identify structure
-        if (Math.random() < 0.001) console.log('[Invoke Metadata Debug]', 'Raw Model:', root.model);
-
         if (typeof root.model === 'string') mapped.model = root.model;
         else if (root.model.model_name) mapped.model = root.model.model_name;
         else if (root.model.name) mapped.model = root.model.name;
-        else if (root.model.default) mapped.model = root.model.default; // Some store as default?
+        else if (root.model.default) mapped.model = root.model.default;
     }
 
     // Extract LoRAs
     if (root.loras && Array.isArray(root.loras)) {
         mapped.loras = root.loras.map((l: any) => {
             if (typeof l === 'string') return l;
-            // Handle { model: { name: "..." } } structure (InvokeAI 4+)
             if (l.model && typeof l.model === 'object') {
                 return l.model.model_name || l.model.name || 'Unknown LoRA';
             }
-            // Handle older or alternative structures
             if (l.lora && typeof l.lora === 'object') return l.lora.model_name || l.lora.name;
             return l.model_name || l.name || 'Unknown LoRA';
         }).filter(Boolean);
-
-        if (mapped.loras.length > 0) {
-            console.log('[Invoke LoRA Sync] Extracted LoRAs:', mapped.loras);
-        }
     }
 
-    // Extract Workflow
-    if (root.workflow || root.graph) {
+    // -- DATA AUTOPSY --
+    if (processedIndex === 0 || row.image_name?.includes('autopsy')) {
+        console.log('[InvokeAI Data Autopsy]', {
+            image: row.image_name,
+            col_workflow: !!row.workflow,
+            col_graph: !!row.graph,
+            col_session_workflow: !!row.session_workflow,
+            meta_workflow: !!root.workflow,
+            meta_graph: !!root.graph,
+            meta_keys: Object.keys(root)
+        });
+    }
+
+    // Extract Workflow - Prioritize Session Workflow if found via JOIN
+    if (sessionWorkflow) {
+        mapped.workflowJson = typeof sessionWorkflow === 'string' ? sessionWorkflow : JSON.stringify(sessionWorkflow);
+        console.log('[InvokeAI Sync Trace] Workflow found via session_queue JOIN for', row.image_name, 'Length:', mapped.workflowJson.length);
+    } else if (root.workflow || root.graph) {
         const wf = root.workflow || root.graph;
         mapped.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
+        console.log('[InvokeAI Sync Trace] Workflow found in metadata blob for', row.image_name, 'Length:', mapped.workflowJson.length);
+    } else if (row.workflow || row.graph || row.workflow_json || row.workflowJson) {
+        const wf = row.workflow || row.graph || row.workflow_json || row.workflowJson;
+        mapped.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
+        console.log('[InvokeAI Sync Trace] Workflow found in row fallback for', row.image_name || row.path, 'Length:', mapped.workflowJson.length);
     }
 
     return mapped;
@@ -203,6 +215,7 @@ export const syncImages = async (
     signal?: AbortSignal,
     options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
 ): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }> }> => {
+    console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
@@ -227,6 +240,11 @@ export const syncImages = async (
     const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)');
     const columns = tableInfo.map(c => c.name);
 
+    const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'");
+    const allTables = allTablesRows.map((t: any) => t.name);
+    const hasSessionQueue = allTables.includes('session_queue');
+    const hasGraphsTable = allTables.includes('graphs');
+
     const hasMetadataJson = columns.includes('metadata_json');
     const hasMetadata = columns.includes('metadata');
     const hasIsIntermediate = columns.includes('is_intermediate');
@@ -235,6 +253,12 @@ export const syncImages = async (
     const hasThumbnailName = columns.includes('thumbnail_name');
     const hasWorkflow = columns.includes('workflow');
     const hasGraph = columns.includes('graph');
+
+    console.log('[InvokeAI Sync] Schema Check:', {
+        hasWorkflow, hasGraph,
+        hasSessionQueue, hasGraphsTable,
+        columns: columns.length
+    });
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -261,13 +285,15 @@ export const syncImages = async (
 
 
     console.log('[InvokeAI Sync] Using root:', imagesRoot);
+    console.log('[InvokeAI Sync] Detected Columns:', columns);
+    console.log('[InvokeAI Sync] Has Workflow Col:', hasWorkflow, 'Has Graph Col:', hasGraph);
 
     // 4. Count Total & Prepare Filter
     const conditions: string[] = [];
 
     // Intermediate Filter
     if (!options.importIntermediates && hasIsIntermediate) {
-        conditions.push('is_intermediate = 0');
+        conditions.push('i.is_intermediate = 0');
     }
 
     // Incremental Sync Logic
@@ -276,13 +302,13 @@ export const syncImages = async (
         // IMPORTANT: InvokeAI stores created_at in UTC.
         const bufferedTimestamp = options.afterTimestamp - (60 * 1000);
         const isoDate = new Date(bufferedTimestamp).toISOString().replace('T', ' ').replace('Z', '');
-        conditions.push(`created_at > '${isoDate}'`);
+        conditions.push(`i.created_at > '${isoDate}'`);
         console.log('[InvokeAI Sync] Incremental Scan since (buffered):', isoDate);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images ${whereClause}`);
+    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 
     const { getDb, insertImagesBatch } = await import('./db');
@@ -321,22 +347,33 @@ export const syncImages = async (
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
 
-    const favCol = hasStarred ? ', starred' : (hasIsStarred ? ', is_starred' : '');
-    const thumbCol = hasThumbnailName ? ', thumbnail_name' : '';
-    const workflowCol = hasWorkflow ? ', workflow' : (hasGraph ? ', graph as workflow' : '');
+    const favCol = hasStarred ? ', i.starred' : (hasIsStarred ? ', i.is_starred' : '');
+    const thumbCol = hasThumbnailName ? ', i.thumbnail_name' : '';
+    const workflowCol = hasWorkflow ? ', i.workflow' : (hasGraph ? ', i.graph as workflow' : '');
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
+        const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
-            SELECT image_name, ${metaCol}, created_at, width, height ${favCol} ${thumbCol} ${workflowCol}
-            FROM images 
-            ${whereClause} 
-            ORDER BY created_at ASC
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol}
+            ${hasSessionQueue ? ', sq.workflow as session_workflow' : ''}
+            FROM images i
+            ${hasSessionQueue ? 'LEFT JOIN session_queue sq ON i.session_id = sq.session_id' : ''}
+            ${whereClause}
+            ORDER BY i.created_at ASC
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
         `;
 
         const rows = await (invokeDb as any).select(query);
+        console.log(`[InvokeAI Sync] Batch fetch results: ${rows.length} rows.`);
+        if (processed === 0) {
+            console.log('[InvokeAI Sync Debug] Query:', query);
+            if (rows.length > 0) {
+                console.log('[InvokeAI Sync Debug] First Row Keys:', Object.keys(rows[0]));
+                console.log('[InvokeAI Sync Debug] First Row Workflow:', rows[0].workflow ? (typeof rows[0].workflow === 'string' ? rows[0].workflow.substring(0, 50) + '...' : 'Object') : 'NULL/Undefined');
+            }
+        }
         if (rows.length === 0) break;
 
         // Fetch file sizes in bulk for this batch
@@ -361,27 +398,25 @@ export const syncImages = async (
             const fullPath = batchPaths[i];
             const fileSize = sizes[i] || 0;
 
-            if (signal?.aborted) throw new Error('Aborted');
-
-            // Force UTC parsing as InvokeAI SQLite uses UTC
-            const timeRaw = row.created_at.includes('Z') ? row.created_at : row.created_at + ' Z';
-            const timestamp = new Date(timeRaw).getTime();
-
-            if (processed === 0) console.log('[InvokeAI Sync] First image found timestamp:', row.created_at, '->', timestamp);
-            if (timestamp > maxTimestampNum) {
-                maxTimestampNum = timestamp;
-            }
-
             try {
-                const metadata = mapInvokeMetadata(row, metaCol);
+                if (signal?.aborted) throw new Error('Aborted');
+
+                // Force UTC parsing as InvokeAI SQLite uses UTC
+                const timeRaw = row.created_at.includes('Z') ? row.created_at : row.created_at + ' Z';
+                const timestamp = new Date(timeRaw).getTime();
+
+                if (processed === 0) console.log('[InvokeAI Sync] First image found timestamp:', row.created_at, '->', timestamp);
+                if (timestamp > maxTimestampNum) {
+                    maxTimestampNum = timestamp;
+                }
+
+                // Map metadata using same helper
+                // Note: we use 'metadata_blob' because that's what it's aliased to in the SELECT above
+                const metadata = mapInvokeMetadata(row, 'metadata_blob', processed);
 
                 // Tag as intermediate if applicable
                 if (hasIsIntermediate) {
                     metadata.isIntermediate = !!row.is_intermediate;
-                }
-
-                if (row.workflow) {
-                    metadata.workflowJson = row.workflow;
                 }
 
                 let isFavorite = false;
@@ -543,7 +578,8 @@ export const scanForOrphans = async (
             const scanResults: any[] = await invoke('scan_images_bulk', {
                 paths: chunkAbsPaths,
                 thumbnailDir: null,
-                skipThumbnail: true
+                skipThumbnail: true,
+                extractWorkflow: false
             });
 
             const batchToInsert: any[] = [];
@@ -578,6 +614,14 @@ export const scanForOrphans = async (
                     rawParameters: meta.metadata?.rawParameters,
                     isIntermediate: !!meta.isIntermediate || !meta.metadata // Heuristic: No metadata = Intermediate
                 };
+
+                if (processed === 0) {
+                    console.log('[Hybrid Sync Debug] First Orphan finalMeta:', {
+                        hasWorkflow: !!finalMeta.workflowJson,
+                        workflowLength: finalMeta.workflowJson?.length,
+                        tool: finalMeta.tool
+                    });
+                }
 
                 const newImg: any = {
                     id: absPath,

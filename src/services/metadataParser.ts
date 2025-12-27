@@ -48,10 +48,10 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
 
 // -- Public API --
 
-export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false): Promise<ParseResult> => {
+export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult> => {
     try {
         // 1. Rust Side (Fast I/O & Basic Parse & Thumbnail Gen)
-        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail }) as any;
+        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow }) as any;
 
         // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
         if (info.metadata) {
@@ -217,4 +217,24 @@ export const parseImageBuffer = async (data: Uint8Array, filename: string): Prom
 export const parseImageFile = async (file: File): Promise<ParseResult> => {
     // Stub for browser file object support
     return parseImageBuffer(new Uint8Array(await file.arrayBuffer()), file.name);
+};
+
+export const scanImageWorkflow = async (path: string): Promise<string | null> => {
+    try {
+        const result = await invoke('scan_image_workflow', { path }) as string | null;
+        if (!result) return null;
+
+        // If it's a JSON string, it might be the raw workflow already
+        if (result.trim().startsWith('{')) {
+            // But it might also be a metadata blob that needs parsing by the worker
+            const filename = path.split(/[\\/]/).pop() || "unknown";
+            const { metadata } = await parseInWorker({ chunks: { invokeai_metadata: result } }, filename);
+            return metadata.workflowJson || result;
+        }
+
+        return result;
+    } catch (e) {
+        console.error("Failed to scan image workflow:", e);
+        return null;
+    }
 };

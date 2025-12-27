@@ -136,9 +136,10 @@ async fn scan_image(
     path: String,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
+    extract_workflow: bool,
 ) -> Result<serde_json::Value, String> {
     // Wrapper for single image scan
-    scan_image_internal(path, thumbnail_dir, skip_thumbnail)
+    scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow)
 }
 
 #[tauri::command]
@@ -146,12 +147,13 @@ async fn scan_images_bulk(
     paths: Vec<String>,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
+    extract_workflow: bool,
 ) -> Result<Vec<serde_json::Value>, String> {
     // Process in parallel using Rayon
     let results: Vec<serde_json::Value> = paths
         .par_iter()
         .map(|path| {
-            match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail) {
+            match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail, extract_workflow) {
                 Ok(json) => json,
                 Err(e) => serde_json::json!({
                     "id": path,
@@ -163,6 +165,46 @@ async fn scan_images_bulk(
         .collect();
 
     Ok(results)
+}
+
+#[tauri::command]
+async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
+    // Specialized fast-scan for JUST the workflow chunk
+    let mut file = File::open(&path).map_err(|e| e.to_string())?;
+    let mut buffer = [0; 8];
+    if file.read_exact(&mut buffer).is_err() { return Ok(None); }
+    if buffer != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] { return Ok(None); }
+
+    loop {
+        let mut length_bytes = [0; 4];
+        if file.read_exact(&mut length_bytes).is_err() { break; }
+        let length = u32::from_be_bytes(length_bytes) as u64;
+
+        let mut type_bytes = [0; 4];
+        if file.read_exact(&mut type_bytes).is_err() { break; }
+        let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
+
+        if chunk_type == "workflow" || chunk_type == "graph" || chunk_type == "invokeai_workflow" || chunk_type == "invokeai_graph" {
+            let mut chunk_data = vec![0; length as usize];
+            file.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
+            return Ok(Some(String::from_utf8_lossy(&chunk_data).to_string()));
+        } else if chunk_type == "zTXt" || chunk_type == "tEXt" || chunk_type == "iTXt" {
+            let mut chunk_data = vec![0; length as usize];
+            file.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
+            let content = String::from_utf8_lossy(&chunk_data).to_string();
+            
+            // Check for InvokeAI metadata blob which often contains the workflow/graph
+            if content.contains("invokeai_metadata") || content.contains("sd-metadata") {
+                // Return raw chunk for worker/frontend to parse
+                return Ok(Some(content));
+            }
+        } else if chunk_type == "IEND" {
+            break;
+        }
+
+        if file.seek(SeekFrom::Current((length + 4) as i64)).is_err() { break; }
+    }
+    Ok(None)
 }
  
 #[tauri::command]
@@ -358,6 +400,7 @@ fn scan_image_internal(
     path: String,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
+    extract_workflow: bool,
 ) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
 
@@ -429,7 +472,8 @@ fn scan_image_internal(
     let is_png = buffer == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
     let mut chunks = std::collections::HashMap::new();
 
-    if is_png {
+    // PERFORMANCE: Only scan chunks if specifically requested or if it's not a bulk import
+    if is_png && extract_workflow {
         let mut loop_count = 0;
         loop {
             // Safety break
@@ -569,13 +613,21 @@ fn scan_image_internal(
         serde_json::Value::Null
     };
 
+    // Optimization: If we found workflow_json, we don't need to return the raw chunks over the bridge
+    // unless the frontend explicitly needs them (which it doesn't for bulk scans)
+    let chunks_to_return = if parsed_metadata.workflow_json.is_some() {
+        std::collections::HashMap::new()
+    } else {
+        chunks
+    };
+
     Ok(serde_json::json!({
         "width": dimensions.0,
         "height": dimensions.1,
         "size": size,
         "modified": modified,
         "thumbnail": if generated_thumbnail_path.is_empty() { String::new() } else { generated_thumbnail_path },
-        "chunks": chunks,
+        "chunks": chunks_to_return,
         "metadata": metadata_value
     }))
 }
@@ -961,9 +1013,9 @@ pub fn run() {
             refresh_boards_native,
             scan_directory_recursive,
             start_live_link_watcher,
-            get_file_sizes_bulk,
             show_in_folder,
-            open_file
+            open_file,
+            scan_image_workflow
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

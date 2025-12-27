@@ -782,3 +782,18 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
         return [];
     }
 };
+
+export const updateImageWorkflow = async (id: string, workflowJson: string): Promise<void> => {
+    const db = await getDb();
+    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [id]) as any[];
+    if (rows.length === 0) return;
+
+    try {
+        const metadata = JSON.parse(rows[0].metadata_json);
+        metadata.workflowJson = workflowJson;
+
+        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), id]);
+    } catch (e) {
+        console.error('[DB] Failed to update workflow for image', id, e);
+    }
+};

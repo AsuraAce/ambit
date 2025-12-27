@@ -5,9 +5,12 @@ import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download
 import { AIImage } from '../../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { scanImageWorkflow } from '../../services/metadataParser';
+import { updateImageWorkflow } from '../../services/db';
 
 interface WorkflowInspectorProps {
     image: AIImage;
+    onWorkflowLoaded?: (workflowJson: string) => void;
 }
 
 const WorkflowNode: React.FC<{ title: string; type: string; inputs: Record<string, any> | any[] }> = ({ title, type, inputs }) => {
@@ -56,20 +59,54 @@ const WorkflowNode: React.FC<{ title: string; type: string; inputs: Record<strin
     );
 };
 
-export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) => {
+export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onWorkflowLoaded }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [copied, setCopied] = useState(false);
+    const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Lazy Load Workflow if missing
+    React.useEffect(() => {
+        if (!image.metadata.workflowJson && !localWorkflow && !isLoading) {
+            const loadWorkflow = async () => {
+                setIsLoading(true);
+                try {
+                    console.log('[Workflow] Lazy loading for:', image.filename);
+                    const result = await scanImageWorkflow(image.id);
+                    if (result) {
+                        setLocalWorkflow(result);
+                        await updateImageWorkflow(image.id, result);
+                        onWorkflowLoaded?.(result);
+                    }
+                } catch (e) {
+                    console.error('[Workflow] Failed lazy loading', e);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            loadWorkflow();
+        }
+    }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading]);
+
+    // Sync local state if prop changes
+    React.useEffect(() => {
+        if (image.metadata.workflowJson) {
+            setLocalWorkflow(image.metadata.workflowJson);
+        }
+    }, [image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        if (image.metadata.workflowJson) {
-            navigator.clipboard.writeText(image.metadata.workflowJson);
+        const wf = localWorkflow || image.metadata.workflowJson;
+        if (wf) {
+            navigator.clipboard.writeText(wf);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }
     };
 
     const handleDownload = async () => {
-        if (!image.metadata.workflowJson) return;
+        const wf = localWorkflow || image.metadata.workflowJson;
+        if (!wf) return;
 
         try {
             // Generate a sensible filename: name_workflow.json
@@ -82,7 +119,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
             });
 
             if (filePath) {
-                await writeTextFile(filePath, image.metadata.workflowJson);
+                await writeTextFile(filePath, wf);
                 console.log('[Workflow] Saved to', filePath);
             }
         } catch (e) {
@@ -91,9 +128,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
     };
 
     const workflowNodes = useMemo(() => {
-        if (!image.metadata.workflowJson) return [];
+        const wf = localWorkflow || image.metadata.workflowJson;
+        if (!wf) return [];
         try {
-            const json = JSON.parse(image.metadata.workflowJson);
+            const json = JSON.parse(wf);
             const nodes: any[] = [];
 
             // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
@@ -140,8 +178,29 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
                 }
             });
 
-            // Sort by ID to try and establish some logical flow/creation order
+            // Hybrid Sorting Strategy: Hoist "Hero Nodes" (Sampler, Prompt, etc.)
+            const getNodePriority = (node: any) => {
+                const t = String(node.type || "").toLowerCase();
+                const l = String(node.title || "").toLowerCase();
+
+                // Tier 1: Samplers / Generation
+                if (t.includes('sampler') || t.includes('denoise') || t.includes('t2l') || t.includes('l2l')) return 1;
+
+                // Tier 2: Prompts / Conditioning
+                if (t.includes('prompt') || t.includes('conditioning') || l.includes('prompt')) return 2;
+
+                // Tier 3: Loaders
+                if (t.includes('loader') || t.includes('checkpoint')) return 3;
+
+                return 10; // Default
+            };
+
             return nodes.sort((a, b) => {
+                const pA = getNodePriority(a);
+                const pB = getNodePriority(b);
+
+                if (pA !== pB) return pA - pB;
+
                 const idA = String(a.id);
                 const idB = String(b.id);
                 if (!isNaN(Number(idA)) && !isNaN(Number(idB))) return Number(idA) - Number(idB);
@@ -176,7 +235,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
                         </div>
                     </div>
 
-                    {image.metadata.workflowJson && (
+                    {(localWorkflow || image.metadata.workflowJson) && (
                         <div className="flex gap-2">
                             <button
                                 onClick={handleCopy}
@@ -227,16 +286,17 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
                                 <div className="max-w-md mx-auto px-4">
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
                                     <p className="text-xs text-gray-400 mb-4 text-balance">
-                                        {image.metadata.tool === 'InvokeAI'
-                                            ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
-                                            : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
+                                        {isLoading ? "Reading workflow data from file headers..." :
+                                            image.metadata.tool === 'InvokeAI'
+                                                ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
+                                                : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }
                                     </p>
-                                    {image.metadata.workflowJson && (
+                                    {(localWorkflow || image.metadata.workflowJson) && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">
                                             <div className="text-[10px] text-gray-400 font-mono uppercase mb-2">JSON Preview</div>
                                             <pre className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 font-mono break-all whitespace-pre-wrap">
-                                                {image.metadata.workflowJson.substring(0, 1000)}...
+                                                {(localWorkflow || image.metadata.workflowJson || "").substring(0, 1000)}...
                                             </pre>
                                         </div>
                                     )}
