@@ -196,7 +196,7 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
     const db = await getDb();
     // Ensure we don't count deleted unless explicitly asked (usually handled in whereClause generation)
     // But for safety, if whereClause is empty, we default to is_deleted=0
-    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     const query = `SELECT count(*) as count FROM images ${finalWhere}`;
     const result = await db.select<any[]>(query, params);
@@ -212,7 +212,7 @@ export const searchImages = async (
     sortOrder: 'ASC' | 'DESC' = 'DESC'
 ): Promise<AIImage[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     const query = `
         SELECT * FROM images 
@@ -284,7 +284,7 @@ export interface LibraryStats {
 
 export const getLibraryStats = async (whereClause: string = '', params: any[] = []): Promise<LibraryStats> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     try {
         // 1. Basic aggregated stats
@@ -339,7 +339,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
 
 export const getFacets = async (whereClause: string = '', params: any[] = []) => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : 'WHERE is_deleted = 0';
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     try {
         // 1. Models (Re-use query or slightly different if we want all?)
@@ -698,6 +698,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
         SELECT * FROM images 
         WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
         AND is_deleted = 0
+        AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
     `;
 
     if (whereClause) {
@@ -724,6 +725,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
+        AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
     `;
 
     if (whereClause) {
@@ -755,7 +757,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
     // We respect the current filters (whereClause) but default to is_deleted=0 and group_id IS NULL 
     // to avoid scanning trash or already stacked images.
 
-    const baseWhere = whereClause ? whereClause : 'WHERE is_deleted = 0 AND group_id IS NULL';
+    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1";
 
     // Inner query finds the (size, w, h) triplets that are duplicated
     const query = `
