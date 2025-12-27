@@ -331,7 +331,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
     if (!settings.invokeAiPath) return;
     setIsDiagLoading(true);
     try {
-      const { diagnoseInvokeAI } = await import('../../services/invokeService');
+      const { diagnoseInvokeAI } = await import('../../services/invoke/connection');
       const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath);
       const folderAudit: any = await invoke('audit_invokeai_folder', { path: settings.invokeAiPath });
 
@@ -352,7 +352,7 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
     setTestResult(null);
 
     try {
-      const { testConnection } = await import('../../services/invokeService');
+      const { testConnection } = await import('../../services/invoke/connection');
       const result = await testConnection(settings.invokeAiPath);
       setTestResult({ success: result.success, message: result.message });
     } catch (e) {

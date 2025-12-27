@@ -175,7 +175,7 @@ export const useFileOperations = ({
                     newImages.push(newImg);
 
                     // Persist to DB
-                    await import('../services/db').then(({ insertImage }) => insertImage(newImg));
+                    await import('../services/db/imageRepo').then(({ insertImage }) => insertImage(newImg));
 
                 } catch (e) {
                     console.error(`Error importing ${path}:`, e);
@@ -318,7 +318,7 @@ export const useFileOperations = ({
                 // We do this individually for now, but bulk insert would be better if plugin supported it.
                 // Since plugin is async, we fire and await.
                 try {
-                    const { insertImage } = await import('../services/db');
+                    const { insertImage } = await import('../services/db/imageRepo');
                     await insertImage(newImg);
                 } catch (dbErr) {
                     console.error("Failed to insert into DB", dbErr);
@@ -377,15 +377,15 @@ export const useFileOperations = ({
         }
 
         try {
-            const db = await import('../services/db');
+            const { markAsDeleted, deleteImage } = await import('../services/db/imageRepo');
             if (isPermanent) {
                 // await db.deleteImagesForever(ids); // Implementation needed in db.ts if not exists, or loop deleteImage
                 // Currently db.ts likely has deleteImage(id). 
                 // Let's check `db.ts` or implement loop.
-                await Promise.all(ids.map(id => db.deleteImage(id)));
+                await Promise.all(ids.map(id => deleteImage(id)));
                 addToast(`Permanently deleted ${ids.length} images`, 'success');
             } else {
-                await db.markAsDeleted(ids, true);
+                await markAsDeleted(ids, true);
                 addToast(`Moved ${ids.length} images to Trash`, 'success');
             }
         } catch (e) {

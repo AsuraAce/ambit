@@ -22,7 +22,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: { scope?: 'global' | 'filtered' } = {}) => {
         if (showLoader) setIsLoading(true);
         try {
-            const db = await import('../services/db');
+            const db = await import('../services/db/maintenanceRepo');
 
 
             if (tab === 'trash') {

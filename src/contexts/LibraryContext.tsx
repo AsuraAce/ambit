@@ -10,7 +10,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { scanImageNative } from '../services/metadataParser';
 import { GeneratorTool } from '../types';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
-import { LibraryStats } from '../services/db';
+import { LibraryStats } from '../services/db/searchRepo';
 
 interface Facets {
   models: string[];
@@ -60,6 +60,7 @@ interface LibraryContextType {
   setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
   isFiltering: boolean;
   toggleFavorite: (id: string) => Promise<void>;
+  refreshMaintenanceCounts: () => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -136,7 +137,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
   // --- Helper: Refresh Global Data (Stats, Facets) ---
   const refreshMetadata = useCallback(async () => {
     try {
-      const { getFacets, getLibraryStats } = await import('../services/db');
+      const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
       // Dynamic Facets: Use current filters.
       const [newFacets, newStats] = await Promise.all([
         getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),
@@ -150,7 +151,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Helper: Refresh thumbs for Manual Collections (those without a board_id link in DB)
   const refreshManualCollectionThumbs = async (currentCollections: Collection[]) => {
-    const { getCollectionThumbnail } = await import('../services/db');
+    const { getCollectionThumbnail } = await import('../services/db/collectionRepo');
     let changed = false;
 
     // Process in parallel
@@ -182,7 +183,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Hydrate Collections from DB (Optimized O(1) + Count)
   const refreshCollectionsFromDb = useCallback(async () => {
-    const { hydrateCollections } = await import('../services/db');
+    const { hydrateCollections } = await import('../services/db/collectionRepo');
     const boardMap = await hydrateCollections();
 
     // 1. Update Boards (Fast)
@@ -271,7 +272,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     const requestingParams = activeSqlParamsRef.current; // access ref active value
 
     try {
-      const { searchImages, countImages } = await import('../services/db');
+      const { searchImages, countImages } = await import('../services/db/searchRepo');
 
       // Determine Sort
       let sortField = 'timestamp';
@@ -364,7 +365,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       const envKey = process.env.API_KEY;
       if (envKey) state.settings.googleGeminiApiKey = envKey;
 
-      const { normalizeAllPaths, migrateSchema } = await import('../services/db');
+      const { normalizeAllPaths } = await import('../services/db/maintenanceRepo');
+      const { migrateSchema } = await import('../services/db/migrations');
       await migrateSchema();
       await normalizeAllPaths();
 
@@ -462,7 +464,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
     abortControllerRef.current = new AbortController();
 
     try {
-      const { syncImages, scanForOrphans } = await import('../services/invokeService');
+      const { syncImages } = await import('../services/invoke/syncService');
+      const { scanForOrphans } = await import('../services/invoke/orphanScanner');
 
       // Determine Timestamp Strategy
       // Manual: Use settings.lastSyncedAt
@@ -641,7 +644,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
             metadata: mappedMeta
           };
 
-          const { insertImage } = await import('../services/db');
+          const { insertImage } = await import('../services/db/imageRepo');
           await insertImage(imageObj);
 
           // Update UI using Ref for current Filter State
@@ -725,7 +728,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const cleanLibrary = useCallback(async () => {
     try {
-      const { clearLibrary } = await import('../services/db');
+      const { clearLibrary } = await import('../services/db/maintenanceRepo');
       await clearLibrary();
       setImages([]);
       setCollections([]); // Clear Collections from State & Persistence
@@ -754,7 +757,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setImages(prev => prev.map(img => img.id === id ? { ...img, isFavorite: newStatus } : img));
 
       // 3. Database Update
-      const { toggleImageFavorite } = await import('../services/db');
+      const { toggleImageFavorite } = await import('../services/db/imageRepo');
       await toggleImageFavorite(id, newStatus);
 
     } catch (e) {
@@ -803,6 +806,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
       setIsLiveWatching,
       isFiltering,
       toggleFavorite,
+      refreshMaintenanceCounts: refreshMetadata
     }}>
       {children}
     </LibraryContext.Provider>

@@ -1,0 +1,184 @@
+import { invoke } from '@tauri-apps/api/core';
+import { AIImage } from '../../types';
+import { getDb, dbMutex } from './connection';
+import { mapRowToImage } from './repoUtils';
+
+export const normalizeAllPaths = async () => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const check = await db.select<any[]>('SELECT id FROM images WHERE id LIKE "%\\%" OR path LIKE "%\\%" LIMIT 1');
+        if (check.length === 0) return;
+
+        console.log('[DB] Normalizing paths to use forward slashes...');
+        await db.execute(`
+            UPDATE images 
+            SET id = REPLACE(id, '\\', '/'), 
+                path = REPLACE(path, '\\', '/')
+            WHERE id LIKE '%\\%' OR path LIKE '%\\%'
+        `);
+        console.log('[DB] Path normalization complete.');
+    });
+};
+
+export const clearLibrary = async () => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Clearing library...');
+        await db.execute('DELETE FROM images');
+        console.log('[DB] Library cleared.');
+    });
+};
+
+export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
+    const db = await getDb();
+    const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
+    const total = allImages.length;
+
+    if (total === 0) return { scanned: 0, missingIds: [], sampleMissingPaths: [] };
+
+    const CHUNK_SIZE = 1000;
+    let missingIds: string[] = [];
+    let sampleMissingPaths: string[] = [];
+    let processed = 0;
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = allImages.slice(i, i + CHUNK_SIZE);
+        const paths = chunk.map(img => img.path);
+
+        try {
+            const missingPaths = await invoke<string[]>('verify_image_paths', { paths });
+            const missingChunk = chunk.filter(img => missingPaths.includes(img.path));
+            const missingChunkIds = missingChunk.map(img => img.id);
+
+            missingIds = [...missingIds, ...missingChunkIds];
+
+            if (sampleMissingPaths.length < 10) {
+                sampleMissingPaths = [...sampleMissingPaths, ...missingPaths.slice(0, 10 - sampleMissingPaths.length)];
+            }
+        } catch (e) {
+            console.error('[Verify] Chunk check failed', e);
+        }
+
+        processed += chunk.length;
+        if (onProgress) onProgress(processed, total);
+    }
+
+    return { scanned: total, missingIds, sampleMissingPaths };
+};
+
+export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
+    const db = await getDb();
+    if (ids.length === 0) return 0;
+
+    console.log(`[Verify] Marking ${ids.length} images as missing`);
+    for (let i = 0; i < ids.length; i += 500) {
+        const batch = ids.slice(i, i + 500);
+        const placeholders = batch.map(() => '?').join(',');
+        await db.execute(`UPDATE images SET is_missing = 1 WHERE id IN (${placeholders})`, batch);
+    }
+
+    return ids.length;
+};
+
+export const getDeletedImages = async (): Promise<AIImage[]> => {
+    const db = await getDb();
+    const rows = await db.select<any[]>('SELECT * FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC');
+    return rows.map(mapRowToImage);
+};
+
+export const getIntermediateImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+    let query = `
+        SELECT * FROM images 
+        WHERE json_extract(metadata_json, '$.isIntermediate') = 1
+        AND is_deleted = 0
+    `;
+
+    if (whereClause) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+    const rows = await db.select<any[]>(query, params);
+    return rows.map(mapRowToImage);
+};
+
+export const getUntaggedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+    let query = `
+        SELECT * FROM images 
+        WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
+        AND is_deleted = 0
+        AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
+    `;
+
+    if (whereClause) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+    const rows = await db.select<any[]>(query, params);
+    return rows.map(mapRowToImage);
+};
+
+export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+    let query = `
+        SELECT * FROM images 
+        WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')
+        AND path NOT LIKE 'blob:%' 
+        AND path NOT LIKE 'data:%'
+        AND is_deleted = 0
+        AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
+    `;
+
+    if (whereClause) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else if (cleanedWhere.length > 0) {
+            query += ` AND ${cleanedWhere}`;
+        }
+    }
+
+    query += ' ORDER BY timestamp DESC';
+    const rows = await db.select<any[]>(query, params);
+    return rows.map(mapRowToImage);
+};
+
+export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    const db = await getDb();
+    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1";
+
+    const query = `
+        SELECT i.* 
+        FROM images i
+        JOIN (
+            SELECT file_size, width, height 
+            FROM images 
+            ${baseWhere}
+            GROUP BY file_size, width, height 
+            HAVING COUNT(*) > 1
+        ) dup ON i.file_size = dup.file_size AND i.width = dup.width AND i.height = dup.height
+        ${baseWhere}
+        ORDER BY i.file_size DESC, i.timestamp DESC
+    `;
+
+    try {
+        const rows = await db.select<any[]>(query, params);
+        return rows.map(mapRowToImage);
+    } catch (e) {
+        console.error('[DB] Failed to get duplicate candidates', e);
+        return [];
+    }
+};

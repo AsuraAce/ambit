@@ -21,7 +21,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         setProgress(0);
         if (onScanComplete) onScanComplete([]);
         try {
-            const { verifyLibraryIntegrity } = await import('../../services/db');
+            const { verifyLibraryIntegrity } = await import('../../services/db/maintenanceRepo');
             const res = await verifyLibraryIntegrity((curr, total) => {
                 setProgress(Math.round((curr / total) * 100));
             });
@@ -38,7 +38,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         if (!result || result.missingIds.length === 0) return;
         setPruningStatus('running');
         try {
-            const { pruneMissingLinks } = await import('../../services/db');
+            const { pruneMissingLinks } = await import('../../services/db/maintenanceRepo');
             await pruneMissingLinks(result.missingIds);
             setPruningStatus('done');
             setTimeout(() => window.location.reload(), 1500);

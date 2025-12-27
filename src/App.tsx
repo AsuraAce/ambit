@@ -268,7 +268,7 @@ export default function App() {
         // Loop DB calls (Fire and forget)
         selectedIds.forEach(id => {
             // We know the target state is `anyUnfavorite`
-            import('./services/db').then(db => db.toggleImageFavorite(id, anyUnfavorite));
+            import('./services/db/imageRepo').then(db => db.toggleImageFavorite(id, anyUnfavorite));
         });
 
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
@@ -291,8 +291,8 @@ export default function App() {
         }
 
         const ids = Array.from(selectedIds);
-        const db = await import('./services/db');
-        await Promise.all(ids.map(id => db.toggleImagePin(id, anyUnpinned)));
+        const { toggleImagePin } = await import('./services/db/imageRepo');
+        await Promise.all(ids.map(id => toggleImagePin(id, anyUnpinned)));
 
         refreshCollectionThumbnails();
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
@@ -331,18 +331,18 @@ export default function App() {
         }));
 
         // 2. Persist to DB
-        const db = await import('./services/db');
+        const { toggleImageMask } = await import('./services/db/imageRepo');
         const promises: Promise<void>[] = [];
 
         idsToToggle.forEach(id => {
             if (overrideValue !== undefined) {
                 // Explicit set
-                promises.push(db.toggleImageMask(id, overrideValue));
+                promises.push(toggleImageMask(id, overrideValue));
             } else {
                 // Toggle fallback
                 const img = images.find(i => i.id === id);
                 if (img) {
-                    promises.push(db.toggleImageMask(id, !img.userMasked));
+                    promises.push(toggleImageMask(id, !img.userMasked));
                 }
             }
         });
@@ -394,7 +394,7 @@ export default function App() {
             setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c));
         }
 
-        await import('./services/db').then(db => db.toggleImagePin(id, newPinned));
+        await import('./services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
         refreshCollectionThumbnails();
         addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
     };
@@ -610,7 +610,7 @@ export default function App() {
                             // Optimistic update
                             setImages(prev => prev.map(i => i.id === id ? { ...i, metadata: { ...i.metadata, isIntermediate: nextValue } } : i));
 
-                            const { toggleImageIntermediate } = await import('./services/db');
+                            const { toggleImageIntermediate } = await import('./services/db/imageRepo');
                             await toggleImageIntermediate(id, nextValue);
 
                             addToast(nextValue ? "Flagged as intermediate" : "Moved to gallery", "info");
@@ -746,38 +746,39 @@ export default function App() {
                                     <MaintenanceView
                                         images={images}
                                         onResolveDuplicate={async (k, d) => {
-                                            const db = await import('./services/db');
-                                            await db.markAsDeleted(d, true);
+                                            const { markAsDeleted } = await import('./services/db/imageRepo');
+                                            await markAsDeleted(d, true);
                                             setImages(p => p.map(i => d.includes(i.id) ? { ...i, isDeleted: true } : i));
                                             addToast(`Moved ${d.length} duplicates to trash`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onRestoreImages={async (ids) => {
-                                            const db = await import('./services/db');
-                                            await db.markAsDeleted(ids, false);
+                                            const { markAsDeleted } = await import('./services/db/imageRepo');
+                                            await markAsDeleted(ids, false);
                                             setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i));
                                             addToast(`Restored ${ids.length} images`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onMoveToTrash={async (ids) => {
-                                            const db = await import('./services/db');
-                                            await db.markAsDeleted(ids, true);
+                                            const { markAsDeleted } = await import('./services/db/imageRepo');
+                                            await markAsDeleted(ids, true);
                                             setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: true } : i));
                                             addToast(`Moved ${ids.length} images to trash`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onDeleteForever={async (ids) => {
-                                            const db = await import('./services/db');
-                                            for (const id of ids) await db.deleteImage(id);
+                                            const { deleteImage } = await import('./services/db/imageRepo');
+                                            for (const id of ids) await deleteImage(id);
                                             setImages(p => p.filter(i => !ids.includes(i.id)));
                                             addToast(`Removed ${ids.length} records from library`, 'success');
                                             refreshMaintenanceCounts();
                                         }}
                                         onEmptyTrash={async () => {
-                                            const db = await import('./services/db');
-                                            const deleted = await db.getDeletedImages();
+                                            const { getDeletedImages } = await import('./services/db/maintenanceRepo');
+                                            const { deleteImage } = await import('./services/db/imageRepo');
+                                            const deleted = await getDeletedImages();
                                             const ids = deleted.map(i => i.id);
-                                            for (const id of ids) await db.deleteImage(id);
+                                            for (const id of ids) await deleteImage(id);
                                             setImages(p => p.filter(i => !i.isDeleted));
                                             addToast('Trash emptied', 'success');
                                             refreshMaintenanceCounts();

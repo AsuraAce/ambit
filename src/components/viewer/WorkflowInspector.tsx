@@ -6,7 +6,7 @@ import { AIImage } from '../../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { scanImageWorkflow } from '../../services/metadataParser';
-import { updateImageWorkflow } from '../../services/db';
+import { updateImageWorkflow } from '../../services/db/imageRepo';
 
 interface WorkflowInspectorProps {
     image: AIImage;
