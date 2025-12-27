@@ -24,7 +24,7 @@ export const useStacking = (images: AIImage[]) => {
     const [isCalculating, setIsCalculating] = useState(false);
 
     // Debounce ref
-    const timeoutRef = useRef<NodeJS.Timeout>();
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastImagesRef = useRef<number>(0);
 
     useEffect(() => {

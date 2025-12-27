@@ -61,7 +61,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     const showMiddleSection = showLayoutSwitcher || showSlideshowButton;
 
     return (
-        <header className="flex-shrink-0 pl-6 pr-8 pb-4 sticky top-0 z-50 transition-colors duration-200">
+        <header className="flex-shrink-0 pr-8 pb-4 sticky top-0 z-50 transition-colors duration-200">
             <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring">
                 <div className="flex items-center gap-4 flex-1">
                     <div className="relative w-full max-w-lg group z-30 flex items-center gap-2">
@@ -70,7 +70,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                             <input
                                 ref={searchProps.inputRef}
                                 type="text"
-                                placeholder={searchProps.isAiSearchEnabled ? "Ask Ambit (e.g. 'Show me cyberpunk cities')" : "Search prompts..."}
+                                placeholder={searchProps.isAiSearchEnabled ? "Ask Ambit..." : "Search prompts..."}
                                 className={`w-full bg-gray-100 dark:bg-zinc-800/50 border rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none transition-all text-gray-900 dark:text-gray-100 placeholder-gray-500 ${searchProps.isAiSearchEnabled ? 'border-amethyst-300 dark:border-amethyst-800 focus:border-amethyst-500/50 focus:ring-1 focus:ring-amethyst-500/30' : 'border-gray-200 dark:border-white/10 focus:border-sage-500/50 focus:ring-1 focus:ring-sage-500/30'}`}
                                 value={filters.searchQuery}
                                 onChange={searchProps.handleSearchChange}
@@ -81,7 +81,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                             />
                             {filters.searchQuery && <button onClick={searchProps.clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"><X className="w-3.5 h-3.5" /></button>}
 
-                            {/* Search Dropdown: Suggestions & History */}
                             {isSearchFocused && (
                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                     {searchProps.suggestions.length > 0 && (
@@ -121,7 +120,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                                     onMouseDown={(e) => {
                                                         e.preventDefault();
                                                         setFilters(f => ({ ...f, searchQuery: s }));
-                                                        // Defer submission slightly to ensure state update
                                                         setTimeout(() => searchProps.submitSearch(), 0);
                                                     }}
                                                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
@@ -136,7 +134,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         </div>
                         <button onClick={searchProps.toggleAiSearch} className={`p-2 rounded-xl transition-all border ${searchProps.isAiSearchEnabled ? 'bg-amethyst-100 dark:bg-amethyst-600/20 border-amethyst-500/50 text-amethyst-600 dark:text-amethyst-300 shadow-[0_0_15px_rgba(139,92,246,0.2)]' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 dark:text-zinc-500 hover:text-sage-600 dark:hover:text-sage-400 hover:border-gray-300 dark:hover:border-white/10'}`} title={searchProps.isAiSearchEnabled ? "Disable AI Search" : "Enable AI Search"}><Sparkles className="w-4 h-4" /></button>
                     </div>
+                </div>
 
+                <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1">
                         <button onClick={onImport} className={`p-2 rounded-xl transition-all border relative group ${isImporting ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`} title="Import Images"><Import className="w-4 h-4" /></button>
                         <button
@@ -204,10 +204,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         )}
                     </div>
                     <div className="flex items-center gap-2 text-gray-500 ml-2"><Sliders className="w-3 h-3" /><input type="range" min="100" max="400" value={settings.thumbnailSize} onChange={(e) => setSettings(p => ({ ...p, thumbnailSize: Number(e.target.value) }))} className="w-20 h-1 bg-gray-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sage-500" /></div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="text-xs font-medium text-gray-500">{totalCount.toLocaleString()} {totalCount === 1 ? 'Image' : 'Images'}</div>
-                    {activeCollection && <div className="flex items-center gap-2 px-4 py-1 bg-sage-100 dark:bg-sage-500/20 border border-sage-200 dark:border-sage-500/30 rounded-full text-sage-700 dark:text-sage-300 text-sm"><Folder className="w-3 h-3" />{activeCollection.name}<button onClick={() => setFilters(p => ({ ...p, collectionId: null }))}><X className="w-3 h-3" /></button></div>}
                 </div>
             </div>
             {(filters.dateRange !== 'all' || filters.favoritesOnly || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.searchQuery !== '') && (

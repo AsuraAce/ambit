@@ -124,6 +124,12 @@ export const useCollectionOperations = ({
     addToast("Smart collection deleted", "info");
   }, [setSmartCollections, addToast]);
 
+  const resetCollectionThumbnail = useCallback((id: string) => {
+    setCollections(prev => prev.map(c => c.id === id ? { ...c, customThumbnail: undefined } : c));
+    setTimeout(() => refreshCollectionThumbnails(), 0);
+    addToast("Thumbnail reset", "info");
+  }, [setCollections, refreshCollectionThumbnails, addToast]);
+
   return {
     createCollection,
     deleteCollection,
@@ -134,6 +140,7 @@ export const useCollectionOperations = ({
     addImagesToCollection,
     removeImagesFromCollection,
     saveSmartCollection,
-    deleteSmartCollection
+    deleteSmartCollection,
+    resetCollectionThumbnail
   };
 };

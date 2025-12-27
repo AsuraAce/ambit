@@ -32,7 +32,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   showSupportPulse
 }) => {
   return (
-    <aside className="hidden md:flex w-20 flex-col items-center py-6 fixed left-4 top-12 bottom-4 rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
+    <aside className="hidden md:flex w-20 flex-col items-center py-6 h-full rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
       <div className="mb-8 p-3 bg-sage-500/10 dark:bg-sage-500/20 rounded-2xl shadow-lg border border-sage-500/20">
         <Aperture className="w-6 h-6 text-sage-600 dark:text-sage-300" />
       </div>

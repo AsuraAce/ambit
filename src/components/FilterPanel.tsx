@@ -69,7 +69,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     return (
         <div
-            className={`bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-3xl ml-4 flex flex-col h-full transition-all duration-500 ease-spring shadow-2xl ${isVisible ? 'w-72 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-4 overflow-hidden'} ${className}`}
+            className={`bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-3xl flex flex-col h-full transition-all duration-500 ease-spring shadow-2xl ${isVisible ? 'w-72 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-4 overflow-hidden'} ${className}`}
         >
             <div className="p-5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between min-w-[18rem]">
                 <div className="flex items-center gap-2">
