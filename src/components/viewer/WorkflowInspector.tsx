@@ -3,6 +3,8 @@ import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download } from 'lucide-react';
 import { AIImage } from '../../types';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 interface WorkflowInspectorProps {
     image: AIImage;
@@ -36,9 +38,6 @@ const WorkflowNode: React.FC<{ title: string; type: string; inputs: Record<strin
                     {Object.entries(inputs).map(([key, val]) => {
                         if (typeof val === 'object' && val !== null && !Array.isArray(val)) return null; // Skip complex objects/connections
                         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].length > 50) {
-                            // Check if it looks like a connection link ["id", slot]
-                            // Basic heuristic: if it's an array of mixed types or purely numbers/strings, show it serialized
-                            // ComfyUI links in API format are ["node_id", slot_index]
                             if (val.length === 2 && typeof val[1] === 'number') return null;
                         }
 
@@ -69,23 +68,23 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (!image.metadata.workflowJson) return;
 
         try {
-            const blob = new Blob([image.metadata.workflowJson], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-
             // Generate a sensible filename: name_workflow.json
             const baseName = image.filename.replace(/\.[^/.]+$/, "");
-            a.href = url;
-            a.download = `${baseName}_workflow.json`;
+            const defaultPath = `${baseName}_workflow.json`;
 
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            const filePath = await save({
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+                defaultPath
+            });
+
+            if (filePath) {
+                await writeTextFile(filePath, image.metadata.workflowJson);
+                console.log('[Workflow] Saved to', filePath);
+            }
         } catch (e) {
             console.error('Failed to download workflow', e);
         }
@@ -97,25 +96,57 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
             const json = JSON.parse(image.metadata.workflowJson);
             const nodes: any[] = [];
 
-            // Handle both API format (object values) and Saved format (nodes array)
-            const nodeList = json.nodes ? json.nodes : Object.values(json);
+            // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
+            let nodeList: any[] = [];
+
+            if (Array.isArray(json.nodes)) {
+                nodeList = json.nodes;
+            } else if (typeof json === 'object') {
+                // If it's a flat object of nodes (InvokeAI API or Comfy API)
+                nodeList = Object.entries(json).map(([id, node]: [string, any]) => ({
+                    ...node,
+                    id: node.id || id
+                }));
+            }
 
             nodeList.forEach((node: any) => {
-                if (node.type || node.class_type) {
-                    const type = node.type || node.class_type;
-                    // Allow ALL nodes, just format them safely
+                const incomingInputs = node.widgets_values || node.inputs || node.data || {};
+
+                // 1. Determine Type
+                let type = node.type || node.class_type || node._type || node.node_type || incomingInputs.type || incomingInputs.node_type || "Unknown";
+
+                // 2. Determine Title
+                let title = node.title || node.label || node._meta?.title || incomingInputs.label || incomingInputs.title || type;
+
+                // 3. Refine Generic "Invocation" labels
+                // InvokeAI 4.x often labels EVERYTHING as 'invocation' at the top level
+                if (String(type).toLowerCase() === 'invocation' && (node.node_type || incomingInputs.type || incomingInputs.node_type)) {
+                    type = node.node_type || incomingInputs.type || incomingInputs.node_type;
+                }
+
+                if (String(title).toLowerCase() === 'invocation') {
+                    if (incomingInputs.label) title = incomingInputs.label;
+                    else if (incomingInputs.title) title = incomingInputs.title;
+                    else if (String(type).toLowerCase() !== 'invocation') title = type;
+                }
+
+                if (type || node.id) {
                     nodes.push({
                         id: node.id,
-                        title: node.title || node._meta?.title || type,
+                        title: title,
                         type: type,
-                        // Prefer widgets_values (UI values) if available, else inputs (API values)
-                        inputs: node.widgets_values || node.inputs || {}
+                        inputs: incomingInputs
                     });
                 }
             });
 
             // Sort by ID to try and establish some logical flow/creation order
-            return nodes.sort((a, b) => Number(a.id) - Number(b.id));
+            return nodes.sort((a, b) => {
+                const idA = String(a.id);
+                const idB = String(b.id);
+                if (!isNaN(Number(idA)) && !isNaN(Number(idB))) return Number(idA) - Number(idB);
+                return idA.localeCompare(idB);
+            });
         } catch (e) {
             return [];
         }
@@ -195,7 +226,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image }) =
                             <>
                                 <div className="max-w-md mx-auto px-4">
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
-                                    <p className="text-xs text-gray-400 mb-4 text-balance">This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON.</p>
+                                    <p className="text-xs text-gray-400 mb-4 text-balance">
+                                        {image.metadata.tool === 'InvokeAI'
+                                            ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
+                                            : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
+                                        }
+                                    </p>
                                     {image.metadata.workflowJson && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">
                                             <div className="text-[10px] text-gray-400 font-mono uppercase mb-2">JSON Preview</div>
