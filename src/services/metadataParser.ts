@@ -35,7 +35,7 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
         };
 
         worker.addEventListener('message', handler);
-        worker.postMessage({ chunks, filename, requestId });
+        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId });
 
         // Timeout safety
         setTimeout(() => {
@@ -198,26 +198,20 @@ export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, ski
 
 // Helper for buffer (node/drag drop raw)
 export const parseImageBuffer = async (data: Uint8Array, filename: string): Promise<ParseResult> => {
-    // For browser drag/drop, we might not have 'scan_image' available or we just have the buffer.
-    // The current worker implementation supports 'chunks' or 'filename' string parsing.
-    // It does NOT support raw buffer parsing yet (we removed `parseImageBuffer` logic without moving it to worker's buffer handler).
-
-    // To properly support this, we should add buffer parsing support to the worker.
-    // However, given the scope, let's just do a minimal "filename only" metadata extraction for now 
-    // to avoid breaking the signature, or return empty.
-
-    // If we want full parsing in browser, we need to move the `parseImageBuffer` logic (the one with DataView and PNG chunks)
-    // into the worker. 
-
-    // For now, let's just return basic filename metadata to ensure no crash.
-    // The user's request is focused on "Folder Import" which uses `scanImageNative`.
-
-    // TODO: Fully port PNG buffer parsing to worker for complete browser-only support.
-
-    return {
-        metadata: { tool: GeneratorTool.UNKNOWN },
-        extra: {}
-    };
+    try {
+        const { metadata, extra } = await parseInWorker({ buffer: data } as any, filename);
+        return {
+            metadata,
+            extra,
+            timestamp: Date.now()
+        };
+    } catch (e) {
+        console.error("Buffer parse failed", e);
+        return {
+            metadata: { tool: GeneratorTool.UNKNOWN },
+            extra: {}
+        };
+    }
 };
 
 export const parseImageFile = async (file: File): Promise<ParseResult> => {

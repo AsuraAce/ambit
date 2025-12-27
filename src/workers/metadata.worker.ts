@@ -571,6 +571,11 @@ const parseInvokeAIMetadata = (json: any, metadata: Partial<ImageMetadata>, extr
         }).filter(Boolean);
     }
 
+    if (json.workflow || json.graph) {
+        const wf = json.workflow || json.graph;
+        metadata.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
+    }
+
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 
@@ -594,9 +599,64 @@ const parseInvokeDreamCommand = (cmd: string, metadata: Partial<ImageMetadata>) 
     }
 };
 
+const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
+    const chunks: Record<string, string> = {};
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+    // Verify PNG header
+    if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) {
+        return chunks;
+    }
+
+    let pos = 8;
+    while (pos + 8 < buffer.length) {
+        const length = view.getUint32(pos);
+        const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
+        pos += 8;
+
+        if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
+            const data = buffer.slice(pos, pos + length);
+            const nullPos = data.indexOf(0);
+            if (nullPos !== -1) {
+                const key = textDecoder.decode(data.slice(0, nullPos));
+                if (type === 'tEXt') {
+                    chunks[key] = textDecoder.decode(data.slice(nullPos + 1));
+                } else if (type === 'iTXt') {
+                    // iTXt: Keyword (null) CompressionFlag (1) CompressionMethod (1) Language (null) TranslatedKeyword (null) Text
+                    const isCompressed = data[nullPos + 1] === 1;
+                    let textStart = nullPos + 3;
+                    // Find end of lang
+                    while (textStart < data.length && data[textStart] !== 0) textStart++;
+                    textStart++;
+                    // Find end of trans
+                    while (textStart < data.length && data[textStart] !== 0) textStart++;
+                    textStart++;
+
+                    if (isCompressed) {
+                        // Decompression would require a lib like fflate in the worker.
+                        // For now we skip compressed iTXt if not available.
+                    } else {
+                        chunks[key] = textDecoder.decode(data.slice(textStart));
+                    }
+                }
+                // zTXt would also need decompression.
+            }
+        } else if (type === 'IEND') {
+            break;
+        }
+
+        pos += length + 4; // Data + CRC
+    }
+    return chunks;
+};
+
 // Worker Message Handler
 self.onmessage = (e: MessageEvent) => {
-    const { chunks, filename, requestId } = e.data;
+    let { chunks, buffer, filename, requestId } = e.data;
+
+    if (!chunks && buffer) {
+        chunks = parsePngChunks(buffer);
+    }
 
     if (!chunks && !filename) {
         self.postMessage({ error: 'No data provided', requestId });
@@ -639,6 +699,14 @@ self.onmessage = (e: MessageEvent) => {
                     metadata.rawParameters = invokeMeta;
                     foundAuthoritative = true;
                 } catch { }
+            }
+
+            // InvokeAI Workflow
+            const workflowChunk = chunks.invokeai_workflow || chunks.invokeai_graph || chunks.workflow || chunks.graph;
+            if (workflowChunk) {
+                metadata.workflowJson = workflowChunk;
+                metadata.tool = GeneratorTool.INVOKEAI;
+                foundAuthoritative = true;
             }
         }
 

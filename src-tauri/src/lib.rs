@@ -552,6 +552,16 @@ fn scan_image_internal(
         }
     }
 
+    // Check for standalone workflow/graph chunks (InvokeAI 4.x+)
+    if let Some(workflow) = chunks.get("workflow")
+        .or_else(|| chunks.get("graph"))
+        .or_else(|| chunks.get("invokeai_workflow"))
+        .or_else(|| chunks.get("invokeai_graph")) 
+    {
+        parsed_metadata.workflow_json = Some(workflow.clone());
+        found_metadata = true;
+    }
+
     // Helper to serialize metadata if found, or null
     let metadata_value = if found_metadata {
         serde_json::to_value(&parsed_metadata).unwrap_or(serde_json::Value::Null)
@@ -592,6 +602,8 @@ struct ImageMetadata {
     variation_id: Option<String>,
     #[serde(rename = "isIntermediate", default)]
     is_intermediate: bool,
+    #[serde(rename = "workflowJson", skip_serializing_if = "Option::is_none")]
+    workflow_json: Option<String>,
 }
 
 fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
@@ -636,6 +648,15 @@ fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     }
     if let Some(s) = root.get("scheduler").and_then(|v| v.as_str()) {
         meta.sampler = s.to_string();
+    }
+
+    // Workflow / Graph
+    if let Some(wf) = root.get("workflow").or(root.get("graph")) {
+        if wf.is_string() {
+            meta.workflow_json = Some(wf.as_str().unwrap().to_string());
+        } else {
+            meta.workflow_json = Some(wf.to_string());
+        }
     }
 
     // Model

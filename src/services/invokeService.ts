@@ -63,6 +63,12 @@ function mapInvokeMetadata(row: any, metaCol: string): any {
         }
     }
 
+    // Extract Workflow
+    if (root.workflow || root.graph) {
+        const wf = root.workflow || root.graph;
+        mapped.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
+    }
+
     return mapped;
 }
 
@@ -227,6 +233,8 @@ export const syncImages = async (
     const hasStarred = columns.includes('starred');
     const hasIsStarred = columns.includes('is_starred');
     const hasThumbnailName = columns.includes('thumbnail_name');
+    const hasWorkflow = columns.includes('workflow');
+    const hasGraph = columns.includes('graph');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -315,12 +323,13 @@ export const syncImages = async (
 
     const favCol = hasStarred ? ', starred' : (hasIsStarred ? ', is_starred' : '');
     const thumbCol = hasThumbnailName ? ', thumbnail_name' : '';
+    const workflowCol = hasWorkflow ? ', workflow' : (hasGraph ? ', graph as workflow' : '');
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
         const query = `
-            SELECT image_name, ${metaCol}, created_at, width, height ${favCol} ${thumbCol}
+            SELECT image_name, ${metaCol}, created_at, width, height ${favCol} ${thumbCol} ${workflowCol}
             FROM images 
             ${whereClause} 
             ORDER BY created_at ASC
@@ -369,6 +378,10 @@ export const syncImages = async (
                 // Tag as intermediate if applicable
                 if (hasIsIntermediate) {
                     metadata.isIntermediate = !!row.is_intermediate;
+                }
+
+                if (row.workflow) {
+                    metadata.workflowJson = row.workflow;
                 }
 
                 let isFavorite = false;
@@ -561,6 +574,8 @@ export const scanForOrphans = async (
                     sampler: meta.metadata?.sampler || '',
                     loras: meta.metadata?.loras || [],
                     controlNets: meta.metadata?.controlNets || [],
+                    workflowJson: meta.metadata?.workflowJson,
+                    rawParameters: meta.metadata?.rawParameters,
                     isIntermediate: !!meta.isIntermediate || !meta.metadata // Heuristic: No metadata = Intermediate
                 };
 
