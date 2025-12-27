@@ -254,6 +254,7 @@ export const syncImages = async (
     const hasThumbnailName = columns.includes('thumbnail_name');
     const hasWorkflow = columns.includes('workflow');
     const hasGraph = columns.includes('graph');
+    const hasHasWorkflow = columns.includes('has_workflow');
 
     console.log('[InvokeAI Sync] Schema Check:', {
         hasWorkflow, hasGraph,
@@ -351,13 +352,14 @@ export const syncImages = async (
     const favCol = hasStarred ? ', i.starred' : (hasIsStarred ? ', i.is_starred' : '');
     const thumbCol = hasThumbnailName ? ', i.thumbnail_name' : '';
     const workflowCol = hasWorkflow ? ', i.workflow' : (hasGraph ? ', i.graph as workflow' : '');
+    const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
         const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol} ${hasWfCol}
             ${hasSessionQueue ? ', sq.workflow as session_workflow' : ''}
             FROM images i
             ${hasSessionQueue ? 'LEFT JOIN session_queue sq ON i.session_id = sq.session_id' : ''}
@@ -425,6 +427,10 @@ export const syncImages = async (
                 // Tag as intermediate if applicable
                 if (hasIsIntermediate) {
                     metadata.isIntermediate = !!row.is_intermediate;
+                }
+                // Add hasWorkflowHint if applicable
+                if (hasHasWorkflow) {
+                    metadata.hasWorkflowHint = !!row.has_workflow;
                 }
 
                 let isFavorite = false;
