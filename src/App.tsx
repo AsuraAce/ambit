@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HashRouter } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { Search, Import } from 'lucide-react';
+import { Search, Import, Loader2 } from 'lucide-react';
 import { AIImage, ViewMode, LayoutMode, ContextMenuState, GeneratorTool } from './types';
 import { FilterPanel } from './components/FilterPanel';
 import { ImageViewer } from './components/ImageViewer';
@@ -86,6 +86,7 @@ export default function App() {
     const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
 
     // Interaction State
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -140,6 +141,11 @@ export default function App() {
         setPendingViewerDeleteId: modals.setPendingViewerDeleteId,
         lastSelectedId
     });
+
+    // Calculate Scope Total for Smart Counter
+    const scopeTotal = filters.collectionId && collections.find(c => c.id === filters.collectionId)
+        ? collections.find(c => c.id === filters.collectionId)!.imageIds.length
+        : totalImages;
 
     // --- Extracted Hooks ---
     const { isDraggingExternal } = useDragDrop({
@@ -262,17 +268,24 @@ export default function App() {
                     />
 
                     <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-zinc-800/50 overflow-hidden relative">
+                        {isSearchFocused && <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSearchFocused(false)} />}
+
                         <AppHeader
                             viewMode={viewMode}
                             filters={filters}
                             setFilters={setFilters}
-                            searchProps={search}
+                            searchProps={{
+                                ...search,
+                                isFocused: isSearchFocused,
+                                onFocus: () => setIsSearchFocused(true),
+                                onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
+                            }}
                             layoutMode={layoutMode}
                             setLayoutMode={setLayoutMode}
                             sortOption={sortOption}
                             setSortOption={setSortOption}
                             displayedCount={images.length}
-                            totalCount={totalImages}
+                            totalCount={scopeTotal}
                             onImport={() => fileOps.fileInputRef.current?.click()}
                             onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                             clearAllFilters={clearAllFilters}

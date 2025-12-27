@@ -20,6 +20,9 @@ interface AppHeaderProps {
         activeSuggestionIndex: number;
         selectSuggestion: (index: number) => void;
         clearSearch: () => void;
+        isFocused: boolean;
+        onFocus: () => void;
+        onBlur: () => void;
     };
     layoutMode: LayoutMode;
     setLayoutMode: (mode: LayoutMode) => void;
@@ -51,7 +54,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 }) => {
     const { settings, setSettings, collections, recentSearches, setRecentSearches, loadMoreImages, hasMoreImages, isLiveWatching, setIsLiveWatching } = useLibraryContext();
     const [showSortMenu, setShowSortMenu] = useState(false);
-    const [isSearchFocused, setIsSearchFocused] = useState(false);
 
     const activeCollection = collections.find(c => c.id === filters.collectionId);
 
@@ -61,10 +63,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     const showMiddleSection = showLayoutSwitcher || showSlideshowButton;
 
     return (
-        <header className="flex-shrink-0 pr-8 pb-4 sticky top-0 z-50 transition-colors duration-200">
+        <header className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
             <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring">
                 <div className="flex items-center gap-4 flex-1">
-                    <div className="relative w-full max-w-lg group z-30 flex items-center gap-2">
+                    <div className={`relative w-full max-w-lg group flex items-center gap-2 transition-all duration-300 ${searchProps.isFocused ? 'z-[70] scale-105' : 'z-30'}`}>
                         <div className="relative flex-1">
                             <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${searchProps.isSearchingAi ? 'text-amethyst-600 dark:text-amethyst-400 animate-pulse' : 'text-gray-400 dark:text-zinc-500 group-focus-within:text-sage-600 dark:group-focus-within:text-sage-400'}`} />
                             <input
@@ -74,14 +76,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                 className={`w-full bg-gray-100 dark:bg-zinc-800/50 border rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none transition-all text-gray-900 dark:text-gray-100 placeholder-gray-500 ${searchProps.isAiSearchEnabled ? 'border-amethyst-300 dark:border-amethyst-800 focus:border-amethyst-500/50 focus:ring-1 focus:ring-amethyst-500/30' : 'border-gray-200 dark:border-white/10 focus:border-sage-500/50 focus:ring-1 focus:ring-sage-500/30'}`}
                                 value={filters.searchQuery}
                                 onChange={searchProps.handleSearchChange}
-                                onFocus={() => setIsSearchFocused(true)}
-                                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                                onFocus={searchProps.onFocus}
+                                onBlur={searchProps.onBlur}
                                 onKeyDown={searchProps.handleKeyDown}
                                 autoComplete="off"
                             />
                             {filters.searchQuery && <button onClick={searchProps.clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"><X className="w-3.5 h-3.5" /></button>}
 
-                            {isSearchFocused && (
+                            {searchProps.isFocused && (
                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                     {searchProps.suggestions.length > 0 && (
                                         <div className="py-2">
@@ -204,6 +206,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         )}
                     </div>
                     <div className="flex items-center gap-2 text-gray-500 ml-2"><Sliders className="w-3 h-3" /><input type="range" min="100" max="400" value={settings.thumbnailSize} onChange={(e) => setSettings(p => ({ ...p, thumbnailSize: Number(e.target.value) }))} className="w-20 h-1 bg-gray-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sage-500" /></div>
+
+                    <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
+                    <div className="text-xs font-bold text-gray-500/80 uppercase tracking-tighter tabular-nums text-right min-w-[100px]">
+                        {displayedCount !== totalCount ? (
+                            <>
+                                <span className="text-sage-600 dark:text-sage-400">{displayedCount.toLocaleString()}</span>
+                                <span className="mx-1 opacity-40">/</span>
+                                <span>{totalCount.toLocaleString()}</span>
+                            </>
+                        ) : (
+                            <span>{totalCount.toLocaleString()} IMAGES</span>
+                        )}
+                    </div>
                 </div>
             </div>
             {(filters.dateRange !== 'all' || filters.favoritesOnly || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.searchQuery !== '') && (
