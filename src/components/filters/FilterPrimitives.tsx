@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, Search, X } from 'lucide-react';
 
 // --- Section Header ---
 interface SectionHeaderProps {
@@ -29,13 +29,12 @@ interface SelectableRowProps {
 }
 
 export const SelectableRow: React.FC<SelectableRowProps> = ({ label, isSelected, onClick }) => (
-    <div 
+    <div
         onClick={onClick}
-        className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${
-            isSelected 
-                ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium' 
+        className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${isSelected
+                ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
                 : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
-        }`}
+            }`}
     >
         <span>{label}</span>
         {isSelected ? (
@@ -76,11 +75,11 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
 
     const handleWindowMouseMove = useCallback((e: MouseEvent) => {
         if (!isDragging || !trackRef.current) return;
-        
+
         const rect = trackRef.current.getBoundingClientRect();
         const rawPercent = (e.clientX - rect.left) / rect.width;
         const rawValue = min + (rawPercent * (max - min));
-        
+
         // Snap to step
         const steppedValue = Math.round(rawValue / step) * step;
         const clampedValue = Math.min(Math.max(steppedValue, min), max);
@@ -122,13 +121,13 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
                     {currentMin} - {currentMax}
                 </span>
             </div>
-            
+
             <div className="relative h-6 flex items-center select-none" ref={trackRef}>
                 {/* Track Background */}
                 <div className="absolute left-0 right-0 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
-                
+
                 {/* Active Range */}
-                <div 
+                <div
                     className="absolute h-1 bg-sage-500 rounded-full shadow-[0_0_10px_rgba(140,163,107,0.5)]"
                     style={{
                         left: `${getPercentage(currentMin)}%`,
@@ -137,14 +136,14 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
                 />
 
                 {/* Min Thumb */}
-                <div 
+                <div
                     className={`absolute w-3.5 h-3.5 bg-white dark:bg-slate-900 border-2 border-sage-500 rounded-full shadow cursor-ew-resize hover:scale-125 transition-transform ease-spring z-10 ${isDragging === 'min' ? 'scale-125 ring-2 ring-sage-500/50' : ''}`}
                     style={{ left: `calc(${getPercentage(currentMin)}% - 7px)` }}
                     onMouseDown={handleMouseDown('min')}
                 />
 
                 {/* Max Thumb */}
-                <div 
+                <div
                     className={`absolute w-3.5 h-3.5 bg-white dark:bg-slate-900 border-2 border-sage-500 rounded-full shadow cursor-ew-resize hover:scale-125 transition-transform ease-spring z-10 ${isDragging === 'max' ? 'scale-125 ring-2 ring-sage-500/50' : ''}`}
                     style={{ left: `calc(${getPercentage(currentMax)}% - 7px)` }}
                     onMouseDown={handleMouseDown('max')}
@@ -153,3 +152,32 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
         </div>
     );
 };
+
+// --- Search Input ---
+interface SearchInputProps {
+    value: string;
+    onChange: (val: string) => void;
+    placeholder?: string;
+    className?: string;
+}
+
+export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = "Search...", className }) => (
+    <div className={`relative ${className}`}>
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+        <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full bg-gray-100 dark:bg-zinc-900/50 border border-gray-200 dark:border-gray-700 rounded-lg pl-7 pr-7 py-1.5 text-xs focus:border-sage-500 outline-none text-gray-900 dark:text-white transition-all"
+        />
+        {value && (
+            <button
+                onClick={() => onChange('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
+            >
+                <X className="w-3 h-3" />
+            </button>
+        )}
+    </div>
+);
