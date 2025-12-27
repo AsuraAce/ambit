@@ -787,6 +787,14 @@ export default function App() {
                                         onRegenerateThumbnails={fileOps.regenerateThumbnails}
                                         maskedKeywords={settings.maskedKeywords}
                                         privacyEnabled={privacyEnabled}
+                                        onUpdatePrompt={handleUpdatePrompt}
+                                        onUpdateModel={handleUpdateModel}
+                                        onUpdateTool={handleUpdateTool}
+                                        onUpdateNotes={(id, n) => { setImages(p => p.map(i => i.id === id ? { ...i, notes: n } : i)); addToast('Saved', 'success'); }}
+                                        onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); openModal('settings'); } else { openModal('recovery'); } }}
+                                        onToggleFavorite={(id) => toggleFavorite(id)}
+                                        onTogglePin={handlePinImage}
+                                        availableTags={availableTags}
                                     />
                                 ) : images.length > 0 ? (
                                     viewMode === 'timeline' ? (

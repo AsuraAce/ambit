@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AIImage } from '../types';
+import { AIImage, GeneratorTool } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import {
     Eraser,
@@ -40,6 +40,14 @@ interface MaintenanceViewProps {
     onRegenerateThumbnails?: (ids?: string[]) => void;
     maskedKeywords: string[];
     privacyEnabled: boolean;
+    onUpdatePrompt?: (id: string, prompt: string) => void;
+    onUpdateModel?: (id: string, model: string) => void;
+    onUpdateTool?: (id: string, tool: GeneratorTool) => void;
+    onUpdateNotes?: (id: string, notes: string) => void;
+    onRecoverMetadata?: () => void;
+    onToggleFavorite?: (id: string) => void;
+    onTogglePin?: (id: string, isPinned: boolean) => void;
+    availableTags?: string[];
 }
 
 // Lazy load LibraryHealth outside component to prevent re-creation on render
@@ -154,7 +162,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onViewImage,
     onRegenerateThumbnails,
     maskedKeywords,
-    privacyEnabled
+    privacyEnabled,
+    onUpdatePrompt,
+    onUpdateModel,
+    onUpdateTool,
+    onUpdateNotes,
+    onRecoverMetadata,
+    onToggleFavorite,
+    onTogglePin,
+    availableTags
 }) => {
     const {
         activeSqlWhere,
@@ -657,7 +673,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     }}
                     onAddToCollection={() => { }}
                     onSearch={() => { }}
-                    onToggleFavorite={() => { }}
+                    onToggleFavorite={(id) => onToggleFavorite?.(id)}
+                    onTogglePin={onTogglePin}
+                    onUpdatePrompt={onUpdatePrompt}
+                    onUpdateModel={onUpdateModel}
+                    onUpdateTool={onUpdateTool}
+                    onUpdateNotes={onUpdateNotes}
+                    onRecoverMetadata={onRecoverMetadata}
+                    availableTags={availableTags}
                     onOpenSettings={() => { }}
                     onDelete={() => {
                         if (viewingImageId) {
