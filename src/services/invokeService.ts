@@ -20,6 +20,7 @@ function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): a
         tool: 'InvokeAI',
         positivePrompt: '',
         negativePrompt: '',
+        hasWorkflowHint: row.has_workflow === 1 || row.has_workflow === true
     };
 
     const root = meta.image || meta.generation || meta;

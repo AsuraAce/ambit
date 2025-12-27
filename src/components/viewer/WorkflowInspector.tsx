@@ -73,6 +73,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         // 2. We are not already loading
         // 3. We haven't already attempted this specific image in this session
         if (!image.metadata.workflowJson && !localWorkflow && !isLoading && hasAttempted.current !== image.id) {
+            // If we have a hint that there is definitely NO workflow, skip and mark as attempted
+            if (image.metadata.hasWorkflowHint === false) {
+                hasAttempted.current = image.id;
+                return;
+            }
+
             const loadWorkflow = async () => {
                 setIsLoading(true);
                 hasAttempted.current = image.id;
@@ -293,9 +299,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
                                     <p className="text-xs text-gray-400 mb-4 text-balance">
                                         {isLoading ? "Reading workflow data from file headers..." :
-                                            image.metadata.tool === 'InvokeAI'
-                                                ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
-                                                : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
+                                            (!localWorkflow && !image.metadata.workflowJson)
+                                                ? (image.metadata.hasWorkflowHint === false
+                                                    ? "This image was generated without a recorded workflow."
+                                                    : "No workflow data was found for this image in the database or file headers.")
+                                                : image.metadata.tool === 'InvokeAI'
+                                                    ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
+                                                    : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }
                                     </p>
                                     {(localWorkflow || image.metadata.workflowJson) && (

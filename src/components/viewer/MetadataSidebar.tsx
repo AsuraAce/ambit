@@ -288,7 +288,9 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                             onClick={() => setActiveTab(tab)}
                             className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-all rounded-lg flex items-center justify-center gap-2 ${activeTab === tab ? 'text-white bg-sage-600 shadow-lg shadow-sage-500/20' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                         >
-                            {tab === 'workflow' && <Workflow className="w-3 h-3" />}
+                            {tab === 'workflow' && (
+                                <Workflow className={`w-3 h-3 ${image.metadata.hasWorkflowHint === false ? 'opacity-30 grayscale' : ''}`} />
+                            )}
                             {tab}
                         </button>
                     )

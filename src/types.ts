@@ -45,6 +45,7 @@ export interface ImageMetadata {
   variationId?: string; // A signature (e.g. "seed:strength") for sub-noise variations
   upscaled?: boolean;
   isIntermediate?: boolean;
+  hasWorkflowHint?: boolean; // New: Hint from external DB if workflow exists
 }
 
 export interface ParseResult {
