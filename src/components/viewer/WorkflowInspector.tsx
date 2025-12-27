@@ -64,12 +64,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [copied, setCopied] = useState(false);
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [isLoading, setIsLoading] = useState(false);
+    const hasAttempted = React.useRef<string | null>(null);
 
     // Lazy Load Workflow if missing
     React.useEffect(() => {
-        if (!image.metadata.workflowJson && !localWorkflow && !isLoading) {
+        // Only attempt if:
+        // 1. Data is missing
+        // 2. We are not already loading
+        // 3. We haven't already attempted this specific image in this session
+        if (!image.metadata.workflowJson && !localWorkflow && !isLoading && hasAttempted.current !== image.id) {
             const loadWorkflow = async () => {
                 setIsLoading(true);
+                hasAttempted.current = image.id;
                 try {
                     console.log('[Workflow] Lazy loading for:', image.filename);
                     const result = await scanImageWorkflow(image.id);

@@ -386,6 +386,13 @@ export const syncImages = async (
         try {
             const { invoke } = await import('@tauri-apps/api/core');
             sizes = await invoke<number[]>('get_file_sizes_bulk', { paths: batchPaths });
+            const missing = sizes.filter(s => s === 0).length;
+            if (missing > 0) {
+                console.warn(`[InvokeAI Sync] ${missing}/${rows.length} files missing in batch at ${imagesRoot}/outputs/images/`);
+                if (processed === 0) {
+                    console.log('[InvokeAI Sync Debug] Target missing path example:', batchPaths[sizes.findIndex(s => s === 0)]);
+                }
+            }
         } catch (e) {
             console.warn('[InvokeAI Sync] Failed to fetch file sizes', e);
             sizes = new Array(rows.length).fill(0);
