@@ -2,11 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage } from './repoUtils';
+import { normalizePath } from '../../utils/pathUtils';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
-        const id = image.id.replace(/\\/g, '/').replace(/\/+/g, '/');
+        const id = normalizePath(image.id);
         await db.execute(
             `INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
@@ -27,8 +28,9 @@ export const insertImage = async (image: AIImage) => {
                 image.height,
                 image.fileSize,
                 image.timestamp,
+                image.timestamp,
                 JSON.stringify(image.metadata),
-                image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
+                normalizePath(image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '') || ''),
                 image.isFavorite ? 1 : 0,
                 image.isPinned ? 1 : 0,
                 image.isDeleted ? 1 : 0,
@@ -48,14 +50,14 @@ export const insertImagesBatch = async (images: AIImage[]) => {
 
     await dbMutex.dispatch(async () => {
         const records = images.map(img => ({
-            id: img.id.replace(/\\/g, '/').replace(/\/+/g, '/'),
-            path: img.id.replace(/\\/g, '/').replace(/\/+/g, '/'),
+            id: normalizePath(img.id),
+            path: normalizePath(img.id),
             width: img.width,
             height: img.height,
             fileSize: img.fileSize || 0,
             timestamp: img.timestamp,
             metadataJson: JSON.stringify(img.metadata),
-            thumbnailPath: (img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '').replace(/\\/g, '/').replace(/\/+/g, '/'),
+            thumbnailPath: normalizePath((img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '')),
             isFavorite: !!img.isFavorite,
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
@@ -119,19 +121,19 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
 
 export const toggleImagePin = async (id: string, isPinned: boolean) => {
     const db = await getDb();
-    const normalizedId = id.replace(/\\/g, '/');
+    const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
 };
 
 export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
     const db = await getDb();
-    const normalizedId = id.replace(/\\/g, '/');
+    const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
     const db = await getDb();
-    const normalizedId = id.replace(/\\/g, '/');
+    const normalizedId = normalizePath(id);
     let value: number | null = null;
     if (userMasked === true) value = 1;
     if (userMasked === false) value = 0;
@@ -141,7 +143,7 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
 
 export const toggleImageIntermediate = async (id: string, isIntermediate: boolean) => {
     const db = await getDb();
-    const normalizedId = id.replace(/\\/g, '/');
+    const normalizedId = normalizePath(id);
 
     await db.execute(
         "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2",

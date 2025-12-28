@@ -3,36 +3,23 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AIImage, GeneratorTool } from '../types';
 import { DuplicateFinder } from './DuplicateFinder';
-import {
-    Eraser,
-    Loader2,
-    CheckSquare,
-    Eye,
-    Wand2,
-    Copy,
-    Tag,
-    Zap,
-    Search,
-    Globe,
-    Filter,
-    Play
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { ImageViewer } from './ImageViewer';
-import { useLibraryContext } from '../hooks/useLibraryContext';
-import { MaintenanceTab, useMaintenanceData } from '../hooks/useMaintenanceData';
+import { useMaintenanceData, MaintenanceTab } from '../hooks/useMaintenanceData';
 import { TrashTab } from './maintenance/TrashTab';
 import { UntaggedTab } from './maintenance/UntaggedTab';
 import { MissingTab } from './maintenance/MissingTab';
 import { ThumbnailsTab } from './maintenance/ThumbnailsTab';
 import { IntermediatesTab } from './maintenance/IntermediatesTab';
-import { Layers } from 'lucide-react';
-
+import { MaintenanceTabs } from './maintenance/MaintenanceTabs';
+import { ScanPlaceholder } from './maintenance/ScanPlaceholder';
+import { useSelection } from '../hooks/useSelection';
 
 interface MaintenanceViewProps {
     images: AIImage[];
     onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
     onRestoreImages: (ids: string[]) => void;
-    onMoveToTrash: (ids: string[]) => void; // Added for non-destructive safety
+    onMoveToTrash: (ids: string[]) => void;
     onDeleteForever: (ids: string[]) => void;
     onEmptyTrash: () => Promise<void>;
     onGroupImages?: (ids: string[]) => void;
@@ -50,106 +37,8 @@ interface MaintenanceViewProps {
     availableTags?: string[];
 }
 
-// Lazy load LibraryHealth outside component to prevent re-creation on render
+// Lazy load LibraryHealth
 const LibraryHealth = React.lazy(() => import('./maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
-
-interface ScanPlaceholderProps {
-    tab: MaintenanceTab;
-    onStartScan: (tab: MaintenanceTab, scope: 'global' | 'filtered') => void;
-}
-
-const ScanPlaceholder: React.FC<ScanPlaceholderProps> = ({
-    tab,
-    onStartScan
-}) => {
-    const [scanScope, setScanScope] = useState<'global' | 'filtered'>('global');
-
-    const metadata: Record<string, { title: string, description: string, icon: React.ReactNode, hasScope: boolean }> = {
-        thumbnails: {
-            title: "Thumbnail Optimization",
-            description: "Check for images that need high-quality thumbnail regeneration to improve browsing speed.",
-            icon: <Zap className="w-12 h-12" />,
-            hasScope: true
-        },
-        duplicates: {
-            title: "Duplicate Finder",
-            description: "Scan your library for visually identical or exact duplicate images using strict metadata matching.",
-            icon: <Copy className="w-12 h-12" />,
-            hasScope: true
-        },
-        untagged: {
-            title: "Untagged Images",
-            description: "Identify images that are missing prompts or relevant metadata for better organization.",
-            icon: <Tag className="w-12 h-12" />,
-            hasScope: true
-        },
-        missing: {
-            title: "Missing Files Integrity",
-            description: "Verify that all database records point to actual files on your disk. This will scan your entire collection.",
-            icon: <Search className="w-12 h-12" />,
-            hasScope: false
-        },
-        intermediates: {
-            title: "Intermediate Images",
-            description: "Identify sub-steps, noise previews, or orphan images that lack InvokeAI metadata.",
-            icon: <Layers className="w-12 h-12" />,
-            hasScope: true
-        }
-    };
-
-    const config = metadata[tab];
-    if (!config) return null;
-
-    return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-20 px-6 text-center max-w-2xl mx-auto"
-        >
-            <div className="p-8 bg-sage-500/5 dark:bg-sage-400/5 rounded-full mb-8 border border-sage-500/10 shadow-inner">
-                <div className="text-sage-600 dark:text-sage-400">
-                    {config.icon}
-                </div>
-            </div>
-
-            <h2 className="text-3xl font-black text-gray-900 dark:text-white mb-4 tracking-tight">{config.title}</h2>
-            <p className="text-gray-500 dark:text-gray-400 mb-10 leading-relaxed text-sm">
-                {config.description}
-            </p>
-
-            <div className="flex flex-col items-center gap-6 w-full max-w-xs">
-                {config.hasScope && (
-                    <div className="flex items-center gap-1 p-1.5 bg-gray-100 dark:bg-zinc-800 rounded-2xl w-full border border-gray-200 dark:border-white/5 shadow-sm">
-                        <button
-                            onClick={() => setScanScope('filtered')}
-                            className={`flex-1 px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${scanScope === 'filtered' ? 'bg-white dark:bg-zinc-700 text-sage-600 shadow-md' : 'text-gray-400'}`}
-                        >
-                            <Filter className="w-3.5 h-3.5" /> Current Filter
-                        </button>
-                        <button
-                            onClick={() => setScanScope('global')}
-                            className={`flex-1 px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${scanScope === 'global' ? 'bg-white dark:bg-zinc-700 text-sage-600 shadow-md' : 'text-gray-400'}`}
-                        >
-                            <Globe className="w-3.5 h-3.5" /> Global
-                        </button>
-                    </div>
-                )}
-
-                <button
-                    onClick={() => onStartScan(tab, scanScope)}
-                    className="w-full py-4 bg-sage-600 hover:bg-sage-500 text-white rounded-2xl text-sm font-black shadow-xl shadow-sage-500/30 transition-all active:scale-95 flex items-center justify-center gap-3 group"
-                >
-                    <Play className="w-5 h-5 fill-current group-hover:scale-110 transition-transform" />
-                    Start Maintenance Scan
-                </button>
-
-                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                    Intentionally triggered scan
-                </p>
-            </div>
-        </motion.div>
-    );
-};
 
 export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     images,
@@ -157,9 +46,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onRestoreImages,
     onMoveToTrash,
     onDeleteForever,
-    onEmptyTrash,
-    onGroupImages,
-    onViewImage,
     onRegenerateThumbnails,
     maskedKeywords,
     privacyEnabled,
@@ -172,14 +58,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onTogglePin,
     availableTags
 }) => {
-    const {
-        activeSqlWhere,
-        activeSqlParams
-    } = useLibraryContext();
-
+    // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+    // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
     const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
     const [duplicatesScope, setDuplicatesScope] = useState<'global' | 'filtered'>('global');
@@ -188,10 +70,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-    // Missing scan state
+    // Missing Scan Special State
     const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
 
+    // --- Data Hooks ---
     const {
         isLoading,
         initializedTabs,
@@ -203,11 +86,61 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         refreshData,
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
+    // --- Computed Data ---
+    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
+
+    const missingImages = useMemo(() => {
+        const uniquePool = Array.from(new Map([...images, ...fetchedMissingImages].map(item => [item.id, item])).values());
+        if (scanMissingIds.size > 0) {
+            return uniquePool.filter(img => scanMissingIds.has(img.id) && !img.isDeleted);
+        }
+        return uniquePool.filter(img => img.isMissing && !img.isDeleted);
+    }, [images, fetchedMissingImages, scanMissingIds]);
+
+    // Define the current list for selection logic
+    const currentList = useMemo(() => {
+        switch (activeTab) {
+            case 'trash': return localDeletedImages;
+            case 'untagged': return localUntaggedImages;
+            case 'thumbnails': return localUnoptimizedImages;
+            case 'missing': return missingImages;
+            case 'intermediates': return localIntermediateImages;
+            case 'duplicates': return localDuplicateCandidates; // Note: duplicates view is complex, often handles groups
+            default: return [];
+        }
+    }, [activeTab, localDeletedImages, localUntaggedImages, localUnoptimizedImages, missingImages, localIntermediateImages, localDuplicateCandidates]);
+
+    const targetImage = useMemo(() => {
+        if (!viewingImageId) return null;
+        // Search in all pools to find the image object
+        const allPool = [
+            ...missingImages,
+            ...localUntaggedImages,
+            ...localDeletedImages,
+            ...localUnoptimizedImages,
+            ...localDuplicateCandidates,
+            ...localIntermediateImages,
+            ...activeImages
+        ];
+        return allPool.find(i => i.id === viewingImageId) || null;
+    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates, localIntermediateImages, activeImages]);
+
+    // --- Selection Hook ---
+    const {
+        selectedIds,
+        setSelectedIds,
+        handleImageClick,
+        handleRangeSelection: selectionRangeHandler,
+        clearSelection,
+        setLastSelectedId
+    } = useSelection(currentList);
+
+    // --- Handlers ---
+
     const setActiveTab = useCallback((tab: MaintenanceTab) => {
         setActiveTabOriginal(tab);
-        setSelectedIds(new Set());
-        setLastSelectedIndex(null);
-    }, []);
+        clearSelection();
+    }, [clearSelection]);
 
     const handleScanComplete = async (ids: string[]) => {
         setScanMissingIds(new Set(ids));
@@ -224,90 +157,41 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         }
     };
 
-    const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
-
-    const missingImages = useMemo(() => {
-        const uniquePool = Array.from(new Map([...images, ...fetchedMissingImages].map(item => [item.id, item])).values());
-        if (scanMissingIds.size > 0) {
-            return uniquePool.filter(img => scanMissingIds.has(img.id) && !img.isDeleted);
-        }
-        return uniquePool.filter(img => img.isMissing && !img.isDeleted);
-    }, [images, fetchedMissingImages, scanMissingIds]);
-
-    const targetImage = useMemo(() => {
-        if (!viewingImageId) return null;
-        const allPool = [
-            ...missingImages,
-            ...localUntaggedImages,
-            ...localDeletedImages,
-            ...localUnoptimizedImages,
-            ...localDuplicateCandidates,
-            ...localIntermediateImages
-        ];
-        return allPool.find(i => i.id === viewingImageId) || null;
-    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates]);
-
-    // Selection Handlers
-    const handleSelect = useCallback((id: string, index?: number, isAdditive: boolean = false) => {
-        setSelectedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) {
-                if (!isAdditive) next.delete(id);
-            } else {
-                next.add(id);
-            }
-            return next;
+    // Wrapper for selection to match expected signature in sub-components if needed
+    // Most subcomponents expect `onItemClick: (id, index, e) => void`
+    // useSelection.handleImageClick expects `(e, id, index, setViewerIndex)`
+    const handleItemClickAdapter = useCallback((id: string, index: number, e: React.MouseEvent) => {
+        handleImageClick(e, id, index, () => {
+            // Default click action if not selecting: View Image?
+            // In Maintenance, maybe we don't auto-open viewer on click unless valid?
+            // For now, let's say simple click just SELECTS exclusively (standard file manager)
+            // useSelection handles this logic (clears others, selects this).
+            // If we want to open viewer, we can check if it was a simple click and `selectedIds` has only this one?
+            // Actually useSelection calls the callback if it's a "navigate" click (no modifier).
+            // We can use that to open viewer? Or just select.
+            // Maintenance items usually require explicit action to view.
         });
-        if (typeof index === 'number') setLastSelectedIndex(index);
-    }, []);
+    }, [handleImageClick]);
 
-    const handleRangeSelection = useCallback((indexes: number[], isAdditive: boolean = false) => {
-        let currentList: AIImage[] = [];
-        if (activeTab === 'trash') currentList = localDeletedImages;
-        else if (activeTab === 'untagged') currentList = localUntaggedImages;
-        else if (activeTab === 'thumbnails') currentList = localUnoptimizedImages;
-        else if (activeTab === 'missing') currentList = missingImages;
-        else if (activeTab === 'intermediates') currentList = localIntermediateImages;
-        else if (activeTab === 'duplicates') currentList = activeImages;
+    const handleSelectAll = useCallback(() => {
+        const ids = currentList.map(i => i.id);
+        setSelectedIds(new Set(ids));
+    }, [currentList, setSelectedIds]);
 
-        const idsToProcess = indexes.map(idx => currentList[idx]?.id).filter(Boolean);
+    // Range selection adapter
+    const handleRangeAdapter = useCallback((indexes: number[], isAdditive: boolean) => {
+        selectionRangeHandler(indexes, isAdditive);
+    }, [selectionRangeHandler]);
 
-        setSelectedIds(prev => {
-            const next = isAdditive ? new Set(prev) : new Set<string>();
-            idsToProcess.forEach(id => next.add(id));
-            return next;
-        });
-    }, [activeTab, localDeletedImages, localUntaggedImages, localUnoptimizedImages, missingImages, activeImages]);
 
-    const handleItemClick = useCallback((id: string, index: number, e: React.MouseEvent) => {
-        if (e.shiftKey && lastSelectedIndex !== null) {
-            const start = Math.min(lastSelectedIndex, index);
-            const end = Math.max(lastSelectedIndex, index);
-            const rangeIndexes = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-            handleRangeSelection(rangeIndexes, true);
-        } else {
-            const isAdditive = e.ctrlKey || e.metaKey;
-            handleSelect(id, index, isAdditive);
-        }
-    }, [lastSelectedIndex, handleSelect, handleRangeSelection]);
-
-    const selectAll = () => {
-        let currentList: AIImage[] = [];
-        if (activeTab === 'trash') currentList = localDeletedImages;
-        else if (activeTab === 'untagged') currentList = localUntaggedImages;
-        else if (activeTab === 'thumbnails') currentList = localUnoptimizedImages;
-        else if (activeTab === 'missing') currentList = missingImages;
-        else if (activeTab === 'intermediates') currentList = localIntermediateImages;
-        setSelectedIds(new Set(currentList.map(i => i.id)));
-    };
+    // --- Actions ---
 
     const handleRestoreSelected = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
         await onRestoreImages(ids);
         await refreshData('trash', false);
-        setSelectedIds(new Set());
-        setLastSelectedIndex(null);
+        clearSelection();
     };
 
     const handleDeleteSelected = async () => {
@@ -335,8 +219,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             });
             setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
         }
-        setSelectedIds(new Set());
-        setLastSelectedIndex(null);
+        clearSelection();
     };
 
     const handlePurgeMissing = async () => {
@@ -351,8 +234,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         if (!onRegenerateThumbnails) return;
         await onRegenerateThumbnails(ids);
         if (ids) {
-            setSelectedIds(new Set());
-            setLastSelectedIndex(null);
+            clearSelection();
         }
         await refreshData('thumbnails', false, { scope: thumbnailsScope });
     };
@@ -362,6 +244,18 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         await refreshData('duplicates', false, { scope: duplicatesScope });
     }, [onResolveDuplicate, refreshData, duplicatesScope]);
 
+    const handleUnmarkIntermediates = async () => {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        const { toggleImageIntermediate } = await import('../services/db/imageRepo');
+        for (const id of ids) {
+            await toggleImageIntermediate(id, false);
+        }
+        await refreshData('intermediates', false, { scope: intermediatesScope });
+        clearSelection();
+    };
+
+    // --- Scopes ---
 
     const handleThumbnailsScopeChange = useCallback((scope: 'global' | 'filtered') => {
         setThumbnailsScope(scope);
@@ -378,56 +272,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         refreshData('intermediates', false, { scope });
     }, [refreshData]);
 
-    const handleUnmarkIntermediates = async () => {
-        const ids = Array.from(selectedIds);
-        if (ids.length === 0) return;
-        const { toggleImageIntermediate } = await import('../services/db/imageRepo');
-        for (const id of ids) {
-            await toggleImageIntermediate(id, false);
-        }
-        await refreshData('intermediates', false, { scope: intermediatesScope });
-        setSelectedIds(new Set());
-        setLastSelectedIndex(null);
-    };
+
+    const handleBackgroundClick = useCallback(() => {
+        clearSelection();
+    }, [clearSelection]);
+
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="flex-shrink-0 pt-4 pl-6 pr-8 pb-4 z-20">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg">
-                    <div>
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="p-2 bg-sage-100 dark:bg-sage-900/30 rounded-lg text-sage-600 dark:text-sage-400">
-                                <Eraser className="w-5 h-5" />
-                            </div>
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Maintenance</h2>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Organize your library, resolve conflicts, and manage deleted items.</p>
-                    </div>
-
-                    <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">
-                        {[
-                            { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
-                            { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
-                            { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
-                            { id: 'intermediates', label: 'Intermediates', color: 'text-blue-500' },
-                            { id: 'missing', label: 'Missing', color: 'text-orange-500' },
-                            { id: 'trash', label: 'Trash', color: 'text-red-500' },
-                        ].map((tab) => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id as MaintenanceTab)}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-black transition-all whitespace-nowrap ${activeTab === tab.id
-                                    ? 'bg-white dark:bg-zinc-700 text-sage-600 shadow-md transform scale-105 z-10'
-                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-                                    }`}
-                            >
-                                <span className={activeTab === tab.id ? tab.color : 'text-current'}>{tab.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
+            <MaintenanceTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto relative custom-scrollbar px-6 pb-8" ref={scrollContainerRef}>
@@ -460,20 +313,17 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <ThumbnailsTab
                                 images={localUnoptimizedImages}
                                 selectedIds={selectedIds}
-                                onItemClick={handleItemClick}
-                                onSelectAll={selectAll}
-                                onClearSelection={() => setSelectedIds(new Set())}
+                                onItemClick={handleItemClickAdapter}
+                                onSelectAll={handleSelectAll}
+                                onClearSelection={clearSelection}
                                 onRegenerate={handleRegenerate}
                                 thumbnailsScope={thumbnailsScope}
                                 onScopeChange={handleThumbnailsScopeChange}
                                 privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                             />
                         </motion.div>
                     )}
@@ -496,11 +346,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                     refreshData('duplicates', true, { scope });
                                 }}
                                 scrollContainerRef={scrollContainerRef}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                             />
                         </motion.div>
                     )}
@@ -516,19 +363,16 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <UntaggedTab
                                 images={localUntaggedImages}
                                 selectedIds={selectedIds}
-                                onItemClick={handleItemClick}
-                                onSelectAll={selectAll}
-                                onClearSelection={() => setSelectedIds(new Set())}
+                                onItemClick={handleItemClickAdapter}
+                                onSelectAll={handleSelectAll}
+                                onClearSelection={clearSelection}
                                 onMoveToTrash={handleDeleteSelected}
                                 onViewImage={setViewingImageId}
                                 privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                                 untaggedScope={untaggedScope}
                                 onScopeChange={handleUntaggedScopeChange}
                             />
@@ -551,18 +395,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <MissingTab
                                 images={missingImages}
                                 selectedIds={selectedIds}
-                                onItemClick={handleItemClick}
-                                onSelectAll={selectAll}
-                                onClearSelection={() => setSelectedIds(new Set())}
+                                onItemClick={handleItemClickAdapter}
+                                onSelectAll={handleSelectAll}
+                                onClearSelection={clearSelection}
                                 onDeleteSelected={handleDeleteSelected}
                                 onPurgeMissing={handlePurgeMissing}
                                 onViewImage={setViewingImageId}
                                 scrollContainerRef={scrollContainerRef as any}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                             />
                         </motion.div>
                     )}
@@ -578,19 +419,16 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <TrashTab
                                 images={localDeletedImages}
                                 selectedIds={selectedIds}
-                                onItemClick={handleItemClick}
-                                onSelectAll={selectAll}
-                                onClearSelection={() => setSelectedIds(new Set())}
+                                onItemClick={handleItemClickAdapter}
+                                onSelectAll={handleSelectAll}
+                                onClearSelection={clearSelection}
                                 onRestoreSelected={handleRestoreSelected}
                                 onDeleteSelected={handleDeleteSelected}
                                 privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                             />
                         </motion.div>
                     )}
@@ -606,20 +444,17 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <IntermediatesTab
                                 images={localIntermediateImages}
                                 selectedIds={selectedIds}
-                                onItemClick={handleItemClick}
-                                onSelectAll={selectAll}
-                                onClearSelection={() => setSelectedIds(new Set())}
+                                onItemClick={handleItemClickAdapter}
+                                onSelectAll={handleSelectAll}
+                                onClearSelection={clearSelection}
                                 onDeleteSelected={handleDeleteSelected}
                                 onUnmarkSelected={handleUnmarkIntermediates}
                                 onViewImage={setViewingImageId}
                                 privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
-                                onRangeSelection={handleRangeSelection}
-                                onBackgroundClick={() => {
-                                    setSelectedIds(new Set());
-                                    setLastSelectedIndex(null);
-                                }}
+                                onRangeSelection={handleRangeAdapter}
+                                onBackgroundClick={handleBackgroundClick}
                                 scope={intermediatesScope}
                                 onScopeChange={handleIntermediatesScopeChange}
                             />
@@ -650,24 +485,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     isOpen={true}
                     onClose={() => setViewingImageId(null)}
                     onNext={() => {
-                        let list: AIImage[] = [];
-                        if (activeTab === 'missing') list = fetchedMissingImages;
-                        else if (activeTab === 'untagged') list = localUntaggedImages;
-                        else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
-                        else if (activeTab === 'intermediates') list = localIntermediateImages;
-                        else if (activeTab === 'trash') list = localDeletedImages;
-
+                        const list = currentList; // Use memoized current list
                         const idx = list.findIndex(i => i.id === viewingImageId);
                         if (idx !== -1 && idx < list.length - 1) setViewingImageId(list[idx + 1].id);
                     }}
                     onPrev={() => {
-                        let list: AIImage[] = [];
-                        if (activeTab === 'missing') list = fetchedMissingImages;
-                        else if (activeTab === 'untagged') list = localUntaggedImages;
-                        else if (activeTab === 'thumbnails') list = localUnoptimizedImages;
-                        else if (activeTab === 'intermediates') list = localIntermediateImages;
-                        else if (activeTab === 'trash') list = localDeletedImages;
-
+                        const list = currentList;
                         const idx = list.findIndex(i => i.id === viewingImageId);
                         if (idx > 0) setViewingImageId(list[idx - 1].id);
                     }}

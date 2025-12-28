@@ -32,13 +32,23 @@ export const useSelection = (filteredImages: AIImage[]) => {
         });
       }
     } else {
-      // If clicking normally, we either clear selection or open viewer
-      if (selectedIds.size > 0) {
-         setSelectedIds(new Set());
-         setLastSelectedId(null);
-      } else {
-         setSelectedViewerIndex(index);
-      }
+      // Standard behavior: Select ONLY this item
+      // But if we are already selecting this one and only this one, maybe we want to keep it?
+      // Or maybe we want to allow deselecting if clicking the same item?
+      // Standard file manager: Clicking selected item keeps it selected. Clicking other item selects new one.
+      // Clicking background (handled elsewhere) deselects.
+
+      // If we want to support "click again to view", check if it's already selected and lastSelectedId is the same.
+      // For now, let's just make it select.
+      setSelectedIds(new Set([id]));
+      setLastSelectedId(id);
+
+      // Optional: If we want to support immediate view on click, we could call callback here
+      // but usually viewing is double click or separate intent.
+      // If the caller wants view on single click, they should probably rely on a separate prop or double click.
+      // However, the original code had:
+      // if (selectedIds.size > 0) { clear } else { view }
+      // The user wants "single click selection". So we select.
     }
   }, [filteredImages, lastSelectedId, selectedIds]);
 
@@ -52,20 +62,20 @@ export const useSelection = (filteredImages: AIImage[]) => {
     });
     setLastSelectedId(id);
   }, []);
-  
+
   const handleRangeSelection = useCallback((selectedIndexes: number[], isAdditive: boolean) => {
-      const idsToSelect = selectedIndexes.map(idx => filteredImages[idx]?.id).filter(Boolean) as string[];
-      setSelectedIds(prev => {
-          const next = isAdditive ? new Set(prev) : new Set<string>();
-          idsToSelect.forEach(id => next.add(id));
-          return next;
-      });
-      if (idsToSelect.length > 0) setLastSelectedId(idsToSelect[idsToSelect.length - 1]);
+    const idsToSelect = selectedIndexes.map(idx => filteredImages[idx]?.id).filter(Boolean) as string[];
+    setSelectedIds(prev => {
+      const next = isAdditive ? new Set(prev) : new Set<string>();
+      idsToSelect.forEach(id => next.add(id));
+      return next;
+    });
+    if (idsToSelect.length > 0) setLastSelectedId(idsToSelect[idsToSelect.length - 1]);
   }, [filteredImages]);
 
   const clearSelection = useCallback(() => {
-      setSelectedIds(new Set());
-      setLastSelectedId(null);
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
   }, []);
 
   return {
