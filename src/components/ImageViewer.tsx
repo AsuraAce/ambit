@@ -35,37 +35,9 @@ interface ImageViewerProps {
     onToggleSidebar?: () => void;
 }
 
-// AI Result Modal Component (Local to Viewer)
-const AIResultModal = ({ isOpen, onClose, type, content, onCopy }: { isOpen: boolean; onClose: () => void; type: 'analysis' | 'variations'; content: string | string[] | null; onCopy: (text: string) => void; }) => {
-    if (!isOpen || !content) return null;
-    return (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-white/5 shrink-0">
-                    <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        {type === 'analysis' ? <Wand2 className="w-4 h-4 text-amethyst-500" /> : <Shuffle className="w-4 h-4 text-amethyst-500" />}
-                        {type === 'analysis' ? 'Prompt Analysis' : 'Creative Variations'}
-                    </h3>
-                    <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400"><X className="w-5 h-5" /></button>
-                </div>
-                <div className="p-6 overflow-y-auto custom-scrollbar">
-                    {type === 'analysis' ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed text-gray-600 dark:text-gray-300">
-                            <ReactMarkdown>{content as string}</ReactMarkdown>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">{(content as string[]).map((variation, i) => (
-                            <div key={i} className="group relative p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/5 hover:border-amethyst-500/30 transition-colors">
-                                <p className="text-sm text-gray-700 dark:text-gray-300 pr-8 leading-snug">{variation}</p>
-                                <button onClick={() => onCopy(variation)} className="absolute top-2 right-2 p-1.5 rounded-md bg-white dark:bg-black/40 text-gray-400 hover:text-amethyst-500 opacity-0 group-hover:opacity-100 transition-opacity"><Copy className="w-3.5 h-3.5" /></button>
-                            </div>
-                        ))}</div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
+import { AIResultModal } from './viewer/AIResultModal';
+import { ViewerToolbar } from './viewer/ViewerToolbar';
+import { VersionSelector } from './viewer/VersionSelector';
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
     image,
@@ -175,6 +147,29 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     if (!isOpen) return null;
 
+    const handleCopyImage = async () => {
+        try {
+            const response = await fetch(displayImage.url);
+            const blob = await response.blob();
+            await navigator.clipboard.write([
+                new ClipboardItem({ [blob.type]: blob })
+            ]);
+        } catch (e) {
+            console.error("Copy failed", e);
+        }
+    };
+
+    const handleOpenExternal = async () => {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_file', { path: displayImage.id });
+    };
+
+    const handleShare = () => {
+        if (navigator.share) {
+            navigator.share({ title: displayImage.filename, url: displayImage.url });
+        }
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0 }}
@@ -192,99 +187,22 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
                 }}
             >
-                {/* Floating Toolbar */}
-                <div className={`absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black via-black/50 to-transparent pointer-events-none transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-                    <div className="flex flex-col items-start pointer-events-auto">
-                        <div className="text-gray-300 text-sm font-mono bg-black/50 px-3 py-1.5 rounded-lg border border-white/10 backdrop-blur-md shadow-xl">
-                            {getFilename(displayImage.filename)}
-                        </div>
-                        {versions.length > 0 && (
-                            <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-sage-400 bg-sage-900/30 px-2 py-1 rounded border border-sage-500/20">
-                                <Layers className="w-3 h-3" />
-                                <span>Version {versions.findIndex(v => v.id === displayImage.id) + 1} of {versions.length}</span>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-3 pointer-events-auto">
-                        <button
-                            onClick={async () => {
-                                try {
-                                    const response = await fetch(displayImage.url);
-                                    const blob = await response.blob();
-                                    await navigator.clipboard.write([
-                                        new ClipboardItem({ [blob.type]: blob })
-                                    ]);
-                                    // We need toast here, but Toast is in App. 
-                                    // Since we don't have onToast prop, we'll use a small local feedback or just trust the global state if we can pass it.
-                                    // For now, let's just do it.
-                                } catch (e) {
-                                    console.error("Copy failed", e);
-                                }
-                            }}
-                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                            title="Copy Image to Clipboard"
-                        >
-                            <Copy className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={async () => {
-                                const { invoke } = await import('@tauri-apps/api/core');
-                                await invoke('open_file', { path: displayImage.id });
-                            }}
-                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                            title="Open in Default App"
-                        >
-                            <ExternalLink className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => setIsTheaterMode(!isTheaterMode)}
-                            className={`p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full transition-all backdrop-blur-md shadow-lg ${isTheaterMode ? 'text-sage-400 border-sage-500/50' : 'text-white/50 hover:text-white'}`}
-                            title="Theater Mode (Z)"
-                        >
-                            <Layout className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => { if (navigator.share) navigator.share({ title: displayImage.filename, url: displayImage.url }); }}
-                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                            title="Share"
-                        >
-                            <Share2 className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => onToggleFavorite(displayImage.id)}
-                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                            title={`Favorite (F)${displayImage.isFavorite ? ' - Remove' : ''}`}
-                        >
-                            <Heart className={`w-5 h-5 ${displayImage.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
-                        </button>
-                        {onDelete && (
-                            <button
-                                onClick={() => onDelete(displayImage.id)}
-                                className="p-2.5 bg-black/50 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-full text-white/50 hover:text-red-400 transition-all backdrop-blur-md shadow-lg"
-                                title="Delete"
-                            >
-                                <Trash2 className="w-5 h-5" />
-                            </button>
-                        )}
-                        {onToggleSidebar && !isTheaterMode && (
-                            <button
-                                onClick={onToggleSidebar}
-                                className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                                title={isSidebarOpen ? "Hide Sidebar (I)" : "Show Sidebar (I)"}
-                            >
-                                {isSidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
-                            </button>
-                        )}
-                        <button
-                            onClick={onClose}
-                            className="p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full text-white/50 hover:text-white transition-all backdrop-blur-md shadow-lg"
-                            title="Close (Esc)"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
+                <ViewerToolbar
+                    image={displayImage}
+                    versionsCount={versions.length}
+                    activeVersionIndex={versions.findIndex(v => v.id === displayImage.id)}
+                    showControls={showControls}
+                    isTheaterMode={isTheaterMode}
+                    isSidebarOpen={isSidebarOpen}
+                    onCopy={handleCopyImage}
+                    onOpenExternal={handleOpenExternal}
+                    onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
+                    onShare={handleShare}
+                    onToggleFavorite={() => onToggleFavorite(displayImage.id)}
+                    onDelete={onDelete ? () => onDelete(displayImage.id) : undefined}
+                    onToggleSidebar={onToggleSidebar}
+                    onClose={onClose}
+                />
 
                 <ImageCanvas
                     image={displayImage}
@@ -303,36 +221,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     handlers={handlers}
                 />
 
-                {/* Version Selector (Bottom Center) */}
-                {versions.length > 1 && (
-                    <div className={`absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-end gap-3 p-2 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
-                        {versions.map((v, idx) => {
-                            const isActive = v.id === displayImage.id;
-                            const isUpscale = v.width > versions[0].width;
-                            return (
-                                <button
-                                    key={v.id}
-                                    onClick={(e) => { e.stopPropagation(); setActiveVersionId(v.id); }}
-                                    className={`relative group/thumb w-14 h-20 rounded-xl overflow-hidden border-2 transition-all duration-200 cursor-pointer ${isActive ? 'border-sage-500 scale-110 z-10 shadow-[0_0_15px_rgba(115,140,85,0.5)]' : 'border-transparent opacity-60 hover:opacity-100 hover:scale-105 hover:border-white/20'}`}
-                                >
-                                    <img src={v.thumbnailUrl} className="w-full h-full object-cover" alt="" />
-
-                                    {/* Resolution Badge */}
-                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[8px] text-white text-center py-0.5 font-mono">
-                                        {v.width}w
-                                    </div>
-
-                                    {/* Upscale Icon */}
-                                    {isUpscale && (
-                                        <div className="absolute top-1 right-1 p-0.5 bg-amethyst-500 rounded-full shadow-sm">
-                                            <ArrowRight className="w-2 h-2 text-white -rotate-45" />
-                                        </div>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
+                <VersionSelector
+                    versions={versions}
+                    activeVersionId={displayImage.id}
+                    onVersionSelect={setActiveVersionId}
+                    showControls={showControls}
+                />
 
             </div>
 

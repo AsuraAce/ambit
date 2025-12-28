@@ -177,3 +177,13 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
         console.error('[DB] Failed to update workflow for image', id, e);
     }
 };
+
+export const updateFavorite = async (id: string, isFavorite: boolean) => {
+    const db = await getDb();
+    await db.execute('UPDATE images SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id]);
+};
+
+export const updatePinned = async (id: string, isPinned: boolean) => {
+    const db = await getDb();
+    await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, id]);
+};
