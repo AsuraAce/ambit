@@ -101,7 +101,7 @@ export default function App() {
 
     // --- UI Hooks ---
     const modals = useModalManager();
-    const handlers = useAppHandlers({ setImages });
+    const handlers = useAppHandlers({ setImages, refreshMaintenanceCounts });
 
     // --- Specialized Logic Hooks ---
     const search = useSearch({
@@ -150,7 +150,7 @@ export default function App() {
     // --- Extracted Hooks ---
     const { isDraggingExternal } = useDragDrop({
         onImportPaths: fileOps.handleImportPaths,
-        onImportFiles: fileOps.handleImportFiles
+        onImportFiles: (files) => fileOps.handleImportFiles(Array.from(files))
     });
 
     useFolderMonitor({
@@ -302,44 +302,11 @@ export default function App() {
                                     ) : viewMode === 'maintenance' ? (
                                         <MaintenanceView
                                             images={images}
-                                            onResolveDuplicate={async (k, d) => {
-                                                const { markAsDeleted } = await import('./services/db/imageRepo');
-                                                await markAsDeleted(d, true);
-                                                setImages(p => p.map(i => d.includes(i.id) ? { ...i, isDeleted: true } : i));
-                                                addToast(`Moved ${d.length} duplicates to trash`, 'success');
-                                                refreshMaintenanceCounts();
-                                            }}
-                                            onRestoreImages={async (ids) => {
-                                                const { markAsDeleted } = await import('./services/db/imageRepo');
-                                                await markAsDeleted(ids, false);
-                                                setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i));
-                                                addToast(`Restored ${ids.length} images`, 'success');
-                                                refreshMaintenanceCounts();
-                                            }}
-                                            onMoveToTrash={async (ids) => {
-                                                const { markAsDeleted } = await import('./services/db/imageRepo');
-                                                await markAsDeleted(ids, true);
-                                                setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: true } : i));
-                                                addToast(`Moved ${ids.length} images to trash`, 'success');
-                                                refreshMaintenanceCounts();
-                                            }}
-                                            onDeleteForever={async (ids) => {
-                                                const { deleteImage } = await import('./services/db/imageRepo');
-                                                for (const id of ids) await deleteImage(id);
-                                                setImages(p => p.filter(i => !ids.includes(i.id)));
-                                                addToast(`Removed ${ids.length} records from library`, 'success');
-                                                refreshMaintenanceCounts();
-                                            }}
-                                            onEmptyTrash={async () => {
-                                                const { getDeletedImages } = await import('./services/db/maintenanceRepo');
-                                                const { deleteImage } = await import('./services/db/imageRepo');
-                                                const deleted = await getDeletedImages();
-                                                const ids = deleted.map(i => i.id);
-                                                for (const id of ids) await deleteImage(id);
-                                                setImages(p => p.filter(i => !i.isDeleted));
-                                                addToast('Trash emptied', 'success');
-                                                refreshMaintenanceCounts();
-                                            }}
+                                            onResolveDuplicate={handlers.handleResolveDuplicate}
+                                            onRestoreImages={handlers.handleRestoreImages}
+                                            onMoveToTrash={handlers.handleMoveToTrash}
+                                            onDeleteForever={handlers.handleDeleteForever}
+                                            onEmptyTrash={handlers.handleEmptyTrash}
                                             onGroupImages={handlers.handleGroupImages}
                                             onViewImage={(id) => setViewingImageId(id)}
                                             onRegenerateThumbnails={fileOps.regenerateThumbnails}

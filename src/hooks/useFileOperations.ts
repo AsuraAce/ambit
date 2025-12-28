@@ -2,12 +2,14 @@ import * as React from 'react';
 import { useState, useRef, useCallback } from 'react';
 import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { exportImagesToZip } from '../services/exportService';
+import { imageToBase64 } from '../services/imageService';
 import { recoverImageMetadata } from '../services/geminiService';
 import { useToast } from './useToast';
 import { open } from '@tauri-apps/plugin-dialog';
-import { readFile } from '@tauri-apps/plugin-fs';
+import { remove } from '@tauri-apps/plugin-fs';
 import { processWebFiles, processNativePaths, ImportResult } from '../services/importService';
-import { getThumbnailDir, regenerateThumbnailsForImages } from '../services/thumbnailService';
+import { regenerateThumbnailsForImages } from '../services/thumbnailService';
+import { normalizePath } from '../utils/pathUtils';
 
 interface UseFileOperationsProps {
     images: AIImage[];
@@ -58,113 +60,91 @@ export const useFileOperations = ({
                 if (!silent && stats.errors > 0) addToast(`Failed to load ${stats.errors} files.`, 'error');
             }
         }
-    }, [images, setImages, refreshCollectionThumbnails, addToast]);
+    }, [images, setImages, addToast, refreshCollectionThumbnails]);
 
-    // --- Import Handlers ---
-
-    const handleWebFiles = useCallback(async (files: FileList | File[]) => {
-        if (!files || files.length === 0) return;
+    // --- Actions ---
+    const importImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files) return;
         setIsImporting(true);
-        if (files.length > 5) addToast(`Processing ${files.length} images...`, 'info');
-
         try {
-            const fileArray = Array.isArray(files) ? files : Array.from(files);
-            const result = await processWebFiles(fileArray);
+            const result = await processWebFiles(Array.from(e.target.files));
             commitImportResult(result);
-        } catch (err) {
-            console.error(err);
-            addToast('Critical error during import.', 'error');
+        } catch (error) {
+            addToast("Import failed", "error");
         } finally {
             setIsImporting(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
+            if (fileInputRef.current) fileInputRef.current.value = "";
         }
-    }, [commitImportResult, addToast]);
+    };
 
-    const handleImportPaths = useCallback(async (paths: string[], silent = false) => {
-        if (!paths || paths.length === 0) return;
+    const handleWebFiles = async (files: File[]) => {
         setIsImporting(true);
-        if (!silent) addToast(`Importing ${paths.length} files...`, 'info');
-
         try {
+            const result = await processWebFiles(files);
+            commitImportResult(result);
+        } catch (error) {
+            addToast("Import failed", "error");
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const handleImportPaths = async (paths: string[]) => {
+        setIsImporting(true);
+        try {
+            const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths(paths, thumbDir);
-            commitImportResult(result, silent);
-        } catch (err) {
-            console.error(err);
-            if (!silent) addToast('Critical error during import.', 'error');
+            commitImportResult(result);
+        } catch (error) {
+            addToast("Import failed", "error");
         } finally {
             setIsImporting(false);
         }
-    }, [commitImportResult, addToast]);
-
-    const handleNativeImport = async () => {
-        try {
-            const selected = await open({
-                multiple: true,
-                directory: false,
-                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-            });
-
-            if (!selected) return;
-            const paths = Array.isArray(selected) ? selected : [selected];
-            await handleImportPaths(paths);
-        } catch (err) {
-            console.error(err);
-            addToast('Failed to open file dialog', 'error');
-        }
     };
 
-    const importImages = (e?: React.ChangeEvent<HTMLInputElement>) => {
-        if (e && e.target.files) {
-            handleWebFiles(e.target.files);
-        } else {
-            handleNativeImport();
-        }
-    };
-
-    const scanDirectory = async (dirPath: string, silent = false) => {
+    const scanDirectory = async (dirPath: string) => {
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            const imagePaths = await invoke<string[]>('scan_directory_recursive', { path: dirPath });
-
-            if (imagePaths && imagePaths.length > 0) {
-                await handleImportPaths(imagePaths, silent);
+            const { getThumbnailDir } = await import('../services/thumbnailService');
+            const thumbDir = await getThumbnailDir();
+            const result = await processNativePaths([dirPath], thumbDir);
+            if (result.images.length === 0) {
+                // silencly logs to console
             } else {
-                if (!silent) addToast(`No images found in ${dirPath}`, 'info');
+                commitImportResult(result, true);
             }
         } catch (e) {
             console.error(`Failed to scan directory ${dirPath}`, e);
-            if (!silent) addToast(`Failed to scan folder: ${dirPath}`, 'error');
         }
     };
 
-    // --- Other Operations ---
+    const exportImages = async (ids: string[]) => {
+        const targetImages = images.filter(img => ids.includes(img.id));
+        if (targetImages.length === 0) return;
 
-    const exportImages = async (filename: string, selectedIds: Set<string>, onComplete: () => void) => {
         setIsExporting(true);
         try {
-            await exportImagesToZip(images.filter(img => selectedIds.has(img.id)), filename.endsWith('.zip') ? filename : `${filename}.zip`);
+            await exportImagesToZip(targetImages);
             addToast(`Export complete`, 'success');
-            onComplete();
-        } catch (e) {
-            addToast('Export failed', 'error');
+        } catch (error) {
+            addToast("Export failed", "error");
         } finally {
             setIsExporting(false);
         }
     };
 
-    const deleteImages = async (ids: string[], isPermanent = false) => {
-        // Optimistic UI Update
-        const targetIds = new Set(ids);
-        setImages(prev => prev.filter(img => !targetIds.has(img.id)));
-
+    const deleteImages = async (ids: string[], permanent = false) => {
         try {
             const { markAsDeleted, deleteImage } = await import('../services/db/imageRepo');
-            if (isPermanent) {
-                await Promise.all(ids.map(id => deleteImage(id)));
+            if (permanent) {
+                for (const id of ids) await deleteImage(id);
+                setImages(prev => prev.filter(img => !ids.includes(img.id)));
                 addToast(`Permanently deleted ${ids.length} images`, 'success');
             } else {
                 await markAsDeleted(ids, true);
+                setImages(prev => prev.map(img =>
+                    ids.includes(img.id) ? { ...img, isDeleted: true } : img
+                ));
                 addToast(`Moved ${ids.length} images to Trash`, 'success');
             }
         } catch (e) {
@@ -179,30 +159,17 @@ export const useFileOperations = ({
 
         setIsRecoveringMetadata(true);
         try {
-            let base64 = "";
-            if (!img.url.startsWith('http') && !img.url.startsWith('blob:')) {
-                const data = await readFile(img.url);
-                // Simple binary to base64 conversion for small files or proper handling
-                const binary = Array.from(data).map(b => String.fromCharCode(b)).join('');
-                base64 = `data:image/png;base64,${btoa(binary)}`;
-            } else {
-                const response = await fetch(img.url);
-                const blob = await response.blob();
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                await new Promise<void>(resolve => {
-                    reader.onloadend = () => {
-                        base64 = reader.result as string;
-                        resolve();
-                    }
-                });
-            }
-
+            const base64 = await imageToBase64(img.url);
             const apiKey = settings.googleGeminiApiKey || process.env.API_KEY;
             if (!apiKey) throw new Error("No API Key");
 
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey);
-            setImages(prev => prev.map(pImg => pImg.id === img.id ? { ...pImg, metadata: { ...pImg.metadata, ...recoveredMeta }, originalMetadata: pImg.originalMetadata || pImg.metadata } : pImg));
+            setImages(prev => prev.map(pImg => pImg.id === img.id ? {
+                ...pImg,
+                metadata: { ...pImg.metadata, ...recoveredMeta },
+                originalMetadata: pImg.originalMetadata || pImg.metadata
+            } : pImg));
+
             addToast("Metadata recovered successfully!", "success");
             onComplete();
         } catch (e) {
