@@ -1,6 +1,6 @@
 import { AIImage } from '../../types';
 import { getDb } from './connection';
-import { mapRowToImage } from './repoUtils';
+import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 
 export interface LibraryStats {
     totalImages: number;
@@ -31,7 +31,7 @@ export const searchImages = async (
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     const query = `
-        SELECT * FROM images 
+        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         ${finalWhere} 
         ORDER BY is_pinned DESC, ${sortField} ${sortOrder} 
         LIMIT ${limit} OFFSET ${offset}

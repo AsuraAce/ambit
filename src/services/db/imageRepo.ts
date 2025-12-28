@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage } from './repoUtils';
+import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { normalizePath } from '../../utils/pathUtils';
 
 export const insertImage = async (image: AIImage) => {
@@ -94,8 +94,8 @@ export const isImageNew = async (id: string): Promise<boolean> => {
 export const getAllImages = async (limit?: number, offset: number = 0): Promise<AIImage[]> => {
     const db = await getDb();
     const query = limit
-        ? `SELECT * FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-        : 'SELECT * FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC';
+        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC`;
 
     const rows = await db.select<any[]>(query);
     return rows.map(mapRowToImage);
@@ -111,12 +111,20 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT * FROM images WHERE id IN (${placeholders})`;
+        const query = `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE id IN (${placeholders})`;
         const rows = await db.select<any[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
 
     return allImages;
+};
+
+export const getImageWithFullMetadata = async (id: string): Promise<AIImage | null> => {
+    const db = await getDb();
+    const normalizedId = normalizePath(id);
+    const rows = await db.select<any[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
+    if (rows.length === 0) return null;
+    return mapRowToImage(rows[0]);
 };
 
 export const toggleImagePin = async (id: string, isPinned: boolean) => {

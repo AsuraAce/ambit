@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage } from './repoUtils';
+import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 
 export const normalizeAllPaths = async () => {
     await dbMutex.dispatch(async () => {
@@ -82,14 +82,14 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {
     const db = await getDb();
-    const rows = await db.select<any[]>('SELECT * FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC');
+    const rows = await db.select<any[]>(`SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC`);
     return rows.map(mapRowToImage);
 };
 
 export const getIntermediateImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
     let query = `
-        SELECT * FROM images 
+        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         WHERE json_extract(metadata_json, '$.isIntermediate') = 1
         AND is_deleted = 0
     `;
@@ -111,7 +111,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: an
 export const getUntaggedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
     let query = `
-        SELECT * FROM images 
+        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
         AND is_deleted = 0
         AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
@@ -134,7 +134,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
 export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
     let query = `
-        SELECT * FROM images 
+        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
@@ -161,7 +161,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
     const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1";
 
     const query = `
-        SELECT i.* 
+        SELECT ${IMAGE_FIELDS_LIGHT.replace('metadata_json', 'i.metadata_json')}
         FROM images i
         JOIN (
             SELECT file_size, width, height 

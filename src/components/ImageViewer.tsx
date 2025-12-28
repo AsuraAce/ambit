@@ -11,6 +11,7 @@ import { usePalette } from '../hooks/usePalette';
 import { useImageAI } from '../hooks/useImageAI';
 import { useLibraryContext } from '../hooks/useLibraryContext';
 import { getFilename } from '../utils/pathUtils';
+import { getImageWithFullMetadata } from '../services/db/imageRepo';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -62,6 +63,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onToggleSidebar
 }) => {
     const { collections, settings } = useLibraryContext();
+    const [fullImage, setFullImage] = useState<AIImage | null>(null);
+    const [isLoadingFull, setIsLoadingFull] = useState(false);
 
     // --- Stack / Version Logic ---
     const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
@@ -71,6 +74,21 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         setActiveVersionId(null);
     }, [image.id]);
 
+    // Reset local version and/or fetch full metadata when image or version changes
+    useEffect(() => {
+        const targetId = activeVersionId || image.id;
+        // Optimization: Only clear if it's a completely different image, 
+        // keep old one as placeholder if it's just a version switch? 
+        // No, let's clear to avoid confusing metadata flicker.
+        setFullImage(null);
+        setIsLoadingFull(true);
+
+        getImageWithFullMetadata(targetId).then(res => {
+            if (res) setFullImage(res);
+            setIsLoadingFull(false);
+        }).catch(() => setIsLoadingFull(false));
+    }, [image.id, activeVersionId]);
+
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
         // Sort: Smallest resolution (base) first, largest/newest last
@@ -78,9 +96,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     }, [image]);
 
     const displayImage = useMemo(() => {
-        if (!activeVersionId) return image;
-        return versions.find(v => v.id === activeVersionId) || image;
-    }, [image, versions, activeVersionId]);
+        // Use full image if available, else fallback to partial
+        const base = fullImage || image;
+        if (!activeVersionId) return base;
+        return versions.find(v => v.id === activeVersionId) || base;
+    }, [image, fullImage, versions, activeVersionId]);
 
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, handlers } = useZoomPan();
