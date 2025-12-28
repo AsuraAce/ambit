@@ -39,6 +39,20 @@ export const useModalManager = () => {
 
     const openModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: true }));
     const closeModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: false }));
+    const closeAllModals = () => setModals({
+        settings: false,
+        addToCollection: false,
+        deleteConfirm: false,
+        deleteCollection: false,
+        rename: false,
+        compare: false,
+        shortcuts: false,
+        recovery: false,
+        slideshow: false,
+        donation: false,
+        export: false,
+        commandPalette: false
+    });
 
     const isAnyModalOpen = Object.values(modals).some(v => v);
 
@@ -47,6 +61,7 @@ export const useModalManager = () => {
         setModals,
         openModal,
         closeModal,
+        closeAllModals,
         isAnyModalOpen,
         pendingViewerDeleteId,
         setPendingViewerDeleteId,

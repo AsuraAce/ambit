@@ -13,6 +13,7 @@ import { DonationModal } from './DonationModal';
 import { ExportModal } from './ExportModal';
 import { CommandPalette } from './CommandPalette';
 import { useLibraryContext } from '../hooks/useLibraryContext';
+import { useToast } from '../hooks/useToast';
 
 interface GlobalModalsProps {
   // Modal Visibility States
@@ -39,12 +40,11 @@ interface GlobalModalsProps {
   filteredImages: AIImage[];
 
   // Actions
-  onSettingsSave: (s: AppSettings) => void;
-  onExportConfirm: (filename: string) => void;
+  onSettingsSave?: (s: AppSettings) => void;
+  onExportConfirm: (filename: string, folder: string) => void;
   onRename: (pattern: string, start: number) => void;
   onDeleteConfirm: () => void;
   onDeleteCollectionConfirm: () => void;
-  onToggleFavorite: (id: string) => void;
   onRecoverMetadata: (style: any) => void;
   onAddImagesToCollection: (ids: string[], colId: string) => void;
 
@@ -78,7 +78,6 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   onRename,
   onDeleteConfirm,
   onDeleteCollectionConfirm,
-  onToggleFavorite,
   onRecoverMetadata,
   onAddImagesToCollection,
   pendingViewerDeleteId,
@@ -90,7 +89,13 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   shortcutsModalTab,
   commandPaletteProps
 }) => {
-  const { images, collections, settings } = useLibraryContext();
+  const { images, collections, settings, setSettings, toggleFavorite } = useLibraryContext();
+  const { addToast } = useToast();
+
+  const handleSettingsSave = (s: AppSettings) => {
+    setSettings(s);
+    addToast('Settings saved', 'success');
+  };
   const close = (key: keyof typeof modals) => setModals((p: any) => ({ ...p, [key]: false }));
 
   const collectionName = collections.find(c => c.id === collectionToDeleteId)?.name || 'Collection';
@@ -137,7 +142,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
           imageA={images.find(i => i.id === Array.from(selectedIds)[0])!}
           imageB={images.find(i => i.id === Array.from(selectedIds)[1])!}
           onClose={() => close('compare')}
-          onToggleFavorite={onToggleFavorite}
+          onToggleFavorite={toggleFavorite}
         />
       )}
 

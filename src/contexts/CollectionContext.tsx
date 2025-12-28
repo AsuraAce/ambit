@@ -64,7 +64,8 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
                 const dbData = boardMap[col.id];
                 if (dbData) {
                     const countChanged = dbData.count !== (col.count ?? col.imageIds.length);
-                    const thumbChanged = dbData.thumbnail && dbData.thumbnail !== col.thumbnail;
+                    // Only consider it a thumb change if no custom thumbnail is set by the user
+                    const thumbChanged = !col.customThumbnail && dbData.thumbnail && dbData.thumbnail !== col.thumbnail;
 
                     if (countChanged || thumbChanged) {
                         hasChange = true;
@@ -72,7 +73,11 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
                             ...col,
                             imageIds: [],
                             count: dbData.count,
-                            thumbnail: dbData.thumbnail ? (dbData.thumbnail.startsWith('http') ? dbData.thumbnail : convertFileSrc(dbData.thumbnail.replace(/\\/g, '/'))) : col.thumbnail
+                            // Priority: Maintain existing thumbnail if customThumbnail is set, 
+                            // otherwise pick up the optimized one from the database
+                            thumbnail: (col.customThumbnail && col.thumbnail)
+                                ? col.thumbnail
+                                : (dbData.thumbnail ? (dbData.thumbnail.startsWith('http') ? dbData.thumbnail : convertFileSrc(dbData.thumbnail.replace(/\\/g, '/'))) : col.thumbnail)
                         };
                     }
                 }

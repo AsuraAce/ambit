@@ -8,7 +8,7 @@ import { FilterPanel } from './components/FilterPanel';
 import { ImageViewer } from './components/ImageViewer';
 import { StatsDashboard } from './components/Charts';
 import { TimelineView } from './components/TimelineView';
-import { ContextMenu } from './components/ContextMenu';
+import { AppContextMenu } from './components/AppContextMenu';
 import { VirtualGrid, VirtualGridHandle } from './components/VirtualGrid';
 import { GridItem } from './components/GridItem';
 import { MaintenanceView } from './components/MaintenanceView';
@@ -132,14 +132,14 @@ export default function App() {
     });
 
     const actions = useAppActions({
-        images, setImages, selectedIds, setSelectedIds,
-        viewingImageId, selectedImageIndex, setSelectedImageIndex,
-        filters, setCollections, refreshCollectionThumbnails,
-        toggleFavorite, privacyEnabled, setPrivacyEnabled,
-        settings, openModal: modals.openModal, closeModal: modals.closeModal,
-        contextMenu, fileOps, pendingViewerDeleteId: modals.pendingViewerDeleteId,
-        setPendingViewerDeleteId: modals.setPendingViewerDeleteId,
-        lastSelectedId
+        viewingImageId,
+        selectedImageIndex,
+        setSelectedImageIndex,
+        fileOps,
+        selectedIds,
+        setSelectedIds,
+        lastSelectedId,
+        modalManager: modals // Pass shared modal state
     });
 
     // Calculate Scope Total for Smart Counter
@@ -191,6 +191,7 @@ export default function App() {
         openRename: () => modals.openModal('rename'),
         openCollection: () => modals.openModal('addToCollection'),
         isModalOpen: modals.isAnyModalOpen,
+        closeAllModals: modals.closeAllModals,
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
         onCloseViewer: () => setSelectedImageIndex(null)
@@ -405,7 +406,7 @@ export default function App() {
                                                                         if (img) await actions.handlePinImage(id, !img.isPinned);
                                                                     }}
                                                                     onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                    isThumbnail={activeCollection ? activeCollection.thumbnail === img.thumbnailUrl : false}
+                                                                    isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
                                                                 />
                                                             )}
                                                         />
@@ -469,19 +470,13 @@ export default function App() {
                     filteredImages={images}
                     onSettingsSave={(s) => { setSettings(s); addToast('Settings saved', 'success'); }}
                     onExportConfirm={actions.handleExportConfirm}
-                    onRename={(pattern, start) => {
-                        let current = start;
-                        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, filename: pattern.replace(/#+/g, (m) => String(current++).padStart(m.length, '0')) + '.png' } : img));
-                        addToast(`Renamed ${selectedIds.size} images`, 'success');
-                        setSelectedIds(new Set());
-                    }}
+                    onRename={actions.handleRename}
                     onDeleteConfirm={actions.executeDelete}
                     onDeleteCollectionConfirm={() => {
                         if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
                         modals.closeModal('deleteCollection');
                         modals.setCollectionToDelete(null);
                     }}
-                    onToggleFavorite={(id) => toggleFavorite(id)}
                     onRecoverMetadata={actions.executeMetadataRecovery}
                     onAddImagesToCollection={colOps.addImagesToCollection}
                     pendingViewerDeleteId={modals.pendingViewerDeleteId}
@@ -536,74 +531,19 @@ export default function App() {
                     )}
                 </AnimatePresence>
 
-                {contextMenu && (
-                    <ContextMenu
-                        x={contextMenu.x} y={contextMenu.y}
-                        isPinned={images.find(i => i.id === contextMenu.imageId)?.isPinned}
-                        isFavorite={images.find(i => i.id === contextMenu.imageId)?.isFavorite}
-                        isMasked={isImageMasked(images.find(i => i.id === contextMenu.imageId)!, privacyEnabled, settings.maskedKeywords)}
-                        userMasked={images.find(i => i.id === contextMenu.imageId)?.userMasked}
-                        enableAI={settings.enableAI}
-                        activeCollectionName={activeCollection?.name}
-                        onClose={() => setContextMenu(null)}
-                        onCopyPrompt={() => {
-                            const img = images.find(i => i.id === contextMenu.imageId);
-                            if (img?.metadata.positivePrompt) {
-                                navigator.clipboard.writeText(img.metadata.positivePrompt);
-                                addToast('Prompt copied', 'success');
-                            }
-                            setContextMenu(null);
-                        }}
-                        onAddToCollection={() => { modals.openModal('addToCollection'); setContextMenu(null); }}
-                        onRemoveFromCollection={() => {
-                            if (filters.collectionId && contextMenu.imageId) {
-                                colOps.removeImagesFromCollection([contextMenu.imageId], filters.collectionId);
-                                setContextMenu(null);
-                            }
-                        }}
-                        onToggleFavorite={() => {
-                            if (contextMenu.imageId) {
-                                toggleFavorite(contextMenu.imageId);
-                                setContextMenu(null);
-                            }
-                        }}
-                        onTogglePin={async () => {
-                            const id = contextMenu.imageId;
-                            const img = images.find(i => i.id === id);
-                            if (img) {
-                                await actions.handlePinImage(id, !img.isPinned);
-                            }
-                            setContextMenu(null);
-                        }}
-                        onToggleMask={(val) => { actions.handleBulkMask(contextMenu.imageId, val); setContextMenu(null); }}
-                        onDelete={() => { settings.confirmDelete ? modals.openModal('deleteConfirm') : actions.executeDelete(); setContextMenu(null); }}
-                        onShowInFolder={async () => {
-                            const id = contextMenu.imageId;
-                            const { invoke } = await import('@tauri-apps/api/core');
-                            await invoke('show_in_folder', { path: id });
-                            addToast('Opening folder...', 'info');
-                            setContextMenu(null);
-                        }}
-                        onOpenInDefaultApp={async () => {
-                            const id = contextMenu.imageId;
-                            const { invoke } = await import('@tauri-apps/api/core');
-                            await invoke('open_in_default', { path: id });
-                            setContextMenu(null);
-                        }}
-                        onSetThumbnail={() => {
-                            if (filters.collectionId && contextMenu.imageId) {
-                                setCollections(prev => prev.map(c =>
-                                    c.id === filters.collectionId
-                                        ? { ...c, customThumbnail: contextMenu.imageId!, thumbnail: contextMenu.imageId! }
-                                        : c
-                                ));
-                                addToast("Thumbnail updated", "success");
-                            }
-                            setContextMenu(null);
-                        }}
-                        onUnsetThumbnail={() => { if (filters.collectionId) { setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c)); refreshCollectionThumbnails(); addToast("Thumbnail reset", "info"); } setContextMenu(null); }}
-                    />
-                )}
+                <AppContextMenu
+                    contextMenu={contextMenu}
+                    onClose={() => setContextMenu(null)}
+                    images={images}
+                    actions={actions}
+                    fileOps={fileOps}
+                    colOps={colOps}
+                    modals={modals}
+                    filters={filters}
+                    privacyEnabled={privacyEnabled}
+                    refreshCollectionThumbnails={refreshCollectionThumbnails}
+                    setCollections={setCollections}
+                />
             </div>
         </HashRouter >
     );

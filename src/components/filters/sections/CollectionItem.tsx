@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { FolderInput, Archive, Folder, Pin } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
+import { SmartImage } from '../../SmartImage';
 
 interface CollectionItemProps {
     col: Collection;
@@ -56,8 +57,8 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
             onDrop={(e) => handleDrop(e, col.id)}
             onContextMenu={(e) => handleContextMenu(e, col.id)}
             className={`relative rounded-xl transition-all duration-300 ease-spring group ${dropTargetId === col.id
-                    ? 'bg-sage-100 dark:bg-sage-900/50 ring-2 ring-sage-500 z-10 scale-105 overflow-hidden'
-                    : ''
+                ? 'bg-sage-100 dark:bg-sage-900/50 ring-2 ring-sage-500 z-10 scale-105 overflow-hidden'
+                : ''
                 }`}
         >
             {editingColId === col.id ? (
@@ -79,8 +80,8 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         }
                     }}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id
-                            ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
-                            : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
+                        ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
+                        : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
                         }`}
                 >
                     <div className="flex items-center gap-3 min-w-0 flex-1 pr-8 pointer-events-none">
@@ -88,7 +89,11 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                             <FolderInput className="w-8 h-8 text-sage-500 animate-pulse flex-shrink-0" />
                         ) : (col.customThumbnail || col.thumbnail) ? (
                             <div className="relative w-8 h-8 flex-shrink-0">
-                                <img src={col.customThumbnail || col.thumbnail} className={`w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5 ${col.isArchived ? 'grayscale opacity-70' : ''}`} alt="" />
+                                <SmartImage
+                                    src={col.customThumbnail || col.thumbnail || ''}
+                                    alt=""
+                                    imgClassName={`w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5 ${col.isArchived ? 'grayscale opacity-70' : ''}`}
+                                />
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
                             </div>
                         ) : (

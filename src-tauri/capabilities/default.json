@@ -69,10 +69,36 @@
       ]
     },
     {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
+        }
+      ]
+    },
+    {
       "identifier": "fs:allow-write",
       "allow": [
         {
           "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
         }
       ]
     },
@@ -81,6 +107,15 @@
       "allow": [
         {
           "path": "**"
+        },
+        {
+          "path": "C:\\**"
+        },
+        {
+          "path": "D:\\**"
+        },
+        {
+          "path": "$HOME\\**"
         }
       ]
     },

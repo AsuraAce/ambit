@@ -2,8 +2,10 @@ import * as React from 'react';
 import { useCallback } from 'react';
 import { Collection, AIImage, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface UseCollectionOperationsProps {
+  // ... existing props
   collections: Collection[];
   setCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
   smartCollections: SmartCollection[];
@@ -124,6 +126,14 @@ export const useCollectionOperations = ({
     addToast("Smart collection deleted", "info");
   }, [setSmartCollections, addToast]);
 
+  const setCollectionThumbnail = useCallback((collectionId: string, imageId: string) => {
+    const thumbUrl = convertFileSrc(imageId.replace(/\\/g, '/'));
+    setCollections(prev => prev.map(c =>
+      c.id === collectionId ? { ...c, customThumbnail: imageId, thumbnail: thumbUrl } : c
+    ));
+    addToast("Thumbnail updated", "success");
+  }, [setCollections, addToast]);
+
   const resetCollectionThumbnail = useCallback((id: string) => {
     setCollections(prev => prev.map(c => c.id === id ? { ...c, customThumbnail: undefined } : c));
     setTimeout(() => refreshCollectionThumbnails(), 0);
@@ -141,6 +151,7 @@ export const useCollectionOperations = ({
     removeImagesFromCollection,
     saveSmartCollection,
     deleteSmartCollection,
+    setCollectionThumbnail,
     resetCollectionThumbnail
   };
 };

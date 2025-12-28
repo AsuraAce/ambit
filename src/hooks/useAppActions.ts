@@ -1,40 +1,37 @@
+import * as React from 'react';
 import { AIImage, AppSettings, FilterState, Collection } from '../types';
 import { useToast } from './useToast';
+import { useLibraryContext } from './useLibraryContext';
+import { useModalManager } from './useModalManager';
 
 interface UseAppActionsProps {
-    images: AIImage[];
-    setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    selectedIds: Set<string>;
-    setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     viewingImageId: string | null;
     selectedImageIndex: number | null;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
-    filters: FilterState;
-    setCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-    refreshCollectionThumbnails: () => void;
-    toggleFavorite: (id: string) => void;
-    privacyEnabled: boolean;
-    setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-    settings: AppSettings;
-    openModal: (key: any) => void;
-    closeModal: (key: any) => void;
-    contextMenu: any;
     fileOps: any;
-    pendingViewerDeleteId: string | null;
-    setPendingViewerDeleteId: (id: string | null) => void;
+    selectedIds: Set<string>;
+    setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     lastSelectedId: string | null;
+    modalManager: any; // Renamed from modals
 }
 
 export const useAppActions = ({
-    images, setImages, selectedIds, setSelectedIds,
-    viewingImageId, selectedImageIndex, setSelectedImageIndex,
-    filters, setCollections, refreshCollectionThumbnails,
-    toggleFavorite, privacyEnabled, setPrivacyEnabled,
-    settings, openModal, closeModal, contextMenu, fileOps,
-    pendingViewerDeleteId, setPendingViewerDeleteId,
-    lastSelectedId
+    viewingImageId,
+    selectedImageIndex,
+    setSelectedImageIndex,
+    fileOps,
+    selectedIds,
+    setSelectedIds,
+    lastSelectedId,
+    modalManager: modals // Destructure with alias for minimum logic change
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
+    const {
+        images, setImages, filters, setCollections,
+        refreshCollectionThumbnails, toggleFavorite,
+        privacyEnabled, setPrivacyEnabled, settings
+    } = useLibraryContext();
+    const { openModal, closeModal, pendingViewerDeleteId, setPendingViewerDeleteId } = modals;
 
     const executeDelete = () => {
         const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
@@ -66,8 +63,8 @@ export const useAppActions = ({
         }
     };
 
-    const handleExportConfirm = async (filename: string) => {
-        await fileOps.exportImages(filename, selectedIds, () => {
+    const handleExportConfirm = async (filename: string, folder: string) => {
+        await fileOps.exportImages(filename, selectedIds, folder, () => {
             setSelectedIds(new Set());
             closeModal('export');
         });
@@ -93,10 +90,6 @@ export const useAppActions = ({
                 return (b.timestamp || 0) - (a.timestamp || 0);
             });
         });
-
-        if (filters.collectionId) {
-            setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c));
-        }
 
         const ids = Array.from(selectedIds);
         const { toggleImagePin } = await import('../services/db/imageRepo');
@@ -163,8 +156,15 @@ export const useAppActions = ({
         addToast(next ? "Privacy Mode Enabled" : "Privacy Mode Disabled (Hidden/Blurred items revealed)", "info");
     };
 
+    const handleRename = (pattern: string, start: number) => {
+        let current = start;
+        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, filename: pattern.replace(/#+/g, (m) => String(current++).padStart(m.length, '0')) + '.png' } : img));
+        addToast(`Renamed ${selectedIds.size} images`, 'success');
+        setSelectedIds(new Set());
+    };
+
     const executeMetadataRecovery = async (style: any) => {
-        const targetId = contextMenu?.imageId || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null) || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || viewingImageId;
+        const targetId = viewingImageId || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
         if (!targetId) return;
         fileOps.recoverMetadata(targetId, style, () => closeModal('recovery'));
     };
@@ -177,10 +177,6 @@ export const useAppActions = ({
                 return (b.timestamp || 0) - (a.timestamp || 0);
             });
         });
-
-        if (filters.collectionId) {
-            setCollections(prev => prev.map(c => c.id === filters.collectionId ? { ...c, customThumbnail: undefined } : c));
-        }
 
         await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
         refreshCollectionThumbnails();
@@ -214,6 +210,8 @@ export const useAppActions = ({
         executeMetadataRecovery,
         handlePinImage,
         handleShortcutFavorite,
-        handleShortcutPin
+        handleShortcutPin,
+        handleRename,
+        toggleFavorite
     };
 };

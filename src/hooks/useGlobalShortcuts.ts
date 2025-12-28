@@ -28,6 +28,7 @@ interface GlobalShortcutsProps {
 
     // UI Toggles
     isModalOpen: boolean; // General check if any modal is open
+    closeAllModals: () => void;
     toggleShortcuts: () => void;
     toggleCommandPalette: () => void;
     onCloseViewer: () => void;
@@ -54,6 +55,7 @@ export const useGlobalShortcuts = ({
     openRename,
     openCollection,
     isModalOpen,
+    closeAllModals,
     toggleShortcuts,
     toggleCommandPalette,
     onCloseViewer,
@@ -97,7 +99,12 @@ export const useGlobalShortcuts = ({
             // If any modal is open, we generally block standard navigation/actions
             // Exception: Escape (to close modal logic handled by modal) or Enter (handled by modal)
             if (isModalOpen) {
-                // We explicitly allow Escape to bubble or be handled, but block 'Delete', 'Space', 'Arrows'
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeAllModals();
+                    return;
+                }
+                // We explicitly block 'Delete', 'Space', 'Arrows' etc while modal is open
                 if (['Delete', 'Backspace', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'f'].includes(e.key)) {
                     return;
                 }
@@ -241,6 +248,7 @@ export const useGlobalShortcuts = ({
         toggleFavorite,
         togglePin,
         openRename,
-        openCollection
+        openCollection,
+        closeAllModals
     ]);
 };

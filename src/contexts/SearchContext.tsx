@@ -153,16 +153,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     useEffect(() => {
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections);
-        setActiveSqlWhere(where);
-        setActiveSqlParams(params);
 
-        if (where !== activeSqlWhere) {
-            setImages([]);
-            setHasMoreImages(true);
-            setTotalImages(0);
-            setIsFiltering(true);
+        // Deep comparison for params to avoid re-fetches if contents are same
+        const paramsChanged = JSON.stringify(params) !== JSON.stringify(activeSqlParams);
+        const whereChanged = where !== activeSqlWhere;
+
+        if (whereChanged || paramsChanged) {
+            setActiveSqlWhere(where);
+            setActiveSqlParams(params);
+
+            if (whereChanged) {
+                setImages([]);
+                setHasMoreImages(true);
+                setTotalImages(0);
+                setIsFiltering(true);
+            }
         }
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
         fetchData(false);

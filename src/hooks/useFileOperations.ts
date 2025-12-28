@@ -118,15 +118,18 @@ export const useFileOperations = ({
         }
     };
 
-    const exportImages = async (ids: string[]) => {
-        const targetImages = images.filter(img => ids.includes(img.id));
-        if (targetImages.length === 0) return;
+    const exportImages = async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
+        const idArray = Array.from(ids);
+        const targetImages = images.filter(img => idArray.includes(img.id));
+        if (targetImages.length === 0 || !destinationFolder) return;
 
         setIsExporting(true);
         try {
-            await exportImagesToZip(targetImages);
+            await exportImagesToZip(targetImages, destinationFolder, filename);
             addToast(`Export complete`, 'success');
+            if (onComplete) onComplete();
         } catch (error) {
+            console.error("Export error", error);
             addToast("Export failed", "error");
         } finally {
             setIsExporting(false);
