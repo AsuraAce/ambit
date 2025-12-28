@@ -32,23 +32,11 @@ export const useSelection = (filteredImages: AIImage[]) => {
         });
       }
     } else {
-      // Standard behavior: Select ONLY this item
-      // But if we are already selecting this one and only this one, maybe we want to keep it?
-      // Or maybe we want to allow deselecting if clicking the same item?
-      // Standard file manager: Clicking selected item keeps it selected. Clicking other item selects new one.
-      // Clicking background (handled elsewhere) deselects.
-
-      // If we want to support "click again to view", check if it's already selected and lastSelectedId is the same.
-      // For now, let's just make it select.
-      setSelectedIds(new Set([id]));
+      // Standard behavior: Open viewer on single click
+      // We explicitly DO NOT select it here to avoid spawning the selection bar
+      // as per user request. We just set it as the last selected (focus)
       setLastSelectedId(id);
-
-      // Optional: If we want to support immediate view on click, we could call callback here
-      // but usually viewing is double click or separate intent.
-      // If the caller wants view on single click, they should probably rely on a separate prop or double click.
-      // However, the original code had:
-      // if (selectedIds.size > 0) { clear } else { view }
-      // The user wants "single click selection". So we select.
+      setSelectedViewerIndex(index);
     }
   }, [filteredImages, lastSelectedId, selectedIds]);
 

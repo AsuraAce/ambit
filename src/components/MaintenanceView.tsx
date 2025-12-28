@@ -162,16 +162,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // useSelection.handleImageClick expects `(e, id, index, setViewerIndex)`
     const handleItemClickAdapter = useCallback((id: string, index: number, e: React.MouseEvent) => {
         handleImageClick(e, id, index, () => {
-            // Default click action if not selecting: View Image?
-            // In Maintenance, maybe we don't auto-open viewer on click unless valid?
-            // For now, let's say simple click just SELECTS exclusively (standard file manager)
-            // useSelection handles this logic (clears others, selects this).
-            // If we want to open viewer, we can check if it was a simple click and `selectedIds` has only this one?
-            // Actually useSelection calls the callback if it's a "navigate" click (no modifier).
-            // We can use that to open viewer? Or just select.
-            // Maintenance items usually require explicit action to view.
+            setViewingImageId(id);
         });
-    }, [handleImageClick]);
+    }, [handleImageClick, setViewingImageId]);
 
     const handleSelectAll = useCallback(() => {
         const ids = currentList.map(i => i.id);
