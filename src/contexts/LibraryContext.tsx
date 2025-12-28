@@ -58,21 +58,25 @@ export interface LibraryContextType {
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
+
 export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   return (
-    <SettingsProvider>
-      <CollectionProvider>
-        <SearchProvider>
-          <SyncProviderWrapper>
-            <WatcherProviderWrapper>
-              <LibraryContextWrapper>
-                {children}
-              </LibraryContextWrapper>
-            </WatcherProviderWrapper>
-          </SyncProviderWrapper>
-        </SearchProvider>
-      </CollectionProvider>
-    </SettingsProvider>
+    <ErrorBoundary>
+      <SettingsProvider>
+        <CollectionProvider>
+          <SearchProvider>
+            <SyncProviderWrapper>
+              <WatcherProviderWrapper>
+                <LibraryContextWrapper>
+                  {children}
+                </LibraryContextWrapper>
+              </WatcherProviderWrapper>
+            </SyncProviderWrapper>
+          </SearchProvider>
+        </CollectionProvider>
+      </SettingsProvider>
+    </ErrorBoundary>
   );
 };
 

@@ -1,5 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getDb } from './connection';
+import { normalizePath } from '../../utils/pathUtils';
 
 export const getCollectionThumbnail = async (imageIds: string[]): Promise<string | undefined> => {
     if (!imageIds || imageIds.length === 0) return undefined;
@@ -7,7 +8,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
     try {
         const BATCH_SIZE = 900;
-        const normalizedIds = imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
+        const normalizedIds = imageIds.map(normalizePath);
 
         let candidates: Array<{ path: string, timestamp: number, is_pinned: number }> = [];
 
@@ -45,7 +46,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
         if (!rawPath) return undefined;
         return (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:'))
             ? rawPath
-            : convertFileSrc(rawPath.replace(/\\/g, '/'));
+            : convertFileSrc(normalizePath(rawPath));
 
     } catch (e) {
         console.error('[DB] Fail collection thumb', e);
@@ -91,10 +92,10 @@ export const hydrateCollections = async (): Promise<Record<string, { count: numb
         thumbRows.forEach(row => {
             if (row.board_id && map[row.board_id]) {
                 const raw = row.thumbnail_path;
-                map[row.board_id].thumbnail = (raw && !raw.startsWith('http')) ? convertFileSrc(raw.replace(/\\/g, '/')) : raw;
+                map[row.board_id].thumbnail = (raw && !raw.startsWith('http')) ? convertFileSrc(normalizePath(raw)) : raw;
             } else if (row.board_id) {
                 const raw = row.thumbnail_path;
-                map[row.board_id] = { count: 0, thumbnail: (raw && !raw.startsWith('http')) ? convertFileSrc(raw.replace(/\\/g, '/')) : raw };
+                map[row.board_id] = { count: 0, thumbnail: (raw && !raw.startsWith('http')) ? convertFileSrc(normalizePath(raw)) : raw };
             }
         });
 

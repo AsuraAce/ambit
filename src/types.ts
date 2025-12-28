@@ -61,6 +61,7 @@ export interface ParseResult {
   fileSize?: number;
   timestamp?: number;
   thumbnail?: string;
+  error?: boolean;
 }
 
 export interface AIImage {

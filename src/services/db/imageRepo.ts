@@ -153,37 +153,42 @@ export const toggleImageIntermediate = async (id: string, isIntermediate: boolea
 
 export const deleteImage = async (id: string) => {
     const db = await getDb();
-    await db.execute('DELETE FROM images WHERE id = $1', [id]);
+    const normalizedId = normalizePath(id);
+    await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
 };
 
 export const markAsDeleted = async (ids: string[], deleted: boolean) => {
     if (ids.length === 0) return;
+    const normalizedIds = ids.map(normalizePath);
     const db = await getDb();
-    const placeholders = ids.map(() => '?').join(',');
-    await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [deleted ? 1 : 0, ...ids]);
+    const placeholders = normalizedIds.map(() => '?').join(',');
+    await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [deleted ? 1 : 0, ...normalizedIds]);
 };
 
 export const updateImageWorkflow = async (id: string, workflowJson: string): Promise<void> => {
     const db = await getDb();
-    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [id]) as any[];
+    const normalizedId = normalizePath(id);
+    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]) as any[];
     if (rows.length === 0) return;
 
     try {
         const metadata = JSON.parse(rows[0].metadata_json);
         metadata.workflowJson = workflowJson;
 
-        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), id]);
+        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
     } catch (e) {
-        console.error('[DB] Failed to update workflow for image', id, e);
+        console.error('[DB] Failed to update workflow for image', normalizedId, e);
     }
 };
 
 export const updateFavorite = async (id: string, isFavorite: boolean) => {
     const db = await getDb();
-    await db.execute('UPDATE images SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id]);
+    const normalizedId = normalizePath(id);
+    await db.execute('UPDATE images SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, normalizedId]);
 };
 
 export const updatePinned = async (id: string, isPinned: boolean) => {
     const db = await getDb();
-    await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, id]);
+    const normalizedId = normalizePath(id);
+    await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, normalizedId]);
 };

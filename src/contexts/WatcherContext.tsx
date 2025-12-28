@@ -4,6 +4,8 @@ import { useSettings } from './SettingsContext';
 import { useSync } from './SyncContext';
 import { useToast } from '../hooks/useToast';
 import { watcherService } from '../services/WatcherService';
+import { startLiveLink } from '../services/invoke/liveLink';
+import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -15,7 +17,7 @@ interface WatcherContextType {
 const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
 
 export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: () => void }> = ({ children, onNewImageDetected }) => {
-    const { settings } = useSettings();
+    const { settings, isLoaded } = useSettings();
     const { startInvokeSync } = useSync();
     const { addToast } = useToast();
 
@@ -32,22 +34,23 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const liveLinkCleanupRef = useRef<(() => void) | null>(null);
 
     const refreshMaintenanceCounts = useCallback(async () => {
+        if (!isLoaded) return;
         try {
-            const { getMaintenanceCounts } = await import('../services/db/maintenanceRepo');
             const counts = await getMaintenanceCounts();
             setMaintenanceCounts(counts);
         } catch (e) {
             console.error("Failed to refresh maintenance counts", e);
         }
-    }, []);
+    }, [isLoaded]);
 
     // Initial maintenance count
     useEffect(() => {
-        refreshMaintenanceCounts();
-    }, [refreshMaintenanceCounts]);
+        if (isLoaded) refreshMaintenanceCounts();
+    }, [isLoaded, refreshMaintenanceCounts]);
 
     // Standard Watcher (Monitored Folders)
     useEffect(() => {
+        if (!isLoaded) return;
         const initWatcher = async () => {
             await watcherService.startWatching(settings, (event) => {
                 if (onNewImageDetected) onNewImageDetected();
@@ -55,23 +58,22 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             });
         };
 
-        if (settings.monitoredFolders) {
+        if (settings.monitoredFolders && settings.monitoredFolders.length > 0) {
             initWatcher();
         }
 
         return () => { watcherService.stopWatching(); };
-    }, [settings.monitoredFolders, onNewImageDetected, refreshMaintenanceCounts]);
+    }, [isLoaded, settings, onNewImageDetected, refreshMaintenanceCounts]);
 
     // Live Watch (InvokeAI)
     useEffect(() => {
-        if (!isLiveWatching || !settings.invokeAiPath) {
+        if (!isLoaded || !isLiveWatching || !settings.invokeAiPath) {
             liveLinkCleanupRef.current?.();
             liveLinkCleanupRef.current = null;
             return;
         }
 
         const startLiveWatch = async () => {
-            const { startLiveLink } = await import('../services/invoke/liveLink');
             liveLinkCleanupRef.current = await startLiveLink(
                 settings.invokeAiPath!,
                 async () => {
@@ -87,13 +89,14 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             liveLinkCleanupRef.current?.();
             liveLinkCleanupRef.current = null;
         };
-    }, [isLiveWatching, settings.invokeAiPath, startInvokeSync, onNewImageDetected, addToast]);
+    }, [isLoaded, isLiveWatching, settings.invokeAiPath, startInvokeSync, onNewImageDetected, addToast]);
 
     // Maintenance interval
     useEffect(() => {
+        if (!isLoaded) return;
         const interval = setInterval(refreshMaintenanceCounts, 60000);
         return () => clearInterval(interval);
-    }, [refreshMaintenanceCounts]);
+    }, [isLoaded, refreshMaintenanceCounts]);
 
     return (
         <WatcherContext.Provider value={{

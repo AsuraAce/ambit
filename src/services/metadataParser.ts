@@ -1,5 +1,6 @@
 import { ImageMetadata, GeneratorTool, ParseResult, AIImage } from '../types';
 import { invoke } from '@tauri-apps/api/core';
+import { getFilename } from '../utils/pathUtils';
 
 // Initializing the worker
 // Using ?worker&inline might be needed depending on Vite config, 
@@ -48,45 +49,54 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
 
 // -- Public API --
 
-export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult> => {
+// -- Internal Helpers --
+
+const processScanResult = async (info: any, path: string): Promise<ParseResult> => {
+    if (info.failed || info.error) {
+        console.error(`Scan failed for ${path}:`, info.error);
+        return {
+            metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
+            extra: {},
+            width: 0,
+            height: 0,
+            fileSize: 0,
+            timestamp: Date.now(),
+            error: true
+        };
+    }
+
+    // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
+    if (info.metadata) {
+        return {
+            metadata: info.metadata,
+            extra: {},
+            isIntermediate: info.metadata.isIntermediate,
+            width: info.width,
+            height: info.height,
+            fileSize: info.size,
+            timestamp: info.modified,
+            thumbnail: info.thumbnail
+        };
+    }
+
+    // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
+    if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
+        return {
+            metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
+            extra: {},
+            isIntermediate: true,
+            width: info.width,
+            height: info.height,
+            fileSize: info.size,
+            timestamp: info.modified,
+            thumbnail: info.thumbnail
+        };
+    }
+
+    const filename = path.split(/[\\/]/).pop() || "unknown";
+
     try {
-        // 1. Rust Side (Fast I/O & Basic Parse & Thumbnail Gen)
-        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow }) as any;
-
-        // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
-        if (info.metadata) {
-            return {
-                metadata: info.metadata,
-                extra: {},
-                isIntermediate: info.metadata.isIntermediate,
-                width: info.width,
-                height: info.height,
-                fileSize: info.size,
-                timestamp: info.modified,
-                thumbnail: info.thumbnail
-            };
-        }
-
-        // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
-        if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
-            // It's likely an intermediate or raw save
-            return {
-                metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
-                extra: {},
-                isIntermediate: true, // Mark as intermediate to allow filtering
-                width: info.width,
-                height: info.height,
-                fileSize: info.size,
-                timestamp: info.modified,
-                thumbnail: info.thumbnail
-            };
-        }
-
-        const filename = path.split(/[\\/]/).pop() || "unknown";
-
-        // 2. Offload Parsing to Worker
         const { metadata, extra } = await parseInWorker(info.chunks, filename);
-
         return {
             metadata,
             extra,
@@ -96,7 +106,26 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
             timestamp: info.modified,
             thumbnail: info.thumbnail
         };
+    } catch (workerError) {
+        console.error(`Worker parse failed/timed out for ${path}:`, workerError);
+        return {
+            metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
+            extra: {},
+            width: info.width,
+            height: info.height,
+            fileSize: info.size,
+            timestamp: info.modified,
+            thumbnail: info.thumbnail
+        };
+    }
+};
 
+// -- Public API --
+
+export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult> => {
+    try {
+        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow }) as any;
+        return await processScanResult(info, path);
     } catch (e) {
         console.error("Native scan failed", e);
         return {
@@ -112,84 +141,14 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
 
 export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false): Promise<ParseResult[]> => {
     try {
-        // 1. Bulk Scan in Rust
         const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail }) as any[];
 
-        // 2. Process results
-        // We map each result to a promise that resolves to the final ParseResult
-        const tasks = results.map(async (info, index) => {
-            const path = paths[index]; // Correlation by index, assuming preserved order (Rayon collect preserves order)
-
-            if (info.failed || info.error) {
-                console.error(`Bulk scan failed for ${path}:`, info.error);
-                return {
-                    metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
-                    extra: {},
-                    width: 0,
-                    height: 0,
-                    fileSize: 0,
-                    timestamp: Date.now(),
-                    error: true // Optional flag if we want to filter later
-                };
-            }
-
-            const filename = path.split(/[\\/]/).pop() || "unknown";
-
-            // If Rust parsed it, use it!
-            if (info.metadata) {
-                return {
-                    metadata: info.metadata,
-                    extra: {},
-                    isIntermediate: info.metadata.isIntermediate,
-                    width: info.width,
-                    height: info.height,
-                    fileSize: info.size,
-                    timestamp: info.modified,
-                    thumbnail: info.thumbnail
-                };
-            }
-
-            // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
-            if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
-                return {
-                    metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
-                    extra: {},
-                    isIntermediate: true,
-                    width: info.width,
-                    height: info.height,
-                    fileSize: info.size,
-                    timestamp: info.modified,
-                    thumbnail: info.thumbnail
-                };
-            }
-
-            try {
-                const { metadata, extra } = await parseInWorker(info.chunks, filename);
-                return {
-                    metadata,
-                    extra,
-                    width: info.width,
-                    height: info.height,
-                    fileSize: info.size,
-                    timestamp: info.modified,
-                    thumbnail: info.thumbnail
-                };
-            } catch (workerError) {
-                console.error(`Worker parse failed for ${path}`, workerError);
-                return {
-                    metadata: { tool: GeneratorTool.UNKNOWN },
-                    extra: {},
-                    width: info.width,
-                    height: info.height,
-                    fileSize: info.size,
-                    timestamp: info.modified,
-                    thumbnail: info.thumbnail
-                };
-            }
+        const tasks = results.map((info, index) => {
+            const path = paths[index];
+            return processScanResult(info, path);
         });
 
         return Promise.all(tasks);
-
     } catch (e) {
         console.error("Bulk scan invocation failed", e);
         return [];
@@ -227,7 +186,7 @@ export const scanImageWorkflow = async (path: string): Promise<string | null> =>
         // If it's a JSON string, it might be the raw workflow already
         if (result.trim().startsWith('{')) {
             // But it might also be a metadata blob that needs parsing by the worker
-            const filename = path.split(/[\\/]/).pop() || "unknown";
+            const filename = getFilename(path);
             const { metadata } = await parseInWorker({ chunks: { invokeai_metadata: result } }, filename);
             return metadata.workflowJson || result;
         }

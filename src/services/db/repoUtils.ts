@@ -1,16 +1,17 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage } from '../../types';
 
 // Helper to keep mapping consistent
 export function mapRowToImage(row: any): AIImage {
-    const normalizedPath = row.path.replace(/\\/g, '/');
-    const thumbPath = row.thumbnail_path ? row.thumbnail_path.replace(/\\/g, '/') : null;
+    const normalizedPath = normalizePath(row.path);
+    const thumbPath = row.thumbnail_path ? normalizePath(row.thumbnail_path) : null;
 
     return {
         id: row.id,
         url: convertFileSrc(normalizedPath),
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
-        filename: normalizedPath.split('/').pop() || row.path,
+        filename: getFilename(normalizedPath),
         fileSize: row.file_size,
         timestamp: row.timestamp,
         width: row.width,
