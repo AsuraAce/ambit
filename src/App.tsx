@@ -269,6 +269,9 @@ export default function App() {
                     />
 
                     <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-zinc-800/50 overflow-hidden relative">
+                        {/* Spotlight Effect */}
+                        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.08),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.15),transparent_60%)] z-10" />
+
                         {isSearchFocused && <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSearchFocused(false)} />}
 
                         <AppHeader
@@ -296,7 +299,7 @@ export default function App() {
                         <div className="flex-1 flex overflow-hidden min-h-0 relative">
 
 
-                            <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar px-2' : 'overflow-hidden'}`}>
+                            <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
                                 <ErrorBoundary>
                                     {viewMode === 'dashboard' ? (
                                         <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); setViewMode('grid'); }} />

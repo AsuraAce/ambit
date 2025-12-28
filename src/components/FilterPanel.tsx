@@ -156,10 +156,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
                     />
                 </div>
+            </div>
 
-                <div className="mt-auto pt-6">
-                    <DateRangeSection filters={filters} setFilters={setFilters} />
-                </div>
+            <div className="p-4 pt-0 border-t border-transparent">
+                <DateRangeSection filters={filters} setFilters={setFilters} />
             </div>
 
             {/* Footer / Status */}
