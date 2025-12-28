@@ -15,6 +15,8 @@ interface ViewControlsProps {
     setThumbnailSize: (size: number) => void;
     displayedCount: number;
     totalCount: number;
+    scopeName: string;
+    isFiltering?: boolean;
 }
 
 export const ViewControls: React.FC<ViewControlsProps> = ({
@@ -28,7 +30,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     thumbnailSize,
     setThumbnailSize,
     displayedCount,
-    totalCount
+    totalCount,
+    scopeName,
+    isFiltering
 }) => {
     const [showSortMenu, setShowSortMenu] = useState(false);
 
@@ -131,15 +135,21 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
             <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
 
-            <div className="text-xs font-bold text-gray-500/80 uppercase tracking-tighter tabular-nums text-right min-w-[100px]">
+            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
                 {displayedCount !== totalCount ? (
                     <>
-                        <span className="text-sage-600 dark:text-sage-400">{displayedCount.toLocaleString()}</span>
-                        <span className="mx-1 opacity-40">/</span>
-                        <span>{totalCount.toLocaleString()}</span>
+                        <div className="flex items-center gap-1">
+                            <span className="text-sage-600 dark:text-sage-400">{isFiltering && displayedCount === 0 ? '...' : displayedCount.toLocaleString()}</span>
+                            <span className="opacity-40">/</span>
+                            <span className="text-gray-600 dark:text-gray-300">{totalCount.toLocaleString()}</span>
+                        </div>
+                        <span className="text-[8px] opacity-60">{isFiltering ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}</span>
                     </>
                 ) : (
-                    <span>{totalCount.toLocaleString()} IMAGES</span>
+                    <>
+                        <span className="text-gray-600 dark:text-gray-300">{totalCount.toLocaleString()}</span>
+                        <span className="text-[8px] opacity-60">TOTAL {scopeName}</span>
+                    </>
                 )}
             </div>
         </div>

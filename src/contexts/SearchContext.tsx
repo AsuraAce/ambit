@@ -29,7 +29,8 @@ interface SearchContextType {
     setSortOption: React.Dispatch<React.SetStateAction<SortOption>>;
     facets: Facets;
     stats: LibraryStats;
-    totalImages: number;
+    totalImages: number; // This is the MATCHING count
+    globalTotal: number; // Total non-deleted images in library
     hasMoreImages: boolean;
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
@@ -73,6 +74,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
 
     const [totalImages, setTotalImages] = useState(0);
+    const [globalTotal, setGlobalTotal] = useState(0);
     const [hasMoreImages, setHasMoreImages] = useState(true);
     const [isFiltering, setIsFiltering] = useState(false);
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -120,29 +122,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
 
             if (!isLoadMore) {
-                const count = await countImages(currentWhere, currentParams);
+                const [count, newBatch, globalCount] = await Promise.all([
+                    countImages(currentWhere, currentParams),
+                    searchImages(currentWhere, currentParams, PAGE_SIZE, 0, sortField, sortOrder),
+                    countImages('WHERE is_deleted = 0', [])
+                ]);
+
                 setTotalImages(count);
+                setImages(newBatch);
+                setGlobalTotal(globalCount);
+                setHasMoreImages(newBatch.length >= PAGE_SIZE);
                 refreshMetadata();
-
-                if (count === 0) {
-                    setImages([]);
-                    setHasMoreImages(false);
-                    isFetchingRef.current = false;
-                    setIsFiltering(false);
-                    return;
-                }
-            }
-
-            const offset = isLoadMore ? imagesRef.current.length : 0;
-            const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder);
-
-            if (newBatch.length < PAGE_SIZE) {
-                setHasMoreImages(false);
             } else {
-                setHasMoreImages(true);
+                const offset = imagesRef.current.length;
+                const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder);
+                setImages(prev => [...prev, ...newBatch]);
+                setHasMoreImages(newBatch.length >= PAGE_SIZE);
             }
-
-            setImages(prev => isLoadMore ? [...prev, ...newBatch] : newBatch);
         } catch (e) {
             console.error("Failed to fetch images", e);
         } finally {
@@ -162,12 +158,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setActiveSqlWhere(where);
             setActiveSqlParams(params);
 
-            if (whereChanged) {
-                setImages([]);
-                setHasMoreImages(true);
-                setTotalImages(0);
-                setIsFiltering(true);
-            }
+            // Reset results immediately to avoid "bleed" from previous filters/collections
+            setImages([]);
+            setHasMoreImages(true);
+            setTotalImages(0);
+            setIsFiltering(true);
         }
     }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, activeSqlWhere, activeSqlParams]);
 
@@ -175,13 +170,18 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         fetchData(false);
     }, [activeSqlWhere, activeSqlParams, sortOption]);
 
-    // Persistence load
+    // Persistence load & Global count
     useEffect(() => {
-        const loadSearch = async () => {
-            const state = await appRepository.load();
+        const loadInitial = async () => {
+            const { countImages } = await import('../services/db/searchRepo');
+            const [state, globalCount] = await Promise.all([
+                appRepository.load(),
+                countImages('WHERE is_deleted = 0', [])
+            ]);
             if (state.recentSearches) setRecentSearches(state.recentSearches);
+            setGlobalTotal(globalCount);
         };
-        loadSearch();
+        loadInitial();
     }, []);
 
     // Persistence save
@@ -253,6 +253,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             facets,
             stats,
             totalImages,
+            globalTotal,
             hasMoreImages,
             loadMoreImages,
             clearAllFilters,

@@ -32,10 +32,12 @@ interface AppHeaderProps {
     setSortOption: (opt: SortOption) => void;
     displayedCount: number;
     totalCount: number;
+    scopeName: string;
     onImport: () => void;
     onSlideshow: () => void;
     clearAllFilters: () => void;
     isImporting: boolean;
+    isFiltering?: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -49,10 +51,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     setSortOption,
     displayedCount,
     totalCount,
+    scopeName,
     onImport,
     onSlideshow,
     clearAllFilters,
-    isImporting
+    isImporting,
+    isFiltering
 }) => {
     const { settings, setSettings, recentSearches, setRecentSearches, isLiveWatching, setIsLiveWatching } = useLibraryContext();
 
@@ -105,6 +109,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         setThumbnailSize={(size) => setSettings(p => ({ ...p, thumbnailSize: size }))}
                         displayedCount={displayedCount}
                         totalCount={totalCount}
+                        scopeName={scopeName}
+                        isFiltering={isFiltering}
                     />
                 </div>
             </div>

@@ -26,6 +26,7 @@ export interface LibraryContextType {
   facets: any;
   stats: any;
   totalImages: number;
+  globalTotal: number;
   hasMoreImages: boolean;
   loadMoreImages: () => Promise<void>;
   startInvokeSync: (options?: any) => Promise<void>;

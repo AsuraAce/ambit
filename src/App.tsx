@@ -49,7 +49,7 @@ export default function App() {
         smartCollections, setSmartCollections, settings, setSettings,
         setRecentSearches, refreshCollectionThumbnails,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
-        totalImages, loadMoreImages,
+        totalImages, globalTotal, loadMoreImages,
         privacyEnabled, setPrivacyEnabled,
         isFiltering, toggleFavorite,
         refreshMaintenanceCounts
@@ -142,10 +142,16 @@ export default function App() {
         modalManager: modals // Pass shared modal state
     });
 
-    // Calculate Scope Total for Smart Counter
-    const scopeTotal = filters.collectionId && collections.find(c => c.id === filters.collectionId)
-        ? collections.find(c => c.id === filters.collectionId)!.imageIds.length
-        : totalImages;
+    // Calculate Scope Context for Smart Counter
+    const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
+    const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;
+
+    const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
+    const scopeTotal = Math.max(
+        activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
+            (activeSmartCollection ? totalImages : globalTotal),
+        totalImages
+    );
 
     // --- Extracted Hooks ---
     const { isDraggingExternal } = useDragDrop({
@@ -197,7 +203,6 @@ export default function App() {
         onCloseViewer: () => setSelectedImageIndex(null)
     });
 
-    const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : undefined;
 
     // Determine which image to show in viewer
     const displayedViewerImage = viewingImageId
@@ -288,8 +293,10 @@ export default function App() {
                             setLayoutMode={setLayoutMode}
                             sortOption={sortOption}
                             setSortOption={setSortOption}
-                            displayedCount={images.length}
+                            displayedCount={totalImages}
                             totalCount={scopeTotal}
+                            scopeName={scopeName}
+                            isFiltering={isFiltering}
                             onImport={() => fileOps.fileInputRef.current?.click()}
                             onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                             clearAllFilters={clearAllFilters}
