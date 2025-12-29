@@ -351,7 +351,7 @@ export default function App() {
                                                 <GridSkeleton layout={layoutMode} />
                                             ) : (
                                                 <>
-                                                    {(filters.collectionId && viewMode !== 'timeline') && (
+                                                    {(filters.collectionId && viewMode !== 'timeline' && !filters.pinnedOnly) && (
                                                         <PinnedShelf
                                                             images={images.filter(i => i.isPinned)}
                                                             isCollapsed={modals.isPinnedShelfCollapsed}
@@ -385,15 +385,18 @@ export default function App() {
                                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                             onSelectionToggle={handleSelectionToggle}
                                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
+                                                            onTogglePin={async (e, id) => {
+                                                                const img = images.find(i => i.id === id);
+                                                                if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                            }}
                                                             onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
                                                             onRangeSelection={handleRangeSelection}
                                                             onBackgroundClick={clearSelection}
-                                                            showPinsAsShelf={!!filters.collectionId}
                                                         />
                                                     ) : (
                                                         <VirtualGrid<AIImage>
                                                             ref={gridRef}
-                                                            items={filters.collectionId ? images.filter(i => !i.isPinned) : images}
+                                                            items={(filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images}
                                                             layout={layoutMode}
                                                             minItemWidth={settings.thumbnailSize}
                                                             gap={16}
@@ -407,15 +410,15 @@ export default function App() {
                                                             }}
                                                             onLayoutChange={handleLayoutChange}
                                                             onRangeSelection={(indices, isAdditive) => {
-                                                                const itemsInGrid = filters.collectionId ? images.filter(i => !i.isPinned) : images;
-                                                                const pinnedInShelf = filters.collectionId ? images.filter(i => i.isPinned) : [];
+                                                                const itemsInGrid = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images;
+                                                                const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
                                                                 const pinnedCount = pinnedInShelf.length;
                                                                 const globalIndices = indices.map(idx => idx + pinnedCount);
                                                                 handleRangeSelection(globalIndices, isAdditive);
                                                             }}
                                                             onBackgroundClick={clearSelection}
                                                             renderItem={(img, style, index, layout) => {
-                                                                const pinnedInShelf = filters.collectionId ? images.filter(i => i.isPinned) : [];
+                                                                const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
                                                                 const pinnedCount = pinnedInShelf.length;
                                                                 return (
                                                                     <GridItem

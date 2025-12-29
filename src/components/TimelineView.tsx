@@ -16,6 +16,7 @@ interface TimelineViewProps {
     onImageClick: (e: React.MouseEvent, id: string, index: number) => void;
     onSelectionToggle: (e: React.MouseEvent, id: string) => void;
     onToggleFavorite: (e: React.MouseEvent, id: string) => void;
+    onTogglePin?: (e: React.MouseEvent, id: string) => void;
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
     onBackgroundClick?: () => void;
@@ -23,7 +24,6 @@ interface TimelineViewProps {
     // Privacy Props
     maskedKeywords: string[];
     privacyEnabled: boolean;
-    showPinsAsShelf?: boolean;
 }
 // ... (keep chunk helper if inside range, wait, my target content starts at imports)
 
@@ -47,14 +47,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onImageClick,
     onSelectionToggle,
     onToggleFavorite,
+    onTogglePin,
     onContextMenu,
     onRangeSelection,
     onBackgroundClick,
     maskedKeywords,
-    privacyEnabled,
-    showPinsAsShelf = true
+    privacyEnabled
 }) => {
-    const { groups } = useTimeline(images, sortOption, showPinsAsShelf);
+    const { groups } = useTimeline(images, sortOption);
     const containerRef = useRef<HTMLDivElement>(null);
     const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
@@ -119,19 +119,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
             currentY += headerHeight;
 
-            if (group.id === 'pinned') {
-                // SPECIAL CASE: Horizontal Shelf for Pinned Items
-                const shelfHeight = thumbnailSize * 0.8; // Slightly smaller height for shelf
-                items.push({
-                    type: 'shelf',
-                    id: 'pinned-shelf',
-                    images: group.images,
-                    y: currentY,
-                    height: shelfHeight,
-                    globalStartIndex: globalImageIndex
-                });
-                globalImageIndex += group.images.length;
-                currentY += shelfHeight + gap;
+            if (false) {
+                // SPECIAL CASE: Horizontal Shelf (REMOVED)
             } else {
                 // 2. Rows (Default Grid)
                 const rows = chunk(group.images, cols);
@@ -430,6 +419,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                     onClick={(e) => onImageClick(e, img.id, globalIndex)}
                                                     onToggleSelection={(e) => onSelectionToggle(e, img.id)}
                                                     onToggleFavorite={(e) => onToggleFavorite(e, img.id)}
+                                                    onTogglePin={onTogglePin ? (e) => onTogglePin(e, img.id) : undefined}
                                                     onContextMenu={(e) => {
                                                         e.preventDefault();
                                                         onContextMenu(e, img.id);
@@ -474,6 +464,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                 onClick={(e) => onImageClick(e, subItem.image.id, subItem.globalIndex)}
                                                 onToggleSelection={(e) => onSelectionToggle(e, subItem.image.id)}
                                                 onToggleFavorite={(e) => onToggleFavorite(e, subItem.image.id)}
+                                                onTogglePin={onTogglePin ? (e) => onTogglePin(e, subItem.image.id) : undefined}
                                                 onContextMenu={(e) => {
                                                     e.preventDefault();
                                                     onContextMenu(e, subItem.image.id);

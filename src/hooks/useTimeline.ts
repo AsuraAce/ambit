@@ -9,7 +9,7 @@ export interface TimelineGroup {
     images: AIImage[];
 }
 
-export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_desc', showPinsAsShelf: boolean = true) => {
+export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_desc') => {
     const groups = useMemo(() => {
         const groupsMap = new Map<string, TimelineGroup>();
         const now = new Date();
@@ -26,36 +26,30 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
             let id = '';
             let groupTimestamp = 0; // Used for sorting the groups themselves
 
-            if (img.isPinned && showPinsAsShelf) {
-                label = 'Pinned';
-                id = 'pinned';
-                groupTimestamp = Number.MAX_SAFE_INTEGER; // Always top
-            } else {
-                const imgDate = new Date(img.timestamp);
-                const imgDayStart = new Date(imgDate.getFullYear(), imgDate.getMonth(), imgDate.getDate()).getTime();
+            const imgDate = new Date(img.timestamp);
+            const imgDayStart = new Date(imgDate.getFullYear(), imgDate.getMonth(), imgDate.getDate()).getTime();
 
-                if (img.timestamp >= thirtyDaysAgo) {
-                    // --- DAILY GROUPING (< 30 days) ---
-                    if (imgDayStart === todayStart) {
-                        label = 'Today';
-                        id = 'today';
-                        groupTimestamp = todayStart + 2; // Boost to ensure top
-                    } else if (imgDayStart === yesterdayStart) {
-                        label = 'Yesterday';
-                        id = 'yesterday';
-                        groupTimestamp = todayStart + 1;
-                    } else {
-                        label = imgDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-                        id = imgDayStart.toString();
-                        groupTimestamp = imgDayStart;
-                    }
+            if (img.timestamp >= thirtyDaysAgo) {
+                // --- DAILY GROUPING (< 30 days) ---
+                if (imgDayStart === todayStart) {
+                    label = 'Today';
+                    id = 'today';
+                    groupTimestamp = todayStart + 2; // Boost to ensure top
+                } else if (imgDayStart === yesterdayStart) {
+                    label = 'Yesterday';
+                    id = 'yesterday';
+                    groupTimestamp = todayStart + 1;
                 } else {
-                    // --- MONTHLY GROUPING (> 30 days) ---
-                    label = imgDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-                    id = `${imgDate.getFullYear()}-${imgDate.getMonth()}`;
-                    // Set timestamp to start of month
-                    groupTimestamp = new Date(imgDate.getFullYear(), imgDate.getMonth(), 1).getTime();
+                    label = imgDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+                    id = imgDayStart.toString();
+                    groupTimestamp = imgDayStart;
                 }
+            } else {
+                // --- MONTHLY GROUPING (> 30 days) ---
+                label = imgDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                id = `${imgDate.getFullYear()}-${imgDate.getMonth()}`;
+                // Set timestamp to start of month
+                groupTimestamp = new Date(imgDate.getFullYear(), imgDate.getMonth(), 1).getTime();
             }
 
             if (!groupsMap.has(id)) {
@@ -77,13 +71,12 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         // ALWAYS Newest -> Oldest for Timeline View structure (Fixed)
         groupList.sort((a, b) => b.timestamp - a.timestamp);
 
-        // Debug Pinning
-        // console.log('[useTimeline] Groups:', groupList.map(g => `${g.id} (${g.images.length}) TS:${g.timestamp}`)); 
-
-
         // 3. Sort Images WITHIN Groups based on user selection
         groupList.forEach(group => {
             group.images.sort((a, b) => {
+                // ALWAYS Prioritize Pinned items at the top of their date group
+                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+
                 switch (sortOption) {
                     case 'name_asc': return a.filename.localeCompare(b.filename);
                     case 'name_desc': return b.filename.localeCompare(a.filename);
@@ -97,7 +90,7 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         });
 
         return groupList;
-    }, [images, sortOption, showPinsAsShelf]);
+    }, [images, sortOption]);
 
     return { groups };
 };
