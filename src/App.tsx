@@ -128,11 +128,7 @@ export default function App() {
 
     const colOps = useCollectionOperations({
         collections,
-        setCollections,
         smartCollections,
-        setSmartCollections,
-        images,
-        refreshCollectionThumbnails,
         refreshCollections,
         setFilters,
         activeCollectionId: filters.collectionId
@@ -148,6 +144,14 @@ export default function App() {
         lastSelectedId,
         modalManager: modals // Pass shared modal state
     });
+
+    const handleRemoveFromCollection = useCallback(async () => {
+        if (filters.collectionId && selectedIds.size > 0) {
+            await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            clearSelection();
+            addToast(`Removed ${selectedIds.size} images from collection`, 'info');
+        }
+    }, [filters.collectionId, selectedIds, colOps, clearSelection, addToast]);
 
     // Calculate Scope Context for Smart Counter
     const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
@@ -212,7 +216,8 @@ export default function App() {
         closeAllModals: modals.closeAllModals,
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
-        onCloseViewer: () => setSelectedImageIndex(null)
+        onCloseViewer: () => setSelectedImageIndex(null),
+        handleRemoveFromCollection: handleRemoveFromCollection,
     });
 
 
@@ -489,6 +494,8 @@ export default function App() {
                             onTogglePin={actions.handleBulkPin}
                             onToggleMask={actions.handleBulkMask}
                             onCompare={() => modals.openModal('compare')}
+                            activeCollectionId={filters.collectionId}
+                            onRemoveFromCollection={handleRemoveFromCollection}
                         />
                     </main>
                 </div>

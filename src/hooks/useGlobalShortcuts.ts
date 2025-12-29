@@ -25,6 +25,7 @@ interface GlobalShortcutsProps {
     togglePin: () => void;
     openRename: () => void;
     openCollection: () => void;
+    handleRemoveFromCollection: () => void;
 
     // UI Toggles
     isModalOpen: boolean; // General check if any modal is open
@@ -59,6 +60,7 @@ export const useGlobalShortcuts = ({
     toggleShortcuts,
     toggleCommandPalette,
     onCloseViewer,
+    handleRemoveFromCollection,
 }: GlobalShortcutsProps) => {
 
     useEffect(() => {

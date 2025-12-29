@@ -99,7 +99,13 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                             </div>
                         ) : (
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}>
-                                {col.isArchived ? <Archive className="w-4 h-4 text-gray-400" /> : <Folder className="w-4 h-4 text-gray-400 dark:text-zinc-500" />}
+                                {col.isArchived ? (
+                                    <Archive className="w-4 h-4 text-gray-400" />
+                                ) : col.filters ? (
+                                    <Sparkles className="w-4 h-4 text-sage-500" />
+                                ) : (
+                                    <Folder className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
+                                )}
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
                             </div>
                         )}

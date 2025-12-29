@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive } from 'lucide-react';
+import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive, Sparkles } from 'lucide-react';
 import { Collection } from '../types';
 import { SearchInput } from './filters/FilterPrimitives';
 import { SmartImage } from './SmartImage';
@@ -10,6 +10,7 @@ interface AddToCollectionModalProps {
     isOpen: boolean;
     onClose: () => void;
     collections: Collection[];
+    smartCollections?: Collection[]; // It's actually SmartCollection[] but Collection works too
     selectedIds: string[];
     onAddImagesToCollection: (ids: string[], colId: string) => void;
 }
@@ -32,6 +33,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     isOpen,
     onClose,
     collections,
+    smartCollections = [],
     selectedIds,
     onAddImagesToCollection
 }) => {
@@ -40,7 +42,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
 
-    const filtered = collections
+    const allCollections = [...collections, ...smartCollections];
+
+    const filtered = allCollections
         .filter(c => {
             const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesArchive = showArchived ? true : !c.isArchived;
@@ -181,7 +185,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                             <div
                                                 className={`w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}
                                             >
-                                                {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />}
+                                                {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : (col.filters ? <Sparkles className="w-5 h-5 text-sage-500" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />)}
                                                 {col.color && (
                                                     <div
                                                         className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}

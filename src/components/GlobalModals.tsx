@@ -90,7 +90,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   shortcutsModalTab,
   commandPaletteProps
 }) => {
-  const { images, collections, settings, setSettings, toggleFavorite } = useLibraryContext();
+  const { images, collections, smartCollections, settings, setSettings, toggleFavorite } = useLibraryContext();
   const { addToast } = useToast();
 
   const handleSettingsSave = (s: AppSettings) => {
@@ -194,6 +194,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         isOpen={modals.addToCollection}
         onClose={() => close('addToCollection')}
         collections={collections}
+        smartCollections={smartCollections}
         selectedIds={Array.from(selectedIds)}
         onAddImagesToCollection={(ids, colId) => {
           onAddImagesToCollection(ids, colId);

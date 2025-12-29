@@ -105,17 +105,21 @@ export const useCollectionOperations = ({
   }, [collections, smartCollections, refreshCollections, addToast]);
 
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
-    const id = `sc_${Date.now()}`;
+    // Check if we already have a collection with this name to update it instead of creating a new one
+    const existing = [...collections, ...smartCollections].find(c => c.name.toLowerCase() === name.toLowerCase());
+
+    const id = existing ? existing.id : `sc_${Date.now()}`;
     await upsertCollection({
+      ...existing, // Preserve existing properties like color, pins, etc.
       id,
       name,
       filters,
-      createdAt: Date.now(),
+      createdAt: existing?.createdAt || Date.now(),
       source: 'ambit'
     });
     await refreshCollections();
-    addToast(`Smart collection "${name}" saved`, 'success');
-  }, [refreshCollections, addToast]);
+    addToast(existing ? `Smart collection "${name}" updated` : `Smart collection "${name}" saved`, 'success');
+  }, [collections, smartCollections, refreshCollections, addToast]);
 
   const setCollectionThumbnail = useCallback(async (collectionId: string, imageId: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);

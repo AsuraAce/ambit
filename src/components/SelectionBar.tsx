@@ -1,4 +1,4 @@
-import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
+import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
 import { AIImage } from '../types';
 import { isImageMasked } from '../utils/maskingUtils';
 
@@ -10,6 +10,7 @@ interface SelectionBarProps {
     confirmDelete: boolean;
     privacyEnabled: boolean;
     maskedKeywords: string[];
+    activeCollectionId?: string | null;
 
     // Actions
     onClearSelection: () => void;
@@ -17,6 +18,7 @@ interface SelectionBarProps {
     onExport: () => void;
     onRename: () => void;
     onAddToCollection: () => void;
+    onRemoveFromCollection?: () => void;
     onToggleFavorite: () => void;
     onTogglePin: () => void;
     onToggleMask: (targetId?: string, overrideValue?: boolean | null) => void;
@@ -36,10 +38,12 @@ export function SelectionBar({
     onExport,
     onRename,
     onAddToCollection,
+    onRemoveFromCollection,
     onToggleFavorite,
     onTogglePin,
     onToggleMask,
-    onCompare
+    onCompare,
+    activeCollectionId
 }: SelectionBarProps) {
     if (selectedIds.size === 0) return null;
 
@@ -123,6 +127,11 @@ export function SelectionBar({
                 <button onClick={onAddToCollection} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Add to Collection">
                     <Folder className="w-5 h-5" />
                 </button>
+                {activeCollectionId && onRemoveFromCollection && (
+                    <button onClick={onRemoveFromCollection} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Remove from this Collection">
+                        <FolderMinus className="w-5 h-5" />
+                    </button>
+                )}
                 <button onClick={onRename} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Batch Rename">
                     <Edit3 className="w-5 h-5" />
                 </button>

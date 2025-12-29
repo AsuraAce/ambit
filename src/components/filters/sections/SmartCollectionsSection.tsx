@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Save, Sparkles, Trash2 } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { FilterState, SmartCollection } from '../../../types';
 import { SectionHeader } from '../FilterPrimitives';
+import { CollectionItem } from './CollectionItem';
 
 interface SmartCollectionsSectionProps {
     filters: FilterState;
@@ -12,6 +13,14 @@ interface SmartCollectionsSectionProps {
     onToggle: () => void;
     onSaveSmartCollection: (name: string, filters: FilterState) => void;
     onDeleteSmartCollection: (id: string) => void;
+    onDropOnCollection?: (collectionId: string, data: string) => void;
+    onRenameCollection?: (colId: string, newName: string) => void;
+    onToggleArchiveCollection?: (colId: string) => void;
+    onTogglePinCollection?: (colId: string) => void;
+    onSetCollectionColor?: (colId: string, color: string | undefined) => void;
+    onPlayCollection?: (colId: string) => void;
+    onExportCollection?: (colId: string) => void;
+    onResetCollectionThumbnail?: (colId: string) => void;
     isDirty: boolean;
 }
 
@@ -23,10 +32,23 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
     onToggle,
     onSaveSmartCollection,
     onDeleteSmartCollection,
+    onDropOnCollection,
+    onRenameCollection,
+    onToggleArchiveCollection,
+    onTogglePinCollection,
+    onSetCollectionColor,
+    onPlayCollection,
+    onExportCollection,
+    onResetCollectionThumbnail,
     isDirty
 }) => {
     const [isCreatingSmart, setIsCreatingSmart] = useState(false);
     const [newName, setNewName] = useState('');
+    const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+    // Renaming state
+    const [editingColId, setEditingColId] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
 
     const handleSaveSmartCollection = (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,6 +57,36 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
             setNewName('');
             setIsCreatingSmart(false);
         }
+    };
+
+    const handleRenameSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (editingColId && editName.trim() && onRenameCollection) {
+            onRenameCollection(editingColId, editName);
+            setEditingColId(null);
+            setEditName('');
+        }
+    };
+
+    // Drag & Drop Handlers
+    const handleDragEnter = (e: React.DragEvent, colId: string) => {
+        e.preventDefault(); e.stopPropagation();
+        setDropTargetId(colId);
+    };
+    const handleDragOver = (e: React.DragEvent, colId: string) => {
+        e.preventDefault(); e.stopPropagation();
+        setDropTargetId(colId);
+    };
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault(); e.stopPropagation();
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDropTargetId(null);
+    };
+    const handleDrop = (e: React.DragEvent, colId: string) => {
+        e.preventDefault(); e.stopPropagation();
+        setDropTargetId(null);
+        const data = e.dataTransfer.getData('text/plain');
+        if (data && onDropOnCollection) onDropOnCollection(colId, data);
     };
 
     return (
@@ -71,21 +123,23 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
                     )}
 
                     {smartCollections.map(sc => (
-                        <div key={sc.id} className="group relative flex items-center">
-                            <button
-                                onClick={() => setFilters(sc.filters)}
-                                className="flex-1 text-left px-3 py-2 rounded-xl text-sm text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-sage-700 dark:hover:text-sage-300 truncate flex items-center gap-2 transition-colors"
-                            >
-                                <Sparkles className="w-3.5 h-3.5 text-sage-500" />
-                                {sc.name}
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onDeleteSmartCollection(sc.id); }}
-                                className="absolute right-2 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                                <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                        <CollectionItem
+                            key={sc.id}
+                            col={sc}
+                            filters={filters}
+                            setFilters={setFilters}
+                            editingColId={editingColId}
+                            editName={editName}
+                            setEditName={setEditName}
+                            setEditingColId={setEditingColId}
+                            handleRenameSubmit={handleRenameSubmit}
+                            handleDragEnter={handleDragEnter}
+                            handleDragOver={handleDragOver}
+                            handleDragLeave={handleDragLeave}
+                            handleDrop={handleDrop}
+                            handleContextMenu={() => { }} // App.tsx wires up context menu via portal
+                            dropTargetId={dropTargetId}
+                        />
                     ))}
                     {smartCollections.length === 0 && !isCreatingSmart && (
                         <div className="px-3 py-2 text-xs text-gray-500 dark:text-zinc-600 italic">No smart collections saved.</div>

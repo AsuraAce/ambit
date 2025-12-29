@@ -49,7 +49,7 @@ const SearchContext = createContext<SearchContextType | undefined>(undefined);
 
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, privacyEnabled } = useSettings();
-    const { collections } = useCollections();
+    const { collections, smartCollections, refreshCollections } = useCollections();
 
     const [images, setImages] = useState<AIImage[]>([]);
     const [filters, setFilters] = useState<FilterState>({
@@ -95,8 +95,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             ]);
             setFacets(newFacets);
             setStats(newStats);
+            // Refresh collections to update smart counts if necessary
+            await refreshCollections();
         } catch (e) { console.error("Failed to refresh metadata", e); }
-    }, [activeSqlWhere, activeSqlParams]);
+    }, [activeSqlWhere, activeSqlParams, refreshCollections]);
 
     const fetchData = useCallback(async (isLoadMore: boolean) => {
         if (isFetchingRef.current && isLoadMore) return;
@@ -153,7 +155,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [activeSqlWhere, activeSqlParams, sortOption, refreshMetadata]);
 
     useEffect(() => {
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections);
+        const allCols = [...collections, ...smartCollections];
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCols);
 
         // Deep comparison for params to avoid re-fetches if contents are same
         const paramsChanged = JSON.stringify(params) !== JSON.stringify(activeSqlParams);
@@ -169,7 +172,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setTotalImages(0);
             setIsFiltering(true);
         }
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, activeSqlWhere, activeSqlParams]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections, activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
         fetchData(false);

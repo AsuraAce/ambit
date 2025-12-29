@@ -107,7 +107,7 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
         idMap.set(row.collection_id, list);
     });
 
-    return collections.map(c => {
+    const mappedCollections = collections.map(c => {
         const rawThumb = c.custom_thumbnail || thumbMap.get(c.id);
         return {
             id: c.id,
@@ -125,6 +125,44 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             source: c.source
         };
     });
+
+    // 2. Process Smart Collections: Calculate Dynamic Counts & Thumbnails
+    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers'); // Import here to avoid circular dep issues at top-level if any
+    const finalCollections = await Promise.all(mappedCollections.map(async (c) => {
+        if (!c.filters) return c;
+
+        try {
+            // Build the specific SQL for this smart collection
+            // We pass [] for collections to avoid deep recursion, as a smart collection rule shouldn't depend on other collections for its definition usually, 
+            // or if it does, it's complex. For now, we assume self-contained rules or basic ones.
+            // Note: We need a way to get 'privacyEnabled' etc. usually passed from context. 
+            // For repo level stats, we might assume "Show All" or "System View" (no masking).
+            // Let's assume standard system view: privacy disabled, no masking for count accuracy in management.
+            const { where, params } = buildSqlWhereClause(c.filters, false, 'blur', [], []);
+
+            // Get Dynamic Count
+            const countRes = await db.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM images ${where}`, params);
+            const dynamicCount = countRes[0]?.count || 0;
+
+            // Get Dynamic Thumbnail (if no custom one)
+            let smartThumb = c.thumbnail;
+            if (!c.customThumbnail) {
+                const thumbUrl = await getSmartCollectionThumbnail(where, params);
+                if (thumbUrl) smartThumb = thumbUrl;
+            }
+
+            return {
+                ...c,
+                count: dynamicCount, // Override static count
+                thumbnail: smartThumb
+            };
+        } catch (e) {
+            console.error(`[DB] Failed to calc stats for smart col ${c.name}`, e);
+            return c;
+        }
+    }));
+
+    return finalCollections;
 };
 
 export const getCollectionThumbnail = async (imageIds: string[]): Promise<string | undefined> => {
@@ -175,6 +213,31 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
     } catch (e) {
         console.error('[DB] Fail collection thumb', e);
+        return undefined;
+    }
+};
+
+export const getSmartCollectionThumbnail = async (whereClause: string, params: any[]): Promise<string | undefined> => {
+    const db = await getDb();
+    try {
+        const query = `
+            SELECT thumbnail_path, timestamp, is_pinned
+            FROM images
+            ${whereClause}
+            ORDER BY is_pinned DESC, timestamp DESC
+            LIMIT 1
+        `;
+        const res = await db.select<any[]>(query, params);
+        if (res && res.length > 0) {
+            const rawPath = res[0].thumbnail_path;
+            if (!rawPath) return undefined;
+            return (rawPath.startsWith('http') || rawPath.startsWith('data:') || rawPath.startsWith('blob:'))
+                ? rawPath
+                : convertFileSrc(normalizePath(rawPath));
+        }
+        return undefined;
+    } catch (e) {
+        console.error('[DB] Fail smart thumb', e);
         return undefined;
     }
 };

@@ -117,6 +117,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         isOpen={expanded.smart} onToggle={() => toggleSection('smart')}
                         onSaveSmartCollection={onSaveSmartCollection}
                         onDeleteSmartCollection={onDeleteSmartCollection}
+                        onDropOnCollection={onDropOnCollection}
+                        onRenameCollection={onRenameCollection}
+                        onToggleArchiveCollection={onToggleArchiveCollection}
+                        onTogglePinCollection={onTogglePinCollection}
+                        onSetCollectionColor={onSetCollectionColor}
+                        onPlayCollection={onPlayCollection}
+                        onExportCollection={onExportCollection}
+                        onResetCollectionThumbnail={onResetCollectionThumbnail}
                         isDirty={isDirty}
                     />
 
