@@ -130,25 +130,28 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
                 title="Smart Collections"
                 isOpen={isOpen}
                 onToggle={onToggle}
-                action={
-                    <div className="flex items-center gap-1">
+            />
+
+            {isOpen && (
+                <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
+                    <div className="flex items-center gap-1.5 px-2 pb-2">
                         <button
                             onClick={(e) => { e.stopPropagation(); setShowArchived(!showArchived); }}
-                            className={`transition-colors p-1 rounded-md ${showArchived ? 'text-sage-600 dark:text-sage-400 bg-sage-100 dark:bg-sage-900/30' : 'text-gray-400 hover:text-sage-500 dark:hover:text-sage-400'}`}
+                            className={`transition-colors p-1.5 rounded-lg border ${showArchived ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                             title={showArchived ? "Hide Archived" : "Include Archived"}
                         >
-                            <Archive className="w-3 h-3" />
+                            <Archive className="w-3.5 h-3.5" />
                         </button>
                         <div className="relative">
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu); }}
-                                className={`transition-colors p-1 rounded-md ${showSortMenu ? 'text-sage-600 dark:text-sage-400 bg-sage-100 dark:bg-sage-900/30' : 'text-gray-400 hover:text-sage-500 dark:hover:text-sage-400'}`}
+                                className={`transition-colors p-1.5 rounded-lg border ${showSortMenu ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                                 title="Sort Collections"
                             >
-                                <ArrowUpDown className="w-3 h-3" />
+                                <ArrowUpDown className="w-3.5 h-3.5" />
                             </button>
                             {showSortMenu && (
-                                <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                                <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden py-1">
                                     {[
                                         { id: 'date_desc', label: 'Newest Created' },
                                         { id: 'date_asc', label: 'Oldest Created' },
@@ -175,26 +178,21 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
                         </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
-                            className={`transition-colors p-1 rounded-md ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-100 dark:bg-sage-900/30' : 'text-gray-400 hover:text-sage-500 dark:hover:text-sage-400'}`}
+                            className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                             title="Search Collections"
                         >
-                            <Search className="w-3 h-3" />
+                            <Search className="w-3.5 h-3.5" />
                         </button>
                         {isDirty && !isCreatingSmart && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); setIsCreatingSmart(true); }}
-                                className="text-sage-600 dark:text-sage-400 hover:text-sage-500 dark:hover:text-sage-300 transition-colors bg-sage-100 dark:bg-sage-900/30 border border-sage-500/30 p-1 rounded-md"
+                                className="ml-auto text-sage-600 dark:text-sage-400 hover:text-white hover:bg-sage-500 transition-all bg-sage-50 dark:bg-sage-900/40 border border-sage-500/30 p-1.5 rounded-lg shadow-sm"
                                 title="Save current filters"
                             >
-                                <Save className="w-3 h-3" />
+                                <Save className="w-3.5 h-3.5" />
                             </button>
                         )}
                     </div>
-                }
-            />
-
-            {isOpen && (
-                <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
                     {isSearchOpen && (
                         <SearchInput
                             value={searchQuery}
