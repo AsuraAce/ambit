@@ -200,3 +200,10 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
     const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, normalizedId]);
 };
+export const updateImagesBoard = async (ids: string[], boardId: string | null) => {
+    if (ids.length === 0) return;
+    const db = await getDb();
+    const normalizedIds = ids.map(normalizePath);
+    const placeholders = normalizedIds.map(() => '?').join(',');
+    await db.execute(`UPDATE images SET board_id = ? WHERE id IN (${placeholders})`, [boardId, ...normalizedIds]);
+};

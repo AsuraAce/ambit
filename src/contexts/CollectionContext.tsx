@@ -71,7 +71,6 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
                         hasChange = true;
                         return {
                             ...col,
-                            imageIds: [],
                             count: dbData.count,
                             // Priority: Maintain existing thumbnail if customThumbnail is set, 
                             // otherwise pick up the optimized one from the database

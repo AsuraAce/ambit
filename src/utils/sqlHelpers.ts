@@ -27,16 +27,28 @@ export const buildSqlWhereClause = (
     // 2. Collection ID
     if (filters.collectionId) {
         const manualCol = collections?.find(c => c.id === filters.collectionId);
-        // Only use IN (...) if we actually have IDs populated (Manual Collection)
+        const subConditions: string[] = [];
+
+        // Manual inclusions (paths)
         if (manualCol && manualCol.imageIds && manualCol.imageIds.length > 0) {
             const ids = manualCol.imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
             const placeholders = ids.map(() => '?').join(',');
-            conditions.push(`path IN (${placeholders})`);
+            subConditions.push(`path IN (${placeholders})`);
             params.push(...ids);
-        } else {
-            // Default: Filter by Board ID (Efficient)
-            conditions.push('board_id = ?');
+        }
+
+        // Database ID matching (for boards)
+        // Manual collections start with 'c_', boards are usually UUIDs
+        if (!filters.collectionId.startsWith('c_')) {
+            subConditions.push('board_id = ?');
             params.push(filters.collectionId);
+        }
+
+        if (subConditions.length > 0) {
+            conditions.push(`(${subConditions.join(' OR ')})`);
+        } else {
+            // Default fallback to ensure we don't show everything if no matches
+            conditions.push('1 = 0');
         }
     }
 

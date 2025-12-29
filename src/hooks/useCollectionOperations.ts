@@ -12,6 +12,7 @@ interface UseCollectionOperationsProps {
   setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
   images: AIImage[];
   refreshCollectionThumbnails: () => void;
+  refreshCollections: () => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<any>>;
   activeCollectionId: string | null;
 }
@@ -23,6 +24,7 @@ export const useCollectionOperations = ({
   setSmartCollections,
   images,
   refreshCollectionThumbnails,
+  refreshCollections,
   setFilters,
   activeCollectionId
 }: UseCollectionOperationsProps) => {
@@ -83,30 +85,48 @@ export const useCollectionOperations = ({
     }));
   }, [setCollections]);
 
-  const addImagesToCollection = useCallback((imageIds: string[], collectionId: string) => {
-    setCollections(prev => prev.map(col => {
-      if (col.id !== collectionId) return col;
-      const newIds = [...col.imageIds];
-      imageIds.forEach(id => {
-        if (!newIds.includes(id)) {
-          newIds.push(id);
-        }
-      });
-      return { ...col, imageIds: newIds };
-    }));
+  const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
+    const isBoard = !collectionId.startsWith('c_');
+
+    if (isBoard) {
+      const { updateImagesBoard } = await import('../services/db/imageRepo');
+      await updateImagesBoard(imageIds, collectionId);
+      // Trigger a sync of counts
+      setTimeout(() => refreshCollections(), 100);
+    } else {
+      setCollections(prev => prev.map(col => {
+        if (col.id !== collectionId) return col;
+        const newIds = [...col.imageIds];
+        imageIds.forEach(id => {
+          if (!newIds.includes(id)) {
+            newIds.push(id);
+          }
+        });
+        return { ...col, imageIds: newIds };
+      }));
+    }
 
     setTimeout(() => refreshCollectionThumbnails(), 0);
     addToast(`Added images to collection`, 'success');
-  }, [setCollections, images, refreshCollectionThumbnails, addToast]);
+  }, [setCollections, refreshCollections, refreshCollectionThumbnails, addToast]);
 
-  const removeImagesFromCollection = useCallback((imageIds: string[], collectionId: string) => {
-    setCollections(prev => prev.map(col => {
-      if (col.id !== collectionId) return col;
-      return { ...col, imageIds: col.imageIds.filter(id => !imageIds.includes(id)) };
-    }));
+  const removeImagesFromCollection = useCallback(async (imageIds: string[], collectionId: string) => {
+    const isBoard = !collectionId.startsWith('c_');
+
+    if (isBoard) {
+      const { updateImagesBoard } = await import('../services/db/imageRepo');
+      await updateImagesBoard(imageIds, null);
+      setTimeout(() => refreshCollections(), 100);
+    } else {
+      setCollections(prev => prev.map(col => {
+        if (col.id !== collectionId) return col;
+        return { ...col, imageIds: col.imageIds.filter(id => !imageIds.includes(id)) };
+      }));
+    }
+
     setTimeout(() => refreshCollectionThumbnails(), 0);
     addToast("Removed from collection", "info");
-  }, [setCollections, images, refreshCollectionThumbnails, addToast]);
+  }, [setCollections, refreshCollections, refreshCollectionThumbnails, addToast]);
 
   // --- Smart Collections ---
 

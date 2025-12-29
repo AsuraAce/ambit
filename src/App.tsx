@@ -47,7 +47,7 @@ export default function App() {
     const {
         isLoaded, images, setImages, collections, setCollections,
         smartCollections, setSmartCollections, settings, setSettings,
-        setRecentSearches, refreshCollectionThumbnails,
+        setRecentSearches, refreshCollectionThumbnails, refreshCollections,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, globalTotal, loadMoreImages,
         privacyEnabled, setPrivacyEnabled,
@@ -127,6 +127,7 @@ export default function App() {
         setSmartCollections,
         images,
         refreshCollectionThumbnails,
+        refreshCollections,
         setFilters,
         activeCollectionId: filters.collectionId
     });
