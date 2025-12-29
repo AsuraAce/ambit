@@ -113,9 +113,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   }, [currentSrc]);
 
   const finalWrapperClass = wrapperClassName || className || '';
-  // Removed scale-95 and opacity-0 from loading state to prevent flicker
-  // The image will simply arrive and fade in slightly if it takes time.
-  const finalImgClass = imgClassName || `w-full h-full transition-opacity duration-300 ease-out ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`;
+  const loadingClasses = `transition-all duration-500 ease-out ${status === 'loaded' ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`;
+  const finalImgClass = `${imgClassName || 'w-full h-full'} ${loadingClasses}`;
 
   // Extract filename for display in error state
   const displayFilename = React.useMemo(() => {

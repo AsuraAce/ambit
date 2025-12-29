@@ -92,6 +92,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                                 <SmartImage
                                     src={col.customThumbnail || col.thumbnail || ''}
                                     alt=""
+                                    wrapperClassName="w-full h-full"
                                     imgClassName={`w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5 ${col.isArchived ? 'grayscale opacity-70' : ''}`}
                                 />
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}

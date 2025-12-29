@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive } from 'lucide-react';
 import { Collection } from '../types';
 import { SearchInput } from './filters/FilterPrimitives';
+import { SmartImage } from './SmartImage';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -14,6 +15,18 @@ interface AddToCollectionModalProps {
 }
 
 type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc';
+
+const getColorClass = (colorName?: string) => {
+    if (!colorName) return '';
+    switch (colorName) {
+        case 'red': return 'bg-red-500';
+        case 'orange': return 'bg-orange-500';
+        case 'green': return 'bg-green-500';
+        case 'blue': return 'bg-blue-500';
+        case 'purple': return 'bg-purple-500';
+        default: return '';
+    }
+};
 
 export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     isOpen,
@@ -150,9 +163,32 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                     className="w-full group text-left px-4 py-3 rounded-xl hover:bg-sage-50 dark:hover:bg-sage-900/10 flex items-center justify-between transition-all border border-transparent hover:border-sage-200/50 dark:hover:border-sage-500/20"
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${col.color ? '' : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 group-hover:bg-sage-100 dark:group-hover:bg-sage-900/30 group-hover:text-sage-600'}`} style={col.color ? { backgroundColor: `${col.color}20`, color: col.color } : {}}>
-                                            <Folder className="w-4 h-4" />
-                                        </div>
+                                        {(col.customThumbnail || col.thumbnail) ? (
+                                            <div className="w-10 h-10 flex-shrink-0 relative">
+                                                <SmartImage
+                                                    src={col.customThumbnail || col.thumbnail || ''}
+                                                    alt=""
+                                                    wrapperClassName="w-full h-full"
+                                                    imgClassName="w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5"
+                                                />
+                                                {col.color && (
+                                                    <div
+                                                        className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                                                    />
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div
+                                                className={`w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}
+                                            >
+                                                {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />}
+                                                {col.color && (
+                                                    <div
+                                                        className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
                                         <div>
                                             <div className="flex items-center gap-2">
                                                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-sage-700 dark:group-hover:text-sage-300 transition-colors">
