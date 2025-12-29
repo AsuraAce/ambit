@@ -12,6 +12,7 @@ import { SlideshowModal } from './SlideshowModal';
 import { DonationModal } from './DonationModal';
 import { ExportModal } from './ExportModal';
 import { CommandPalette } from './CommandPalette';
+import { AddToCollectionModal } from './AddToCollectionModal';
 import { useLibraryContext } from '../hooks/useLibraryContext';
 import { useToast } from '../hooks/useToast';
 
@@ -189,47 +190,16 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         {...commandPaletteProps}
       />
 
-      {/* Add to Collection Modal (Simple Inline Implementation) */}
-      <AnimatePresence>
-        {modals.addToCollection && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/10 backdrop-blur-[1px]"
-            onClick={() => close('addToCollection')}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="absolute bottom-20 left-1/2 -translate-x-1/2 w-64 bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-2 backdrop-blur-md"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-xs font-bold text-gray-500 dark:text-gray-500 px-2 py-1 mb-1 uppercase tracking-wider">Select Collection</div>
-              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
-                {collections.map(col => (
-                  <button
-                    key={col.id}
-                    onClick={() => {
-                      onAddImagesToCollection(Array.from(selectedIds), col.id);
-                      close('addToCollection');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2 transition-colors"
-                  >
-                    <svg className="w-3 h-3 text-sage-600 dark:text-sage-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                    {col.name}
-                  </button>
-                ))}
-              </div>
-              <div className="border-t border-gray-200 dark:border-white/10 mt-2 pt-2">
-                <button onClick={() => close('addToCollection')} className="w-full text-center text-xs text-gray-500 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 py-1 transition-colors">Cancel</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <AddToCollectionModal
+        isOpen={modals.addToCollection}
+        onClose={() => close('addToCollection')}
+        collections={collections}
+        selectedIds={Array.from(selectedIds)}
+        onAddImagesToCollection={(ids, colId) => {
+          onAddImagesToCollection(ids, colId);
+          close('addToCollection');
+        }}
+      />
     </>
   );
 };
