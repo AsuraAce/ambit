@@ -91,6 +91,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const refreshMetadata = useCallback(async () => {
         try {
+            // Immediate UI feedback: clear previous keyword stats to prevent stale "glance"
+            setStats(prev => ({ ...prev, keywordStats: [] }));
+
             const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
             const [newFacets, newStats] = await Promise.all([
                 getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),

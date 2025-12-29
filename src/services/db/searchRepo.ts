@@ -1,6 +1,7 @@
 import { AIImage } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
+import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 
 export interface LibraryStats {
     totalImages: number;
@@ -115,7 +116,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     const db = await getDb();
 
     try {
-        const stopWords = new Set(['a', 'an', 'the', 'of', 'in', 'on', 'at', 'with', 'and', 'or', 'for', 'to', 'is', 'are', 'style', 'by', 'view', 'highly', 'detailed', 'render', '4k', '8k', 'resolution', 'quality', 'masterpiece', 'best', 'score', 'rating', 'source', 'image', 'picture', 'v10', 'v20', 'v30', 'should', 'have', 'from', 'says', 'that', 'with', 'this', 'was', 'were', 'been', 'being', 'will', 'would', 'could', 'should', 'more', 'most', 'some', 'any', 'each', 'few', 'more', 'other', 'another', 'such', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can', 'just', 'highly', 'more', 'also', 'about', 'through', 'under', 'these', 'those', 'must', 'often', 'might']);
+        const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
 
         // Fix ambiguity for JOIN: replace and ensure 'id' becomes 'images.id'
         const finalWhere = whereClause ? whereClause : "WHERE images.is_deleted = 0";
@@ -126,7 +127,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             FROM images_fts
             JOIN images ON images.id = images_fts.id
             ${safeWhere}
-            LIMIT 2000
+            LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
         `;
         const rows = await db.select<any[]>(promptQuery, params);
 
