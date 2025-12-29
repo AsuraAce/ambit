@@ -25,15 +25,20 @@ export const searchImages = async (
     limit: number,
     offset: number,
     sortField: string = 'timestamp',
-    sortOrder: 'ASC' | 'DESC' = 'DESC'
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    prioritizePinned: boolean = false
 ): Promise<AIImage[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
+    const orderBy = prioritizePinned
+        ? `ORDER BY is_pinned DESC, ${sortField} ${sortOrder}`
+        : `ORDER BY ${sortField} ${sortOrder}`;
+
     const query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         ${finalWhere} 
-        ORDER BY is_pinned DESC, ${sortField} ${sortOrder} 
+        ${orderBy}
         LIMIT ${limit} OFFSET ${offset}
     `;
 

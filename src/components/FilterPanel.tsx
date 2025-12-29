@@ -65,7 +65,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
     };
 
-    const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.pinnedOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
 
     return (
         <div

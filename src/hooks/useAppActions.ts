@@ -85,10 +85,16 @@ export const useAppActions = ({
         const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
         setImages(prev => {
             const updated = prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img);
-            return [...updated].sort((a, b) => {
-                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                return (b.timestamp || 0) - (a.timestamp || 0);
-            });
+
+            // Only sort if we are in a collection (where pinned items are forced to top)
+            // In "All Photos", we want to keep chronological order
+            if (filters.collectionId) {
+                return [...updated].sort((a, b) => {
+                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                    return (b.timestamp || 0) - (a.timestamp || 0);
+                });
+            }
+            return updated;
         });
 
         const ids = Array.from(selectedIds);
@@ -172,10 +178,14 @@ export const useAppActions = ({
     const handlePinImage = async (id: string, newPinned: boolean) => {
         setImages(prev => {
             const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
-            return [...updated].sort((a, b) => {
-                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                return (b.timestamp || 0) - (a.timestamp || 0);
-            });
+
+            if (filters.collectionId) {
+                return [...updated].sort((a, b) => {
+                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+                    return (b.timestamp || 0) - (a.timestamp || 0);
+                });
+            }
+            return updated;
         });
 
         await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));

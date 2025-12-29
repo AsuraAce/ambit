@@ -98,6 +98,7 @@ export interface FilterState {
   maxSteps?: number;
   minCfg?: number;
   maxCfg?: number;
+  pinnedOnly?: boolean;
 }
 
 export interface Collection {

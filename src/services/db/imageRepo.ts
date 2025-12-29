@@ -91,11 +91,13 @@ export const isImageNew = async (id: string): Promise<boolean> => {
     return (result[0]?.count || 0) === 0;
 };
 
-export const getAllImages = async (limit?: number, offset: number = 0): Promise<AIImage[]> => {
+export const getAllImages = async (limit?: number, offset: number = 0, prioritizePinned: boolean = false): Promise<AIImage[]> => {
     const db = await getDb();
+    const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
+
     const query = limit
-        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ORDER BY is_pinned DESC, timestamp DESC`;
+        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ${orderBy}`;
 
     const rows = await db.select<any[]>(query);
     return rows.map(mapRowToImage);

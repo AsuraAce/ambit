@@ -58,7 +58,12 @@ export const buildSqlWhereClause = (
         conditions.push('is_favorite = 1');
     }
 
-    // 4. Models (Array)
+    // 4. Pinned Only
+    if (filters.pinnedOnly) {
+        conditions.push('is_pinned = 1');
+    }
+
+    // 5. Models (Array)
     if (filters.models.length > 0) {
         // We check overrideModel OR metadata.model
         // JSON structure: { "model": "..." } or { "overrideModel": "..." }

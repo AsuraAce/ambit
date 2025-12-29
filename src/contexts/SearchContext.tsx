@@ -121,10 +121,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
             }
 
+            // Only prioritize pinned images if we are in a specific collection (not "All Photos")
+            // AND the sort option is "Date Descending" (default view) - optional refinement, but sticking to plan:
+            // "True when viewing a specific Collection"
+            const prioritizePinned = filters.collectionId !== null;
+
             if (!isLoadMore) {
                 const [count, newBatch, globalCount] = await Promise.all([
                     countImages(currentWhere, currentParams),
-                    searchImages(currentWhere, currentParams, PAGE_SIZE, 0, sortField, sortOrder),
+                    searchImages(currentWhere, currentParams, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
                     countImages('WHERE is_deleted = 0', [])
                 ]);
 
@@ -135,7 +140,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshMetadata();
             } else {
                 const offset = imagesRef.current.length;
-                const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder);
+                const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
                 setImages(prev => [...prev, ...newBatch]);
                 setHasMoreImages(newBatch.length >= PAGE_SIZE);
             }
@@ -207,6 +212,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             searchQuery: '',
             dateRange: 'all',
             favoritesOnly: false,
+            pinnedOnly: false,
             models: [],
             tools: [],
             loras: [],
