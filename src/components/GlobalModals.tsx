@@ -47,13 +47,15 @@ interface GlobalModalsProps {
   onDeleteConfirm: () => void;
   onDeleteCollectionConfirm: () => void;
   onRecoverMetadata: (style: any) => void;
-  onAddImagesToCollection: (ids: string[], colId: string) => void;
+  onCollectionAction: (ids: string[], targetColId: string, mode: 'add' | 'move', sourceColId?: string) => void;
   onCloseExport?: () => void;
   exportIds?: Set<string>;
 
   // Specific Props
   pendingViewerDeleteId: string | null;
   collectionToDeleteId: string | null;
+  addToCollectionMode: 'add' | 'move';
+  sourceCollectionId: string | null;
   isRecoveringMetadata: boolean;
   isExporting: boolean;
   slideshowShuffle: boolean;
@@ -82,11 +84,13 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   onDeleteConfirm,
   onDeleteCollectionConfirm,
   onRecoverMetadata,
-  onAddImagesToCollection,
+  onCollectionAction,
   onCloseExport,
   exportIds,
   pendingViewerDeleteId,
   collectionToDeleteId,
+  addToCollectionMode,
+  sourceCollectionId,
   isRecoveringMetadata,
   isExporting,
   slideshowShuffle,
@@ -200,8 +204,10 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         collections={collections}
         smartCollections={smartCollections}
         selectedIds={Array.from(selectedIds)}
-        onAddImagesToCollection={(ids, colId) => {
-          onAddImagesToCollection(ids, colId);
+        mode={addToCollectionMode}
+        sourceCollectionId={sourceCollectionId || undefined}
+        onConfirm={(ids, colId, mode, sourceId) => {
+          onCollectionAction(ids, colId, mode, sourceId);
           close('addToCollection');
         }}
       />

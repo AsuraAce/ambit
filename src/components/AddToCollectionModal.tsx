@@ -12,7 +12,9 @@ interface AddToCollectionModalProps {
     collections: Collection[];
     smartCollections?: Collection[]; // It's actually SmartCollection[] but Collection works too
     selectedIds: string[];
-    onAddImagesToCollection: (ids: string[], colId: string) => void;
+    onConfirm: (ids: string[], targetColId: string, mode: 'add' | 'move', sourceColId?: string) => void;
+    mode?: 'add' | 'move';
+    sourceCollectionId?: string;
 }
 
 type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc';
@@ -35,7 +37,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     collections,
     smartCollections = [],
     selectedIds,
-    onAddImagesToCollection
+    onConfirm,
+    mode = 'add',
+    sourceCollectionId
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sort, setSort] = useState<CollectionSort>('date_desc');
@@ -48,7 +52,8 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
         .filter(c => {
             const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesArchive = showArchived ? true : !c.isArchived;
-            return matchesSearch && matchesArchive;
+            const isNotSource = c.id !== sourceCollectionId;
+            return matchesSearch && matchesArchive && isNotSource;
         })
         .sort((a, b) => {
             switch (sort) {
@@ -92,7 +97,9 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
                     <div>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add to Collection</h3>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                            {mode === 'move' ? 'Move to Collection' : 'Add to Collection'}
+                        </h3>
                         <p className="text-xs text-gray-500">{selectedIds.length} images selected</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
@@ -163,7 +170,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                             {filtered.map(col => (
                                 <button
                                     key={col.id}
-                                    onClick={() => onAddImagesToCollection(selectedIds, col.id)}
+                                    onClick={() => onConfirm(selectedIds, col.id, mode, sourceCollectionId)}
                                     className="w-full group text-left px-4 py-3 rounded-xl hover:bg-sage-50 dark:hover:bg-sage-900/10 flex items-center justify-between transition-all border border-transparent hover:border-sage-200/50 dark:hover:border-sage-500/20"
                                 >
                                     <div className="flex items-center gap-3">

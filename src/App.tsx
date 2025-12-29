@@ -193,6 +193,12 @@ export default function App() {
         clearSelection();
     }, [filters.collectionId, clearSelection]);
 
+    const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
+        modals.setAddToCollectionMode(mode);
+        if (mode === 'add') modals.setSourceCollectionId(null);
+        modals.openModal('addToCollection');
+    }, [modals]);
+
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
         viewMode,
@@ -213,7 +219,7 @@ export default function App() {
         toggleFavorite: actions.handleShortcutFavorite,
         togglePin: actions.handleShortcutPin,
         openRename: () => modals.openModal('rename'),
-        openCollection: () => modals.openModal('addToCollection'),
+        openCollection: () => handleOpenCollectionModal('add'),
         isModalOpen: modals.isAnyModalOpen,
         closeAllModals: modals.closeAllModals,
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
@@ -532,7 +538,7 @@ export default function App() {
                             onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
                             onExport={() => modals.openModal('export')}
                             onRename={() => modals.openModal('rename')}
-                            onAddToCollection={() => modals.openModal('addToCollection')}
+                            onAddToCollection={() => handleOpenCollectionModal('add')}
                             onToggleFavorite={actions.handleBulkFavorite}
                             onTogglePin={actions.handleBulkPin}
                             onToggleMask={actions.handleBulkMask}
@@ -566,14 +572,20 @@ export default function App() {
                         modals.setCollectionToDelete(null);
                     }}
                     onRecoverMetadata={actions.executeMetadataRecovery}
-                    onAddImagesToCollection={async (ids, colId) => {
-                        await colOps.addImagesToCollection(ids, colId);
+                    onCollectionAction={async (ids, targetId, mode, sourceId) => {
+                        if (mode === 'move' && sourceId) {
+                            await colOps.moveImagesBetweenCollections(ids, sourceId, targetId);
+                        } else {
+                            await colOps.addImagesToCollection(ids, targetId);
+                        }
                         clearSelection();
                     }}
                     onCloseExport={() => setExportIds(new Set())}
                     exportIds={exportIds}
                     pendingViewerDeleteId={modals.pendingViewerDeleteId}
                     collectionToDeleteId={modals.collectionToDelete}
+                    addToCollectionMode={modals.addToCollectionMode}
+                    sourceCollectionId={modals.sourceCollectionId}
                     isRecoveringMetadata={fileOps.isRecoveringMetadata}
                     isExporting={fileOps.isExporting}
                     slideshowShuffle={modals.slideshowShuffle}
@@ -616,7 +628,7 @@ export default function App() {
                             onUpdateNotes={(id, n) => { setImages(p => p.map(i => i.id === id ? { ...i, notes: n } : i)); addToast('Saved', 'success'); }}
                             onSearch={(term) => { setFilters(p => ({ ...p, searchQuery: term })); setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8)); }}
                             onRevertMetadata={(id) => { setImages(p => p.map(i => i.id === id && i.originalMetadata ? { ...i, metadata: i.originalMetadata, originalMetadata: undefined } : i)); addToast('Reverted', 'success'); }}
-                            onAddToCollection={(id, colId) => colOps.addImagesToCollection([id], colId)}
+                            onAddToCollection={(id) => handleOpenCollectionModal('add')}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
@@ -631,6 +643,14 @@ export default function App() {
                     actions={actions}
                     fileOps={fileOps}
                     colOps={colOps}
+                    onMoveToCollection={() => {
+                        if (filters.collectionId) {
+                            modals.setAddToCollectionMode('move');
+                            modals.setSourceCollectionId(filters.collectionId);
+                            modals.openModal('addToCollection');
+                        }
+                        setContextMenu(null);
+                    }}
                     modals={modals}
                     filters={filters}
                     privacyEnabled={privacyEnabled}

@@ -12,6 +12,7 @@ interface AppContextMenuProps {
     actions: any;
     fileOps: any;
     colOps: any;
+    onMoveToCollection: () => void;
     modals: any;
     filters: any;
     privacyEnabled: boolean;
@@ -26,6 +27,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     actions,
     fileOps,
     colOps,
+    onMoveToCollection,
     modals,
     filters,
     privacyEnabled,
@@ -110,9 +112,12 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onAddToCollection={() => {
+                modals.setAddToCollectionMode('add');
+                modals.setSourceCollectionId(null);
                 modals.openModal('addToCollection');
                 onClose();
             }}
+            onMoveToCollection={onMoveToCollection}
             onRemoveFromCollection={() => {
                 if (filters.collectionId && contextMenu.imageId) {
                     colOps.removeImagesFromCollection([contextMenu.imageId], filters.collectionId);

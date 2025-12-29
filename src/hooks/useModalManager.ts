@@ -36,6 +36,8 @@ export const useModalManager = () => {
     const [shortcutsModalTab, setShortcutsModalTab] = useState<'shortcuts' | 'search'>('shortcuts');
     const [slideshowShuffle, setSlideshowShuffle] = useState(false);
     const [isPinnedShelfCollapsed, setIsPinnedShelfCollapsed] = useState(true);
+    const [addToCollectionMode, setAddToCollectionMode] = useState<'add' | 'move'>('add');
+    const [sourceCollectionId, setSourceCollectionId] = useState<string | null>(null);
 
     const openModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: true }));
     const closeModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: false }));
@@ -74,6 +76,10 @@ export const useModalManager = () => {
         slideshowShuffle,
         setSlideshowShuffle,
         isPinnedShelfCollapsed,
-        setIsPinnedShelfCollapsed
+        setIsPinnedShelfCollapsed,
+        addToCollectionMode,
+        setAddToCollectionMode,
+        sourceCollectionId,
+        setSourceCollectionId
     };
 };

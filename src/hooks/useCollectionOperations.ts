@@ -216,6 +216,43 @@ export const useCollectionOperations = ({
     addToast(existing ? `Smart collection "${name}" updated` : `Smart collection "${name}" saved`, 'success');
   }, [collections, smartCollections, refreshCollections, addToast]);
 
+  const moveImagesBetweenCollections = useCallback(async (imageIds: string[], sourceId: string, targetId: string) => {
+    const sourceCol = [...collections, ...smartCollections].find(c => c.id === sourceId);
+    const targetCol = [...collections, ...smartCollections].find(c => c.id === targetId);
+    if (!sourceCol || !targetCol) return;
+
+    // Optimistic Update: Transfer counts
+    setAllCollections(prev => prev.map(c => {
+      if (c.id === sourceId) return { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) };
+      if (c.id === targetId) return { ...c, count: (c.count || 0) + imageIds.length };
+      return c;
+    }));
+
+    try {
+      // 1. Remove from source
+      if (sourceCol.filters) {
+        const currentExclusions = sourceCol.manualExclusions || [];
+        const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
+        await upsertCollection({ ...sourceCol, manualExclusions: newExclusions });
+      }
+      await removeImgsFromCol(sourceId, imageIds);
+
+      // 2. Add to target
+      await addImgsToCol(targetId, imageIds);
+
+      addToast(`Moved images to ${targetCol.name}`, 'success');
+      refreshCollections();
+    } catch (e) {
+      // Rollback both
+      setAllCollections(prev => prev.map(c => {
+        if (c.id === sourceId) return sourceCol;
+        if (c.id === targetId) return targetCol;
+        return c;
+      }));
+      addToast("Failed to move images", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+
   const setCollectionThumbnail = useCallback(async (collectionId: string, imageId: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
     if (!col) return;
@@ -241,6 +278,7 @@ export const useCollectionOperations = ({
     togglePinCollection,
     addImagesToCollection,
     removeImagesFromCollection,
+    moveImagesBetweenCollections,
     saveSmartCollection,
     deleteSmartCollection: deleteCollection,
     setCollectionThumbnail,

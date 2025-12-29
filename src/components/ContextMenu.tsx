@@ -20,6 +20,7 @@ interface ContextMenuProps {
   onCopyFilePath?: () => void;
   onOpenInDefaultApp?: () => void;
   onAddToCollection: () => void;
+  onMoveToCollection?: () => void;
   onRemoveFromCollection?: () => void;
   onTogglePin: () => void;
   onDelete: () => void;
@@ -59,6 +60,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onUnsetThumbnail,
   onToggleMask,
   onToggleFavorite,
+  onMoveToCollection,
   isFavorite,
   isMasked,
   userMasked,
@@ -141,6 +143,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
       <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-amber-400" />} side={side}>
         <MenuItem icon={<FolderPlus className="w-4 h-4 text-gray-400" />} label="Add to Collection..." onClick={onAddToCollection} />
+        {onMoveToCollection && (
+          <MenuItem icon={<Layout className="w-4 h-4 text-sage-400" />} label="Move to Collection..." onClick={onMoveToCollection} />
+        )}
         {activeCollectionName && onRemoveFromCollection && (
           <MenuItem
             icon={<FolderMinus className="w-4 h-4 text-red-500" />}
