@@ -92,6 +92,12 @@ export default function App() {
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
+    const changeViewMode = useCallback((newMode: ViewMode) => {
+        if (newMode === viewMode) return;
+        setViewMode(newMode);
+        clearSelection();
+    }, [viewMode, clearSelection]);
+
     const handleLayoutChange = useCallback((c: number, h: number) => {
         setGridLayout(prev => {
             if (prev.columns === c && prev.rowHeight === h) return prev;
@@ -176,6 +182,11 @@ export default function App() {
         return () => clearTimeout(timer);
     }, []);
 
+    // Clear selection when context changes significantly
+    useEffect(() => {
+        clearSelection();
+    }, [filters.collectionId, clearSelection]);
+
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
         viewMode,
@@ -223,7 +234,7 @@ export default function App() {
                     {/* --- Sidebar --- */}
                     <AppSidebar
                         viewMode={viewMode}
-                        setViewMode={setViewMode}
+                        setViewMode={changeViewMode}
                         filters={filters}
                         setFilters={setFilters}
                         isFilterPanelOpen={isFilterPanelOpen}
@@ -243,10 +254,11 @@ export default function App() {
                         onCreateCollection={colOps.createCollection}
                         onSaveSmartCollection={colOps.saveSmartCollection}
                         onDeleteSmartCollection={colOps.deleteSmartCollection}
-                        onDropOnCollection={(colId, data) => {
+                        onDropOnCollection={async (colId, data) => {
                             try {
                                 const ids = JSON.parse(data);
-                                colOps.addImagesToCollection(ids, colId);
+                                await colOps.addImagesToCollection(ids, colId);
+                                clearSelection();
                                 const col = collections.find(c => c.id === colId);
                                 addToast(`Added ${ids.length} images to ${col?.name || 'collection'}`, 'success');
                             } catch { }
@@ -310,7 +322,7 @@ export default function App() {
                             <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
                                 <ErrorBoundary>
                                     {viewMode === 'dashboard' ? (
-                                        <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); setViewMode('grid'); }} />
+                                        <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); changeViewMode('grid'); }} />
                                     ) : viewMode === 'maintenance' ? (
                                         <MaintenanceView
                                             images={images}
@@ -489,7 +501,10 @@ export default function App() {
                         modals.setCollectionToDelete(null);
                     }}
                     onRecoverMetadata={actions.executeMetadataRecovery}
-                    onAddImagesToCollection={colOps.addImagesToCollection}
+                    onAddImagesToCollection={async (ids, colId) => {
+                        await colOps.addImagesToCollection(ids, colId);
+                        clearSelection();
+                    }}
                     pendingViewerDeleteId={modals.pendingViewerDeleteId}
                     collectionToDeleteId={modals.collectionToDelete}
                     isRecoveringMetadata={fileOps.isRecoveringMetadata}
@@ -498,7 +513,7 @@ export default function App() {
                     initialSettingsTab={modals.initialSettingsTab}
                     shortcutsModalTab={modals.shortcutsModalTab}
                     commandPaletteProps={{
-                        onNavigate: (mode: any) => setViewMode(mode),
+                        onNavigate: changeViewMode,
                         onToggleTheme: toggleTheme,
                         onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
                         onImport: () => fileOps.fileInputRef.current?.click(),
