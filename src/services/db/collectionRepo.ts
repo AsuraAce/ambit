@@ -28,6 +28,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
             color = excluded.color,
             is_archived = excluded.is_archived,
             is_pinned = excluded.is_pinned,
+            created_at = excluded.created_at,
             filter_state = excluded.filter_state,
             manual_exclusions = excluded.manual_exclusions,
             custom_thumbnail = excluded.custom_thumbnail`,
