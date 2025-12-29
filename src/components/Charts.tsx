@@ -6,6 +6,7 @@ import { Lightbulb, X, BarChart3 } from 'lucide-react';
 import { AIImage } from '../types';
 // Note: useLibraryStats hook is deprecated for large library performance. Using DB stats.
 import { useLibraryContext } from '../hooks/useLibraryContext';
+import { WordCloud } from './stats/WordCloud';
 
 interface ChartsProps {
     images: AIImage[];
@@ -24,8 +25,8 @@ const TIPS = [
 
 export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     // Use DB-backed global stats
-    const { stats } = useLibraryContext();
-    const { totalGenerations, avgSteps, estSizeMB, modelStats } = stats;
+    const { stats, setFilters, isFiltering } = useLibraryContext();
+    const { totalGenerations, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
 
     const [showTip, setShowTip] = useState(true);
 
@@ -103,14 +104,23 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                             </ResponsiveContainer>
                         </div>
 
-                        {/* Word Cloud - Disabled temporarily as DB implementation is pending */}
-                        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col opacity-50 pointer-events-none grayscale">
-                            <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                                <span className="bg-black/50 text-white px-3 py-1 rounded-full text-xs">Coming Soon</span>
-                            </div>
-                            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider">Top Prompt Keywords</h3>
-                            <div className="flex-1 flex items-center justify-center text-gray-500">
-                                Word Cloud analysis is currently disabled for large libraries.
+                        {/* Word Cloud */}
+                        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col relative overflow-hidden group">
+                            <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center justify-between">
+                                <span>Top Prompt Keywords</span>
+                                {isFiltering && <div className="w-4 h-4 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />}
+                            </h3>
+                            <div className="flex-1 min-h-0">
+                                <WordCloud
+                                    keywords={isFiltering ? [] : (keywordStats || [])}
+                                    totalImages={totalGenerations}
+                                    onWordClick={(word) => {
+                                        setFilters((prev: any) => ({
+                                            ...prev,
+                                            searchQuery: prev.searchQuery ? `${prev.searchQuery.trim()} ${word}` : word
+                                        }));
+                                    }}
+                                />
                             </div>
                         </div>
                     </div>

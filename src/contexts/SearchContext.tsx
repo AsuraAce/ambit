@@ -18,6 +18,7 @@ interface LibraryStats {
     avgSteps: number;
     estSizeMB: string;
     modelStats: any[];
+    keywordStats: { text: string; value: number }[];
 }
 
 interface SearchContextType {
@@ -70,7 +71,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         totalGenerations: 0,
         avgSteps: 0,
         estSizeMB: '0',
-        modelStats: []
+        modelStats: [],
+        keywordStats: []
     });
 
     const [totalImages, setTotalImages] = useState(0);

@@ -8,6 +8,7 @@ export interface LibraryStats {
     avgSteps: number;
     estSizeMB: string;
     modelStats: { name: string; fullName: string; count: number }[];
+    keywordStats: { text: string; value: number }[];
 }
 
 export const countImages = async (whereClause: string, params: any[]): Promise<number> => {
@@ -86,12 +87,16 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             count: r.count
         }));
 
+        // Get Keyword Stats
+        const keywordStats = await getKeywordStats(finalWhere, params);
+
         return {
             totalImages: total,
             totalGenerations: total,
             avgSteps: avgSteps,
             estSizeMB: ((total * 2.4)).toFixed(1),
-            modelStats
+            modelStats,
+            keywordStats
         };
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
@@ -100,8 +105,53 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',
-            modelStats: []
+            modelStats: [],
+            keywordStats: []
         };
+    }
+};
+
+export const getKeywordStats = async (whereClause: string = '', params: any[] = []): Promise<{ text: string; value: number }[]> => {
+    const db = await getDb();
+
+    try {
+        const stopWords = new Set(['a', 'an', 'the', 'of', 'in', 'on', 'at', 'with', 'and', 'or', 'for', 'to', 'is', 'are', 'style', 'by', 'view', 'highly', 'detailed', 'render', '4k', '8k', 'resolution', 'quality', 'masterpiece', 'best', 'score', 'rating', 'source', 'image', 'picture', 'v10', 'v20', 'v30', 'should', 'have', 'from', 'says', 'that', 'with', 'this', 'was', 'were', 'been', 'being', 'will', 'would', 'could', 'should', 'more', 'most', 'some', 'any', 'each', 'few', 'more', 'other', 'another', 'such', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can', 'just', 'highly', 'more', 'also', 'about', 'through', 'under', 'these', 'those', 'must', 'often', 'might']);
+
+        // Fix ambiguity for JOIN: replace and ensure 'id' becomes 'images.id'
+        const finalWhere = whereClause ? whereClause : "WHERE images.is_deleted = 0";
+        const safeWhere = finalWhere.replace(/\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match) => `images.${match}`);
+
+        const promptQuery = `
+            SELECT positive_prompt 
+            FROM images_fts
+            JOIN images ON images.id = images_fts.id
+            ${safeWhere}
+            LIMIT 2000
+        `;
+        const rows = await db.select<any[]>(promptQuery, params);
+
+        const counts: Record<string, number> = {};
+        rows.forEach(r => {
+            const tokens = (r.positive_prompt || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .split(/\s+/);
+
+            tokens.forEach((token: string) => {
+                if (token.length > 3 && !stopWords.has(token) && !/^\d+$/.test(token)) {
+                    counts[token] = (counts[token] || 0) + 1;
+                }
+            });
+        });
+
+        return Object.entries(counts)
+            .map(([text, value]) => ({ text, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 40);
+
+    } catch (e) {
+        console.error('[DB] Failed to get keyword stats', e);
+        return [];
     }
 };
 
