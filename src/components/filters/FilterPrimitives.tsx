@@ -32,8 +32,8 @@ export const SelectableRow: React.FC<SelectableRowProps> = ({ label, isSelected,
     <div
         onClick={onClick}
         className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${isSelected
-                ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
-                : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
+            ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+            : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
             }`}
     >
         <span>{label}</span>
@@ -162,22 +162,24 @@ interface SearchInputProps {
 }
 
 export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, placeholder = "Search...", className }) => (
-    <div className={`relative ${className}`}>
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-        <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className="w-full bg-gray-100 dark:bg-zinc-900/50 border border-gray-200 dark:border-gray-700 rounded-lg pl-7 pr-7 py-1.5 text-xs focus:border-sage-500 outline-none text-gray-900 dark:text-white transition-all"
-        />
-        {value && (
-            <button
-                onClick={() => onChange('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
-            >
-                <X className="w-3 h-3" />
-            </button>
-        )}
+    <div className={`${className}`}>
+        <div className="relative group size-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 group-focus-within:text-sage-500 transition-colors pointer-events-none" />
+            <input
+                type="text"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                className="w-full bg-gray-100/50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-10 py-2 text-xs focus:border-sage-500/50 focus:ring-4 focus:ring-sage-500/10 outline-none text-gray-900 dark:text-white transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
+            />
+            {value && (
+                <button
+                    onClick={() => onChange('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-lg transition-all"
+                >
+                    <X className="w-3 h-3" />
+                </button>
+            )}
+        </div>
     </div>
 );

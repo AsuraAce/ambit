@@ -199,7 +199,7 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                             value={searchQuery}
                             onChange={setSearchQuery}
                             placeholder="Find collection..."
-                            className="px-1 pb-2"
+                            className="pb-3"
                         />
                     )}
 
