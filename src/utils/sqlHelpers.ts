@@ -38,10 +38,20 @@ export const buildSqlWhereClause = (
 
         // B. Smart Filter Rules (Recursive logic simplified for performance)
         if (col && col.filters) {
+            // override smart date logic if we have a global date filter
+            const effectiveSmartFilters = { ...col.filters };
+
+            // If the GLOBAL filter has a specific date range, we want that to take precedence
+            // over the smart collection's internal date range.
+            // So we disable the smart collection's date range for this sub-query.
+            if (filters.dateRange !== 'all') {
+                effectiveSmartFilters.dateRange = 'all';
+            }
+
             // We can recursively call ourselves to get the smart filter sub-clause
             // but we must be careful not to create infinite loops or duplicate base constraints.
             // For now, let's just use a simplified version:
-            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(col.filters, false, 'blur', [], [], true);
+            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(effectiveSmartFilters, false, 'blur', [], [], true);
             if (smartWhere) {
                 subConditions.push(`(${smartWhere})`);
                 params.push(...smartParams);
@@ -215,12 +225,15 @@ export const buildSqlWhereClause = (
 
     // 9. Date Range
     if (filters.dateRange !== 'all') {
-        const now = Date.now();
+        const midnight = new Date();
+        midnight.setHours(0, 0, 0, 0);
+        const todayStart = midnight.getTime();
         const day = 24 * 60 * 60 * 1000;
+
         let cutOff = 0;
-        if (filters.dateRange === 'today') cutOff = now - day;
-        if (filters.dateRange === 'week') cutOff = now - (7 * day);
-        if (filters.dateRange === 'month') cutOff = now - (30 * day);
+        if (filters.dateRange === 'today') cutOff = todayStart;
+        if (filters.dateRange === 'week') cutOff = todayStart - (7 * day);
+        if (filters.dateRange === 'month') cutOff = todayStart - (30 * day);
 
         if (cutOff > 0) {
             conditions.push('timestamp >= ?');

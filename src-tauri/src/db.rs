@@ -77,5 +77,14 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4]
+    let migration5 = Migration {
+        version: 5,
+        description: "fix_timestamp_units",
+        // Convert any timestamps that look like seconds (10 digits: ~1 billion to ~10 billion) 
+        // to milliseconds. This covers years 2001 to 2286.
+        sql: "UPDATE images SET timestamp = timestamp * 1000 WHERE timestamp > 1000000000 AND timestamp < 10000000000;",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5]
 }
