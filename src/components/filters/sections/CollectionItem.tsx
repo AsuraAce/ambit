@@ -123,9 +123,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                     </div>
 
                     {col.isPinned && (
-                        <div className="absolute right-9 top-1/2 -translate-y-1/2 text-sage-500 dark:text-sage-400">
-                            <Pin className="w-3 h-3 fill-current" />
-                        </div>
+                        <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-sage-500 dark:bg-sage-400 rounded-r-full" />
                     )}
 
                     <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none transition-opacity duration-200 ${filters.collectionId === col.id ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500'

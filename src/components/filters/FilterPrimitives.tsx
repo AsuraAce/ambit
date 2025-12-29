@@ -12,10 +12,10 @@ interface SectionHeaderProps {
 }
 
 export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, isOpen, onToggle, action }) => (
-    <div className="flex items-center justify-between cursor-pointer group py-1" onClick={onToggle}>
-        <h3 className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase tracking-wider group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">
-            {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            {title}
+    <div className="flex items-center justify-between cursor-pointer group py-1 min-w-0" onClick={onToggle}>
+        <h3 className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase tracking-wider group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors min-w-0 flex-1">
+            {isOpen ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+            <span className="truncate">{title}</span>
         </h3>
         {action}
     </div>

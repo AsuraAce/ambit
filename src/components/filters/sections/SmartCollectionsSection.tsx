@@ -183,10 +183,10 @@ export const SmartCollectionsSection: React.FC<SmartCollectionsSectionProps> = (
                         {isDirty && !isCreatingSmart && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); setIsCreatingSmart(true); }}
-                                className="text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 transition-colors text-[10px] flex items-center gap-1 font-medium bg-sage-100 dark:bg-sage-900/30 border border-sage-500/30 px-1.5 py-0.5 rounded"
+                                className="text-sage-600 dark:text-sage-400 hover:text-sage-500 dark:hover:text-sage-300 transition-colors bg-sage-100 dark:bg-sage-900/30 border border-sage-500/30 p-1 rounded-md"
                                 title="Save current filters"
                             >
-                                <Save className="w-3 h-3" /> Save
+                                <Save className="w-3 h-3" />
                             </button>
                         )}
                     </div>
