@@ -12,8 +12,12 @@ interface TabProps {
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
+// --- Granular Memoized Tabs ---
+
+const LibraryHealthLazy = React.lazy(() => import('../maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
+
 // --- GENERAL TAB ---
-export const GeneralTab: React.FC<TabProps> = ({ settings, setSettings }) => (
+export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => (
   <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
     <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Appearance</h4>
@@ -57,22 +61,15 @@ export const GeneralTab: React.FC<TabProps> = ({ settings, setSettings }) => (
 
       <div className="pt-6 border-t border-gray-100 dark:border-white/5">
         <React.Suspense fallback={<div className="h-20 bg-gray-100 dark:bg-white/5 rounded-xl animate-pulse" />}>
-          {(() => {
-            const LibraryHealth = React.lazy(() => import('../maintenance/LibraryHealth').then(m => ({ default: m.LibraryHealth })));
-            // We'll need a way to navigate to maintenance, ideally passed as prop or handled via global nav
-            // For now, we'll assume the user finds the maintenance tab or we wire it up globally later.
-            // A simple reload to maintenance view isn't trivial without context access here, 
-            // so we can rely on text instruction or future wiring.
-            return <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />;
-          })()}
+          <LibraryHealthLazy mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />
         </React.Suspense>
       </div>
     </section>
   </div>
-);
+));
 
 // --- FOLDERS TAB ---
-export const FoldersTab: React.FC<TabProps> = ({ settings, setSettings }) => {
+export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
   const [newFolderPath, setNewFolderPath] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -112,11 +109,9 @@ export const FoldersTab: React.FC<TabProps> = ({ settings, setSettings }) => {
 
       if (selected && typeof selected === 'string') {
         const { normalizePath } = await import('../../utils/pathUtils');
-        // In Tauri v2, opening a directory grants permission scope for it automatically (usually)
         setNewFolderPath(normalizePath(selected));
       }
     } catch (e) {
-      // Fallback for Web Demo / Dev mode if plugin missing
       console.warn('Native dialog failed, falling back to input', e);
       fileInputRef.current?.click();
     }
@@ -125,7 +120,6 @@ export const FoldersTab: React.FC<TabProps> = ({ settings, setSettings }) => {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      // WEB FALLBACK: Still use the fake path for purely web demo visualization
       const relativePath = files[0].webkitRelativePath;
       const folderName = relativePath.split('/')[0] || 'Selected_Folder';
       setNewFolderPath(`D:/AI_Workflows/${folderName} (Simulated)`);
@@ -205,10 +199,10 @@ export const FoldersTab: React.FC<TabProps> = ({ settings, setSettings }) => {
       </div>
     </div>
   );
-};
+});
 
 // --- PRIVACY TAB ---
-export const PrivacyTab: React.FC<TabProps> = ({ settings, setSettings }) => {
+export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
   const [keywordInput, setKeywordInput] = useState(settings.maskedKeywords.join(', '));
 
   const handleKeywordsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -268,10 +262,10 @@ export const PrivacyTab: React.FC<TabProps> = ({ settings, setSettings }) => {
       </section>
     </div>
   );
-};
+});
 
 // --- EXPERIMENTS TAB ---
-export const ExperimentsTab: React.FC<TabProps> = ({ settings, setSettings }) => {
+export const ExperimentsTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
   return (
     <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
       <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
@@ -317,11 +311,11 @@ export const ExperimentsTab: React.FC<TabProps> = ({ settings, setSettings }) =>
       </section>
     </div>
   );
-};
+});
 
 // --- INTEGRATIONS TAB ---
 
-export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) => {
+export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [diagData, setDiagData] = useState<any>(null);
@@ -373,9 +367,6 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
       });
 
       if (selected && typeof selected === 'string') {
-        // We might want to normalize path
-        // const { normalizePath } = await import('../../utils/pathUtils');
-        // setSettings(prev => ({ ...prev, invokeAiPath: normalizePath(selected) }));
         setSettings(prev => ({ ...prev, invokeAiPath: selected }));
       }
     } catch (e) {
@@ -385,7 +376,6 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
 
   return (
     <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-      {/* Description Header */}
       <div className="px-1">
         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
           Integrations
@@ -464,7 +454,6 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
         </div>
       </section>
 
-      {/* Diagnostics Section */}
       <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
         <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -582,10 +571,10 @@ export const IntegrationsTab: React.FC<TabProps> = ({ settings, setSettings }) =
       <SyncSection settings={settings} setSettings={setSettings} />
     </div>
   );
-};
+});
 
 // Sub-component for Sync Logic
-const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch<React.SetStateAction<AppSettings>> }> = ({ settings, setSettings }) => {
+const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch<React.SetStateAction<AppSettings>> }> = React.memo(({ settings, setSettings }) => {
   const { syncState, startInvokeSync, cancelSync, cleanLibrary } = useLibrary();
   const { status, progress } = syncState;
 
@@ -598,7 +587,7 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
 
   const handleSync = () => {
     if (!settings.invokeAiPath) return;
-    startInvokeSync(settings.invokeAiPath, {
+    startInvokeSync({
       syncFavorites,
       syncBoards,
       importIntermediates: settings.importIntermediates,
@@ -744,14 +733,12 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
           )}
         </div>
 
-        {/* Confirmation Dialogs */}
         <ConfirmDialog
           isOpen={confirmAction.isOpen && confirmAction.type === 'reset'}
           title="Reset Sync Cursor?"
           message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE InvokeAI library from the beginning. This process may take some time.`}
           confirmLabel="Reset Cursor"
           onConfirm={() => {
-            console.log('[Settings] Resetting lastSyncedAt to NULL');
             setSettings(p => ({ ...p, lastSyncedAt: null }));
             closeConfirm();
           }}
@@ -811,4 +798,4 @@ const SyncSection: React.FC<{ settings: AppSettings, setSettings: React.Dispatch
       </div>
     </section>
   );
-};
+});

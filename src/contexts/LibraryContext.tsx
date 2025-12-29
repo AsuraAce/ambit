@@ -32,6 +32,7 @@ export interface LibraryContextType {
   loadMoreImages: () => Promise<void>;
   startInvokeSync: (options?: any) => Promise<void>;
   cancelSync: () => void;
+  cleanLibrary: () => Promise<void>;
   syncStatus: string;
   syncProgress: { current: number; total: number };
   syncState: {

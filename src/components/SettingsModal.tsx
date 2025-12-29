@@ -39,7 +39,7 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon, isActive, onClic
   </button>
 );
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({
+export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   isOpen,
   onClose,
   settings,
@@ -149,4 +149,4 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       )}
     </AnimatePresence>
   );
-};
+});

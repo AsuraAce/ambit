@@ -73,6 +73,10 @@ interface GlobalModalsProps {
   }
 }
 
+import { useSettings } from '../contexts/SettingsContext';
+import { useCollections } from '../contexts/CollectionContext';
+import { useSearch } from '../contexts/SearchContext';
+
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
   modals,
   setModals,
@@ -98,7 +102,9 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   shortcutsModalTab,
   commandPaletteProps
 }) => {
-  const { images, collections, smartCollections, settings, setSettings, toggleFavorite } = useLibraryContext();
+  const { settings, setSettings } = useSettings();
+  const { collections, smartCollections } = useCollections();
+  const { images, toggleFavorite } = useSearch();
   const { addToast } = useToast();
 
   const handleSettingsSave = (s: AppSettings) => {
