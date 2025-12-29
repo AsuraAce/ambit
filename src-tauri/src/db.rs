@@ -41,5 +41,41 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3]
+    let migration4 = Migration {
+        version: 4,
+        description: "create_collections_and_junction",
+        sql: "
+            CREATE TABLE IF NOT EXISTS collections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT,
+                is_archived INTEGER DEFAULT 0,
+                is_pinned INTEGER DEFAULT 0,
+                created_at INTEGER,
+                filter_state TEXT,
+                manual_exclusions TEXT,
+                custom_thumbnail TEXT,
+                source TEXT DEFAULT 'ambit'
+            );
+            CREATE TABLE IF NOT EXISTS collection_images (
+                collection_id TEXT,
+                image_id TEXT,
+                PRIMARY KEY (collection_id, image_id),
+                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+            );
+            -- Migrate existing board_ids to collections
+            INSERT INTO collections (id, name, created_at, source)
+            SELECT DISTINCT board_id, board_id, (strftime('%s', 'now') * 1000), 'invoke'
+            FROM images 
+            WHERE board_id IS NOT NULL;
+            
+            INSERT INTO collection_images (collection_id, image_id)
+            SELECT board_id, id 
+            FROM images 
+            WHERE board_id IS NOT NULL;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4]
 }

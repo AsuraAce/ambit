@@ -24,31 +24,42 @@ export const buildSqlWhereClause = (
         conditions.push(`(${privacyConditions.join(' AND ')})`);
     }
 
-    // 2. Collection ID
+    // 2. Collection ID (Hybrid Logic)
     if (filters.collectionId) {
-        const manualCol = collections?.find(c => c.id === filters.collectionId);
+        const col = collections?.find(c => c.id === filters.collectionId);
         const subConditions: string[] = [];
 
-        // Manual inclusions (paths)
-        if (manualCol && manualCol.imageIds && manualCol.imageIds.length > 0) {
-            const ids = manualCol.imageIds.map(id => id.replace(/\\/g, '/').replace(/\/+/g, '/'));
-            const placeholders = ids.map(() => '?').join(',');
-            subConditions.push(`path IN (${placeholders})`);
-            params.push(...ids);
-        }
+        // A. Manual Inclusions (via Junction Table)
+        subConditions.push(`id IN (SELECT image_id FROM collection_images WHERE collection_id = ?)`);
+        params.push(filters.collectionId);
 
-        // Database ID matching (for boards)
-        // Manual collections start with 'c_', boards are usually UUIDs
-        if (!filters.collectionId.startsWith('c_')) {
-            subConditions.push('board_id = ?');
-            params.push(filters.collectionId);
+        // B. Smart Filter Rules (Recursive logic simplified for performance)
+        if (col && col.filters) {
+            // We can recursively call ourselves to get the smart filter sub-clause
+            // but we must be careful not to create infinite loops or duplicate base constraints.
+            // For now, let's just use a simplified version:
+            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(col.filters, false, 'blur', []); // Minimal privacy/base for rules
+            if (smartWhere) {
+                // Strip the "WHERE " prefix and base constraints if needed
+                // Actually, buildSqlWhereClause always adds is_deleted = 0 etc. 
+                // We might want a 'clean' version for smart filters.
+                const cleanSmart = smartWhere.replace('WHERE ', '');
+                subConditions.push(`(${cleanSmart})`);
+                params.push(...smartParams);
+            }
         }
 
         if (subConditions.length > 0) {
-            conditions.push(`(${subConditions.join(' OR ')})`);
-        } else {
-            // Default fallback to ensure we don't show everything if no matches
-            conditions.push('1 = 0');
+            let combined = `(${subConditions.join(' OR ')})`;
+
+            // C. Manual Exclusions
+            if (col && col.manualExclusions && col.manualExclusions.length > 0) {
+                const placeholders = col.manualExclusions.map(() => '?').join(',');
+                combined = `(${combined} AND id NOT IN (${placeholders}))`;
+                params.push(...col.manualExclusions);
+            }
+
+            conditions.push(combined);
         }
     }
 

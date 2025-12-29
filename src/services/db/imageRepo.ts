@@ -28,7 +28,6 @@ export const insertImage = async (image: AIImage) => {
                 image.height,
                 image.fileSize,
                 image.timestamp,
-                image.timestamp,
                 JSON.stringify(image.metadata),
                 normalizePath(image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '') || ''),
                 image.isFavorite ? 1 : 0,
@@ -42,6 +41,14 @@ export const insertImage = async (image: AIImage) => {
                 image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
             ]
         );
+
+        // Junction Table Sync
+        if (image.boardId) {
+            await db.execute(
+                'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
+                [image.boardId, id]
+            );
+        }
     });
 };
 
@@ -207,5 +214,17 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     const db = await getDb();
     const normalizedIds = ids.map(normalizePath);
     const placeholders = normalizedIds.map(() => '?').join(',');
+
     await db.execute(`UPDATE images SET board_id = ? WHERE id IN (${placeholders})`, [boardId, ...normalizedIds]);
+
+    // Junction Table Sync
+    if (boardId) {
+        for (const id of normalizedIds) {
+            await db.execute('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)', [boardId, id]);
+        }
+    } else {
+        // If boardId is null, we don't necessarily know which collection to remove it from in the M:N world,
+        // but since board_id was 1:N, we should probably remove it from any 'invoke' source collections?
+        // Actually, a simpler approach is to use the dedicated collection removal tools for manual changes.
+    }
 };

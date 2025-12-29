@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { FolderInput, Archive, Folder, Pin } from 'lucide-react';
+import { FolderInput, Archive, Folder, Pin, Sparkles } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SmartImage } from '../../SmartImage';
 
@@ -103,7 +103,10 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
                             </div>
                         )}
-                        <span className={`truncate font-sans pointer-events-auto ${col.isArchived ? 'opacity-70 italic text-gray-500 dark:text-gray-500' : ''}`} title={col.name}>{col.name}</span>
+                        <span className={`truncate font-sans pointer-events-auto ${col.isArchived ? 'opacity-70 italic text-gray-500 dark:text-gray-500' : ''} flex items-center gap-1.5`} title={col.name}>
+                            {col.name}
+                            {col.filters && <Sparkles className="w-2.5 h-2.5 text-sage-500/70" />}
+                        </span>
                     </div>
 
                     {col.isPinned && (

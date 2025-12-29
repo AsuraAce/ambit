@@ -106,20 +106,21 @@ export interface Collection {
   name: string;
   description?: string;
   imageIds: string[];
-  count?: number; // Optimized: Store count directly to avoid loading all IDs
+  count?: number;
   thumbnail?: string;
-  customThumbnail?: string; // Explicit user choice
-  color?: string; // Hex or tailwind color name for organization
+  customThumbnail?: string;
+  color?: string;
   createdAt: number;
   isArchived?: boolean;
   isPinned?: boolean;
+  filters?: FilterState; // Added for Smart/Hybrid logic
+  manualExclusions?: string[]; // Added for Hybrid override logic
+  source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
 }
 
-export interface SmartCollection {
-  id: string;
-  name: string;
+export interface SmartCollection extends Collection {
+  // Kept for backward compatibility, now just a specialized Collection
   filters: FilterState;
-  icon?: string;
 }
 
 export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';

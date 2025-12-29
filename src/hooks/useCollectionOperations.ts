@@ -1,17 +1,12 @@
 import * as React from 'react';
 import { useCallback } from 'react';
-import { Collection, AIImage, SmartCollection, FilterState } from '../types';
+import { Collection, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { upsertCollection, deleteCollectionFromDb, addImagesToCollection as addImgsToCol, removeImagesFromCollection as removeImgsFromCol } from '../services/db/collectionRepo';
 
 interface UseCollectionOperationsProps {
-  // ... existing props
   collections: Collection[];
-  setCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
   smartCollections: SmartCollection[];
-  setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
-  images: AIImage[];
-  refreshCollectionThumbnails: () => void;
   refreshCollections: () => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<any>>;
   activeCollectionId: string | null;
@@ -19,145 +14,124 @@ interface UseCollectionOperationsProps {
 
 export const useCollectionOperations = ({
   collections,
-  setCollections,
   smartCollections,
-  setSmartCollections,
-  images,
-  refreshCollectionThumbnails,
   refreshCollections,
   setFilters,
   activeCollectionId
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
 
-  // --- Regular Collections ---
-
-  const createCollection = useCallback((name: string) => {
-    const newCol: Collection = {
-      id: `c_${Date.now()}`,
+  const createCollection = useCallback(async (name: string) => {
+    const id = `c_${Date.now()}`;
+    await upsertCollection({
+      id,
       name,
-      imageIds: [],
-      createdAt: Date.now()
-    };
-    setCollections(prev => [...prev, newCol]);
+      createdAt: Date.now(),
+      source: 'ambit'
+    });
+    await refreshCollections();
     addToast(`Collection "${name}" created`, 'success');
-  }, [setCollections, addToast]);
+  }, [refreshCollections, addToast]);
 
-  const deleteCollection = useCallback((id: string) => {
-    setCollections(prev => prev.filter(c => c.id !== id));
+  const deleteCollection = useCallback(async (id: string) => {
+    await deleteCollectionFromDb(id);
     if (activeCollectionId === id) {
       setFilters((prev: any) => ({ ...prev, collectionId: null }));
     }
+    await refreshCollections();
     addToast("Collection deleted", "success");
-  }, [setCollections, activeCollectionId, setFilters, addToast]);
+  }, [activeCollectionId, setFilters, refreshCollections, addToast]);
 
-  const renameCollection = useCallback((id: string, newName: string) => {
-    setCollections(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+  const renameCollection = useCallback(async (id: string, newName: string) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!col) return;
+    await upsertCollection({ ...col, name: newName });
+    await refreshCollections();
     addToast("Collection renamed", "success");
-  }, [setCollections, addToast]);
+  }, [collections, smartCollections, refreshCollections, addToast]);
 
-  const setCollectionColor = useCallback((id: string, color: string | undefined) => {
-    setCollections(prev => prev.map(c => c.id === id ? { ...c, color } : c));
-  }, [setCollections]);
+  const setCollectionColor = useCallback(async (id: string, color: string | undefined) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!col) return;
+    await upsertCollection({ ...col, color });
+    await refreshCollections();
+  }, [collections, smartCollections, refreshCollections]);
 
-  const toggleArchiveCollection = useCallback((id: string) => {
-    const col = collections.find(c => c.id === id);
+  const toggleArchiveCollection = useCallback(async (id: string) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
 
     const newState = !col.isArchived;
-    setCollections(prev => prev.map(c => c.id === id ? { ...c, isArchived: newState } : c));
+    await upsertCollection({ ...col, isArchived: newState });
 
-    // Auto-eject logic: If user archives the collection they are currently viewing, switch to All Photos
     if (activeCollectionId === id && newState) {
       setFilters((prev: any) => ({ ...prev, collectionId: null }));
     }
 
+    await refreshCollections();
     addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-  }, [collections, setCollections, addToast, activeCollectionId, setFilters]);
+  }, [collections, smartCollections, activeCollectionId, setFilters, refreshCollections, addToast]);
 
-  const togglePinCollection = useCallback((id: string) => {
-    setCollections(prev => prev.map(c => {
-      if (c.id === id) {
-        const newState = !c.isPinned;
-        return { ...c, isPinned: newState };
-      }
-      return c;
-    }));
-  }, [setCollections]);
+  const togglePinCollection = useCallback(async (id: string) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!col) return;
+    await upsertCollection({ ...col, isPinned: !col.isPinned });
+    await refreshCollections();
+  }, [collections, smartCollections, refreshCollections]);
 
   const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
-    const isBoard = !collectionId.startsWith('c_');
-
-    if (isBoard) {
-      const { updateImagesBoard } = await import('../services/db/imageRepo');
-      await updateImagesBoard(imageIds, collectionId);
-      // Trigger a sync of counts
-      setTimeout(() => refreshCollections(), 100);
-    } else {
-      setCollections(prev => prev.map(col => {
-        if (col.id !== collectionId) return col;
-        const newIds = [...col.imageIds];
-        imageIds.forEach(id => {
-          if (!newIds.includes(id)) {
-            newIds.push(id);
-          }
-        });
-        return { ...col, imageIds: newIds };
-      }));
-    }
-
-    setTimeout(() => refreshCollectionThumbnails(), 0);
+    await addImgsToCol(collectionId, imageIds);
+    await refreshCollections();
     addToast(`Added images to collection`, 'success');
-  }, [setCollections, refreshCollections, refreshCollectionThumbnails, addToast]);
+  }, [refreshCollections, addToast]);
 
   const removeImagesFromCollection = useCallback(async (imageIds: string[], collectionId: string) => {
-    const isBoard = !collectionId.startsWith('c_');
+    const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
 
-    if (isBoard) {
-      const { updateImagesBoard } = await import('../services/db/imageRepo');
-      await updateImagesBoard(imageIds, null);
-      setTimeout(() => refreshCollections(), 100);
-    } else {
-      setCollections(prev => prev.map(col => {
-        if (col.id !== collectionId) return col;
-        return { ...col, imageIds: col.imageIds.filter(id => !imageIds.includes(id)) };
-      }));
+    if (!col) return;
+
+    // Handle Manual Exclusions for Hybrid Smart Collections
+    if (col.filters) {
+      const currentExclusions = col.manualExclusions || [];
+      const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
+      await upsertCollection({ ...col, manualExclusions: newExclusions });
     }
 
-    setTimeout(() => refreshCollectionThumbnails(), 0);
+    // Always attempt removal from junction table (handles manual additions)
+    await removeImgsFromCol(collectionId, imageIds);
+
+    await refreshCollections();
     addToast("Removed from collection", "info");
-  }, [setCollections, refreshCollections, refreshCollectionThumbnails, addToast]);
+  }, [collections, smartCollections, refreshCollections, addToast]);
 
-  // --- Smart Collections ---
-
-  const saveSmartCollection = useCallback((name: string, filters: FilterState) => {
-    const newSmartCol: SmartCollection = {
-      id: `sc_${Date.now()}`,
+  const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
+    const id = `sc_${Date.now()}`;
+    await upsertCollection({
+      id,
       name,
-      filters
-    };
-    setSmartCollections(prev => [...prev, newSmartCol]);
+      filters,
+      createdAt: Date.now(),
+      source: 'ambit'
+    });
+    await refreshCollections();
     addToast(`Smart collection "${name}" saved`, 'success');
-  }, [setSmartCollections, addToast]);
+  }, [refreshCollections, addToast]);
 
-  const deleteSmartCollection = useCallback((id: string) => {
-    setSmartCollections(prev => prev.filter(s => s.id !== id));
-    addToast("Smart collection deleted", "info");
-  }, [setSmartCollections, addToast]);
-
-  const setCollectionThumbnail = useCallback((collectionId: string, imageId: string) => {
-    const thumbUrl = convertFileSrc(imageId.replace(/\\/g, '/'));
-    setCollections(prev => prev.map(c =>
-      c.id === collectionId ? { ...c, customThumbnail: imageId, thumbnail: thumbUrl } : c
-    ));
+  const setCollectionThumbnail = useCallback(async (collectionId: string, imageId: string) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
+    if (!col) return;
+    await upsertCollection({ ...col, customThumbnail: imageId });
+    await refreshCollections();
     addToast("Thumbnail updated", "success");
-  }, [setCollections, addToast]);
+  }, [collections, smartCollections, refreshCollections, addToast]);
 
-  const resetCollectionThumbnail = useCallback((id: string) => {
-    setCollections(prev => prev.map(c => c.id === id ? { ...c, customThumbnail: undefined } : c));
-    setTimeout(() => refreshCollectionThumbnails(), 0);
+  const resetCollectionThumbnail = useCallback(async (id: string) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!col) return;
+    await upsertCollection({ ...col, customThumbnail: undefined });
+    await refreshCollections();
     addToast("Thumbnail reset", "info");
-  }, [setCollections, refreshCollectionThumbnails, addToast]);
+  }, [collections, smartCollections, refreshCollections, addToast]);
 
   return {
     createCollection,
@@ -169,7 +143,7 @@ export const useCollectionOperations = ({
     addImagesToCollection,
     removeImagesFromCollection,
     saveSmartCollection,
-    deleteSmartCollection,
+    deleteSmartCollection: deleteCollection,
     setCollectionThumbnail,
     resetCollectionThumbnail
   };

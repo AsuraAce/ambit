@@ -210,5 +210,17 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
+    if (options.syncBoards && boards.size > 0) {
+        const { upsertCollection } = await import('../db/collectionRepo');
+        for (const [id, board] of boards.entries()) {
+            await upsertCollection({
+                id,
+                name: board.name,
+                createdAt: board.createdAt || Date.now(),
+                source: 'invoke'
+            });
+        }
+    }
+
     return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds, boardMapping: boards };
 };
