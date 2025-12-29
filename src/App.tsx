@@ -345,9 +345,11 @@ export default function App() {
                                             onTogglePin={actions.handlePinImage}
                                             availableTags={availableTags}
                                         />
-                                    ) : images.length > 0 ? (
+                                    ) : (images.length > 0 || isFiltering) ? (
                                         <>
-                                            {viewMode === 'timeline' ? (
+                                            {isFiltering ? (
+                                                <GridSkeleton layout={layoutMode} />
+                                            ) : viewMode === 'timeline' ? (
                                                 <TimelineView
                                                     images={images}
                                                     selectedIds={selectedIds}
@@ -385,61 +387,57 @@ export default function App() {
                                                         onRangeSelection={handleRangeSelection}
                                                         onBackgroundClick={clearSelection}
                                                     />
-                                                    {isFiltering ? (
-                                                        <GridSkeleton layout={layoutMode} />
-                                                    ) : (
-                                                        <VirtualGrid<AIImage>
-                                                            ref={gridRef}
-                                                            items={images.filter(i => !i.isPinned)}
-                                                            layout={layoutMode}
-                                                            minItemWidth={settings.thumbnailSize}
-                                                            gap={16}
-                                                            padding={24}
-                                                            scrollContainerRef={scrollContainerRef}
-                                                            onEndReached={loadMoreImages}
-                                                            getItemRatio={(img) => {
-                                                                const w = img.width || 1;
-                                                                const h = img.height || 1;
-                                                                return w / h;
-                                                            }}
-                                                            onLayoutChange={handleLayoutChange}
-                                                            onRangeSelection={(indices, isAdditive) => {
-                                                                const pinnedCount = images.filter(i => i.isPinned).length;
-                                                                const globalIndices = indices.map(idx => idx + pinnedCount);
-                                                                handleRangeSelection(globalIndices, isAdditive);
-                                                            }}
-                                                            onBackgroundClick={clearSelection}
-                                                            renderItem={(img, style, index, layout) => (
-                                                                <GridItem
-                                                                    key={img.id}
-                                                                    image={img}
-                                                                    style={style}
-                                                                    layoutPos={layout}
-                                                                    index={index + (images.filter(i => i.isPinned).length)}
-                                                                    isSelected={selectedIds.has(img.id)}
-                                                                    selectedIds={selectedIds}
-                                                                    maskedKeywords={settings.maskedKeywords}
-                                                                    privacyEnabled={privacyEnabled}
-                                                                    setImages={setImages}
-                                                                    onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
-                                                                    onToggleSelection={handleSelectionToggle}
-                                                                    onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                                    onTogglePin={async (e, id) => {
-                                                                        const img = images.find(i => i.id === id);
-                                                                        if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                                    }}
-                                                                    onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                    isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
-                                                                />
-                                                            )}
-                                                        />
-                                                    )}
+                                                    <VirtualGrid<AIImage>
+                                                        ref={gridRef}
+                                                        items={images.filter(i => !i.isPinned)}
+                                                        layout={layoutMode}
+                                                        minItemWidth={settings.thumbnailSize}
+                                                        gap={16}
+                                                        padding={24}
+                                                        scrollContainerRef={scrollContainerRef}
+                                                        onEndReached={loadMoreImages}
+                                                        getItemRatio={(img) => {
+                                                            const w = img.width || 1;
+                                                            const h = img.height || 1;
+                                                            return w / h;
+                                                        }}
+                                                        onLayoutChange={handleLayoutChange}
+                                                        onRangeSelection={(indices, isAdditive) => {
+                                                            const pinnedCount = images.filter(i => i.isPinned).length;
+                                                            const globalIndices = indices.map(idx => idx + pinnedCount);
+                                                            handleRangeSelection(globalIndices, isAdditive);
+                                                        }}
+                                                        onBackgroundClick={clearSelection}
+                                                        renderItem={(img, style, index, layout) => (
+                                                            <GridItem
+                                                                key={img.id}
+                                                                image={img}
+                                                                style={style}
+                                                                layoutPos={layout}
+                                                                index={index + (images.filter(i => i.isPinned).length)}
+                                                                isSelected={selectedIds.has(img.id)}
+                                                                selectedIds={selectedIds}
+                                                                maskedKeywords={settings.maskedKeywords}
+                                                                privacyEnabled={privacyEnabled}
+                                                                setImages={setImages}
+                                                                onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
+                                                                onToggleSelection={handleSelectionToggle}
+                                                                onToggleFavorite={(e, id) => toggleFavorite(id)}
+                                                                onTogglePin={async (e, id) => {
+                                                                    const img = images.find(i => i.id === id);
+                                                                    if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                                }}
+                                                                onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                                                                isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
+                                                            />
+                                                        )}
+                                                    />
                                                 </>
                                             )}
                                         </>
                                     ) : (
                                         <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                                            {(!filters.searchQuery && filters.models.length === 0 && !filters.collectionId && !filters.favoritesOnly && filters.dateRange === 'all') ? (
+                                            {globalTotal === 0 ? (
                                                 <>
                                                     <div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500">
                                                         <Import className="w-12 h-12 text-sage-500 opacity-50" />

@@ -76,7 +76,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [totalImages, setTotalImages] = useState(0);
     const [globalTotal, setGlobalTotal] = useState(0);
     const [hasMoreImages, setHasMoreImages] = useState(true);
-    const [isFiltering, setIsFiltering] = useState(false);
+    const [isFiltering, setIsFiltering] = useState(true);
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
 

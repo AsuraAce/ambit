@@ -139,16 +139,16 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 {displayedCount !== totalCount ? (
                     <>
                         <div className="flex items-center gap-1">
-                            <span className="text-sage-600 dark:text-sage-400">{isFiltering && displayedCount === 0 ? '...' : displayedCount.toLocaleString()}</span>
+                            <span className="text-sage-600 dark:text-sage-400">{(isFiltering && displayedCount === 0) ? '...' : displayedCount.toLocaleString()}</span>
                             <span className="opacity-40">/</span>
-                            <span className="text-gray-600 dark:text-gray-300">{totalCount.toLocaleString()}</span>
+                            <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
                         </div>
-                        <span className="text-[8px] opacity-60">{isFiltering ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}</span>
+                        <span className="text-[8px] opacity-60">{(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}</span>
                     </>
                 ) : (
                     <>
-                        <span className="text-gray-600 dark:text-gray-300">{totalCount.toLocaleString()}</span>
-                        <span className="text-[8px] opacity-60">TOTAL {scopeName}</span>
+                        <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
+                        <span className="text-[8px] opacity-60">{(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}</span>
                     </>
                 )}
             </div>
