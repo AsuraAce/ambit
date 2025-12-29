@@ -49,7 +49,7 @@ const SearchContext = createContext<SearchContextType | undefined>(undefined);
 
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, privacyEnabled } = useSettings();
-    const { collections, smartCollections, refreshCollections } = useCollections();
+    const { collections, smartCollections, refreshCollections, isLoaded } = useCollections();
 
     const [images, setImages] = useState<AIImage[]>([]);
     const [filters, setFilters] = useState<FilterState>({
@@ -82,6 +82,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
+    const prevCollectionIdRef = useRef<string | null>(null);
     useEffect(() => { imagesRef.current = images; }, [images]);
 
     const PAGE_SIZE = 1000;
@@ -154,27 +155,25 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [activeSqlWhere, activeSqlParams, sortOption, refreshMetadata]);
 
-    // Track previous collection to only load sort preference on switch
-    const prevCollectionIdRef = useRef<string | null>(null);
-
-    // 1. Load Sort Preference on Collection Switch
+    // 1. Unified Filter & Sort Sync Effect
     useEffect(() => {
         const currentId = filters.collectionId;
+        const allCols = [...collections, ...smartCollections];
+        const activeSmart = smartCollections.find(c => c.id === currentId);
+
+        // A. Sync Sort Option from Collection Preference
         if (currentId && currentId !== prevCollectionIdRef.current) {
-            const activeSmart = smartCollections.find(c => c.id === currentId);
             if (activeSmart && activeSmart.filters?.sortOption) {
-                setSortOption(activeSmart.filters.sortOption);
+                if (sortOption !== activeSmart.filters.sortOption) {
+                    setSortOption(activeSmart.filters.sortOption);
+                }
             }
         }
         prevCollectionIdRef.current = currentId;
-    }, [filters.collectionId, smartCollections]);
 
-    // 2. Main Filter Effect (SQL Builder)
-    useEffect(() => {
-        const allCols = [...collections, ...smartCollections];
+        // B. Build SQL
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCols);
 
-        // Deep comparison for params to avoid re-fetches if contents are same
         const paramsChanged = JSON.stringify(params) !== JSON.stringify(activeSqlParams);
         const whereChanged = where !== activeSqlWhere;
 
@@ -182,25 +181,29 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setActiveSqlWhere(where);
             setActiveSqlParams(params);
 
-            // Reset results immediately to avoid "bleed" from previous filters/collections
+            // Reset results immediately to avoid "bleed"
             setImages([]);
             setHasMoreImages(true);
             setTotalImages(0);
             setIsFiltering(true);
         }
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections, activeSqlWhere, activeSqlParams]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections, activeSqlWhere, activeSqlParams, sortOption]);
 
+    // 2. Main Data Fetching Effect
     useEffect(() => {
-        fetchData(false);
-    }, [activeSqlWhere, activeSqlParams, sortOption]);
+        // Debounce fetch slightly or ensure we have stable where/params
+        const timeout = setTimeout(() => {
+            fetchData(false);
+        }, 10);
+        return () => clearTimeout(timeout);
+    }, [activeSqlWhere, activeSqlParams, sortOption, fetchData]);
 
-    // Auto-persist sort option for smart collections
+    // 3. Auto-persist sort option for smart collections
     useEffect(() => {
         if (!filters.collectionId) return;
         const activeSmart = smartCollections.find(c => c.id === filters.collectionId);
-        if (!activeSmart || !activeSmart.filters) return;
+        if (!activeSmart || !activeSmart.filters || !isLoaded) return; // Wait for collections to be loaded
 
-        // If current sort differs from saved filter sort, persist it
         if (sortOption !== activeSmart.filters.sortOption) {
             const updateSort = async () => {
                 const { upsertCollection } = await import('../services/db/collectionRepo');
@@ -212,7 +215,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             };
             updateSort();
         }
-    }, [sortOption, filters.collectionId, smartCollections, refreshCollections]);
+    }, [sortOption, filters.collectionId, smartCollections, refreshCollections, isLoaded]);
 
     // Persistence load & Global count
     useEffect(() => {

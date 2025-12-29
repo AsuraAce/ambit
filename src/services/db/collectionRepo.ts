@@ -127,54 +127,74 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
     });
 
     // 2. Process Smart Collections: Calculate Dynamic Counts & Thumbnails
-    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers'); // Import here to avoid circular dep issues at top-level if any
+    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
+
+    // Separate regular and smart collections
+    const smartCols = mappedCollections.filter(c => !!c.filters);
+    const regularCols = mappedCollections.filter(c => !c.filters);
+
+    // 1. Batch Count Queries for Smart Collections
+    let smartCounts: Record<string, number> = {};
+    if (smartCols.length > 0) {
+        try {
+            const countQueries = smartCols.map(c => {
+                const statsFilters: FilterState = {
+                    collectionId: c.id,
+                    dateRange: 'all',
+                    favoritesOnly: false,
+                    pinnedOnly: false,
+                    models: [],
+                    tools: [],
+                    loras: [],
+                    searchQuery: ''
+                };
+                const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
+                return { id: c.id, where, params };
+            });
+
+            // SQLite UNION ALL approach for batched counts
+            const unionSql = countQueries.map(q => `SELECT ? as id, (SELECT COUNT(*) FROM images ${q.where}) as count`).join(' UNION ALL ');
+            const unionParams = countQueries.flatMap(q => [q.id, ...q.params]);
+
+            const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
+            res.forEach(row => { smartCounts[row.id] = row.count; });
+        } catch (e) {
+            console.error("[DB] Failed batched smart counts", e);
+        }
+    }
+
+    // 2. Fetch Thumbnails (Still parallel but isolated from counts)
     const finalCollections = await Promise.all(mappedCollections.map(async (c) => {
         if (!c.filters) return c;
 
         try {
-            // Build the specific SQL for this smart collection
-            // We pass [] for collections to avoid deep recursion, as a smart collection rule shouldn't depend on other collections for its definition usually, 
-            // or if it does, it's complex. For now, we assume self-contained rules or basic ones.
-            // Note: We need a way to get 'privacyEnabled' etc. usually passed from context. 
-            // For repo level stats, we might assume "Show All" or "System View" (no masking).
-            // Let's assume standard system view: privacy disabled, no masking for count accuracy in management.
-            // We explicitly inject the collection ID into the filters passed to buildSqlWhereClause
-            // This ensures that "Manual Inclusions" (handled in block 2 of sqlHelpers) are included in the SQL logic.
-            // We also pass the current collection as the 'context' so buildSqlWhereClause can find it.
-            // We only pass the collectionId to buildSqlWhereClause. 
-            // It will find the rules (c.filters) inside and handle the OR logic.
-            const statsFilters: FilterState = {
-                collectionId: c.id,
-                dateRange: 'all',
-                favoritesOnly: false,
-                pinnedOnly: false,
-                models: [],
-                tools: [],
-                loras: [],
-                searchQuery: ''
-            };
-
-            // Build the specific SQL for this smart collection
-            const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
-
-            // Get Dynamic Count
-            const countRes = await db.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM images ${where}`, params);
-            const dynamicCount = countRes[0]?.count || 0;
-
-            // Get Dynamic Thumbnail (if no custom one)
+            const count = smartCounts[c.id] || 0;
             let smartThumb = c.thumbnail;
+
             if (!c.customThumbnail) {
+                // We still fetch thumbnails individually for now as UNION with LIMIT is tricky
+                // but we skip if it's already a valid external thumb (rare for smart)
+                const statsFilters: FilterState = {
+                    collectionId: c.id,
+                    dateRange: 'all',
+                    favoritesOnly: false,
+                    pinnedOnly: false,
+                    models: [],
+                    tools: [],
+                    loras: [],
+                    searchQuery: ''
+                };
+                const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
                 const thumbUrl = await getSmartCollectionThumbnail(where, params);
                 if (thumbUrl) smartThumb = thumbUrl;
             }
 
             return {
                 ...c,
-                count: dynamicCount, // Override static count
+                count,
                 thumbnail: smartThumb
             };
         } catch (e) {
-            console.error(`[DB] Failed to calc stats for smart col ${c.name}`, e);
             return c;
         }
     }));

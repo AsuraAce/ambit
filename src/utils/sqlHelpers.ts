@@ -36,22 +36,31 @@ export const buildSqlWhereClause = (
         subConditions.push(`id IN (SELECT image_id FROM collection_images WHERE collection_id = ?)`);
         params.push(filters.collectionId);
 
-        // B. Smart Filter Rules (Recursive logic simplified for performance)
+        // B. Smart Filter Rules (Hybrid Mode)
+        // If the collection defines smart rules, we combine them with manual inclusions using OR.
         if (col && col.filters) {
-            // override smart date logic if we have a global date filter
+            /** 
+             * DATE PRE-EMPTION LOGIC:
+             * If the user has selected a GLOBAL date filter (e.g. "Today") in the filter panel,
+             * it should take precedence over any date range saved inside the smart collection's own rules.
+             * This allows "narrowing down" a smart collection by date.
+             */
             const effectiveSmartFilters = { ...col.filters };
-
-            // If the GLOBAL filter has a specific date range, we want that to take precedence
-            // over the smart collection's internal date range.
-            // So we disable the smart collection's date range for this sub-query.
             if (filters.dateRange !== 'all') {
-                effectiveSmartFilters.dateRange = 'all';
+                effectiveSmartFilters.dateRange = 'all'; // Disable internal date rule to let global one apply
             }
 
-            // We can recursively call ourselves to get the smart filter sub-clause
-            // but we must be careful not to create infinite loops or duplicate base constraints.
-            // For now, let's just use a simplified version:
-            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(effectiveSmartFilters, false, 'blur', [], [], true);
+            // Recursively build conditions for the smart rules
+            // We set isRecursive=true to skip repeating base constraints (is_deleted, privacy)
+            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
+                effectiveSmartFilters,
+                false,   // privacy handled by parent
+                'blur',
+                [],
+                [],
+                true     // isRecursive
+            );
+
             if (smartWhere) {
                 subConditions.push(`(${smartWhere})`);
                 params.push(...smartParams);
