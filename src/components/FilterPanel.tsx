@@ -49,7 +49,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     isVisible = true,
     className
 }) => {
-    const { collections, smartCollections, facets } = useLibraryContext();
+    const { collections, smartCollections, facets, clearAllFilters } = useLibraryContext();
 
     const [expanded, setExpanded] = React.useState<Record<string, boolean>>({
         collections: true,
@@ -65,7 +65,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
     };
 
-    const isDirty = !!(filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
 
     return (
         <div
@@ -84,27 +84,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <button
                         onClick={() => {
                             if (isDirty) {
-                                setFilters(prev => ({
-                                    ...prev,
-                                    collectionId: null,
-                                    favoritesOnly: false,
-                                    minSteps: undefined,
-                                    maxSteps: undefined,
-                                    minCfg: undefined,
-                                    maxCfg: undefined,
-                                    loras: [],
-                                    models: [],
-                                    tools: []
-                                }));
+                                clearAllFilters();
                             }
                         }}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all shadow-sm font-medium flex items-center justify-between group ease-spring duration-300 ${!filters.collectionId && !filters.favoritesOnly && !filters.minSteps && filters.loras.length === 0
+                        className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all shadow-sm font-medium flex items-center justify-between group ease-spring duration-300 ${!isDirty
                             ? 'bg-sage-600 text-white shadow-sage-500/20'
                             : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
                             }`}
                     >
                         All Photos
-                        {(!filters.collectionId && !filters.favoritesOnly && filters.loras.length === 0) && <Check className="w-4 h-4" />}
+                        {!isDirty && <Check className="w-4 h-4" />}
                     </button>
 
                     <CollectionsSection
