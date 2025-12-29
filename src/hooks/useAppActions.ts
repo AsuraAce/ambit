@@ -63,9 +63,10 @@ export const useAppActions = ({
         }
     };
 
-    const handleExportConfirm = async (filename: string, folder: string) => {
-        await fileOps.exportImages(filename, selectedIds, folder, () => {
-            setSelectedIds(new Set());
+    const handleExportConfirm = async (filename: string, folder: string, ids?: Set<string>) => {
+        const targetIds = ids || selectedIds;
+        await fileOps.exportImages(filename, targetIds, folder, () => {
+            if (!ids) setSelectedIds(new Set());
             closeModal('export');
         });
     };

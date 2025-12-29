@@ -19,6 +19,14 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
     return result[0]?.count || 0;
 };
 
+export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
+    const db = await getDb();
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const query = `SELECT id FROM images ${finalWhere}`;
+    const rows = await db.select<{ id: string }[]>(query, params);
+    return rows.map(r => r.id);
+};
+
 export const searchImages = async (
     whereClause: string,
     params: any[],

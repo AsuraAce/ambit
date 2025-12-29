@@ -48,6 +48,8 @@ interface GlobalModalsProps {
   onDeleteCollectionConfirm: () => void;
   onRecoverMetadata: (style: any) => void;
   onAddImagesToCollection: (ids: string[], colId: string) => void;
+  onCloseExport?: () => void;
+  exportIds?: Set<string>;
 
   // Specific Props
   pendingViewerDeleteId: string | null;
@@ -81,6 +83,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   onDeleteCollectionConfirm,
   onRecoverMetadata,
   onAddImagesToCollection,
+  onCloseExport,
+  exportIds,
   pendingViewerDeleteId,
   collectionToDeleteId,
   isRecoveringMetadata,
@@ -177,8 +181,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 
       <ExportModal
         isOpen={modals.export}
-        onClose={() => close('export')}
-        count={selectedIds.size}
+        onClose={() => { close('export'); onCloseExport?.(); }}
+        count={exportIds?.size || selectedIds.size}
         onConfirm={onExportConfirm}
         isExporting={isExporting}
       />

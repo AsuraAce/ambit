@@ -90,6 +90,7 @@ export default function App() {
 
     // Interaction State
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [exportIds, setExportIds] = useState<Set<string>>(new Set());
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const changeViewMode = useCallback((newMode: ViewMode) => {
@@ -282,11 +283,41 @@ export default function App() {
                             modals.setSlideshowShuffle(false);
                             modals.openModal('slideshow');
                         }}
-                        onExportCollection={(id) => {
+                        onExportCollection={async (id) => {
                             const col = collections.find(c => c.id === id);
                             if (col && col.imageIds.length > 0) {
-                                setSelectedIds(new Set(col.imageIds));
+                                setExportIds(new Set(col.imageIds));
                                 modals.openModal('export');
+                                return;
+                            }
+
+                            // If not a regular collection, check smart collections
+                            const smartCol = smartCollections.find(c => c.id === id);
+                            if (smartCol && smartCol.filters) {
+                                try {
+                                    const { buildSqlWhereClause } = await import('./utils/sqlHelpers');
+                                    const { searchImageIds } = await import('./services/db/searchRepo');
+
+                                    const allCols = [...collections, ...smartCollections];
+                                    const { where, params } = buildSqlWhereClause(
+                                        smartCol.filters,
+                                        privacyEnabled,
+                                        settings.maskingMode,
+                                        settings.maskedKeywords,
+                                        allCols
+                                    );
+
+                                    const ids = await searchImageIds(where, params);
+                                    if (ids.length > 0) {
+                                        setExportIds(new Set(ids));
+                                        modals.openModal('export');
+                                    } else {
+                                        addToast("No images found in this smart collection to export", "info");
+                                    }
+                                } catch (e) {
+                                    console.error("Failed to prepare smart collection export", e);
+                                    addToast("Failed to prepare export", "error");
+                                }
                             }
                         }}
                     />
@@ -511,7 +542,10 @@ export default function App() {
                     selectedIds={selectedIds}
                     filteredImages={images}
                     onSettingsSave={(s) => { setSettings(s); addToast('Settings saved', 'success'); }}
-                    onExportConfirm={actions.handleExportConfirm}
+                    onExportConfirm={(name, folder) => {
+                        actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
+                        setExportIds(new Set());
+                    }}
                     onRename={actions.handleRename}
                     onDeleteConfirm={actions.executeDelete}
                     onDeleteCollectionConfirm={() => {
@@ -524,6 +558,8 @@ export default function App() {
                         await colOps.addImagesToCollection(ids, colId);
                         clearSelection();
                     }}
+                    onCloseExport={() => setExportIds(new Set())}
+                    exportIds={exportIds}
                     pendingViewerDeleteId={modals.pendingViewerDeleteId}
                     collectionToDeleteId={modals.collectionToDelete}
                     isRecoveringMetadata={fileOps.isRecoveringMetadata}

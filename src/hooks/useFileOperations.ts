@@ -120,11 +120,23 @@ export const useFileOperations = ({
 
     const exportImages = async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
         const idArray = Array.from(ids);
-        const targetImages = images.filter(img => idArray.includes(img.id));
-        if (targetImages.length === 0 || !destinationFolder) return;
+        if (idArray.length === 0 || !destinationFolder) return;
 
         setIsExporting(true);
         try {
+            // Check if all images are in state. If not, fetch from DB.
+            let targetImages = images.filter(img => idArray.includes(img.id));
+
+            if (targetImages.length < idArray.length) {
+                const { getImagesByIds } = await import('../services/db/imageRepo');
+                targetImages = await getImagesByIds(idArray);
+            }
+
+            if (targetImages.length === 0) {
+                addToast("No valid images found to export", "error");
+                return;
+            }
+
             await exportImagesToZip(targetImages, destinationFolder, filename);
             addToast(`Export complete`, 'success');
             if (onComplete) onComplete();
