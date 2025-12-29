@@ -99,6 +99,7 @@ export interface FilterState {
   minCfg?: number;
   maxCfg?: number;
   pinnedOnly?: boolean;
+  sortOption?: SortOption;
 }
 
 export interface Collection {

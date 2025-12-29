@@ -5,14 +5,17 @@ export const buildSqlWhereClause = (
     privacyEnabled: boolean,
     maskingMode: AppSettings['maskingMode'],
     maskedKeywords: string[],
-    collections?: Collection[]
+    collections?: Collection[],
+    isRecursive: boolean = false
 ): { where: string; params: any[] } => {
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // Base Condition: Not Deleted and Not Intermediate
-    conditions.push('is_deleted = 0');
-    conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
+    // Base Condition: Not Deleted and Not Intermediate (Skip if recursive as they are added by parent)
+    if (!isRecursive) {
+        conditions.push('is_deleted = 0');
+        conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
+    }
 
     // 1. Privacy Logic
     if (privacyEnabled && maskingMode === 'hide' && maskedKeywords.length > 0) {
@@ -38,13 +41,9 @@ export const buildSqlWhereClause = (
             // We can recursively call ourselves to get the smart filter sub-clause
             // but we must be careful not to create infinite loops or duplicate base constraints.
             // For now, let's just use a simplified version:
-            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(col.filters, false, 'blur', []); // Minimal privacy/base for rules
+            const { where: smartWhere, params: smartParams } = buildSqlWhereClause(col.filters, false, 'blur', [], [], true);
             if (smartWhere) {
-                // Strip the "WHERE " prefix and base constraints if needed
-                // Actually, buildSqlWhereClause always adds is_deleted = 0 etc. 
-                // We might want a 'clean' version for smart filters.
-                const cleanSmart = smartWhere.replace('WHERE ', '');
-                subConditions.push(`(${cleanSmart})`);
+                subConditions.push(`(${smartWhere})`);
                 params.push(...smartParams);
             }
         }
@@ -229,6 +228,6 @@ export const buildSqlWhereClause = (
         }
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';
     return { where, params };
 };

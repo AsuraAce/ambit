@@ -154,6 +154,22 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [activeSqlWhere, activeSqlParams, sortOption, refreshMetadata]);
 
+    // Track previous collection to only load sort preference on switch
+    const prevCollectionIdRef = useRef<string | null>(null);
+
+    // 1. Load Sort Preference on Collection Switch
+    useEffect(() => {
+        const currentId = filters.collectionId;
+        if (currentId && currentId !== prevCollectionIdRef.current) {
+            const activeSmart = smartCollections.find(c => c.id === currentId);
+            if (activeSmart && activeSmart.filters?.sortOption) {
+                setSortOption(activeSmart.filters.sortOption);
+            }
+        }
+        prevCollectionIdRef.current = currentId;
+    }, [filters.collectionId, smartCollections]);
+
+    // 2. Main Filter Effect (SQL Builder)
     useEffect(() => {
         const allCols = [...collections, ...smartCollections];
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCols);
@@ -177,6 +193,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         fetchData(false);
     }, [activeSqlWhere, activeSqlParams, sortOption]);
+
+    // Auto-persist sort option for smart collections
+    useEffect(() => {
+        if (!filters.collectionId) return;
+        const activeSmart = smartCollections.find(c => c.id === filters.collectionId);
+        if (!activeSmart || !activeSmart.filters) return;
+
+        // If current sort differs from saved filter sort, persist it
+        if (sortOption !== activeSmart.filters.sortOption) {
+            const updateSort = async () => {
+                const { upsertCollection } = await import('../services/db/collectionRepo');
+                await upsertCollection({
+                    ...activeSmart,
+                    filters: { ...activeSmart.filters, sortOption }
+                });
+                await refreshCollections();
+            };
+            updateSort();
+        }
+    }, [sortOption, filters.collectionId, smartCollections, refreshCollections]);
 
     // Persistence load & Global count
     useEffect(() => {

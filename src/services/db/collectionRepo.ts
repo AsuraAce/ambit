@@ -138,7 +138,24 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             // Note: We need a way to get 'privacyEnabled' etc. usually passed from context. 
             // For repo level stats, we might assume "Show All" or "System View" (no masking).
             // Let's assume standard system view: privacy disabled, no masking for count accuracy in management.
-            const { where, params } = buildSqlWhereClause(c.filters, false, 'blur', [], []);
+            // We explicitly inject the collection ID into the filters passed to buildSqlWhereClause
+            // This ensures that "Manual Inclusions" (handled in block 2 of sqlHelpers) are included in the SQL logic.
+            // We also pass the current collection as the 'context' so buildSqlWhereClause can find it.
+            // We only pass the collectionId to buildSqlWhereClause. 
+            // It will find the rules (c.filters) inside and handle the OR logic.
+            const statsFilters: FilterState = {
+                collectionId: c.id,
+                dateRange: 'all',
+                favoritesOnly: false,
+                pinnedOnly: false,
+                models: [],
+                tools: [],
+                loras: [],
+                searchQuery: ''
+            };
+
+            // Build the specific SQL for this smart collection
+            const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
 
             // Get Dynamic Count
             const countRes = await db.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM images ${where}`, params);

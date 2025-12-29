@@ -18,6 +18,13 @@ interface CollectionItemProps {
     handleDrop: (e: React.DragEvent, colId: string) => void;
     handleContextMenu: (e: React.MouseEvent, colId: string) => void;
     dropTargetId: string | null;
+    onToggleArchive?: (colId: string) => void;
+    onTogglePin?: (colId: string) => void;
+    onSetColor?: (colId: string, color: string | undefined) => void;
+    onPlay?: (colId: string) => void;
+    onExport?: (colId: string) => void;
+    onResetThumbnail?: (colId: string) => void;
+    onDelete?: (colId: string) => void;
 }
 
 const getColorClass = (colorName?: string) => {

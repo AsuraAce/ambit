@@ -81,6 +81,7 @@ export const useCollectionOperations = ({
 
   const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
     await addImgsToCol(collectionId, imageIds);
+    // Refresh collections to update dynamic sidebar counts
     await refreshCollections();
     addToast(`Added images to collection`, 'success');
   }, [refreshCollections, addToast]);
@@ -109,6 +110,11 @@ export const useCollectionOperations = ({
     const existing = [...collections, ...smartCollections].find(c => c.name.toLowerCase() === name.toLowerCase());
 
     const id = existing ? existing.id : `sc_${Date.now()}`;
+
+    // Merge existing filters if updating, to preserve sortOption if it was set previously but not cleared
+    // Actually, the passed 'filters' usually represents the current active state, so we should trust it.
+    // However, if we want to ensure sortOption is passed, we depend on the caller.
+
     await upsertCollection({
       ...existing, // Preserve existing properties like color, pins, etc.
       id,

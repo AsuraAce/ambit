@@ -33,12 +33,14 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     setCollections
 }) => {
     const { addToast } = useToast();
-    const { collections, settings, toggleFavorite: libraryToggleFavorite } = useLibraryContext();
+    const { collections, smartCollections, settings, toggleFavorite: libraryToggleFavorite } = useLibraryContext();
 
     if (!contextMenu) return null;
 
     const activeImage = images.find(i => i.id === contextMenu.imageId);
-    const activeCollection = filters.collectionId ? collections.find((c: any) => c.id === filters.collectionId) : undefined;
+    const activeCollection = filters.collectionId
+        ? (collections.find((c: any) => c.id === filters.collectionId) || smartCollections.find((c: any) => c.id === filters.collectionId))
+        : undefined;
 
     return (
         <ContextMenu

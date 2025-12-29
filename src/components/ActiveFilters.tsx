@@ -14,8 +14,9 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
     setFilters,
     clearAllFilters
 }) => {
-    const { smartCollections } = useLibraryContext();
-    const activeSmartCol = filters.collectionId ? smartCollections.find(sc => sc.id === filters.collectionId) : undefined;
+    const { collections, smartCollections } = useLibraryContext();
+    const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
+    const activeSmartCol = filters.collectionId ? allCols.find(sc => sc.id === filters.collectionId) : undefined;
 
     // Merge visible filters with smart collection implicit filters for display
     const hasActiveFilters =
@@ -51,6 +52,12 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
                     {activeSmartCol.filters.searchQuery && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
                             <span className="truncate max-w-[150px]">"{activeSmartCol.filters.searchQuery}"</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
+                    {activeSmartCol.filters.dateRange && activeSmartCol.filters.dateRange !== 'all' && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="capitalize">{activeSmartCol.filters.dateRange}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}

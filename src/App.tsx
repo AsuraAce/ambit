@@ -374,7 +374,7 @@ export default function App() {
                                                             }}
                                                             onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                             thumbnailSize={settings.thumbnailSize}
-                                                            activeThumbnailUrl={activeCollection?.thumbnail}
+                                                            activeThumbnailUrl={activeCollection?.thumbnail || activeSmartCollection?.thumbnail}
                                                             onRangeSelection={handleRangeSelection}
                                                             onBackgroundClick={clearSelection}
                                                         />
@@ -445,7 +445,7 @@ export default function App() {
                                                                             if (img) await actions.handlePinImage(id, !img.isPinned);
                                                                         }}
                                                                         onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                        isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
+                                                                        isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
                                                                     />
                                                                 );
                                                             }}
