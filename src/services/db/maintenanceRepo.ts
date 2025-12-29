@@ -112,7 +112,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
     const db = await getDb();
     let query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
-        WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') 
+        WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') 
         AND is_deleted = 0
         AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
     `;
@@ -189,7 +189,7 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<any[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') AND is_deleted = 0 AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1) as untagged,
+            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') AND is_deleted = 0 AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
             COUNT(*) FILTER (WHERE json_extract(metadata_json, '$.isIntermediate') = 1 AND is_deleted = 0) as intermediates,
             COUNT(*) FILTER (WHERE is_deleted = 1) as trash

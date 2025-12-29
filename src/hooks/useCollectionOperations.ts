@@ -10,6 +10,7 @@ interface UseCollectionOperationsProps {
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
   refreshCollections: () => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<any>>;
+  setImages: React.Dispatch<React.SetStateAction<any[]>>;
   activeCollectionId: string | null;
 }
 
@@ -19,6 +20,7 @@ export const useCollectionOperations = ({
   setAllCollections,
   refreshCollections,
   setFilters,
+  setImages,
   activeCollectionId
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
@@ -175,6 +177,11 @@ export const useCollectionOperations = ({
       c.id === collectionId ? { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) } : c
     ));
 
+    // Optimistic Grid Removal: Remove from current view if we are looking at this collection
+    if (activeCollectionId === collectionId) {
+      setImages(prev => prev.filter(img => !imageIds.includes(img.id)));
+    }
+
     try {
       // Handle Manual Exclusions for Hybrid Smart Collections
       if (col.filters) {
@@ -227,6 +234,11 @@ export const useCollectionOperations = ({
       if (c.id === targetId) return { ...c, count: (c.count || 0) + imageIds.length };
       return c;
     }));
+
+    // Optimistic Grid Removal: Remove from current view if we are looking at the source collection
+    if (activeCollectionId === sourceId) {
+      setImages(prev => prev.filter(img => !imageIds.includes(img.id)));
+    }
 
     try {
       // 1. Remove from source

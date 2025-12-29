@@ -133,6 +133,7 @@ export default function App() {
         setAllCollections,
         refreshCollections,
         setFilters,
+        setImages,
         activeCollectionId: filters.collectionId
     });
 
