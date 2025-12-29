@@ -18,6 +18,7 @@ export const insertImage = async (image: AIImage) => {
                 metadata_json=excluded.metadata_json,
                 thumbnail_path=excluded.thumbnail_path,
                 is_favorite=excluded.is_favorite,
+                is_pinned=excluded.is_pinned,
                 group_id=excluded.group_id,
                 board_id=excluded.board_id
             `,

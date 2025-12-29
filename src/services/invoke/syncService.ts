@@ -47,6 +47,7 @@ export const syncImages = async (
     const hasWorkflow = columns.includes('workflow');
     const hasGraph = columns.includes('graph');
     const hasHasWorkflow = columns.includes('has_workflow');
+    const hasUpdatedAt = columns.includes('updated_at');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -74,9 +75,14 @@ export const syncImages = async (
     }
 
     if (options.afterTimestamp && options.afterTimestamp > 0) {
-        const bufferedTimestamp = options.afterTimestamp - (60 * 1000);
+        const bufferedTimestamp = options.afterTimestamp; // Remove 60s buffer
         const isoDate = new Date(bufferedTimestamp).toISOString().replace('T', ' ').replace('Z', '');
-        conditions.push(`i.created_at > '${isoDate}'`);
+        const timeCond = `i.created_at > '${isoDate}'`;
+        if (hasUpdatedAt) {
+            conditions.push(`(${timeCond} OR i.updated_at > '${isoDate}')`);
+        } else {
+            conditions.push(timeCond);
+        }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -87,6 +93,11 @@ export const syncImages = async (
     const ambitDb = await getDb();
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
     const ambitExistingIds = new Set(existingRows.map(r => r.id));
+
+    // Fetch existing states for favorite/pin/board to preserve them if sync is disabled for those fields
+    const { getImagesByIds } = await import('../db/imageRepo');
+    const existingImagesMeta = new Map<string, { isFavorite: boolean, isPinned: boolean, boardId?: string }>();
+
     const syncedIds = new Set<string>();
 
     if (totalToImport === 0) {
@@ -112,18 +123,19 @@ export const syncImages = async (
     const thumbCol = hasThumbnailName ? ', i.thumbnail_name' : '';
     const workflowCol = hasWorkflow ? ', i.workflow' : (hasGraph ? ', i.graph as workflow' : '');
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
+    const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
         const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol} ${hasWfCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol} ${hasWfCol} ${updatedCol}
             ${hasSessionQueue ? ', sq.workflow as session_workflow' : ''}
             FROM images i
             ${hasSessionQueue ? 'LEFT JOIN session_queue sq ON i.session_id = sq.session_id' : ''}
             ${whereClause}
-            ORDER BY i.created_at ASC
+            ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
         `;
 
@@ -143,6 +155,9 @@ export const syncImages = async (
             sizes = new Array(rows.length).fill(0);
         }
 
+        const existingImagesInBatch = await getImagesByIds(batchPaths);
+        const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+
         const currentBatch: any[] = [];
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
@@ -152,7 +167,13 @@ export const syncImages = async (
             try {
                 const timeRaw = row.created_at.includes('Z') ? row.created_at : row.created_at + ' Z';
                 const timestamp = new Date(timeRaw).getTime();
-                if (timestamp > maxTimestampNum) maxTimestampNum = timestamp;
+                let lastModified = timestamp;
+                if (hasUpdatedAt && row.updated_at) {
+                    const upTimeRaw = row.updated_at.includes('Z') ? row.updated_at : row.updated_at + ' Z';
+                    lastModified = new Date(upTimeRaw).getTime();
+                }
+
+                if (lastModified > maxTimestampNum) maxTimestampNum = lastModified;
 
                 const metadata = mapInvokeMetadata(row, 'metadata_blob', processed);
                 if (hasIsIntermediate) metadata.isIntermediate = !!row.is_intermediate;
@@ -160,16 +181,47 @@ export const syncImages = async (
 
                 let isFavorite = false;
                 let isPinned = false;
+
+                // Sync protection: If we already have this image, and sync options are OFF, keep the old values
+                const existing = existingMap.get(fullPath);
+
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
-                    const isStarredInInvoke = (hasStarred && row.starred) || (hasIsStarred && row.is_starred);
+                    const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
+                        (hasIsStarred && (row.is_starred === 1 || row.is_starred === true));
+
                     if (isStarredInInvoke) {
                         const mode = options.starredAs;
                         if (mode === 'favorite' || mode === 'both') isFavorite = true;
                         if (mode === 'pin' || mode === 'both') isPinned = true;
                     }
+                } else if (existing) {
+                    isFavorite = existing.isFavorite;
+                    isPinned = existing.isPinned || false;
                 }
 
                 let boardId = options.syncBoards ? imageToBoardId.get(row.image_name) : undefined;
+                if (!options.syncBoards && existing) {
+                    boardId = existing.boardId;
+                }
+
+                let needsUpdate = false;
+                if (!existing) {
+                    needsUpdate = true;
+                } else {
+                    // Only update if favorite, pin, or board changed
+                    if (isFavorite !== existing.isFavorite) needsUpdate = true;
+                    if (isPinned !== (existing.isPinned || false)) needsUpdate = true;
+                    if (boardId !== existing.boardId) needsUpdate = true;
+                    // Note: We don't check metadata updates here to keep it simple and performance-oriented
+                    // but since InvokeAI metadata is usually immutable after creation, this is safe.
+                }
+
+                if (!needsUpdate) {
+                    processed++;
+                    syncedIds.add(row.image_name);
+                    continue;
+                }
+
                 let thumbnailPath = (hasThumbnailName && row.thumbnail_name)
                     ? `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`
                     : `${imagesRoot}/outputs/images/thumbnails/${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"}`;
@@ -191,7 +243,7 @@ export const syncImages = async (
                     metadata: metadata
                 };
 
-                if (!ambitExistingIds.has(fullPath)) {
+                if (!existing) {
                     newImportedCount++;
                     ambitExistingIds.add(fullPath);
                 } else {
