@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Folder, ArrowUpDown, Check, X, Plus } from 'lucide-react';
+import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive } from 'lucide-react';
 import { Collection } from '../types';
 import { SearchInput } from './filters/FilterPrimitives';
 
@@ -25,9 +25,14 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [sort, setSort] = useState<CollectionSort>('date_desc');
     const [showSortMenu, setShowSortMenu] = useState(false);
+    const [showArchived, setShowArchived] = useState(false);
 
     const filtered = collections
-        .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        .filter(c => {
+            const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesArchive = showArchived ? true : !c.isArchived;
+            return matchesSearch && matchesArchive;
+        })
         .sort((a, b) => {
             switch (sort) {
                 case 'name_asc': return a.name.localeCompare(b.name);
@@ -91,8 +96,17 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         <button
                             onClick={() => setShowSortMenu(!showSortMenu)}
                             className={`p-2 rounded-lg border transition-all ${showSortMenu ? 'bg-sage-600 text-white border-sage-600' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-gray-500'}`}
+                            title="Sort Collections"
                         >
                             <ArrowUpDown className="w-4 h-4" />
+                        </button>
+
+                        <button
+                            onClick={() => setShowArchived(!showArchived)}
+                            className={`p-2 rounded-lg border transition-all ${showArchived ? 'bg-sage-600 text-white border-sage-600' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-gray-500'}`}
+                            title={showArchived ? "Hide Archived" : "Show Archived"}
+                        >
+                            <Archive className="w-4 h-4" />
                         </button>
 
                         <AnimatePresence>
@@ -140,7 +154,14 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                             <Folder className="w-4 h-4" />
                                         </div>
                                         <div>
-                                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-sage-700 dark:group-hover:text-sage-300 transition-colors">{col.name}</div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-sage-700 dark:group-hover:text-sage-300 transition-colors">
+                                                    {col.name}
+                                                </div>
+                                                {col.isArchived && (
+                                                    <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">Archived</span>
+                                                )}
+                                            </div>
                                             <div className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider">{col.count ?? col.imageIds.length} images</div>
                                         </div>
                                     </div>
