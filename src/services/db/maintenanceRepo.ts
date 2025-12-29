@@ -186,17 +186,20 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
 export const getMaintenanceCounts = async () => {
     const db = await getDb();
 
-    const untagged = await db.select<any[]>('SELECT COUNT(*) as count FROM images WHERE (metadata_json IS NULL OR metadata_json LIKE \'%"positivePrompt":""%\' OR metadata_json LIKE \'%"positivePrompt":null%\') AND is_deleted = 0 AND json_extract(metadata_json, "$.isIntermediate") IS NOT 1');
-    const orphans = await db.select<any[]>('SELECT COUNT(*) as count FROM images WHERE is_missing = 1 AND is_deleted = 0');
-    const intermediates = await db.select<any[]>('SELECT COUNT(*) as count FROM images WHERE json_extract(metadata_json, "$.isIntermediate") = 1 AND is_deleted = 0');
-    const missing = await db.select<any[]>('SELECT COUNT(*) as count FROM images WHERE is_missing = 1 AND is_deleted = 0');
-    const trash = await db.select<any[]>('SELECT COUNT(*) as count FROM images WHERE is_deleted = 1');
+    // Batch all counts into a single query to reduce IPC overhead
+    const res = await db.select<any[]>(`
+        SELECT 
+            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR metadata_json LIKE '%"positivePrompt":""%' OR metadata_json LIKE '%"positivePrompt":null%') AND is_deleted = 0 AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1) as untagged,
+            COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
+            COUNT(*) FILTER (WHERE json_extract(metadata_json, '$.isIntermediate') = 1 AND is_deleted = 0) as intermediates,
+            COUNT(*) FILTER (WHERE is_deleted = 1) as trash
+        FROM images
+    `);
 
-    // For duplicates, we need a slightly more complex query to count the groups or the redundant items.
-    // Let's count groups for simplicity in the health badge.
-    const duplicates = await db.select<any[]>(`
+    // Duplicates require a subquery count
+    const duplicates = await db.select<{ count: number }[]>(`
         SELECT COUNT(*) as count FROM (
-            SELECT file_size, width, height 
+            SELECT 1
             FROM images 
             WHERE is_deleted = 0 AND group_id IS NULL AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
             GROUP BY file_size, width, height 
@@ -204,12 +207,14 @@ export const getMaintenanceCounts = async () => {
         )
     `);
 
+    const counts = res[0] || {};
+
     return {
-        untagged: untagged[0]?.count || 0,
-        orphans: orphans[0]?.count || 0, // This is actually the same as missing in our current logic
-        intermediates: intermediates[0]?.count || 0,
-        missing: missing[0]?.count || 0,
-        trash: trash[0]?.count || 0,
+        untagged: counts.untagged || 0,
+        orphans: counts.missing || 0,
+        intermediates: counts.intermediates || 0,
+        missing: counts.missing || 0,
+        trash: counts.trash || 0,
         duplicates: duplicates[0]?.count || 0
     };
 };

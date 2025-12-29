@@ -146,30 +146,53 @@ export const useCollectionOperations = ({
   }, [collections, smartCollections, setAllCollections, refreshCollections]);
 
   const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
-    await addImgsToCol(collectionId, imageIds);
-    // Refresh collections to update dynamic sidebar counts
-    await refreshCollections();
-    addToast(`Added images to collection`, 'success');
-  }, [refreshCollections, addToast]);
+    const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
+    if (!col) return;
+
+    // Optimistic Update: Increment count
+    setAllCollections(prev => prev.map(c =>
+      c.id === collectionId ? { ...c, count: (c.count || 0) + imageIds.length } : c
+    ));
+
+    try {
+      await addImgsToCol(collectionId, imageIds);
+      addToast(`Added images to collection`, 'success');
+      // Background refresh for safety and smart collection updates
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
+      addToast("Failed to add to collection", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
   const removeImagesFromCollection = useCallback(async (imageIds: string[], collectionId: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
-
     if (!col) return;
 
-    // Handle Manual Exclusions for Hybrid Smart Collections
-    if (col.filters) {
-      const currentExclusions = col.manualExclusions || [];
-      const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
-      await upsertCollection({ ...col, manualExclusions: newExclusions });
+    // Optimistic Update: Decrement count
+    setAllCollections(prev => prev.map(c =>
+      c.id === collectionId ? { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) } : c
+    ));
+
+    try {
+      // Handle Manual Exclusions for Hybrid Smart Collections
+      if (col.filters) {
+        const currentExclusions = col.manualExclusions || [];
+        const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
+        await upsertCollection({ ...col, manualExclusions: newExclusions });
+      }
+
+      // Always attempt removal from junction table (handles manual additions)
+      await removeImgsFromCol(collectionId, imageIds);
+      addToast("Removed from collection", "info");
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
+      addToast("Failed to remove from collection", "error");
     }
-
-    // Always attempt removal from junction table (handles manual additions)
-    await removeImgsFromCol(collectionId, imageIds);
-
-    await refreshCollections();
-    addToast("Removed from collection", "info");
-  }, [collections, smartCollections, refreshCollections, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
     // Check if we already have a collection with this name to update it instead of creating a new one
