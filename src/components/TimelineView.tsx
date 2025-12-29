@@ -23,6 +23,7 @@ interface TimelineViewProps {
     // Privacy Props
     maskedKeywords: string[];
     privacyEnabled: boolean;
+    showPinsAsShelf?: boolean;
 }
 // ... (keep chunk helper if inside range, wait, my target content starts at imports)
 
@@ -50,9 +51,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onRangeSelection,
     onBackgroundClick,
     maskedKeywords,
-    privacyEnabled
+    privacyEnabled,
+    showPinsAsShelf = true
 }) => {
-    const { groups } = useTimeline(images, sortOption);
+    const { groups } = useTimeline(images, sortOption, showPinsAsShelf);
     const containerRef = useRef<HTMLDivElement>(null);
     const stickyHeaderRef = useRef<HTMLDivElement>(null);
 

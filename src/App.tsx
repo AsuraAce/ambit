@@ -349,89 +349,100 @@ export default function App() {
                                         <>
                                             {isFiltering ? (
                                                 <GridSkeleton layout={layoutMode} />
-                                            ) : viewMode === 'timeline' ? (
-                                                <TimelineView
-                                                    images={images}
-                                                    selectedIds={selectedIds}
-                                                    thumbnailSize={settings.thumbnailSize}
-                                                    sortOption={sortOption}
-                                                    maskedKeywords={settings.maskedKeywords}
-                                                    privacyEnabled={privacyEnabled}
-                                                    onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
-                                                    onSelectionToggle={handleSelectionToggle}
-                                                    onToggleFavorite={(e, id) => { toggleFavorite(id); }}
-                                                    onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
-                                                    onRangeSelection={handleRangeSelection}
-                                                    onBackgroundClick={clearSelection}
-                                                />
                                             ) : (
                                                 <>
-                                                    <PinnedShelf
-                                                        images={images.filter(i => i.isPinned)}
-                                                        isCollapsed={modals.isPinnedShelfCollapsed}
-                                                        onToggleCollapse={() => modals.setIsPinnedShelfCollapsed(p => !p)}
-                                                        selectedIds={selectedIds}
-                                                        maskedKeywords={settings.maskedKeywords}
-                                                        privacyEnabled={privacyEnabled}
-                                                        setImages={setImages}
-                                                        onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
-                                                        onToggleSelection={handleSelectionToggle}
-                                                        onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                        onTogglePin={async (e, id) => {
-                                                            const img = images.find(i => i.id === id);
-                                                            if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                        }}
-                                                        onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                        thumbnailSize={settings.thumbnailSize}
-                                                        activeThumbnailUrl={activeCollection?.thumbnail}
-                                                        onRangeSelection={handleRangeSelection}
-                                                        onBackgroundClick={clearSelection}
-                                                    />
-                                                    <VirtualGrid<AIImage>
-                                                        ref={gridRef}
-                                                        items={images.filter(i => !i.isPinned)}
-                                                        layout={layoutMode}
-                                                        minItemWidth={settings.thumbnailSize}
-                                                        gap={16}
-                                                        padding={24}
-                                                        scrollContainerRef={scrollContainerRef}
-                                                        onEndReached={loadMoreImages}
-                                                        getItemRatio={(img) => {
-                                                            const w = img.width || 1;
-                                                            const h = img.height || 1;
-                                                            return w / h;
-                                                        }}
-                                                        onLayoutChange={handleLayoutChange}
-                                                        onRangeSelection={(indices, isAdditive) => {
-                                                            const pinnedCount = images.filter(i => i.isPinned).length;
-                                                            const globalIndices = indices.map(idx => idx + pinnedCount);
-                                                            handleRangeSelection(globalIndices, isAdditive);
-                                                        }}
-                                                        onBackgroundClick={clearSelection}
-                                                        renderItem={(img, style, index, layout) => (
-                                                            <GridItem
-                                                                key={img.id}
-                                                                image={img}
-                                                                style={style}
-                                                                layoutPos={layout}
-                                                                index={index + (images.filter(i => i.isPinned).length)}
-                                                                isSelected={selectedIds.has(img.id)}
-                                                                selectedIds={selectedIds}
-                                                                maskedKeywords={settings.maskedKeywords}
-                                                                privacyEnabled={privacyEnabled}
-                                                                setImages={setImages}
-                                                                onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
-                                                                onToggleSelection={handleSelectionToggle}
-                                                                onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                                onTogglePin={async (e, id) => {
-                                                                    const img = images.find(i => i.id === id);
-                                                                    if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                                }}
-                                                                onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
-                                                            />
-                                                        )}
-                                                    />
+                                                    {(filters.collectionId && viewMode !== 'timeline') && (
+                                                        <PinnedShelf
+                                                            images={images.filter(i => i.isPinned)}
+                                                            isCollapsed={modals.isPinnedShelfCollapsed}
+                                                            onToggleCollapse={() => modals.setIsPinnedShelfCollapsed(p => !p)}
+                                                            selectedIds={selectedIds}
+                                                            maskedKeywords={settings.maskedKeywords}
+                                                            privacyEnabled={privacyEnabled}
+                                                            setImages={setImages}
+                                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
+                                                            onToggleSelection={handleSelectionToggle}
+                                                            onToggleFavorite={(e, id) => toggleFavorite(id)}
+                                                            onTogglePin={async (e, id) => {
+                                                                const img = images.find(i => i.id === id);
+                                                                if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                            }}
+                                                            onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                                                            thumbnailSize={settings.thumbnailSize}
+                                                            activeThumbnailUrl={activeCollection?.thumbnail}
+                                                            onRangeSelection={handleRangeSelection}
+                                                            onBackgroundClick={clearSelection}
+                                                        />
+                                                    )}
+                                                    {viewMode === 'timeline' ? (
+                                                        <TimelineView
+                                                            images={images}
+                                                            selectedIds={selectedIds}
+                                                            thumbnailSize={settings.thumbnailSize}
+                                                            sortOption={sortOption}
+                                                            maskedKeywords={settings.maskedKeywords}
+                                                            privacyEnabled={privacyEnabled}
+                                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
+                                                            onSelectionToggle={handleSelectionToggle}
+                                                            onToggleFavorite={(e, id) => { toggleFavorite(id); }}
+                                                            onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
+                                                            onRangeSelection={handleRangeSelection}
+                                                            onBackgroundClick={clearSelection}
+                                                            showPinsAsShelf={!!filters.collectionId}
+                                                        />
+                                                    ) : (
+                                                        <VirtualGrid<AIImage>
+                                                            ref={gridRef}
+                                                            items={filters.collectionId ? images.filter(i => !i.isPinned) : images}
+                                                            layout={layoutMode}
+                                                            minItemWidth={settings.thumbnailSize}
+                                                            gap={16}
+                                                            padding={24}
+                                                            scrollContainerRef={scrollContainerRef}
+                                                            onEndReached={loadMoreImages}
+                                                            getItemRatio={(img) => {
+                                                                const w = img.width || 1;
+                                                                const h = img.height || 1;
+                                                                return w / h;
+                                                            }}
+                                                            onLayoutChange={handleLayoutChange}
+                                                            onRangeSelection={(indices, isAdditive) => {
+                                                                const itemsInGrid = filters.collectionId ? images.filter(i => !i.isPinned) : images;
+                                                                const pinnedInShelf = filters.collectionId ? images.filter(i => i.isPinned) : [];
+                                                                const pinnedCount = pinnedInShelf.length;
+                                                                const globalIndices = indices.map(idx => idx + pinnedCount);
+                                                                handleRangeSelection(globalIndices, isAdditive);
+                                                            }}
+                                                            onBackgroundClick={clearSelection}
+                                                            renderItem={(img, style, index, layout) => {
+                                                                const pinnedInShelf = filters.collectionId ? images.filter(i => i.isPinned) : [];
+                                                                const pinnedCount = pinnedInShelf.length;
+                                                                return (
+                                                                    <GridItem
+                                                                        key={img.id}
+                                                                        image={img}
+                                                                        style={style}
+                                                                        layoutPos={layout}
+                                                                        index={index + pinnedCount}
+                                                                        isSelected={selectedIds.has(img.id)}
+                                                                        selectedIds={selectedIds}
+                                                                        maskedKeywords={settings.maskedKeywords}
+                                                                        privacyEnabled={privacyEnabled}
+                                                                        setImages={setImages}
+                                                                        onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
+                                                                        onToggleSelection={handleSelectionToggle}
+                                                                        onToggleFavorite={(e, id) => toggleFavorite(id)}
+                                                                        onTogglePin={async (e, id) => {
+                                                                            const img = images.find(i => i.id === id);
+                                                                            if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                                        }}
+                                                                        onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                                                                        isThumbnail={activeCollection ? (activeCollection.customThumbnail === img.id || activeCollection.thumbnail === img.id) : false}
+                                                                    />
+                                                                );
+                                                            }}
+                                                        />
+                                                    )}
                                                 </>
                                             )}
                                         </>

@@ -9,7 +9,7 @@ export interface TimelineGroup {
     images: AIImage[];
 }
 
-export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_desc') => {
+export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_desc', showPinsAsShelf: boolean = true) => {
     const groups = useMemo(() => {
         const groupsMap = new Map<string, TimelineGroup>();
         const now = new Date();
@@ -26,7 +26,7 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
             let id = '';
             let groupTimestamp = 0; // Used for sorting the groups themselves
 
-            if (img.isPinned) {
+            if (img.isPinned && showPinsAsShelf) {
                 label = 'Pinned';
                 id = 'pinned';
                 groupTimestamp = Number.MAX_SAFE_INTEGER; // Always top
@@ -97,7 +97,7 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
         });
 
         return groupList;
-    }, [images, sortOption]);
+    }, [images, sortOption, showPinsAsShelf]);
 
     return { groups };
 };
