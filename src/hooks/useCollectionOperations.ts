@@ -59,20 +59,19 @@ export const useCollectionOperations = ({
   }, [setCollections]);
 
   const toggleArchiveCollection = useCallback((id: string) => {
-    setCollections(prev => prev.map(c => {
-      if (c.id === id) {
-        const newState = !c.isArchived;
-        addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-        return { ...c, isArchived: newState };
-      }
-      return c;
-    }));
+    const col = collections.find(c => c.id === id);
+    if (!col) return;
+
+    const newState = !col.isArchived;
+    setCollections(prev => prev.map(c => c.id === id ? { ...c, isArchived: newState } : c));
 
     // Auto-eject logic: If user archives the collection they are currently viewing, switch to All Photos
-    if (activeCollectionId === id) {
+    if (activeCollectionId === id && newState) {
       setFilters((prev: any) => ({ ...prev, collectionId: null }));
     }
-  }, [setCollections, addToast, activeCollectionId, setFilters]);
+
+    addToast(newState ? "Collection archived" : "Collection unarchived", "info");
+  }, [collections, setCollections, addToast, activeCollectionId, setFilters]);
 
   const togglePinCollection = useCallback((id: string) => {
     setCollections(prev => prev.map(c => {
