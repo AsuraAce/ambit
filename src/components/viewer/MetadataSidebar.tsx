@@ -142,6 +142,27 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     const [isEditingTool, setIsEditingTool] = useState(false);
     const [editedTool, setEditedTool] = useState<GeneratorTool>(GeneratorTool.UNKNOWN);
     const [collectionQuery, setCollectionQuery] = useState('');
+    const [imageCollections, setImageCollections] = useState<string[]>([]);
+    const [isLoadingCollections, setIsLoadingCollections] = useState(false);
+
+    // Fetch collections for this image on demand (replaces old col.imageIds.includes check)
+    useEffect(() => {
+        let isCancelled = false;
+        const fetchImageMembership = async () => {
+            setIsLoadingCollections(true);
+            try {
+                const { getCollectionsForImage } = await import('../../services/db/collectionRepo');
+                const colIds = await getCollectionsForImage(image.id);
+                if (!isCancelled) setImageCollections(colIds);
+            } catch (e) {
+                console.error("Failed to fetch image collections", e);
+            } finally {
+                if (!isCancelled) setIsLoadingCollections(false);
+            }
+        };
+        fetchImageMembership();
+        return () => { isCancelled = true; };
+    }, [image.id]);
 
     // Editing State
     const [isPromptDirty, setIsPromptDirty] = useState(false);
@@ -566,13 +587,32 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 <input type="text" placeholder="Find collection..." value={collectionQuery} onChange={(e) => setCollectionQuery(e.target.value)} className="w-full bg-white dark:bg-zinc-800/50 border border-gray-200 dark:border-white/10 rounded-lg pl-8 pr-2 py-1.5 text-xs text-gray-900 dark:text-white focus:border-sage-500 outline-none" />
                             </div>
-                            <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                            <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1 relative">
+                                {isLoadingCollections && (
+                                    <div className="absolute inset-0 bg-white/50 dark:bg-zinc-900/50 flex items-center justify-center z-10 backdrop-blur-[1px]">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-sage-500 border-t-transparent" />
+                                    </div>
+                                )}
                                 {collections.filter(c => c.name.toLowerCase().includes(collectionQuery.toLowerCase())).map(col => {
-                                    const isIn = col.imageIds.includes(image.id);
+                                    const isIn = imageCollections.includes(col.id);
                                     return (
-                                        <button key={col.id} onClick={() => onAddToCollection(image.id, col.id)} className={`w-full text-left px-4 py-3 rounded-xl text-sm flex items-center justify-between border transition-all ${isIn ? 'bg-sage-100 dark:bg-sage-900/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300' : 'bg-white dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
+                                        <button
+                                            key={col.id}
+                                            onClick={async () => {
+                                                // Optimistic UI for membership
+                                                const wasIn = isIn;
+                                                setImageCollections(prev => wasIn ? prev.filter(id => id !== col.id) : [...prev, col.id]);
+                                                try {
+                                                    await onAddToCollection(image.id, col.id);
+                                                } catch (e) {
+                                                    // Rollback if needed (though onAddToCollection is usually reliable)
+                                                    setImageCollections(prev => wasIn ? [...prev, col.id] : prev.filter(id => id !== col.id));
+                                                }
+                                            }}
+                                            className={`w-full text-left px-4 py-3 rounded-xl text-sm flex items-center justify-between border transition-all ${isIn ? 'bg-sage-100 dark:bg-sage-900/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300' : 'bg-white dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                                        >
                                             <span className="truncate">{col.name}</span>
-                                            {isIn ? <Check className="w-3 h-3 text-sage-500" /> : <Plus className="w-3 h-3" />}
+                                            {isIn ? <Check className="w-3.5 h-3.5 text-sage-500" /> : <Plus className="w-3.5 h-3.5" />}
                                         </button>
                                     );
                                 })}

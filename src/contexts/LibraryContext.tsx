@@ -16,6 +16,7 @@ export interface LibraryContextType {
   setSortOption: any;
   collections: any[];
   setCollections: any;
+  setAllCollections: any;
   smartCollections: any[];
   setSmartCollections: any;
   settings: any;

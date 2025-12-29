@@ -8,6 +8,7 @@ interface CollectionContextType {
     setCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
     smartCollections: SmartCollection[]; // Unified, but kept for legacy props
     setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
+    setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
     refreshCollections: () => Promise<void>;
     refreshCollectionThumbnails: () => Promise<void>;
     isLoaded: boolean;
@@ -74,6 +75,7 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
             setCollections: () => { }, // No-op, managed by DB now
             smartCollections,
             setSmartCollections: () => { }, // No-op, managed by DB now
+            setAllCollections,
             refreshCollections,
             refreshCollectionThumbnails: refreshCollections,
             isLoaded

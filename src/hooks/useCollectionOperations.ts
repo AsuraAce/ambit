@@ -7,6 +7,7 @@ import { upsertCollection, deleteCollectionFromDb, addImagesToCollection as addI
 interface UseCollectionOperationsProps {
   collections: Collection[];
   smartCollections: SmartCollection[];
+  setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
   refreshCollections: () => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<any>>;
   activeCollectionId: string | null;
@@ -15,6 +16,7 @@ interface UseCollectionOperationsProps {
 export const useCollectionOperations = ({
   collections,
   smartCollections,
+  setAllCollections,
   refreshCollections,
   setFilters,
   activeCollectionId
@@ -23,61 +25,125 @@ export const useCollectionOperations = ({
 
   const createCollection = useCallback(async (name: string) => {
     const id = `c_${Date.now()}`;
-    await upsertCollection({
+    const newCol: Collection = {
       id,
       name,
       createdAt: Date.now(),
-      source: 'ambit'
-    });
-    await refreshCollections();
-    addToast(`Collection "${name}" created`, 'success');
-  }, [refreshCollections, addToast]);
+      source: 'ambit',
+      imageIds: [],
+      count: 0
+    };
+
+    // Optimistic Update
+    setAllCollections(prev => [...prev, newCol]);
+
+    try {
+      await upsertCollection(newCol);
+      addToast(`Collection "${name}" created`, 'success');
+      // Background refresh to ensure everything is in sync (smart stats etc)
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.filter(c => c.id !== id));
+      addToast("Failed to create collection", "error");
+    }
+  }, [setAllCollections, refreshCollections, addToast]);
 
   const deleteCollection = useCallback(async (id: string) => {
-    await deleteCollectionFromDb(id);
+    const original = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!original) return;
+
+    // Optimistic Update
+    setAllCollections(prev => prev.filter(c => c.id !== id));
     if (activeCollectionId === id) {
       setFilters((prev: any) => ({ ...prev, collectionId: null }));
     }
-    await refreshCollections();
-    addToast("Collection deleted", "success");
-  }, [activeCollectionId, setFilters, refreshCollections, addToast]);
+
+    try {
+      await deleteCollectionFromDb(id);
+      addToast("Collection deleted", "success");
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => [...prev, original]);
+      addToast("Failed to delete collection", "error");
+    }
+  }, [collections, smartCollections, activeCollectionId, setFilters, setAllCollections, refreshCollections, addToast]);
 
   const renameCollection = useCallback(async (id: string, newName: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
-    await upsertCollection({ ...col, name: newName });
-    await refreshCollections();
-    addToast("Collection renamed", "success");
-  }, [collections, smartCollections, refreshCollections, addToast]);
+
+    // Optimistic Update
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+
+    try {
+      await upsertCollection({ ...col, name: newName });
+      addToast("Collection renamed", "success");
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+      addToast("Failed to rename collection", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
   const setCollectionColor = useCallback(async (id: string, color: string | undefined) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
-    await upsertCollection({ ...col, color });
-    await refreshCollections();
-  }, [collections, smartCollections, refreshCollections]);
+
+    // Optimistic Update
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, color } : c));
+
+    try {
+      await upsertCollection({ ...col, color });
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections]);
 
   const toggleArchiveCollection = useCallback(async (id: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
 
     const newState = !col.isArchived;
-    await upsertCollection({ ...col, isArchived: newState });
 
+    // Optimistic Update
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, isArchived: newState } : c));
     if (activeCollectionId === id && newState) {
       setFilters((prev: any) => ({ ...prev, collectionId: null }));
     }
 
-    await refreshCollections();
-    addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-  }, [collections, smartCollections, activeCollectionId, setFilters, refreshCollections, addToast]);
+    try {
+      await upsertCollection({ ...col, isArchived: newState });
+      addToast(newState ? "Collection archived" : "Collection unarchived", "info");
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+      addToast("Failed to update archive status", "error");
+    }
+  }, [collections, smartCollections, activeCollectionId, setFilters, setAllCollections, refreshCollections, addToast]);
 
   const togglePinCollection = useCallback(async (id: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
-    await upsertCollection({ ...col, isPinned: !col.isPinned });
-    await refreshCollections();
-  }, [collections, smartCollections, refreshCollections]);
+
+    const newState = !col.isPinned;
+
+    // Optimistic Update
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, isPinned: newState } : c));
+
+    try {
+      await upsertCollection({ ...col, isPinned: newState });
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections]);
 
   const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
     await addImgsToCol(collectionId, imageIds);

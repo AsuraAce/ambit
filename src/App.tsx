@@ -46,7 +46,7 @@ export default function App() {
     // --- Global Data Context ---
     const {
         isLoaded, images, setImages, collections, setCollections,
-        smartCollections, setSmartCollections, settings, setSettings,
+        smartCollections, setSmartCollections, setAllCollections, settings, setSettings,
         setRecentSearches, refreshCollectionThumbnails, refreshCollections,
         filters, setFilters, sortOption, setSortOption, clearAllFilters,
         totalImages, globalTotal, loadMoreImages,
@@ -130,6 +130,7 @@ export default function App() {
     const colOps = useCollectionOperations({
         collections,
         smartCollections,
+        setAllCollections,
         refreshCollections,
         setFilters,
         activeCollectionId: filters.collectionId
@@ -285,9 +286,20 @@ export default function App() {
                         }}
                         onExportCollection={async (id) => {
                             const col = collections.find(c => c.id === id);
-                            if (col && col.imageIds.length > 0) {
-                                setExportIds(new Set(col.imageIds));
-                                modals.openModal('export');
+                            if (col) {
+                                try {
+                                    const { getCollectionImageIds } = await import('./services/db/collectionRepo');
+                                    const ids = await getCollectionImageIds(id);
+                                    if (ids.length > 0) {
+                                        setExportIds(new Set(ids));
+                                        modals.openModal('export');
+                                    } else {
+                                        addToast("No images found in this collection to export", "info");
+                                    }
+                                } catch (e) {
+                                    console.error("Failed to prepare collection export", e);
+                                    addToast("Failed to prepare export", "error");
+                                }
                                 return;
                             }
 

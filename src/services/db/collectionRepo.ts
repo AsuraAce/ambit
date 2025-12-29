@@ -84,28 +84,18 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
     // Get thumbnails (optimized: pick most recent pinned or most recent)
+    // We only join with images for the ranking subset
     const thumbnails = await db.select<{ collection_id: string, thumbnail_path: string }[]>(`
         WITH Ranked AS (
             SELECT ci.collection_id, i.thumbnail_path,
                    ROW_NUMBER() OVER (PARTITION BY ci.collection_id ORDER BY i.is_pinned DESC, i.timestamp DESC) as rn
             FROM collection_images ci
-            JOIN images i ON ci.image_id = i.id
+            INNER JOIN images i ON ci.image_id = i.id
             WHERE i.is_deleted = 0
         )
         SELECT collection_id, thumbnail_path FROM Ranked WHERE rn = 1
     `);
     const thumbMap = new Map(thumbnails.map(t => [t.collection_id, t.thumbnail_path]));
-
-    // Get image IDs for each collection (for legacy compatibility and small collections)
-    const imageIds = await db.select<{ collection_id: string, image_id: string }[]>(
-        'SELECT collection_id, image_id FROM collection_images'
-    );
-    const idMap = new Map<string, string[]>();
-    imageIds.forEach(row => {
-        const list = idMap.get(row.collection_id) || [];
-        list.push(row.image_id);
-        idMap.set(row.collection_id, list);
-    });
 
     const mappedCollections = collections.map(c => {
         const rawThumb = c.custom_thumbnail || thumbMap.get(c.id);
@@ -117,7 +107,7 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             isPinned: !!c.is_pinned,
             createdAt: c.created_at,
             count: countMap.get(c.id) || 0,
-            imageIds: idMap.get(c.id) || [],
+            imageIds: [], // Removed for performance. Use getCollectionImageIds(id) if needed.
             thumbnail: rawThumb ? (rawThumb.startsWith('http') ? rawThumb : convertFileSrc(normalizePath(rawThumb))) : undefined,
             customThumbnail: c.custom_thumbnail,
             filters: c.filter_state ? JSON.parse(c.filter_state) : undefined,
@@ -276,6 +266,42 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: a
     } catch (e) {
         console.error('[DB] Fail smart thumb', e);
         return undefined;
+    }
+};
+
+/**
+ * Targeted fetch for collection memberships of a single image.
+ * Used for Metadata Sidebar to avoid loading thousands of IDs.
+ */
+export const getCollectionsForImage = async (imageId: string): Promise<string[]> => {
+    const db = await getDb();
+    try {
+        const res = await db.select<{ collection_id: string }[]>(
+            'SELECT collection_id FROM collection_images WHERE image_id = ?',
+            [imageId]
+        );
+        return res.map(r => r.collection_id);
+    } catch (e) {
+        console.error('[DB] Failed to get collections for image', e);
+        return [];
+    }
+};
+
+/**
+ * Get all image IDs for a specific collection.
+ * Used for Export and other batch operations.
+ */
+export const getCollectionImageIds = async (collectionId: string): Promise<string[]> => {
+    const db = await getDb();
+    try {
+        const res = await db.select<{ image_id: string }[]>(
+            'SELECT image_id FROM collection_images WHERE collection_id = ?',
+            [collectionId]
+        );
+        return res.map(r => r.image_id);
+    } catch (e) {
+        console.error('[DB] Failed to get collection image IDs', e);
+        return [];
     }
 };
 
