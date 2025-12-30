@@ -6,48 +6,35 @@ import { normalizePath } from '../../utils/pathUtils';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const id = normalizePath(image.id);
-        await db.execute(
-            `INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-             ON CONFLICT(id) DO UPDATE SET 
-                path=excluded.path,
-                timestamp=excluded.timestamp, 
-                file_size=excluded.file_size,
-                metadata_json=excluded.metadata_json,
-                thumbnail_path=excluded.thumbnail_path,
-                is_favorite=excluded.is_favorite,
-                is_pinned=excluded.is_pinned,
-                group_id=excluded.group_id,
-                board_id=excluded.board_id
-            `,
-            [
-                id,
-                id,
-                image.width,
-                image.height,
-                image.fileSize,
-                image.timestamp,
-                JSON.stringify(image.metadata),
-                normalizePath(image.thumbnailUrl?.replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '') || ''),
-                image.isFavorite ? 1 : 0,
-                image.isPinned ? 1 : 0,
-                image.isDeleted ? 1 : 0,
-                image.isMissing ? 1 : 0,
-                image.userMasked === true ? 1 : (image.userMasked === false ? 0 : null),
-                image.groupId,
-                image.boardId,
-                image.notes,
-                image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
-            ]
-        );
+        // Reuse the batch logic for single inserts to keep SQL in sync (Rust-side)
+        const record = {
+            id: normalizePath(image.id),
+            path: normalizePath(image.id),
+            width: image.width,
+            height: image.height,
+            fileSize: image.fileSize || 0,
+            timestamp: image.timestamp,
+            metadataJson: JSON.stringify(image.metadata),
+            thumbnailPath: normalizePath((image.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '')),
+            isFavorite: !!image.isFavorite,
+            isPinned: !!image.isPinned,
+            isDeleted: !!image.isDeleted,
+            isMissing: !!image.isMissing,
+            userMasked: image.userMasked === true ? true : (image.userMasked === false ? false : null),
+            groupId: image.groupId || null,
+            boardId: image.boardId || null,
+            notes: image.notes || null,
+            originalMetadataJson: image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
+        };
+
+        await invoke('save_images_batch', { images: [record] });
 
         // Junction Table Sync
         if (image.boardId) {
+            const db = await getDb();
             await db.execute(
                 'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-                [image.boardId, id]
+                [image.boardId, record.id]
             );
         }
     });
@@ -152,7 +139,33 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
     const normalizedId = normalizePath(id);
     const rows = await db.select<any[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return null;
-    return mapRowToImage(rows[0]);
+
+    const image = mapRowToImage(rows[0]);
+
+    // --- ON-DEMAND METADATA RECOVERY ---
+    // If this is an A1111 image but it's "Low Fidelity" (no rawParameters),
+    // we proactively fetch the true metadata from the file. 
+    // This fixes "Legacy" images in the context of the Image Viewer.
+    if (image.metadata.tool === GeneratorTool.AUTOMATIC1111 && !image.metadata.rawParameters) {
+        try {
+            const { scanImageNative } = await import('../metadataParser');
+            const deepScan = await scanImageNative(id, '', true, true);
+            if (deepScan && deepScan.metadata.rawParameters) {
+                image.metadata = {
+                    ...image.metadata,
+                    ...deepScan.metadata,
+                    rawParameters: deepScan.metadata.rawParameters
+                };
+                // We DON'T persist back to DB here to avoid "magic" DB writes 
+                // on simple reads, but we return the high-fidelity version to the UI.
+                // The user's next 'Save' or 'Copy' will use this data.
+            }
+        } catch (e) {
+            console.error("Failed deep scan for", id, e);
+        }
+    }
+
+    return image;
 };
 
 export const toggleImagePin = async (id: string, isPinned: boolean) => {

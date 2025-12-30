@@ -104,7 +104,9 @@ fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<
                 is_favorite=excluded.is_favorite,
                 is_pinned=excluded.is_pinned,
                 group_id=excluded.group_id,
-                board_id=excluded.board_id"
+                board_id=excluded.board_id,
+                notes=excluded.notes,
+                original_metadata_json=excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
 
         for img in &images {
@@ -295,21 +297,9 @@ fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>
         } else if chunk_type == "IEND" {
             break;
         } else {
-            // Skip data + CRC
-            // Since R is Read, we can't Seek easily if it's just Read. 
-            // But we can read into void.
-            // Actually usually we use BufReader which can seek but the trait bounds...
-            // Standard Read trait implies we just read and discard.
-            let mut skip = std::io::repeat(0).take(length + 4);
-            std::io::copy(&mut skip, &mut std::io::sink()).ok(); // Discard
-             // Or simpler:
-             // let _ = std::io::copy(&mut reader.take(length + 4), &mut std::io::sink());
-             // But reader comes in as &mut R.
-             // Let's just do a loop skip.
-             for _ in 0..(length + 4) {
-                 let mut b = [0; 1];
-                 if reader.read_exact(&mut b).is_err() { break; }
-             }
+            // Efficiently skip data + CRC
+            let skip_len = length + 4;
+            std::io::copy(&mut reader.by_ref().take(skip_len), &mut std::io::sink()).map_err(|e| e.to_string())?;
         }
     }
 
