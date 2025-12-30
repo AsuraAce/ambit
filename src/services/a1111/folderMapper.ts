@@ -3,6 +3,9 @@ import { A1111FolderType } from './types';
 export const getGenerationTypeFromPath = (path: string): A1111FolderType => {
     const lowerPath = path.toLowerCase().replace(/\\/g, '/');
 
+    if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
+        return A1111FolderType.GRID;
+    }
     if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img')) {
         return A1111FolderType.TXT2IMG;
     }
@@ -11,9 +14,6 @@ export const getGenerationTypeFromPath = (path: string): A1111FolderType => {
     }
     if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras')) {
         return A1111FolderType.EXTRAS;
-    }
-    if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
-        return A1111FolderType.GRID;
     }
 
     return A1111FolderType.UNKNOWN;
