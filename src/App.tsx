@@ -619,15 +619,16 @@ export default function App() {
                                 }
                             }}
                             onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
+                            onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
                             onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
                             onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
                             onToggleFavorite={(id) => toggleFavorite(id)}
                             onTogglePin={(id, p) => actions.handlePinImage(id, p)}
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
                             onOpenSettings={() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }}
-                            onUpdateNotes={(id, n) => { setImages(p => p.map(i => i.id === id ? { ...i, notes: n } : i)); addToast('Saved', 'success'); }}
+                            onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
                             onSearch={(term) => { setFilters(p => ({ ...p, searchQuery: term })); setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8)); }}
-                            onRevertMetadata={(id) => { setImages(p => p.map(i => i.id === id && i.originalMetadata ? { ...i, metadata: i.originalMetadata, originalMetadata: undefined } : i)); addToast('Reverted', 'success'); }}
+                            onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
                             onAddToCollection={(id) => handleOpenCollectionModal('add')}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}

@@ -17,11 +17,14 @@ interface MetadataSidebarProps {
     setNotes: (s: string) => void;
     promptValue: string;
     setPromptValue: React.Dispatch<React.SetStateAction<string>>;
+    negativePromptValue: string;
+    setNegativePromptValue: React.Dispatch<React.SetStateAction<string>>;
 
     // Actions
-    onUpdateNotes: (id: string, notes: string) => void;
-    onUpdatePrompt: (id: string, prompt: string) => void;
-    onUpdateModel: (id: string, model: string) => void;
+    onUpdateNotes?: (imageId: string, notes: string) => void;
+    onUpdatePrompt?: (imageId: string, prompt: string) => void;
+    onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
+    onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
     onAddToCollection: (imageId: string, colId: string) => void;
     onSearch: (term: string) => void;
@@ -116,8 +119,11 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     setNotes,
     promptValue,
     setPromptValue,
+    negativePromptValue,
+    setNegativePromptValue,
     onUpdateNotes,
     onUpdatePrompt,
+    onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
     onAddToCollection,
@@ -166,6 +172,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
     // Editing State
     const [isPromptDirty, setIsPromptDirty] = useState(false);
+    const [isNegativePromptDirty, setIsNegativePromptDirty] = useState(false);
     const [isNotesDirty, setIsNotesDirty] = useState(false);
     const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
     const [notesSuggestions, setNotesSuggestions] = useState<string[]>([]);
@@ -220,9 +227,67 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
     const handleCopyGenData = () => {
         const md = image.metadata;
-        const neg = md.negativePrompt ? `\nNegative prompt: ${md.negativePrompt}` : '';
-        const params = `Steps: ${md.steps}, Sampler: ${md.sampler}, CFG scale: ${md.cfg}, Seed: ${md.seed}, Model: ${md.overrideModel || md.model}`;
-        const text = `${md.positivePrompt}${neg}\n${params}`;
+
+        // "PROPER" A1111 Merging Logic:
+        // If we have rawParameters and have edited the prompts, merge them into the raw string 
+        // to preserve complex extension settings (ADetailer, ControlNet extra configs, etc.)
+        if (md.rawParameters && md.tool === GeneratorTool.AUTOMATIC1111) {
+            if (!isPromptDirty && !isNegativePromptDirty) {
+                navigator.clipboard.writeText(md.rawParameters);
+            } else {
+                const parts = md.rawParameters.split('\n');
+                let negativeIdx = -1;
+                let stepsIdx = -1;
+
+                for (let i = 0; i < parts.length; i++) {
+                    if (parts[i].startsWith('Negative prompt:')) negativeIdx = i;
+                    if (parts[i].startsWith('Steps:')) { stepsIdx = i; break; }
+                }
+
+                let result = promptValue;
+                if (negativePromptValue) {
+                    result += `\nNegative prompt: ${negativePromptValue}`;
+                }
+                if (stepsIdx !== -1) {
+                    result += `\n${parts.slice(stepsIdx).join('\n')}`;
+                } else {
+                    // Fallback to reconstructed params if raw structure is weird
+                    const params: string[] = [];
+                    params.push(`Steps: ${md.steps || 0}`);
+                    params.push(`Sampler: ${md.sampler || 'Euler a'}`);
+                    params.push(`CFG scale: ${md.cfg || 7}`);
+                    params.push(`Seed: ${md.seed || -1}`);
+                    params.push(`Size: ${image.width}x${image.height}`);
+                    result += `\n${params.join(', ')}`;
+                }
+                navigator.clipboard.writeText(result);
+            }
+            setCopiedData(true);
+            setTimeout(() => setCopiedData(false), 2000);
+            return;
+        }
+
+        const neg = negativePromptValue ? `\nNegative prompt: ${negativePromptValue}` : '';
+
+        const params: string[] = [];
+        params.push(`Steps: ${md.steps || 0}`);
+        params.push(`Sampler: ${md.sampler || 'Euler a'}`);
+        params.push(`CFG scale: ${md.cfg || 7}`);
+        params.push(`Seed: ${md.seed || -1}`);
+        params.push(`Size: ${image.width}x${image.height}`);
+
+        if (md.modelHash) params.push(`Model hash: ${md.modelHash}`);
+        if (md.model && md.model !== 'Unknown') params.push(`Model: ${md.model}`);
+        if (md.vae) params.push(`VAE: ${md.vae}`);
+        if (md.clipSkip) params.push(`Clip skip: ${md.clipSkip}`);
+        if (md.denoisingStrength) params.push(`Denoising strength: ${md.denoisingStrength}`);
+
+        // Hires Fix
+        if (md.hiresUpscale) params.push(`Hires upscale: ${md.hiresUpscale}`);
+        if (md.hiresSteps) params.push(`Hires steps: ${md.hiresSteps}`);
+        if (md.hiresUpscaler) params.push(`Hires upscaler: ${md.hiresUpscaler}`);
+
+        const text = `${md.positivePrompt || ''}${neg}\n${params.join(', ')}`;
         navigator.clipboard.writeText(text);
         setCopiedData(true);
         setTimeout(() => setCopiedData(false), 2000);
@@ -250,13 +315,18 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     };
 
     const savePrompt = () => {
-        onUpdatePrompt(image.id, promptValue);
-        setIsPromptDirty(false);
+        if (onUpdatePrompt) {
+            onUpdatePrompt(image.id, promptValue);
+            setIsPromptDirty(false);
+        }
+        if (onUpdateNegativePrompt) {
+            onUpdateNegativePrompt(image.id, negativePromptValue);
+            setIsNegativePromptDirty(false);
+        }
     };
-
     const handleNotesBlur = () => {
         if (isNotesDirty) {
-            onUpdateNotes(image.id, notes);
+            onUpdateNotes && onUpdateNotes(image.id, notes);
             setIsNotesDirty(false);
         }
         setTimeout(() => setNotesSuggestions([]), 200);
@@ -651,10 +721,59 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         </div>
 
                         {/* Edit Prompt */}
-                        <div>
+                        <div className="mb-6">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2"><FileText className="w-3 h-3 text-sage-500" /><h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3></div>
-                                {isPromptDirty && <button onClick={savePrompt} className="text-xs flex items-center gap-1 bg-sage-500 text-white px-2 py-1 rounded shadow-md hover:bg-sage-600"><Save className="w-3 h-3" /> Save</button>}
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const text = await navigator.clipboard.readText();
+                                                if (!text || !text.includes('Steps:')) return;
+
+                                                // Intelligent A1111 Parser
+                                                const parts = text.split('\n');
+                                                let positive = '';
+                                                let negative = '';
+                                                let state = 0; // 0: positive, 1: negative, 2: params
+
+                                                for (const line of parts) {
+                                                    const clean = line.trim();
+                                                    if (!clean) continue;
+
+                                                    if (clean.startsWith('Negative prompt:')) {
+                                                        state = 1;
+                                                        negative = clean.replace('Negative prompt:', '').trim();
+                                                        continue;
+                                                    }
+                                                    if (clean.startsWith('Steps:')) {
+                                                        state = 2;
+                                                        continue;
+                                                    }
+
+                                                    if (state === 0) positive += (positive ? '\n' : '') + clean;
+                                                    else if (state === 1) negative += (negative ? '\n' : '') + clean;
+                                                }
+
+                                                if (positive) {
+                                                    setPromptValue(positive);
+                                                    setIsPromptDirty(true);
+                                                }
+                                                if (negative) {
+                                                    setNegativePromptValue(negative);
+                                                    setIsNegativePromptDirty(true);
+                                                }
+                                            } catch (e) {
+                                                console.error("Failed to paste metadata", e);
+                                            }
+                                        }}
+                                        className="text-[10px] px-2 py-1 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded transition-colors flex items-center gap-1 text-gray-500"
+                                        title="Paste from A1111 Clipboard"
+                                    >
+                                        <ClipboardList className="w-3 h-3" /> Recreate from A1111
+                                    </button>
+                                    {(isPromptDirty || isNegativePromptDirty) && <button onClick={savePrompt} className="text-xs flex items-center gap-1 bg-sage-500 text-white px-2 py-1 rounded shadow-md hover:bg-sage-600"><Save className="w-3 h-3" /> Save</button>}
+                                </div>
                             </div>
                             <div className="relative">
                                 <textarea value={promptValue} onChange={handlePromptChange} placeholder="Enter positive prompt..." className="w-full bg-white dark:bg-zinc-950/50 border border-gray-200 dark:border-white/10 rounded-xl p-4 text-sm font-sans leading-relaxed text-gray-700 dark:text-gray-300 focus:border-sage-500/50 outline-none resize-none h-40 shadow-inner z-10" />
@@ -666,6 +785,25 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                     </div>
                                 )}
                             </div>
+                        </div>
+
+                        {/* Edit Negative Prompt */}
+                        <div className="mb-6">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <FileText className="w-3 h-3 text-red-400/70" />
+                                    <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Negative Prompt</h3>
+                                </div>
+                            </div>
+                            <textarea
+                                value={negativePromptValue}
+                                onChange={(e) => {
+                                    setNegativePromptValue(e.target.value);
+                                    setIsNegativePromptDirty(true);
+                                }}
+                                placeholder="Enter negative prompt..."
+                                className="w-full bg-white dark:bg-zinc-950/50 border border-gray-200 dark:border-white/10 rounded-xl p-4 text-sm font-sans leading-relaxed text-gray-700 dark:text-gray-300 focus:border-sage-500/50 outline-none resize-none h-32 shadow-inner"
+                            />
                         </div>
 
                         {/* Metadata Toggle */}

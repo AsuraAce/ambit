@@ -23,6 +23,7 @@ interface ImageViewerProps {
     onSearch: (term: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
+    onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (imageId: string, tool: GeneratorTool) => void;
     onToggleFavorite: (id: string) => void;
@@ -50,6 +51,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onSearch,
     onUpdateNotes,
     onUpdatePrompt,
+    onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
     onToggleFavorite,
@@ -116,14 +118,16 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     // --- Buffers (Notes/Prompt editing local to displayImage) ---
     const [notes, setNotes] = useState(displayImage.notes || '');
     const [promptValue, setPromptValue] = useState(displayImage.metadata.positivePrompt || '');
+    const [negativePromptValue, setNegativePromptValue] = useState(displayImage.metadata.negativePrompt || '');
 
     // Sync state when display image changes (version switch or nav)
     useEffect(() => {
         setNotes(displayImage.notes || '');
         setPromptValue(displayImage.metadata.positivePrompt || '');
+        setNegativePromptValue(displayImage.metadata.negativePrompt || '');
         resetZoom();
         ai.closeModal();
-    }, [displayImage.id, displayImage.metadata.positivePrompt, resetZoom]);
+    }, [displayImage.id, displayImage.metadata.positivePrompt, displayImage.metadata.negativePrompt, resetZoom]);
 
     // Theater Mode Controls Auto-Hide
     useEffect(() => {
@@ -262,8 +266,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     setNotes={setNotes}
                     promptValue={promptValue}
                     setPromptValue={setPromptValue}
+                    negativePromptValue={negativePromptValue}
+                    setNegativePromptValue={setNegativePromptValue}
                     onUpdateNotes={(id, n) => onUpdateNotes?.(id, n)}
                     onUpdatePrompt={(id, p) => onUpdatePrompt?.(id, p)}
+                    onUpdateNegativePrompt={(id, np) => onUpdateNegativePrompt?.(id, np)}
                     onUpdateModel={(id, m) => onUpdateModel?.(id, m)}
                     onUpdateTool={(id, t) => onUpdateTool?.(id, t)}
                     onAddToCollection={onAddToCollection}

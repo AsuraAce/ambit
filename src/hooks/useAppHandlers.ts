@@ -1,5 +1,6 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
+import { insertImage } from '../services/db/imageRepo';
 
 interface UseAppHandlersProps {
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
@@ -9,42 +10,67 @@ interface UseAppHandlersProps {
 export const useAppHandlers = ({ setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
     const { addToast } = useToast();
 
-    const handleUpdatePrompt = (id: string, prompt: string) => {
+    const handleUpdatePrompt = async (id: string, prompt: string) => {
+        let updatedImg: AIImage | null = null;
         setImages(prev => prev.map(i => {
             if (i.id !== id) return i;
             const originalMetadata = i.originalMetadata || { ...i.metadata };
-            return {
+            updatedImg = {
                 ...i,
                 originalMetadata,
                 metadata: { ...i.metadata, positivePrompt: prompt }
             };
+            return updatedImg;
         }));
+        if (updatedImg) await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
-    const handleUpdateModel = (id: string, model: string) => {
+    const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
+        let updatedImg: AIImage | null = null;
         setImages(prev => prev.map(i => {
             if (i.id !== id) return i;
             const originalMetadata = i.originalMetadata || { ...i.metadata };
-            return {
+            updatedImg = {
+                ...i,
+                originalMetadata,
+                metadata: { ...i.metadata, negativePrompt }
+            };
+            return updatedImg;
+        }));
+        if (updatedImg) await insertImage(updatedImg);
+        addToast('Updated', 'success');
+    };
+
+    const handleUpdateModel = async (id: string, model: string) => {
+        let updatedImg: AIImage | null = null;
+        setImages(prev => prev.map(i => {
+            if (i.id !== id) return i;
+            const originalMetadata = i.originalMetadata || { ...i.metadata };
+            updatedImg = {
                 ...i,
                 originalMetadata,
                 metadata: { ...i.metadata, overrideModel: model }
             };
+            return updatedImg;
         }));
+        if (updatedImg) await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
-    const handleUpdateTool = (id: string, tool: GeneratorTool) => {
+    const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
+        let updatedImg: AIImage | null = null;
         setImages(prev => prev.map(i => {
             if (i.id !== id) return i;
             const originalMetadata = i.originalMetadata || { ...i.metadata };
-            return {
+            updatedImg = {
                 ...i,
                 originalMetadata,
                 metadata: { ...i.metadata, tool }
             };
+            return updatedImg;
         }));
+        if (updatedImg) await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
@@ -99,10 +125,39 @@ export const useAppHandlers = ({ setImages, refreshMaintenanceCounts }: UseAppHa
         refreshMaintenanceCounts();
     };
 
+    const handleUpdateNotes = async (id: string, notes: string) => {
+        let updatedImg: AIImage | null = null;
+        setImages(prev => prev.map(i => {
+            if (i.id !== id) return i;
+            updatedImg = { ...i, notes };
+            return updatedImg;
+        }));
+        if (updatedImg) await insertImage(updatedImg);
+        addToast('Saved', 'success');
+    };
+
+    const handleRevertMetadata = async (id: string) => {
+        let updatedImg: AIImage | null = null;
+        setImages(prev => prev.map(i => {
+            if (i.id !== id || !i.originalMetadata) return i;
+            updatedImg = {
+                ...i,
+                metadata: i.originalMetadata,
+                originalMetadata: undefined
+            };
+            return updatedImg;
+        }));
+        if (updatedImg) await insertImage(updatedImg);
+        addToast('Reverted to original', 'success');
+    };
+
     return {
         handleUpdatePrompt,
+        handleUpdateNegativePrompt,
         handleUpdateModel,
         handleUpdateTool,
+        handleUpdateNotes,
+        handleRevertMetadata,
         handleGroupImages,
         handleResolveDuplicate,
         handleRestoreImages,

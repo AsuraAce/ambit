@@ -656,6 +656,8 @@ fn scan_image_internal(
 struct ImageMetadata {
     tool: String,
     model: String,
+    #[serde(rename = "rawParameters", skip_serializing_if = "Option::is_none")]
+    raw_parameters: Option<String>,
     steps: u32,
     cfg: f32,
     seed: i64,
@@ -858,6 +860,7 @@ fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
 fn extract_a1111_metadata(text: &str) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
     meta.tool = "Automatic1111".to_string();
+    meta.raw_parameters = Some(text.to_string());
 
     let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
     if lines.is_empty() {
@@ -866,7 +869,7 @@ fn extract_a1111_metadata(text: &str) -> ImageMetadata {
 
     let mut positive_parts = Vec::new();
     let mut negative_prompt = String::new();
-    let mut params_line = String::new();
+    let mut params_lines = Vec::new();
     let mut state = 0; // 0: positive, 1: negative, 2: params
 
     for line in lines {
@@ -875,7 +878,7 @@ fn extract_a1111_metadata(text: &str) -> ImageMetadata {
             negative_prompt.push_str(&line[17..]);
         } else if line.starts_with("Steps: ") {
             state = 2;
-            params_line = line.to_string();
+            params_lines.push(line.to_string());
         } else if state == 0 {
             positive_parts.push(line);
         } else if state == 1 {
@@ -883,13 +886,17 @@ fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                 negative_prompt.push(' ');
             }
             negative_prompt.push_str(line);
+        } else if state == 2 {
+            params_lines.push(line.to_string());
         }
     }
 
     meta.positive_prompt = positive_parts.join("\n").trim().to_string();
     meta.negative_prompt = negative_prompt.trim().to_string();
 
-    // Parse params_line
+    // Parse params (prefer the line starting with Steps:)
+    let params_line = params_lines.iter().find(|l| l.starts_with("Steps: ")).cloned().unwrap_or_default();
+
     if !params_line.is_empty() {
         let pairs = params_line.split(", ");
         let mut variation_seed = String::new();
