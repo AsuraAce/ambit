@@ -1,5 +1,5 @@
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
-import { scanImageNative } from './metadataParser';
+import { scanImageNative, scanImagesBulk } from './metadataParser';
 import { AIImage } from '../types';
 
 let cachedThumbnailDir: string | null = null;
@@ -27,21 +27,30 @@ export const regenerateThumbnailsForImages = async (
     let processed = 0;
     const total = candidates.length;
     const updates: AIImage[] = [];
+    const BATCH_SIZE = 20;
 
-    for (const img of candidates) {
+    // Process in batches
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = candidates.slice(i, i + BATCH_SIZE);
+        const paths = batch.map(img => img.id);
+
         try {
-            // Note: img.id is the absolute path
-            const { thumbnail } = await scanImageNative(img.id, thumbDir);
+            // fast-scan with extractWorkflow: false
+            const results = await scanImagesBulk(paths, thumbDir, false, false);
 
-            if (thumbnail) {
-                updates.push({ ...img, thumbnailUrl: thumbnail });
-            }
+            // Match results back to images
+            results.forEach((res, idx) => {
+                if (res.thumbnail) {
+                    updates.push({ ...batch[idx], thumbnailUrl: res.thumbnail });
+                }
+            });
+
         } catch (e) {
-            console.error(`Failed to gen thumb for ${img.id}`, e);
+            console.error(`Failed to bulk gen thumbs for batch starting at ${i}`, e);
         }
 
-        processed++;
-        if (onProgress) onProgress(processed, total);
+        processed += batch.length;
+        if (onProgress) onProgress(Math.min(processed, total), total);
     }
 
     return updates;

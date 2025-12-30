@@ -216,7 +216,23 @@ export const useFileOperations = ({
         let candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
 
         if (targetIds) {
-            candidates = candidates.filter(img => targetIds.includes(img.id));
+            // Check which IDs we already have in memory
+            const knownIds = new Set(images.map(i => i.id));
+            const missingIds = targetIds.filter(id => !knownIds.has(id));
+
+            // Start with known candidates
+            candidates = images.filter(img => targetIds.includes(img.id));
+
+            // Fetch missing objects if needed
+            if (missingIds.length > 0) {
+                try {
+                    const { getImagesByIds } = await import('../services/db/imageRepo');
+                    const fetched = await getImagesByIds(missingIds);
+                    candidates = [...candidates, ...fetched];
+                } catch (e) {
+                    console.error("Failed to fetch missing images for regeneration", e);
+                }
+            }
         }
 
         if (candidates.length === 0) {

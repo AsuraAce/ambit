@@ -600,7 +600,7 @@ fn scan_image_internal(
                     Ok(img) => {
                         // Resize to 400px width (preserving aspect ratio)
                         // FilterType::Lanczos3 is high quality
-                        let thumb = img.resize(400, 400, image::imageops::FilterType::Lanczos3);
+                        let thumb = img.resize(400, 400, image::imageops::FilterType::CatmullRom);
 
                         // Create dir if missing
                         let _ = std::fs::create_dir_all(dir);

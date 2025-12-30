@@ -225,7 +225,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleRegenerate = async (ids?: string[]) => {
         if (!onRegenerateThumbnails) return;
-        await onRegenerateThumbnails(ids);
+
+        // If specific IDs not passed, assume "Regenerate All" from the current unoptimized list
+        const targets = ids || localUnoptimizedImages.map(i => i.id);
+
+        await onRegenerateThumbnails(targets);
         if (ids) {
             clearSelection();
         }
