@@ -4,6 +4,7 @@ import { Workflow, Wand2, Undo2, Copy, Check, Palette, Tag, Settings2, Clipboard
 import { AIImage, Collection, ModelType, ImageMetadata, GeneratorTool } from '../../types';
 import { WorkflowInspector } from './WorkflowInspector';
 import { getFilename } from '../../utils/pathUtils';
+import { useToast } from '../../hooks/useToast';
 
 interface MetadataSidebarProps {
     image: AIImage;
@@ -138,6 +139,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     palette,
     isPaletteLoading
 }) => {
+    const { addToast } = useToast();
     // Local State
     const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
     const [showRaw, setShowRaw] = useState(false);
@@ -225,8 +227,27 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
         setTimeout(() => setCopiedPrompt(false), 2000);
     };
 
-    const handleCopyGenData = () => {
-        const md = image.metadata;
+    const handleCopyGenData = async () => {
+        let md = image.metadata;
+
+        // --- LAZY LOAD RAW METADATA ---
+        // If we want "True" metadata but only have the "Low Fidelity" DB version (missing rawParameters),
+        // we must fetch it from the file on-demand.
+        if (!md.rawParameters && md.tool === GeneratorTool.AUTOMATIC1111) {
+            try {
+                addToast("Reading high-fidelity metadata...", "info");
+                const { invoke } = await import('@tauri-apps/api/core');
+                const freshMetadata = await invoke<ImageMetadata>('read_image_metadata', { path: image.id });
+                if (freshMetadata && freshMetadata.rawParameters) {
+                    md = { ...md, rawParameters: freshMetadata.rawParameters };
+                    // Optionally update the parent image state so we don't read again
+                    // (We can't easily update parent state here without a prop, but for copy it works)
+                }
+            } catch (e) {
+                console.error("Failed to read raw metadata", e);
+                // Fallthrough to lossy copy
+            }
+        }
 
         // "PROPER" A1111 Merging Logic:
         // If we have rawParameters and have edited the prompts, merge them into the raw string 

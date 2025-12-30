@@ -4,6 +4,8 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::path::Path;
+use std::io::BufReader;
 use tauri::Manager;
 // use image::GenericImageView; // Needed for resize algo
 use rusqlite::params;
@@ -208,7 +210,159 @@ async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     }
     Ok(None)
 }
+
+fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>, String> {
+    let mut buffer = [0; 8];
+    if reader.read_exact(&mut buffer).is_err() {
+        return Err("Failed to read header".to_string());
+    }
+
+    // Verify PNG header
+    if buffer != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return Err("Not a PNG file".to_string());
+    }
+
+    let mut chunks = HashMap::new();
+    let mut loop_count = 0;
+
+    loop {
+        if loop_count > 10000 { break; }
+        loop_count += 1;
+
+        let mut length_bytes = [0; 4];
+        if reader.read_exact(&mut length_bytes).is_err() { break; }
+        let length = u32::from_be_bytes(length_bytes) as u64;
+
+        let mut type_bytes = [0; 4];
+        if reader.read_exact(&mut type_bytes).is_err() { break; }
+        let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
+
+        if chunk_type == "tEXt" || chunk_type == "iTXt" || chunk_type == "zTXt" {
+            let mut chunk_data = vec![0; length as usize];
+            if reader.read_exact(&mut chunk_data).is_err() { break; }
+
+            // Parse chunk based on type
+            if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
+                 let key = String::from_utf8_lossy(&chunk_data[0..pos]).to_string();
+                 
+                 if chunk_type == "zTXt" {
+                     if pos + 2 < chunk_data.len() && chunk_data[pos+1] == 0 {
+                         let compressed = &chunk_data[pos+2..];
+                         let mut decoder = ZlibDecoder::new(compressed);
+                         let mut s = String::new();
+                         if decoder.read_to_string(&mut s).is_ok() {
+                             chunks.insert(key, s);
+                         }
+                     }
+                 } else if chunk_type == "tEXt" {
+                     if pos + 1 < chunk_data.len() {
+                         let val = String::from_utf8_lossy(&chunk_data[pos+1..]).to_string();
+                         chunks.insert(key, val);
+                     }
+                 } else if chunk_type == "iTXt" {
+                     // Simplified iTXt parsing
+                     if pos + 2 < chunk_data.len() {
+                         let is_compressed = chunk_data[pos+1] == 1;
+                         // Skip compression method (pos+2)
+                         // Skip lang tags etc - find next nulls
+                         let mut curr = pos + 3;
+                         // Skip lang tag
+                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
+                         curr += 1;
+                         // Skip trans key
+                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
+                         curr += 1;
+                         
+                         if curr < chunk_data.len() {
+                            let data_slice = &chunk_data[curr..];
+                            if is_compressed {
+                                let mut decoder = ZlibDecoder::new(data_slice);
+                                let mut s = String::new();
+                                if decoder.read_to_string(&mut s).is_ok() {
+                                    chunks.insert(key, s);
+                                }
+                            } else {
+                                chunks.insert(key, String::from_utf8_lossy(data_slice).to_string());
+                            }
+                         }
+                     }
+                 }
+            }
+            
+            // Read CRC (4 bytes)
+            let mut crc = [0; 4];
+            let _ = reader.read_exact(&mut crc);
+        } else if chunk_type == "IEND" {
+            break;
+        } else {
+            // Skip data + CRC
+            // Since R is Read, we can't Seek easily if it's just Read. 
+            // But we can read into void.
+            // Actually usually we use BufReader which can seek but the trait bounds...
+            // Standard Read trait implies we just read and discard.
+            let mut skip = std::io::repeat(0).take(length + 4);
+            std::io::copy(&mut skip, &mut std::io::sink()).ok(); // Discard
+             // Or simpler:
+             // let _ = std::io::copy(&mut reader.take(length + 4), &mut std::io::sink());
+             // But reader comes in as &mut R.
+             // Let's just do a loop skip.
+             for _ in 0..(length + 4) {
+                 let mut b = [0; 1];
+                 if reader.read_exact(&mut b).is_err() { break; }
+             }
+        }
+    }
+
+    Ok(chunks)
+}
  
+#[tauri::command(rename_all = "camelCase")]
+async fn read_image_metadata(path: String) -> Result<ImageMetadata, String> {
+    let path_obj = Path::new(&path);
+    if !path_obj.exists() {
+        return Err("File not found".to_string());
+    }
+
+    let file = File::open(path_obj).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(file);
+    let chunks = extract_png_chunks(&mut reader)?;
+
+    // Parse metadata using our standard logic
+    let mut parsed_metadata = ImageMetadata::default();
+    let mut found_metadata = false;
+
+    // A1111 (Higher precedence)
+    if let Some(params) = chunks.get("parameters") {
+        parsed_metadata = extract_a1111_metadata(params);
+        found_metadata = true;
+    }
+
+    // InvokeAI (Fallback)
+    if !found_metadata {
+         if let Some(content) = chunks
+            .get("invokeai_metadata")
+            .or_else(|| chunks.get("sd-metadata"))
+            .or_else(|| chunks.get("dream_metadata"))
+        {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+                parsed_metadata = extract_invokeai_metadata(&json);
+                found_metadata = true;
+            }
+        }
+    }
+
+    // Workflow
+    if let Some(workflow) = chunks.get("workflow")
+        .or_else(|| chunks.get("graph"))
+        .or_else(|| chunks.get("invokeai_workflow"))
+        .or_else(|| chunks.get("invokeai_graph")) 
+    {
+        parsed_metadata.workflow_json = Some(workflow.clone());
+    }
+
+    Ok(parsed_metadata)
+}
+
 #[tauri::command]
 async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
     let sizes: Vec<u64> = paths
