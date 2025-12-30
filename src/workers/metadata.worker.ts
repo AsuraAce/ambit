@@ -34,6 +34,7 @@ export interface ImageMetadata {
     hiresUpscale?: number;
     hiresSteps?: number;
     hiresUpscaler?: string;
+    modelHash?: string;
 }
 
 export interface ParseResult {
@@ -322,6 +323,9 @@ const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) =>
         if (key === 'Hires upscale') metadata.hiresUpscale = parseFloat(value);
         if (key === 'Hires steps') metadata.hiresSteps = parseInt(value);
         if (key === 'Hires upscaler') metadata.hiresUpscaler = value;
+        if (key === 'Model hash' || key === 'sd_model_hash') {
+            if (!metadata.modelHash) metadata.modelHash = value;
+        }
 
         if (key.startsWith('ControlNet')) {
             const modelMatch = value.match(/Model: ([^,]+)/);

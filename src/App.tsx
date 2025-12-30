@@ -368,7 +368,6 @@ export default function App() {
                             onImport={() => fileOps.fileInputRef.current?.click()}
                             onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                             clearAllFilters={clearAllFilters}
-                            isImporting={fileOps.isImporting}
                         />
 
                         <div className="flex-1 flex overflow-hidden min-h-0 relative">

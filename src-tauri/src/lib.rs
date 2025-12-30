@@ -687,6 +687,8 @@ struct ImageMetadata {
     hires_steps: Option<u32>,
     #[serde(rename = "hiresUpscaler", skip_serializing_if = "Option::is_none")]
     hires_upscaler: Option<String>,
+    #[serde(rename = "modelHash", skip_serializing_if = "Option::is_none")]
+    model_hash: Option<String>,
 }
 
 fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
@@ -909,6 +911,12 @@ fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                     "Hires upscale" => meta.hires_upscale = val.parse().ok(),
                     "Hires steps" => meta.hires_steps = val.parse().ok(),
                     "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
+                    "Model hash" => meta.model_hash = Some(val.to_string()),
+                    "sd_model_hash" => {
+                        if meta.model_hash.is_none() {
+                            meta.model_hash = Some(val.to_string());
+                        }
+                    }
                     "Variation seed" => variation_seed = val.to_string(),
                     "Variation seed strength" => variation_strength = val.to_string(),
                     _ => {

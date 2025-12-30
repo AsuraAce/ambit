@@ -191,7 +191,11 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             image.metadata.sampler !== image.originalMetadata.sampler ||
             image.metadata.model !== image.originalMetadata.model ||
             image.metadata.overrideModel !== image.originalMetadata.overrideModel ||
-            image.metadata.tool !== image.originalMetadata.tool
+            image.metadata.tool !== image.originalMetadata.tool ||
+            image.metadata.vae !== image.originalMetadata.vae ||
+            image.metadata.clipSkip !== image.originalMetadata.clipSkip ||
+            image.metadata.denoisingStrength !== image.originalMetadata.denoisingStrength ||
+            image.metadata.hiresUpscale !== image.originalMetadata.hiresUpscale
         );
     };
 
@@ -286,10 +290,15 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         {image.metadata.tool}
                     </span>
 
-                    {/* Second Pill: Model Name */}
-                    {(image.metadata.overrideModel || image.metadata.model !== 'Unknown') && (
-                        <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-800 border border-gray-300 dark:border-white/10 text-gray-600 dark:text-gray-300 font-mono truncate max-w-[150px]" title={image.metadata.overrideModel || image.metadata.model}>
-                            {image.metadata.overrideModel || image.metadata.model}
+                    {/* Second Pill: Model Name or Hash */}
+                    {(image.metadata.overrideModel || image.metadata.model !== 'Unknown' || image.metadata.modelHash) && (
+                        <span
+                            className="px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-mono truncate max-w-[200px]"
+                            title={image.metadata.overrideModel || image.metadata.model !== 'Unknown' ? (image.metadata.overrideModel || image.metadata.model) : (image.metadata.modelHash || '')}
+                        >
+                            {image.metadata.overrideModel || image.metadata.model !== 'Unknown'
+                                ? (image.metadata.overrideModel || image.metadata.model)
+                                : `Hash: ${image.metadata.modelHash?.slice(0, 8)}`}
                         </span>
                     )}
 
@@ -501,6 +510,28 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                                 <ParamItem label="Steps" value={(image.metadata.steps ?? 0).toString()} isModified={isModified('steps')} />
                                                 <ParamItem label="CFG Scale" value={(image.metadata.cfg ?? 7).toString()} isModified={isModified('cfg')} />
                                                 <ParamItem label="Seed" value={(image.metadata.seed ?? 0).toString()} fullWidth isModified={isModified('seed')} />
+
+                                                {/* Advanced Fields */}
+                                                <ParamItem label="VAE" value={image.metadata.vae || ''} isModified={isModified('vae')} />
+                                                <ParamItem label="Clip Skip" value={image.metadata.clipSkip?.toString() || ''} isModified={isModified('clipSkip')} />
+                                                <ParamItem label="Denoising" value={image.metadata.denoisingStrength?.toString() || ''} isModified={isModified('denoisingStrength')} />
+
+                                                {/* Hires Fix */}
+                                                {(image.metadata.hiresUpscale || image.metadata.hiresSteps || image.metadata.hiresUpscaler) && (
+                                                    <>
+                                                        <div className="col-span-2 h-px bg-gray-200 dark:bg-white/5 my-1" />
+                                                        <ParamItem label="Hires Upscale" value={image.metadata.hiresUpscale?.toString() || ''} isModified={isModified('hiresUpscale')} />
+                                                        <ParamItem label="Hires Steps" value={image.metadata.hiresSteps?.toString() || ''} isModified={isModified('hiresSteps')} />
+                                                        <ParamItem label="Hires Upscaler" value={image.metadata.hiresUpscaler || ''} fullWidth isModified={isModified('hiresUpscaler')} />
+                                                    </>
+                                                )}
+
+                                                {image.metadata.modelHash && (
+                                                    <>
+                                                        <div className="col-span-2 h-px bg-gray-200 dark:bg-white/5 my-1" />
+                                                        <ParamItem label="Model Hash" value={image.metadata.modelHash} fullWidth />
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     )}

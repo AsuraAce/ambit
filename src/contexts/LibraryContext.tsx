@@ -41,6 +41,10 @@ export interface LibraryContextType {
   };
   isFiltering: boolean;
   isLoaded: boolean;
+  isImporting: boolean;
+  importProgress: { current: number; total: number } | null;
+  setIsImporting: (val: boolean) => void;
+  setImportProgress: (val: { current: number; total: number } | null) => void;
   isLiveSyncing: boolean;
   isLiveWatching: boolean;
   setIsLiveWatching: any;

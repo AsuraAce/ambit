@@ -44,6 +44,10 @@ interface SearchContextType {
     setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
     toggleFavorite: (id: string) => Promise<void>;
     togglePin: (id: string, isPinned?: boolean) => Promise<void>;
+    isImporting: boolean;
+    setIsImporting: React.Dispatch<React.SetStateAction<boolean>>;
+    importProgress: { current: number; total: number } | null;
+    setImportProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -81,6 +85,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [isFiltering, setIsFiltering] = useState(true);
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
@@ -318,7 +324,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             recentSearches,
             setRecentSearches,
             toggleFavorite,
-            togglePin
+            togglePin,
+            isImporting,
+            setIsImporting,
+            importProgress,
+            setImportProgress
         }}>
             {children}
         </SearchContext.Provider>

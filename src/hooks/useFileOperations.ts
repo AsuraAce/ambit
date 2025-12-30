@@ -10,6 +10,7 @@ import { remove } from '@tauri-apps/plugin-fs';
 import { processWebFiles, processNativePaths, ImportResult } from '../services/importService';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { normalizePath } from '../utils/pathUtils';
+import { useSearch } from '../contexts/SearchContext';
 
 interface UseFileOperationsProps {
     images: AIImage[];
@@ -25,7 +26,7 @@ export const useFileOperations = ({
     settings
 }: UseFileOperationsProps) => {
     const { addToast } = useToast();
-    const [isImporting, setIsImporting] = useState(false);
+    const { isImporting, setIsImporting, setImportProgress } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
 
@@ -94,27 +95,34 @@ export const useFileOperations = ({
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
-            const result = await processNativePaths(paths, thumbDir);
+            const result = await processNativePaths(paths, thumbDir, (current, total) => {
+                setImportProgress({ current, total });
+            });
             commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
             setIsImporting(false);
+            setImportProgress(null);
         }
     };
 
     const scanDirectory = async (dirPath: string) => {
+        setIsImporting(true);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
-            const result = await processNativePaths([dirPath], thumbDir);
-            if (result.images.length === 0) {
-                // silencly logs to console
-            } else {
+            const result = await processNativePaths([dirPath], thumbDir, (current, total) => {
+                setImportProgress({ current, total });
+            });
+            if (result.images.length > 0) {
                 commitImportResult(result, true);
             }
         } catch (e) {
             console.error(`Failed to scan directory ${dirPath}`, e);
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
         }
     };
 

@@ -17,6 +17,7 @@ export interface ImportResult {
 }
 
 const mapMetadata = (meta: any) => ({
+    ...meta,
     tool: meta.tool || GeneratorTool.UNKNOWN,
     model: meta.model || 'Unknown',
     seed: meta.seed || 0,
@@ -25,11 +26,6 @@ const mapMetadata = (meta: any) => ({
     sampler: meta.sampler || 'Unknown',
     positivePrompt: meta.positivePrompt || '',
     negativePrompt: meta.negativePrompt || '',
-    workflowJson: meta.workflowJson,
-    rawParameters: meta.rawParameters,
-    loras: meta.loras,
-    controlNets: meta.controlNets,
-    ipAdapters: meta.ipAdapters
 });
 
 export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
@@ -121,6 +117,7 @@ export const processNativePaths = async (
         try {
             // Optimization: Skip thumbnails for bulk import -> true
             const results = await scanImagesBulk(chunk, thumbnailDir || '', true);
+            const batchImages: AIImage[] = [];
 
             for (let j = 0; j < results.length; j++) {
                 const result = results[j];
@@ -161,11 +158,13 @@ export const processNativePaths = async (
                     metadata: mapMetadata(result.metadata)
                 };
 
+                batchImages.push(newImg);
                 newImages.push(newImg);
-
-                // Fire and forget db insert
-                insertImage(newImg).catch(e => console.error("DB Insert failed", e));
             }
+
+            // Sync Database in batches to ensure progress bar reflects completion
+            const { insertImagesBatch } = await import('./db/imageRepo');
+            await insertImagesBatch(batchImages);
         } catch (e) {
             console.error("Bulk scan failed for chunk", e);
             errors += chunk.length;

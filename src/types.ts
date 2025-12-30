@@ -54,6 +54,7 @@ export interface ImageMetadata {
   hiresUpscale?: number;
   hiresSteps?: number;
   hiresUpscaler?: string;
+  modelHash?: string;
 }
 
 export interface ParseResult {
