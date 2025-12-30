@@ -6,6 +6,12 @@ vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
 }));
 
+// Mock Tauri Event
+vi.mock('@tauri-apps/api/event', () => ({
+    listen: vi.fn().mockResolvedValue(() => { }),
+    emit: vi.fn(),
+}));
+
 // Mock Tauri SQL Plugin
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
@@ -42,6 +48,22 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
     mkdir: vi.fn(),
     readDir: vi.fn(),
     exists: vi.fn(),
+    BaseDirectory: {
+        AppData: 0,
+        Document: 1,
+        Download: 2,
+        Home: 3,
+        Video: 4,
+        Picture: 5,
+        Public: 6,
+        Temp: 7,
+        Template: 8,
+        Config: 9,
+        Cache: 10,
+        LocalData: 11,
+        Resource: 12,
+        Runtime: 13,
+    }
 }));
 
 // Mock Worker
