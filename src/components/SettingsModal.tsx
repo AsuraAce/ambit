@@ -78,7 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", stiffness: 350, damping: 25 }}
-            className="w-full max-w-5xl bg-white dark:bg-[#09090b] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-auto max-h-[85vh] overflow-hidden"
+            className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-auto max-h-[85vh] overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
 
@@ -120,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
             </div>
 
             {/* Content */}
-            <div className="flex-1 flex flex-col min-w-0 bg-gray-50/50 dark:bg-[#09090b]">
+            <div className="flex-1 flex flex-col min-w-0 bg-background">
               <div className="flex items-center justify-between p-8 pb-4 shrink-0">
                 <div className="flex flex-col">
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white capitalize">{activeTab}</h3>
@@ -140,7 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
               </div>
 
-              <div className="p-6 border-t border-gray-200 dark:border-white/5 flex justify-end gap-3 bg-white dark:bg-[#09090b] shrink-0">
+              <div className="p-6 border-t border-gray-200 dark:border-white/5 flex justify-end gap-3 bg-card shrink-0">
                 <button
                   type="button"
                   onClick={onClose}

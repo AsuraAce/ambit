@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus } from 'lucide-react';
 import { AppSettings } from '../../../types';
+import { A1111FolderType, DiscoveryCandidate } from '../../../services/a1111/types';
 
 interface TabProps {
     settings: AppSettings;
@@ -11,7 +12,7 @@ interface TabProps {
 export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isScanning, setIsScanning] = useState(false);
-    const [candidates, setCandidates] = useState<any[]>([]);
+    const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [scanLogs, setScanLogs] = useState<string[]>([]);
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
     const [showAllFolders, setShowAllFolders] = useState(false);
@@ -31,8 +32,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
             const priorityUnlinked = results.filter(c => c.isPriority && !c.isAlreadyLinked);
             setSelectedPaths(new Set(priorityUnlinked.map(c => c.path)));
 
-            // If NO priority folders found, auto-show all
-            if (priorityUnlinked.length === 0 && results.length > 0) {
+            // If NO priority folders AT ALL, auto-show all
+            if (results.filter(c => c.isPriority).length === 0 && results.length > 0) {
                 setShowAllFolders(true);
             }
 
@@ -203,7 +204,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                         )}
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        {candidates.some(c => !c.isPriority) || showAllFolders ? (
+                                        {candidates.some(c => !c.isPriority) ? (
                                             <label className="flex items-center gap-3 cursor-pointer group">
                                                 <input
                                                     type="checkbox"
@@ -266,7 +267,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                                             value={c.inferredType}
                                                             onChange={(e) => {
                                                                 const newCandidates = candidates.map(cand =>
-                                                                    cand.path === c.path ? { ...cand, inferredType: e.target.value } : cand
+                                                                    cand.path === c.path ? { ...cand, inferredType: e.target.value as A1111FolderType } : cand
                                                                 );
                                                                 setCandidates(newCandidates);
                                                             }}

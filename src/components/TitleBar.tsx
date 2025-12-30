@@ -41,7 +41,7 @@ export const TitleBar = () => {
     if (!appWindow) return null; // Don't render if not in Tauri (or loading)
 
     return (
-        <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 bg-white dark:bg-black/90 flex justify-between items-center select-none z-50 border-b border-gray-200 dark:border-white/5 transition-colors">
+        <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 bg-background flex justify-between items-center select-none z-50 border-b border-gray-200 dark:border-white/5 transition-colors">
             <div className="flex items-center gap-2 px-3 pointer-events-none">
                 <div className="w-3 h-3 bg-sage-500 rounded-full" />
                 <span className="text-xs font-bold text-gray-500 dark:text-gray-400">AMBIT</span>
