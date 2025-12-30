@@ -1,0 +1,68 @@
+
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useMaintenanceData } from '../useMaintenanceData';
+
+// --- Mocks ---
+const mockGetDeletedImages = vi.fn().mockResolvedValue([]);
+const mockGetUntaggedImages = vi.fn().mockResolvedValue([]);
+const mockGetDuplicateCandidates = vi.fn().mockResolvedValue([]);
+
+vi.mock('../../services/db/maintenanceRepo', () => ({
+    getDeletedImages: () => mockGetDeletedImages(),
+    getUntaggedImages: (...args: any[]) => mockGetUntaggedImages(...args),
+    getDuplicateCandidates: (...args: any[]) => mockGetDuplicateCandidates(...args),
+    getUnoptimizedImages: vi.fn().mockResolvedValue([]),
+    getIntermediateImages: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../useLibraryContext', () => ({
+    useLibraryContext: () => ({
+        activeSqlWhere: 'WHERE x=1',
+        activeSqlParams: [1]
+    }),
+}));
+
+describe('useMaintenanceData', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should auto-refresh trash on initialization', async () => {
+        renderHook(() => useMaintenanceData('trash', 'global'));
+
+        await waitFor(() => {
+            expect(mockGetDeletedImages).toHaveBeenCalled();
+        });
+    });
+
+    it('should NOT auto-refresh other tabs', async () => {
+        renderHook(() => useMaintenanceData('duplicates', 'global'));
+
+        // Wait a bit to ensure it doesn't trigger
+        await new Promise(r => setTimeout(r, 100));
+        expect(mockGetDuplicateCandidates).not.toHaveBeenCalled();
+    });
+
+    it('should fetch untagged images with filtered scope', async () => {
+        const { result } = renderHook(() => useMaintenanceData('untagged', 'filtered'));
+
+        await act(async () => {
+            await result.current.refreshData('untagged', true, { scope: 'filtered' });
+        });
+
+        await waitFor(() => {
+            expect(mockGetUntaggedImages).toHaveBeenCalledWith('WHERE x=1', [1]);
+        });
+    });
+
+    it('should fetch duplicate candidates with global scope', async () => {
+        const { result } = renderHook(() => useMaintenanceData('duplicates', 'global'));
+
+        await act(async () => {
+            await result.current.refreshData('duplicates', true, { scope: 'global' });
+        });
+
+        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('', []);
+    });
+});

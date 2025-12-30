@@ -113,7 +113,7 @@ export default function App() {
 
     // --- UI Hooks ---
     const modals = useModalManager();
-    const handlers = useAppHandlers({ setImages, refreshMaintenanceCounts });
+    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
 
     // --- Specialized Logic Hooks ---
     const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useSearch({

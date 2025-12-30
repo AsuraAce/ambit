@@ -3,74 +3,75 @@ import { useToast } from './useToast';
 import { insertImage } from '../services/db/imageRepo';
 
 interface UseAppHandlersProps {
+    images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     refreshMaintenanceCounts: () => void;
 }
 
-export const useAppHandlers = ({ setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
+export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
     const { addToast } = useToast();
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id) return i;
-            const originalMetadata = i.originalMetadata || { ...i.metadata };
-            updatedImg = {
-                ...i,
-                originalMetadata,
-                metadata: { ...i.metadata, positivePrompt: prompt }
-            };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const originalMetadata = img.originalMetadata || { ...img.metadata };
+        const updatedImg = {
+            ...img,
+            originalMetadata,
+            metadata: { ...img.metadata, positivePrompt: prompt }
+        };
+
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
     const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id) return i;
-            const originalMetadata = i.originalMetadata || { ...i.metadata };
-            updatedImg = {
-                ...i,
-                originalMetadata,
-                metadata: { ...i.metadata, negativePrompt }
-            };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const originalMetadata = img.originalMetadata || { ...img.metadata };
+        const updatedImg = {
+            ...img,
+            originalMetadata,
+            metadata: { ...img.metadata, negativePrompt }
+        };
+
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
     const handleUpdateModel = async (id: string, model: string) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id) return i;
-            const originalMetadata = i.originalMetadata || { ...i.metadata };
-            updatedImg = {
-                ...i,
-                originalMetadata,
-                metadata: { ...i.metadata, overrideModel: model }
-            };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const originalMetadata = img.originalMetadata || { ...img.metadata };
+        const updatedImg = {
+            ...img,
+            originalMetadata,
+            metadata: { ...img.metadata, overrideModel: model }
+        };
+
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
     const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id) return i;
-            const originalMetadata = i.originalMetadata || { ...i.metadata };
-            updatedImg = {
-                ...i,
-                originalMetadata,
-                metadata: { ...i.metadata, tool }
-            };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const originalMetadata = img.originalMetadata || { ...img.metadata };
+        const updatedImg = {
+            ...img,
+            originalMetadata,
+            metadata: { ...img.metadata, tool }
+        };
+
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Updated', 'success');
     };
 
@@ -126,28 +127,26 @@ export const useAppHandlers = ({ setImages, refreshMaintenanceCounts }: UseAppHa
     };
 
     const handleUpdateNotes = async (id: string, notes: string) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id) return i;
-            updatedImg = { ...i, notes };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const updatedImg = { ...img, notes };
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Saved', 'success');
     };
 
     const handleRevertMetadata = async (id: string) => {
-        let updatedImg: AIImage | null = null;
-        setImages(prev => prev.map(i => {
-            if (i.id !== id || !i.originalMetadata) return i;
-            updatedImg = {
-                ...i,
-                metadata: i.originalMetadata,
-                originalMetadata: undefined
-            };
-            return updatedImg;
-        }));
-        if (updatedImg) await insertImage(updatedImg);
+        const img = images.find(i => i.id === id);
+        if (!img || !img.originalMetadata) return;
+
+        const updatedImg = {
+            ...img,
+            metadata: img.originalMetadata,
+            originalMetadata: undefined
+        };
+        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        await insertImage(updatedImg);
         addToast('Reverted to original', 'success');
     };
 
