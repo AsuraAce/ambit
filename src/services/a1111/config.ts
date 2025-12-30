@@ -11,9 +11,13 @@ const MAX_DEPTH = 4;
 export const discoverA1111Candidates = async (
     rootPath: string,
     existingPaths: Set<string>
-): Promise<DiscoveryCandidate[]> => {
+): Promise<{ candidates: DiscoveryCandidate[], logs: string[] }> => {
     const candidates: DiscoveryCandidate[] = [];
+    const logs: string[] = [];
+    const log = (msg: string) => logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
     const normalizedRoot = normalizePath(rootPath);
+
+    log(`Starting scan of ${normalizedRoot}`);
 
     // Helper to recursively count images in a folder
     const countImagesRecursive = async (path: string): Promise<number> => {
@@ -39,7 +43,9 @@ export const discoverA1111Candidates = async (
         if (depth > MAX_DEPTH) return;
 
         const folderName = path.split(/[\\/]/).pop()?.toLowerCase() || '';
-        if (folderName === 'thumbnails') return; // Skip thumbnail folders entirely
+        if (folderName === 'thumbnails') return;
+
+        log(`Processing: ${path} (Depth ${depth})`);
 
         try {
             const entries = await readDir(path);
@@ -49,7 +55,6 @@ export const discoverA1111Candidates = async (
             for (const entry of entries) {
                 if (entry.isDirectory) {
                     const lowerName = entry.name?.toLowerCase() || '';
-                    // Skip technical folders
                     if (!['venv', 'scripts', 'extensions', 'models', 'embeddings', 'tmp', 'cache', '.git', 'thumbnails'].includes(lowerName)) {
                         subdirs.push({ name: entry.name, fullPath: `${path}/${entry.name}` });
                     }
@@ -61,13 +66,13 @@ export const discoverA1111Candidates = async (
                 }
             }
 
+            log(`  Found ${entries.length} entries. Subdirs: ${subdirs.map(s => s.name).join(', ')}. Direct Images: ${directImageCount}`);
+
             const normalizedPath = normalizePath(path);
             const type = inferTypeFromPath(normalizedPath);
             const isPriority = type !== A1111FolderType.UNKNOWN;
 
             if (isPriority) {
-                // If it's a priority folder (e.g. txt2img-images), 
-                // we treat it as a single unit and count all images inside it (including date subfolders).
                 const totalImageCount = await countImagesRecursive(path);
                 if (totalImageCount > 0) {
                     candidates.push({
@@ -78,32 +83,60 @@ export const discoverA1111Candidates = async (
                         isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
                         isPriority: true
                     });
+                    log(`  -> Added Priority: ${path} (Images: ${totalImageCount})`);
+                } else {
+                    log(`  -> Skipped Priority (Empty): ${path}`);
                 }
-                // Stop recursing further into a priority folder as its children are consolidated
                 return;
-            } else if (directImageCount > 0) {
-                // Non-priority folders show up if they have images directly inside
-                candidates.push({
-                    path: normalizedPath,
-                    name: path.split(/[\\/]/).pop() || path,
-                    imageCount: directImageCount,
-                    inferredType: A1111FolderType.UNKNOWN,
-                    isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
-                    isPriority: false
-                });
             }
 
-            // Recurse into subdirectories if not a priority folder
+            // Check if any subdirectory is a priority folder or contains one
+            let hasPriorityDeep = false;
+            for (const subdir of subdirs) {
+                const subType = inferTypeFromPath(normalizePath(subdir.fullPath));
+                if (subType !== A1111FolderType.UNKNOWN) {
+                    hasPriorityDeep = true;
+                    log(`  -> Has Priority Deep: ${subdir.name} is ${subType}`);
+                    break;
+                }
+            }
+
+            if (!hasPriorityDeep && depth > 0) {
+                // If this is NOT the root and has NO priority folders deep inside, 
+                // check if it has images anywhere inside. If so, consolidate.
+                const totalImageCount = await countImagesRecursive(path);
+                if (totalImageCount > 0) {
+                    candidates.push({
+                        path: normalizedPath,
+                        name: path.split(/[\\/]/).pop() || path,
+                        imageCount: totalImageCount,
+                        inferredType: A1111FolderType.UNKNOWN,
+                        isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
+                        isPriority: false
+                    });
+                    log(`  -> Added Consolidated: ${path} (Images: ${totalImageCount})`);
+                    // Consolidate here, don't recurse deeper if we found images and it's a "clean" custom folder
+                    return;
+                } else {
+                    log(`  -> Skipped Consolidated (No Images): ${path}`);
+                }
+            } else if (hasPriorityDeep) {
+                log(`  -> Recursing (Has Priority Deep)`);
+            } else if (depth === 0) {
+                log(`  -> Recursing (Root)`);
+            }
+
+            // Otherwise, recurse deeper
             for (const subdir of subdirs) {
                 await processFolder(subdir.fullPath, depth + 1);
             }
         } catch (e) {
-            // Probably access denied or not a dir
+            log(`Error processing ${path}: ${e}`);
         }
     };
 
     await processFolder(normalizedRoot, 0);
-    return candidates;
+    return { candidates, logs };
 };
 
 const inferTypeFromPath = (path: string): A1111FolderType => {

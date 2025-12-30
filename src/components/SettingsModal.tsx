@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette } from 'lucide-react';
 import { AppSettings } from '../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab } from './settings/SettingsTabs';
+import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab } from './settings/tabs';
 
 interface SettingsModalProps {
   isOpen: boolean;
