@@ -1,19 +1,19 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Folder, Save, Shield, FlaskConical } from 'lucide-react';
+import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette } from 'lucide-react';
 import { AppSettings } from '../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, IntegrationsTab } from './settings/SettingsTabs';
+import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab } from './settings/SettingsTabs';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
-  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'integrations';
+  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111';
 }
 
-type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'integrations';
+type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111';
 
 interface TabButtonProps {
   id: SettingsTab;
@@ -89,16 +89,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 
               <div className="relative z-10">
                 <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">Ambit Preferences</h2>
-                <nav className="space-y-1">
-                  <TabButton id="general" label="General" icon={<Monitor className="w-4 h-4" />} isActive={activeTab === 'general'} onClick={setActiveTab} />
-                  <TabButton id="folders" label="Folders" icon={<Folder className="w-4 h-4" />} isActive={activeTab === 'folders'} onClick={setActiveTab} />
-                  <TabButton id="integrations" label="Integrations" icon={
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  } isActive={activeTab === 'integrations'} onClick={setActiveTab} />
-                  <TabButton id="privacy" label="Privacy" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'privacy'} onClick={setActiveTab} />
-                  <TabButton id="experiments" label="Experiments" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'experiments'} onClick={setActiveTab} />
+                <nav className="space-y-6">
+                  <div>
+                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Application</h4>
+                    <TabButton id="general" label="General" icon={<Monitor className="w-4 h-4" />} isActive={activeTab === 'general'} onClick={setActiveTab} />
+                    <TabButton id="folders" label="Folders" icon={<Folder className="w-4 h-4" />} isActive={activeTab === 'folders'} onClick={setActiveTab} />
+                  </div>
+
+                  <div>
+                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Generators</h4>
+                    <TabButton id="invokeai" label="InvokeAI" icon={<DatabaseZap className="w-4 h-4" />} isActive={activeTab === 'invokeai'} onClick={setActiveTab} />
+                    <TabButton id="a1111" label="SD WebUI" icon={<Palette className="w-4 h-4" />} isActive={activeTab === 'a1111'} onClick={setActiveTab} />
+                  </div>
+
+                  <div>
+                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Security</h4>
+                    <TabButton id="privacy" label="Privacy" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'privacy'} onClick={setActiveTab} />
+                  </div>
+
+                  <div>
+                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
+                    <TabButton id="experiments" label="Experiments" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'experiments'} onClick={setActiveTab} />
+                  </div>
                 </nav>
               </div>
 
@@ -122,7 +134,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
               <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
                 {activeTab === 'general' && <GeneralTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'integrations' && <IntegrationsTab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'invokeai' && <InvokeAITab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
               </div>

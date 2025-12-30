@@ -313,9 +313,9 @@ export const ExperimentsTab: React.FC<TabProps> = React.memo(({ settings, setSet
   );
 });
 
-// --- INTEGRATIONS TAB ---
+// --- INVOKEAI TAB ---
 
-export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [diagData, setDiagData] = useState<any>(null);
@@ -378,10 +378,10 @@ export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSe
     <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="px-1">
         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
-          Integrations
+          InvokeAI Integration
         </h3>
         <p className="text-sm text-gray-500">
-          Connect and manage external AI generation tools with your library.
+          Connect and manage your InvokeAI installation.
         </p>
       </div>
 
@@ -455,119 +455,6 @@ export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSe
       </section>
 
       <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-        <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
-          <Palette className="w-4 h-4" /> Stable Diffusion WebUI (A1111)
-        </h4>
-
-        <div className="space-y-6">
-          <div className="relative">
-            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3">
-              Installation Root Path
-            </label>
-            <div className="flex gap-2">
-              <div className="flex-1 relative group">
-                <input
-                  type="text"
-                  value={settings.a1111Path || ''}
-                  onChange={(e) => setSettings(prev => ({ ...prev, a1111Path: e.target.value }))}
-                  placeholder="e.g. C:\StableDiffusion\stable-diffusion-webui"
-                  className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
-                />
-                <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-sage-500 transition-colors" />
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const { open } = await import('@tauri-apps/plugin-dialog');
-                    const selected = await open({ directory: true, multiple: false, title: 'Select A1111 Root Folder' });
-                    if (selected && typeof selected === 'string') {
-                      const { normalizePath } = await import('../../utils/pathUtils');
-                      setSettings(prev => ({ ...prev, a1111Path: normalizePath(selected) }));
-                    }
-                  } catch (e) { console.error(e); }
-                }}
-                className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
-              >
-                Browse
-              </button>
-            </div>
-            <p className="text-[10px] text-gray-500 mt-3 flex items-center gap-1.5 opacity-80">
-              <Info className="w-3 h-3" /> Select the root folder of your SD WebUI installation.
-            </p>
-          </div>
-
-          <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
-            <button
-              onClick={async () => {
-                if (!settings.a1111Path) return;
-                setIsTesting(true);
-                setTestResult(null);
-                try {
-                  const { detectA1111Folders } = await import('../../services/a1111/config');
-                  const config = await detectA1111Folders(settings.a1111Path);
-
-                  if (config.folders.length > 0) {
-                    setSettings(prev => {
-                      const existingPaths = new Set(prev.monitoredFolders.map(f => f.path.toLowerCase().replace(/\\/g, '/')));
-                      const newFolders = config.folders
-                        .filter(f => !existingPaths.has(f.path.toLowerCase().replace(/\\/g, '/')))
-                        .map(f => ({
-                          id: `a1111_${f.type}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                          path: f.path,
-                          isActive: true,
-                          imageCount: 0
-                        }));
-
-                      return {
-                        ...prev,
-                        monitoredFolders: [...prev.monitoredFolders, ...newFolders]
-                      };
-                    });
-                    setTestResult({ success: true, message: `Discovered and linked ${config.folders.length} output folders!` });
-                  } else {
-                    setTestResult({ success: false, message: "No standard A1111 output folders found in this path." });
-                  }
-                } catch (e) {
-                  console.error(e);
-                  setTestResult({ success: false, message: "Error scanning root path." });
-                } finally {
-                  setIsTesting(false);
-                }
-              }}
-              disabled={isTesting || !settings.a1111Path}
-              className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.a1111Path
-                ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
-                }`}
-            >
-              {isTesting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Scanning...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  Discover & Link Folders
-                </>
-              )}
-            </button>
-
-            {testResult && (
-              <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                }`}>
-                {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                {testResult.message}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
         <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Activity className="w-4 h-4" /> System Audit
@@ -608,7 +495,7 @@ export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSe
                   <Files className="w-3 h-3 text-sage-500" /> Image Repository
                 </div>
                 <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
-                <div className="text-[9px] text-gray-500 font-medium">Files on Disk</div>
+                <div className="text-[10px] text-gray-500 font-medium">Files on Disk</div>
               </div>
             </div>
 
@@ -680,8 +567,140 @@ export const IntegrationsTab: React.FC<TabProps> = React.memo(({ settings, setSe
         )}
       </section>
 
-      {/* Synchronization Section */}
       <SyncSection settings={settings} setSettings={setSettings} />
+    </div>
+  );
+});
+
+// --- A1111 TAB ---
+
+export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+
+  return (
+    <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="px-1">
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+          Stable Diffusion WebUI
+        </h3>
+        <p className="text-sm text-gray-500">
+          Manage your A1111 (Automatic1111) installation and folders.
+        </p>
+      </div>
+
+      <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+        <h4 className="text-[10px] font-black text-white px-4 py-2 bg-sage-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-sage-500/20">
+          <Palette className="w-4 h-4" /> Core Configuration
+        </h4>
+
+        <div className="space-y-6">
+          <div className="relative">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-3 px-1">
+              Installation Root Path
+            </label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative group">
+                <input
+                  type="text"
+                  value={settings.a1111Path || ''}
+                  onChange={(e) => setSettings(prev => ({ ...prev, a1111Path: e.target.value }))}
+                  placeholder="e.g. C:\StableDiffusion\stable-diffusion-webui"
+                  className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
+                />
+                <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-sage-500 transition-colors" />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const { open } = await import('@tauri-apps/plugin-dialog');
+                    const selected = await open({ directory: true, multiple: false, title: 'Select A1111 Root Folder' });
+                    if (selected && typeof selected === 'string') {
+                      const { normalizePath } = await import('../../utils/pathUtils');
+                      setSettings(prev => ({ ...prev, a1111Path: normalizePath(selected) }));
+                    }
+                  } catch (e) { console.error(e); }
+                }}
+                className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
+              >
+                Browse
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-500 mt-3 flex items-center gap-1.5 opacity-80 px-1">
+              <Info className="w-3 h-3" /> Select the root folder of your SD WebUI installation.
+            </p>
+          </div>
+
+          <div className="pt-6 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+            <button
+              onClick={async () => {
+                if (!settings.a1111Path) return;
+                setIsTesting(true);
+                setTestResult(null);
+                try {
+                  const { detectA1111Folders } = await import('../../services/a1111/config');
+                  const config = await detectA1111Folders(settings.a1111Path);
+
+                  if (config.folders.length > 0) {
+                    setSettings(prev => {
+                      const existingPaths = new Set(prev.monitoredFolders.map(f => f.path.toLowerCase().replace(/\\/g, '/')));
+                      const newFolders = config.folders
+                        .filter(f => !existingPaths.has(f.path.toLowerCase().replace(/\\/g, '/')))
+                        .map(f => ({
+                          id: `a1111_${f.type}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                          path: f.path,
+                          isActive: true,
+                          imageCount: 0
+                        }));
+
+                      return {
+                        ...prev,
+                        monitoredFolders: [...prev.monitoredFolders, ...newFolders]
+                      };
+                    });
+                    setTestResult({ success: true, message: `Linked ${config.folders.length} output folders!` });
+                  } else {
+                    setTestResult({ success: false, message: "No standard A1111 output folders found." });
+                  }
+                } catch (e) {
+                  console.error(e);
+                  setTestResult({ success: false, message: "Error scanning root path." });
+                } finally {
+                  setIsTesting(false);
+                }
+              }}
+              disabled={isTesting || !settings.a1111Path}
+              className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.a1111Path
+                ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
+                : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
+                }`}
+            >
+              {isTesting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Scanning...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  Discover & Link
+                </>
+              )}
+            </button>
+
+            {testResult && (
+              <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                }`}>
+                {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {testResult.message}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 });
