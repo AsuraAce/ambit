@@ -73,7 +73,13 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         const avgSteps = Math.round(basicStats[0]?.avg_steps || 0);
 
         const modelQuery = `
-            SELECT json_extract(metadata_json, '$.model') as name, count(*) as count
+            SELECT 
+                CASE 
+                    WHEN json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown'
+                    THEN COALESCE(json_extract(metadata_json, '$.modelHash'), 'Unknown')
+                    ELSE json_extract(metadata_json, '$.model')
+                END as name, 
+                count(*) as count
             FROM images
             ${finalWhere}
             GROUP BY name
@@ -162,7 +168,12 @@ export const getFacets = async (whereClause: string = '', params: any[] = []) =>
 
     try {
         const models = await db.select<any[]>(`
-            SELECT DISTINCT json_extract(metadata_json, '$.model') as name 
+            SELECT DISTINCT 
+                CASE 
+                    WHEN json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown'
+                    THEN COALESCE(json_extract(metadata_json, '$.modelHash'), 'Unknown')
+                    ELSE json_extract(metadata_json, '$.model')
+                END as name
             FROM images ${finalWhere} 
             ORDER BY name ASC
         `, params);
