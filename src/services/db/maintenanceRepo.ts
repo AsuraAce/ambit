@@ -20,15 +20,6 @@ export const normalizeAllPaths = async () => {
     });
 };
 
-export const clearLibrary = async () => {
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        console.log('[DB] Clearing library...');
-        await db.execute('DELETE FROM images');
-        console.log('[DB] Library cleared.');
-    });
-};
-
 export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
     const db = await getDb();
     const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');

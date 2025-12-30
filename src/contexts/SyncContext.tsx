@@ -143,14 +143,35 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
     const cleanLibrary = useCallback(async () => {
         try {
-            const { getDb } = await import('../services/db');
-            const db = await getDb();
-            await db.execute('DELETE FROM images');
-            // Reset last synced timestamp
+            console.log('[Purge] Starting library purge...');
+            const { purgeLibrary } = await import('../services/db/imageRepo');
+            const { appRepository } = await import('../services/repository');
+
+            console.log('[Purge] Purging main library, FTS index, and all collections...');
+            await purgeLibrary();
+
+            console.log('[Purge] Clearing legacy storage file...');
+            const legacyState = await appRepository.load();
+            await appRepository.save({
+                ...legacyState,
+                images: [],
+                collections: [],
+                smartCollections: []
+            });
+
+            console.log('[Purge] Resetting settings...');
             setSettings(prev => ({ ...prev, lastSyncedAt: null }));
-            addToast('Library purged', 'success');
-            setTimeout(() => window.location.reload(), 1000);
-        } catch (e) { console.error("Purge failed", e); }
+
+            addToast('Library purged successfully', 'success');
+            console.log('[Purge] Purge complete. Reloading window...');
+
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } catch (e: any) {
+            console.error("[Purge] Purge failed:", e);
+            addToast('Purge failed: ' + e.message, 'error');
+        }
     }, [addToast, setSettings]);
 
     return (

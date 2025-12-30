@@ -229,3 +229,24 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
         // Actually, a simpler approach is to use the dedicated collection removal tools for manual changes.
     }
 };
+
+export const purgeLibrary = async () => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Purging library (optimized)...');
+
+        // Drop triggers to speed up mass deletion on large libraries
+        console.log('[DB] Dropping FTS triggers...');
+        await db.execute('DROP TRIGGER IF EXISTS images_ai');
+        await db.execute('DROP TRIGGER IF EXISTS images_ad');
+        await db.execute('DROP TRIGGER IF EXISTS images_au');
+
+        console.log('[DB] Clearing tables...');
+        await db.execute('DELETE FROM collection_images');
+        await db.execute('DELETE FROM images');
+        await db.execute('DELETE FROM images_fts');
+        await db.execute('DELETE FROM collections');
+
+        console.log('[DB] Library purged. Triggers will be recreated on next load.');
+    });
+};

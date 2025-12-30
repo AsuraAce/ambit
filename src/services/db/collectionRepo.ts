@@ -314,3 +314,13 @@ export const hydrateCollections = async () => {
     });
     return map;
 };
+
+export const purgeInvokeCollections = async () => {
+    const { dbMutex } = await import('./connection');
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Purging InvokeAI collections...');
+        await db.execute("DELETE FROM collections WHERE source = 'invoke'");
+        console.log('[DB] InvokeAI collections purged.');
+    });
+};
