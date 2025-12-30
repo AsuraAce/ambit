@@ -46,6 +46,14 @@ export interface ImageMetadata {
   upscaled?: boolean;
   isIntermediate?: boolean;
   hasWorkflowHint?: boolean; // New: Hint from external DB if workflow exists
+
+  // New fields for deeper extraction
+  vae?: string;
+  clipSkip?: number;
+  denoisingStrength?: number;
+  hiresUpscale?: number;
+  hiresSteps?: number;
+  hiresUpscaler?: string;
 }
 
 export interface ParseResult {

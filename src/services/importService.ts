@@ -1,7 +1,7 @@
 import { AIImage, GeneratorTool } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { insertImage } from './db/imageRepo';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { normalizePath } from '../utils/pathUtils';
 
 export interface ImportStats {
@@ -95,11 +95,28 @@ export const processNativePaths = async (
     let skipped = 0;
     let errors = 0;
 
-    // Batch size for bulk scanning
-    const BATCH_SIZE = 50;
+    // 1. Resolve all paths (if a path is a directory, expand it recursively)
+    const allPaths: string[] = [];
+    for (const p of paths) {
+        try {
+            const files = await invoke('scan_directory_recursive', { path: p }) as string[];
+            if (files && files.length > 0) {
+                allPaths.push(...files);
+            } else {
+                // If not a directory or no images found, keep as is (might be a single file)
+                allPaths.push(p);
+            }
+        } catch (e) {
+            allPaths.push(p);
+        }
+    }
 
-    for (let i = 0; i < paths.length; i += BATCH_SIZE) {
-        const chunk = paths.slice(i, i + BATCH_SIZE);
+    // 2. Batch size for bulk scanning
+    const BATCH_SIZE = 50;
+    const totalToProcess = allPaths.length;
+
+    for (let i = 0; i < allPaths.length; i += BATCH_SIZE) {
+        const chunk = allPaths.slice(i, i + BATCH_SIZE);
 
         try {
             // Optimization: Skip thumbnails for bulk import -> true
@@ -111,8 +128,10 @@ export const processNativePaths = async (
 
                 if (!result || (result as any).error) {
                     if ((result as any).error) {
-                        console.error(`Error importing ${path}`);
-                        errors++;
+                        if (!(result as any).is_directory) {
+                            console.error(`Error importing ${path}`);
+                            errors++;
+                        }
                     }
                     continue;
                 }
@@ -152,13 +171,13 @@ export const processNativePaths = async (
             errors += chunk.length;
         }
 
-        if (onProgress) onProgress(Math.min(i + BATCH_SIZE, paths.length), paths.length);
+        if (onProgress) onProgress(Math.min(i + BATCH_SIZE, totalToProcess), totalToProcess);
     }
 
     return {
         images: newImages,
         stats: {
-            processed: paths.length,
+            processed: totalToProcess,
             imported: newImages.length,
             skipped,
             errors

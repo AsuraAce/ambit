@@ -28,6 +28,12 @@ export interface ImageMetadata {
     loras?: string[];
     controlNets?: string[];
     ipAdapters?: string[];
+    vae?: string;
+    clipSkip?: number;
+    denoisingStrength?: number;
+    hiresUpscale?: number;
+    hiresSteps?: number;
+    hiresUpscaler?: string;
 }
 
 export interface ParseResult {
@@ -308,6 +314,24 @@ const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) =>
         if (key === 'Model' && value.trim().length > 0 && value !== 'Unknown') {
             metadata.model = value;
             foundModel = true;
+        }
+
+        if (key === 'VAE') metadata.vae = value;
+        if (key === 'Clip skip') metadata.clipSkip = parseInt(value);
+        if (key === 'Denoising strength') metadata.denoisingStrength = parseFloat(value);
+        if (key === 'Hires upscale') metadata.hiresUpscale = parseFloat(value);
+        if (key === 'Hires steps') metadata.hiresSteps = parseInt(value);
+        if (key === 'Hires upscaler') metadata.hiresUpscaler = value;
+
+        if (key.startsWith('ControlNet')) {
+            const modelMatch = value.match(/Model: ([^,]+)/);
+            if (modelMatch) {
+                if (!metadata.controlNets) metadata.controlNets = [];
+                const modelName = modelMatch[1].trim();
+                if (!metadata.controlNets.includes(modelName)) {
+                    metadata.controlNets.push(modelName);
+                }
+            }
         }
 
         if (key === 'Version' && value.toLowerCase().includes('comfy')) {

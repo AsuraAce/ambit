@@ -1,4 +1,5 @@
 use flate2::read::ZlibDecoder;
+use regex::Regex;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -75,7 +76,7 @@ fn resolve_db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     let db_path = resolve_db_path(&app)?;
 
@@ -132,7 +133,7 @@ fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<
     Ok(images.len())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 async fn scan_image(
     path: String,
     thumbnail_dir: Option<String>,
@@ -143,7 +144,7 @@ async fn scan_image(
     scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 async fn scan_images_bulk(
     paths: Vec<String>,
     thumbnail_dir: Option<String>,
@@ -404,6 +405,14 @@ fn scan_image_internal(
     extract_workflow: bool,
 ) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
+    if path_buf.is_dir() {
+        return Ok(serde_json::json!({
+            "id": path,
+            "failed": true,
+            "error": "path is a directory",
+            "is_directory": true
+        }));
+    }
 
     // 1. Basic File Info
     let metadata = std::fs::metadata(&path_buf).map_err(|e| e.to_string())?;
@@ -585,15 +594,23 @@ fn scan_image_internal(
     let mut parsed_metadata = ImageMetadata::default();
     let mut found_metadata = false;
 
+    // Check for A1111 parameters chunk (Higher precedence than heuristics)
+    if let Some(params) = chunks.get("parameters") {
+        parsed_metadata = extract_a1111_metadata(params);
+        found_metadata = true;
+    }
+
     // Check for InvokeAI
-    if let Some(content) = chunks
-        .get("invokeai_metadata")
-        .or_else(|| chunks.get("sd-metadata"))
-        .or_else(|| chunks.get("dream_metadata"))
-    {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-            parsed_metadata = extract_invokeai_metadata(&json);
-            found_metadata = true;
+    if !found_metadata {
+        if let Some(content) = chunks
+            .get("invokeai_metadata")
+            .or_else(|| chunks.get("sd-metadata"))
+            .or_else(|| chunks.get("dream_metadata"))
+        {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+                parsed_metadata = extract_invokeai_metadata(&json);
+                found_metadata = true;
+            }
         }
     }
 
@@ -657,6 +674,19 @@ struct ImageMetadata {
     is_intermediate: bool,
     #[serde(rename = "workflowJson", skip_serializing_if = "Option::is_none")]
     workflow_json: Option<String>,
+    // New fields for deeper extraction
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vae: Option<String>,
+    #[serde(rename = "clipSkip", skip_serializing_if = "Option::is_none")]
+    clip_skip: Option<u32>,
+    #[serde(rename = "denoisingStrength", skip_serializing_if = "Option::is_none")]
+    denoising_strength: Option<f32>,
+    #[serde(rename = "hiresUpscale", skip_serializing_if = "Option::is_none")]
+    hires_upscale: Option<f32>,
+    #[serde(rename = "hiresSteps", skip_serializing_if = "Option::is_none")]
+    hires_steps: Option<u32>,
+    #[serde(rename = "hiresUpscaler", skip_serializing_if = "Option::is_none")]
+    hires_upscaler: Option<String>,
 }
 
 fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
@@ -823,7 +853,100 @@ fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
     }
 }
 
-#[tauri::command]
+fn extract_a1111_metadata(text: &str) -> ImageMetadata {
+    let mut meta = ImageMetadata::default();
+    meta.tool = "Automatic1111".to_string();
+
+    let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+    if lines.is_empty() {
+        return meta;
+    }
+
+    let mut positive_parts = Vec::new();
+    let mut negative_prompt = String::new();
+    let mut params_line = String::new();
+    let mut state = 0; // 0: positive, 1: negative, 2: params
+
+    for line in lines {
+        if line.starts_with("Negative prompt: ") {
+            state = 1;
+            negative_prompt.push_str(&line[17..]);
+        } else if line.starts_with("Steps: ") {
+            state = 2;
+            params_line = line.to_string();
+        } else if state == 0 {
+            positive_parts.push(line);
+        } else if state == 1 {
+            if !negative_prompt.is_empty() {
+                negative_prompt.push(' ');
+            }
+            negative_prompt.push_str(line);
+        }
+    }
+
+    meta.positive_prompt = positive_parts.join("\n").trim().to_string();
+    meta.negative_prompt = negative_prompt.trim().to_string();
+
+    // Parse params_line
+    if !params_line.is_empty() {
+        let pairs = params_line.split(", ");
+        let mut variation_seed = String::new();
+        let mut variation_strength = String::new();
+
+        for pair in pairs {
+            if let Some((key, val)) = pair.split_once(": ") {
+                let key = key.trim();
+                let val = val.trim();
+                match key {
+                    "Steps" => meta.steps = val.parse().unwrap_or(0),
+                    "Sampler" => meta.sampler = val.to_string(),
+                    "CFG scale" => meta.cfg = val.parse().unwrap_or(0.0),
+                    "Seed" => meta.seed = val.parse().unwrap_or(0),
+                    "Model" => meta.model = val.to_string(),
+                    "VAE" => meta.vae = Some(val.to_string()),
+                    "Clip skip" => meta.clip_skip = val.parse().ok(),
+                    "Denoising strength" => meta.denoising_strength = val.parse().ok(),
+                    "Hires upscale" => meta.hires_upscale = val.parse().ok(),
+                    "Hires steps" => meta.hires_steps = val.parse().ok(),
+                    "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
+                    "Variation seed" => variation_seed = val.to_string(),
+                    "Variation seed strength" => variation_strength = val.to_string(),
+                    _ => {
+                        // Special handling for ControlNet
+                        if key.starts_with("ControlNet") {
+                            if let Some(start) = val.find("Model: ") {
+                                let model_part = &val[start + 7..];
+                                let model_name = model_part.split(',').next().unwrap_or("").trim();
+                                if !model_name.is_empty() {
+                                    meta.control_nets.push(model_name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !variation_seed.is_empty() && !variation_strength.is_empty() {
+            meta.variation_id = Some(format!("{}:{}", variation_seed, variation_strength));
+        }
+    }
+
+    // Extract LoRAs from positive prompt
+    // regex: <lora:([^:>]+)(?::[^>]+)?>
+    if let Ok(re) = Regex::new(r"<lora:([^:>]+)(?::[^>]+)?>") {
+        for cap in re.captures_iter(&meta.positive_prompt) {
+            let lora_name = cap[1].to_string();
+            if !meta.loras.contains(&lora_name) {
+                meta.loras.push(lora_name);
+            }
+        }
+    }
+
+    meta
+}
+
+#[tauri::command(rename_all = "camelCase")]
 fn refresh_boards_native(
     app: tauri::AppHandle,
     board_mapping: HashMap<String, String>,

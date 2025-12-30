@@ -53,7 +53,7 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
 
 const processScanResult = async (info: any, path: string): Promise<ParseResult> => {
     if (info.failed || info.error) {
-        console.error(`Scan failed for ${path}:`, info.error);
+        if (!info.is_directory) console.error(`Scan failed for ${path}:`, info.error);
         return {
             metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
             extra: {},
@@ -139,9 +139,9 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
     }
 };
 
-export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false): Promise<ParseResult[]> => {
+export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult[]> => {
     try {
-        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail }) as any[];
+        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail, extractWorkflow }) as any[];
 
         const tasks = results.map((info, index) => {
             const path = paths[index];
