@@ -587,7 +587,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
     setTestResult(null);
     try {
       const { discoverA1111Candidates } = await import('../../services/a1111/config');
-      const existing = new Set(settings.monitoredFolders.map(f => f.path.toLowerCase().replace(/\\/g, '/')));
+      const existing = new Set(settings.monitoredFolders.map(f => f.path.replace(/\\/g, '/').toLowerCase()));
       const results: any[] = await discoverA1111Candidates(settings.a1111Path, existing);
       setCandidates(results);
 
@@ -618,24 +618,49 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
     setSelectedPaths(next);
   };
 
-  const handleLinkSelected = () => {
+  const handleLinkSelected = async () => {
     const toLink = candidates.filter(c => selectedPaths.has(c.path));
     if (toLink.length === 0) return;
 
-    setSettings(prev => {
-      const newFolders = toLink.map(c => ({
-        id: `a1111_${c.inferredType}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        path: c.path,
-        isActive: true,
-        imageCount: c.imageCount
-      }));
-      return {
-        ...prev,
-        monitoredFolders: [...prev.monitoredFolders, ...newFolders]
-      };
-    });
+    // Separate new folders from already linked ones
+    const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
+    const brandNew = toLink.filter(c => !c.isAlreadyLinked);
+
+    if (brandNew.length > 0) {
+      setSettings(prev => {
+        const newFolders = brandNew.map(c => ({
+          id: `a1111_${c.inferredType}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          path: c.path,
+          isActive: true,
+          imageCount: c.imageCount
+        }));
+        return {
+          ...prev,
+          monitoredFolders: [...prev.monitoredFolders, ...newFolders]
+        };
+      });
+    }
+
+    // If there are already linked folders, trigger a manual scan for them
+    if (alreadyLinked.length > 0) {
+      try {
+        const { processNativePaths } = await import('../../services/importService');
+        setIsScanning(true);
+        await processNativePaths(alreadyLinked.map(c => c.path), undefined, (curr, tot) => {
+          // Progress feedback could be added here
+        });
+        setTestResult({ success: true, message: `Successfully synced ${alreadyLinked.length} folders!` });
+      } catch (e) {
+        console.error("Manual sync failed", e);
+        setTestResult({ success: false, message: "Sync failed. See console for details." });
+      } finally {
+        setIsScanning(false);
+      }
+    } else {
+      setTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });
+    }
+
     setCandidates([]);
-    setTestResult({ success: true, message: `Successfully linked ${toLink.length} folders!` });
   };
 
   const displayedCandidates = showAllFolders
@@ -743,10 +768,15 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                   </div>
                   <div className="flex items-center gap-4">
                     {candidates.length > displayedCandidates.length || showAllFolders ? (
-                      <label className="flex items-center gap-2 cursor-pointer group">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          checked={showAllFolders}
+                          onChange={(e) => setShowAllFolders(e.target.checked)}
+                        />
                         <span className="text-[10px] font-bold text-gray-500 group-hover:text-sage-600 transition-colors uppercase tracking-tight">Show non-standard folders</span>
                         <div
-                          onClick={() => setShowAllFolders(!showAllFolders)}
                           className={`w-8 h-4 rounded-full relative transition-colors ${showAllFolders ? 'bg-sage-500' : 'bg-gray-300 dark:bg-white/10'}`}
                         >
                           <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showAllFolders ? 'left-[17px]' : 'left-0.5'}`} />
@@ -778,8 +808,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                   type="checkbox"
                                   className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
                                   checked={selectedPaths.has(c.path)}
-                                  onChange={() => !c.isAlreadyLinked && toggleSelection(c.path)}
-                                  disabled={c.isAlreadyLinked}
+                                  onChange={() => toggleSelection(c.path)}
                                 />
                               </div>
                             </label>
@@ -835,7 +864,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                       }`}
                   >
                     <Plus className="w-4 h-4" />
-                    Link {selectedPaths.size} Folders
+                    {candidates.some(c => selectedPaths.has(c.path) && c.isAlreadyLinked)
+                      ? `Link/Sync ${selectedPaths.size} Folders`
+                      : `Link ${selectedPaths.size} Folders`}
                   </button>
                 </div>
               </div>
