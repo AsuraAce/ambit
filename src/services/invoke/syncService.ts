@@ -129,6 +129,19 @@ export const syncImages = async (
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
 
+    if (options.syncBoards && boards.size > 0) {
+        onProgress(processed, totalToImport, 'Syncing collections...');
+        const { upsertCollection } = await import('../db/collectionRepo');
+        for (const [id, board] of boards.entries()) {
+            await upsertCollection({
+                id,
+                name: board.name,
+                createdAt: board.createdAt || Date.now(),
+                source: 'invoke'
+            });
+        }
+    }
+
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
@@ -266,16 +279,11 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
+    // Finalize: Link all imported images to their board-based collections in bulk
     if (options.syncBoards && boards.size > 0) {
-        const { upsertCollection } = await import('../db/collectionRepo');
-        for (const [id, board] of boards.entries()) {
-            await upsertCollection({
-                id,
-                name: board.name,
-                createdAt: board.createdAt || Date.now(),
-                source: 'invoke'
-            });
-        }
+        const { syncCollectionImages } = await import('../db/imageRepo');
+        onProgress(processed, totalToImport, 'Finalizing collection mapping...');
+        await syncCollectionImages();
     }
 
     return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds, boardMapping: boards };

@@ -93,6 +93,24 @@ export const insertImagesBatch = async (images: AIImage[]) => {
     await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
 };
 
+/**
+ * High-performance bulk sync of the collection_images junction table.
+ * Links all images to their InvokeAI boards in a single pass.
+ */
+export const syncCollectionImages = async () => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        console.log('[DB] Performing bulk collection sync...');
+        await db.execute(`
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT board_id, id 
+            FROM images 
+            WHERE board_id IS NOT NULL;
+        `);
+        console.log('[DB] Bulk collection sync complete.');
+    });
+};
+
 export const isImageNew = async (id: string): Promise<boolean> => {
     const db = await getDb();
     const result = await db.select<any[]>(`SELECT count(*) as count FROM images WHERE id = ?`, [id]);
