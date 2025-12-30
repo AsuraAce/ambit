@@ -5,3 +5,4 @@ export * from './ExperimentsTab';
 export * from './InvokeAITab';
 export * from './A1111Tab';
 export * from './AdvancedTab';
+export * from './DevTab';

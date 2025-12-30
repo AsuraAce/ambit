@@ -1,19 +1,19 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette } from 'lucide-react';
+import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
 import { AppSettings } from '../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab } from './settings/tabs';
+import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, DevTab } from './settings/tabs';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
-  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111';
+  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'dev';
 }
 
-type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111';
+type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'dev';
 
 interface TabButtonProps {
   id: SettingsTab;
@@ -110,6 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
                     <TabButton id="experiments" label="Experiments" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'experiments'} onClick={setActiveTab} />
+                    <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
                   </div>
                 </nav>
               </div>
@@ -138,6 +139,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'dev' && <DevTab />}
               </div>
 
               <div className="p-6 border-t border-gray-200 dark:border-white/5 flex justify-end gap-3 bg-card shrink-0">
