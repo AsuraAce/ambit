@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { Layers, Zap, RefreshCw, Check, Image } from 'lucide-react';
+import { useSearch } from '../../contexts/SearchContext';
 import { AIImage } from '../../types';
 import { VirtualGrid } from '../VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
@@ -51,40 +52,46 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         );
     }, [selectedIds, onItemClick, privacyEnabled, maskedKeywords]);
 
+    const { isRegeneratingThumbnails } = useSearch();
+
     const actions = (
         <div className="flex flex-wrap items-center gap-3">
             {/* Scope Toggle */}
             <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-xl mr-2">
                 <button
+                    disabled={isRegeneratingThumbnails}
                     onClick={() => onScopeChange('global')}
-                    className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
+                    className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'} ${isRegeneratingThumbnails ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                    Global
+                    Library
                 </button>
                 <button
+                    disabled={isRegeneratingThumbnails}
                     onClick={() => onScopeChange('filtered')}
-                    className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
+                    className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${thumbnailsScope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'} ${isRegeneratingThumbnails ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                    Filtered
+                    Filtered View
                 </button>
             </div>
 
             {selectedIds.size > 0 ? (
                 <button
+                    disabled={isRegeneratingThumbnails}
                     onClick={() => onRegenerate(Array.from(selectedIds))}
-                    className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                    className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
                 >
-                    <Zap className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                    Regenerate Selected
+                    <Zap className={`w-4 h-4 ${!isRegeneratingThumbnails && 'group-hover:rotate-12'} transition-transform`} />
+                    {isRegeneratingThumbnails ? 'Processing...' : 'Regenerate Selected'}
                     <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                 </button>
             ) : (
                 <button
+                    disabled={isRegeneratingThumbnails}
                     onClick={() => onRegenerate()}
-                    className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                    className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
                 >
-                    <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" />
-                    Regenerate All Unoptimized
+                    <RefreshCw className={`w-4 h-4 ${!isRegeneratingThumbnails && 'group-hover:rotate-180'} transition-transform duration-700`} />
+                    {isRegeneratingThumbnails ? 'Optimizing Library...' : 'Regenerate All Unoptimized'}
                     {images.length > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{images.length}</span>}
                 </button>
             )}

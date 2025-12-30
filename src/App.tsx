@@ -58,19 +58,24 @@ export default function App() {
     // --- Theme Hook ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
 
-    // Generate Tags from currently loaded images (View-based tags)
-    const availableTags = React.useMemo(() => {
-        const tags = new Set<string>();
-        // Only scan a subset to avoid lag if view is large
-        images.slice(0, 500).forEach(img => {
-            if (typeof img.metadata.positivePrompt === 'string') {
-                img.metadata.positivePrompt.split(',').forEach(t => {
-                    const clean = t.trim().toLowerCase();
-                    if (clean.length > 2 && clean.length < 40) tags.add(clean);
-                });
-            }
-        });
-        return Array.from(tags).sort();
+    // Generate Tags from currently loaded images (View-based tags) - DEBOUNCED to avoid lag
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const tags = new Set<string>();
+            // Only scan a subset to avoid lag if view is large
+            images.slice(0, 500).forEach(img => {
+                if (typeof img.metadata.positivePrompt === 'string') {
+                    img.metadata.positivePrompt.split(',').forEach(t => {
+                        const clean = t.trim().toLowerCase();
+                        if (clean.length > 2 && clean.length < 40) tags.add(clean);
+                    });
+                }
+            });
+            setAvailableTags(Array.from(tags).sort());
+        }, 1000); // Wait for results to settle before parsing tags
+
+        return () => clearTimeout(timer);
     }, [images]);
 
     const {
@@ -111,14 +116,25 @@ export default function App() {
     const handlers = useAppHandlers({ setImages, refreshMaintenanceCounts });
 
     // --- Specialized Logic Hooks ---
-    const search = useSearch({
+    const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useSearch({
         filters,
         setFilters,
         settings,
         setRecentSearches,
         availableTags: availableTags,
-        onOpenSettings: () => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }
+        onOpenSettings: useCallback(() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }, [modals])
     });
+
+    const searchProps = React.useMemo(() => ({
+        isAiSearchEnabled,
+        isSearchingAi,
+        inputRef,
+        toggleAiSearch,
+        submitSearch,
+        isFocused: isSearchFocused,
+        onFocus: () => setIsSearchFocused(true),
+        onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
+    }), [isAiSearchEnabled, isSearchingAi, inputRef, toggleAiSearch, submitSearch, isSearchFocused]);
 
     const fileOps = useFileOperations({
         images,
@@ -208,7 +224,7 @@ export default function App() {
         lastSelectedId,
         selectedImageIndex,
         gridRef,
-        searchInputRef: search.inputRef,
+        searchInputRef: inputRef,
         setSelectedImageIndex,
         setSelectedIds,
         setLastSelectedId,
@@ -351,12 +367,7 @@ export default function App() {
                             viewMode={viewMode}
                             filters={filters}
                             setFilters={setFilters}
-                            searchProps={{
-                                ...search,
-                                isFocused: isSearchFocused,
-                                onFocus: () => setIsSearchFocused(true),
-                                onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
-                            }}
+                            searchProps={searchProps}
                             layoutMode={layoutMode}
                             setLayoutMode={setLayoutMode}
                             sortOption={sortOption}
@@ -597,7 +608,7 @@ export default function App() {
                         onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
                         onImport: () => fileOps.fileInputRef.current?.click(),
                         onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
-                        onToggleAI: search.toggleAiSearch
+                        onToggleAI: toggleAiSearch
                     }}
                 />
 

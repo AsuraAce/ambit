@@ -15,13 +15,7 @@ interface AppHeaderProps {
         isSearchingAi: boolean;
         inputRef: React.RefObject<HTMLInputElement>;
         toggleAiSearch: () => void;
-        handleSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-        handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-        submitSearch: () => void;
-        suggestions: string[];
-        activeSuggestionIndex: number;
-        selectSuggestion: (index: number) => void;
-        clearSearch: () => void;
+        submitSearch: (query: string) => void;
         isFocused: boolean;
         onFocus: () => void;
         onBlur: () => void;
@@ -39,7 +33,7 @@ interface AppHeaderProps {
     isFiltering?: boolean;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({
+export const AppHeader = React.memo(({
     viewMode,
     filters,
     setFilters,
@@ -55,7 +49,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     onSlideshow,
     clearAllFilters,
     isFiltering
-}) => {
+}: AppHeaderProps) => {
     const { settings, setSettings, recentSearches, setRecentSearches, isLiveWatching, setIsLiveWatching, isImporting, importProgress } = useLibraryContext();
 
     // Determine visibility of middle controls
@@ -128,4 +122,4 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             />
         </header>
     );
-};
+});

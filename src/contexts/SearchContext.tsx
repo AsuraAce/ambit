@@ -48,6 +48,11 @@ interface SearchContextType {
     setIsImporting: React.Dispatch<React.SetStateAction<boolean>>;
     importProgress: { current: number; total: number } | null;
     setImportProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
+    // Thumbnail Regeneration Progress
+    isRegeneratingThumbnails: boolean;
+    setIsRegeneratingThumbnails: React.Dispatch<React.SetStateAction<boolean>>;
+    thumbnailProgress: { current: number; total: number } | null;
+    setThumbnailProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -87,6 +92,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+    const [isRegeneratingThumbnails, setIsRegeneratingThumbnails] = useState(false);
+    const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number } | null>(null);
 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
@@ -97,8 +104,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const refreshMetadata = useCallback(async () => {
         try {
-            // Immediate UI feedback: clear previous keyword stats to prevent stale "glance"
-            setStats(prev => ({ ...prev, keywordStats: [] }));
+            // Immediate UI feedback: clear (or skip clearing) to keep look stable
+            // setStats(prev => ({ ...prev, keywordStats: [] }));
 
             const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
             const [newFacets, newStats] = await Promise.all([
@@ -107,10 +114,18 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             ]);
             setFacets(newFacets);
             setStats(newStats);
-            // Refresh collections to update smart counts if necessary
             await refreshCollections();
         } catch (e) { console.error("Failed to refresh metadata", e); }
     }, [activeSqlWhere, activeSqlParams, refreshCollections]);
+
+    // Internal debounced metadata refresh to avoid thread locks during search
+    const metadataTimerRef = useRef<any>(null);
+    const debouncedRefreshMetadata = useCallback(() => {
+        if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current);
+        metadataTimerRef.current = setTimeout(() => {
+            refreshMetadata();
+        }, 800); // 800ms debounce for "heavy" stats
+    }, [refreshMetadata]);
 
     const fetchData = useCallback(async (isLoadMore: boolean) => {
         if (isFetchingRef.current && isLoadMore) return;
@@ -151,7 +166,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 setImages(newBatch);
                 setGlobalTotal(globalCount);
                 setHasMoreImages(newBatch.length >= PAGE_SIZE);
-                refreshMetadata();
+                debouncedRefreshMetadata();
             } else {
                 const offset = imagesRef.current.length;
                 const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
@@ -328,7 +343,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isImporting,
             setIsImporting,
             importProgress,
-            setImportProgress
+            setImportProgress,
+            isRegeneratingThumbnails,
+            setIsRegeneratingThumbnails,
+            thumbnailProgress,
+            setThumbnailProgress
         }}>
             {children}
         </SearchContext.Provider>

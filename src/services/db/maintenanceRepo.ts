@@ -133,13 +133,16 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1
     `;
 
-    if (whereClause) {
+    if (whereClause && whereClause.trim().length > 0) {
         const cleanedWhere = whereClause.trim();
         if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
             query += ` AND ${cleanedWhere.substring(5)}`;
-        } else if (cleanedWhere.length > 0) {
+        } else {
             query += ` AND ${cleanedWhere}`;
         }
+    } else {
+        // Force params empty if we are in global mode to avoid leaked filter params
+        params = [];
     }
 
     query += ' ORDER BY timestamp DESC';

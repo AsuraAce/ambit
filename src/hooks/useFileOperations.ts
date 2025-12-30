@@ -26,7 +26,11 @@ export const useFileOperations = ({
     settings
 }: UseFileOperationsProps) => {
     const { addToast } = useToast();
-    const { isImporting, setIsImporting, setImportProgress } = useSearch();
+    const {
+        isImporting, setIsImporting, setImportProgress,
+        isRegeneratingThumbnails, setIsRegeneratingThumbnails,
+        thumbnailProgress, setThumbnailProgress
+    } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
 
@@ -207,35 +211,50 @@ export const useFileOperations = ({
         const targetIds = Array.isArray(arg) ? arg : undefined;
         const onProgress = typeof arg === 'function' ? arg : undefined;
 
-        // Find candidates
-        let candidates = images.filter(img => img.id === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+        // Find candidates: Images where the thumbnail IS the full image
+        // We compare the URLs because convertFileSrc ensures they are both in the same format if they match.
+        let candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+
         if (targetIds) {
             candidates = candidates.filter(img => targetIds.includes(img.id));
         }
 
         if (candidates.length === 0) {
-            if (!targetIds) addToast("All images already have thumbnails!", "success");
+            if (!targetIds) addToast("No unoptimized images found correctly.", "success");
             return;
         }
 
-        addToast(`Generating thumbnails for ${candidates.length} images...`, 'info');
+        setIsRegeneratingThumbnails(true);
+        setThumbnailProgress({ current: 0, total: candidates.length });
 
-        const updates = await regenerateThumbnailsForImages(candidates, onProgress);
-
-        if (updates.length > 0) {
-            setImages(prev => {
-                const updateMap = new Map(updates.map(u => [u.id, u]));
-                return prev.map(p => updateMap.get(p.id) || p);
+        try {
+            const updates = await regenerateThumbnailsForImages(candidates, (curr, tot) => {
+                setThumbnailProgress({ current: curr, total: tot });
+                if (onProgress) onProgress(curr, tot);
             });
-            addToast(`Generated ${updates.length} thumbnails`, "success");
-            refreshCollectionThumbnails();
+
+            if (updates.length > 0) {
+                setImages(prev => {
+                    const updateMap = new Map(updates.map(u => [u.id, u]));
+                    return prev.map(p => updateMap.get(p.id) || p);
+                });
+                addToast(`Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`, "success");
+                refreshCollectionThumbnails();
+            }
+        } catch (e) {
+            console.error("Regeneration error", e);
+            addToast("Thumbnail optimization failed partway through", "error");
+        } finally {
+            setIsRegeneratingThumbnails(false);
+            setThumbnailProgress(null);
         }
-    }, [images, setImages, addToast, refreshCollectionThumbnails]);
+    }, [images, setImages, addToast, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress]);
 
     return {
         isImporting,
         isExporting,
         isRecoveringMetadata,
+        isRegeneratingThumbnails,
         fileInputRef,
         importImages,
         handleImportFiles: handleWebFiles,
