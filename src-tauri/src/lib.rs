@@ -515,7 +515,9 @@ fn collect_images_recursive_absolute(
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                collect_images_recursive_absolute(root, &p, files);
+                if !p.ends_with("thumbnails") {
+                    collect_images_recursive_absolute(root, &p, files);
+                }
             } else if p.is_file() {
                 let ext = p
                     .extension()
