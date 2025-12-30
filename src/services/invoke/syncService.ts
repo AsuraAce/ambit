@@ -5,7 +5,7 @@ import { fetchBoardMappings } from './connection';
 
 export const syncImages = async (
     rootPath: string,
-    onProgress: (current: number, total: number) => void,
+    onProgress: (current: number, total: number, message?: string) => void,
     signal?: AbortSignal,
     options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
 ): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }> }> => {
@@ -23,6 +23,7 @@ export const syncImages = async (
     let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
     const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
+    onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb;
     try {
         invokeDb = await Database.load(connectionString);
@@ -30,6 +31,7 @@ export const syncImages = async (
         throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
     }
 
+    onProgress(0, 0, 'Analyzing database schema...');
     const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)');
     const columns = tableInfo.map(c => c.name);
 
@@ -64,6 +66,7 @@ export const syncImages = async (
     let imageToBoardId = new Map<string, string>();
     let boards = new Map<string, { name: string, createdAt: number }>();
     if (options.syncBoards && hasBoardsTable) {
+        onProgress(0, 0, 'Fetching board mappings...');
         const result = await fetchBoardMappings(invokeDb);
         imageToBoardId = result.imageToBoardId;
         boards = result.boards;
@@ -89,6 +92,7 @@ export const syncImages = async (
     const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause}`);
     const totalToImport = countRes[0]?.count || 0;
 
+    onProgress(0, 0, 'Scanning Ambit library...');
     const { getDb, insertImagesBatch } = await import('../db');
     const ambitDb = await getDb();
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
@@ -258,7 +262,7 @@ export const syncImages = async (
 
         if (currentBatch.length > 0) await insertImagesBatch(currentBatch);
         offset += rows.length;
-        onProgress(Math.min(processed, totalToImport), totalToImport);
+        onProgress(Math.min(processed, totalToImport), totalToImport, `Importing: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
         await new Promise(r => setTimeout(r, 0));
     }
 

@@ -6,7 +6,7 @@ import { useToast } from '../hooks/useToast';
 
 interface SyncContextType {
     syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
-    syncProgress: { current: number; total: number };
+    syncProgress: { current: number; total: number; message?: string };
     startInvokeSync: (options?: any) => Promise<void>;
     cancelSync: () => void;
     cleanLibrary: () => Promise<void>;
@@ -21,7 +21,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     const { addToast } = useToast();
 
     const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'complete' | 'error'>('idle');
-    const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
+    const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; message?: string }>({ current: 0, total: 0, message: '' });
     const [isLiveSyncing, setIsLiveSyncing] = useState(false);
 
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -59,7 +59,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
                 settingsRef.current.invokeAiPath!,
-                (c, t) => setSyncProgress({ current: c, total: t }),
+                (c, t, msg) => setSyncProgress({ current: c, total: t, message: msg }),
                 abortControllerRef.current.signal,
                 {
                     syncFavorites: options.syncFavorites,
@@ -72,6 +72,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
+                setSyncProgress(prev => ({ ...prev, message: 'Synchronizing boards...' }));
                 setCollections(prev => {
                     const next = [...prev];
                     let changed = false;
@@ -104,7 +105,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                     settingsRef.current.invokeAiPath!,
                     syncedIds,
                     (phase, current, total) => {
-                        setSyncProgress({ current, total });
+                        setSyncProgress({ current, total, message: phase });
                     },
                     { importIntermediates: settingsRef.current.importIntermediates }
                 );

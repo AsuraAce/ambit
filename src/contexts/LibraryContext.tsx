@@ -34,10 +34,10 @@ export interface LibraryContextType {
   cancelSync: () => void;
   cleanLibrary: () => Promise<void>;
   syncStatus: string;
-  syncProgress: { current: number; total: number };
+  syncProgress: { current: number; total: number; message?: string };
   syncState: {
     status: 'idle' | 'syncing' | 'complete' | 'error';
-    progress: { current: number; total: number };
+    progress: { current: number; total: number; message?: string };
   };
   isFiltering: boolean;
   isLoaded: boolean;
