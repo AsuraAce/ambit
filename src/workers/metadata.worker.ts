@@ -35,6 +35,7 @@ export interface ImageMetadata {
     hiresSteps?: number;
     hiresUpscaler?: string;
     modelHash?: string;
+    generationType?: 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
 }
 
 export interface ParseResult {
@@ -680,7 +681,7 @@ const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
 
 // Worker Message Handler
 self.onmessage = (e: MessageEvent) => {
-    let { chunks, buffer, filename, requestId } = e.data;
+    let { chunks, buffer, filename, requestId, path } = e.data;
 
     if (!chunks && buffer) {
         chunks = parsePngChunks(buffer);
@@ -747,6 +748,20 @@ self.onmessage = (e: MessageEvent) => {
 
         if (metadata.tool === GeneratorTool.UNKNOWN) {
             isIntermediate = true;
+        }
+
+        // Path-based generation type detection (A1111 standard)
+        if (path) {
+            const lowerPath = path.toLowerCase().replace(/\\/g, '/');
+            if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img')) {
+                metadata.generationType = 'txt2img';
+            } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img')) {
+                metadata.generationType = 'img2img';
+            } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras')) {
+                metadata.generationType = 'extras';
+            } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
+                metadata.generationType = 'grid';
+            }
         }
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });

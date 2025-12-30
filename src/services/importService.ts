@@ -26,6 +26,7 @@ const mapMetadata = (meta: any) => ({
     sampler: meta.sampler || 'Unknown',
     positivePrompt: meta.positivePrompt || '',
     negativePrompt: meta.negativePrompt || '',
+    generationType: meta.generationType || 'unknown',
 });
 
 export const processWebFiles = async (files: File[]): Promise<ImportResult> => {

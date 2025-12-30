@@ -55,6 +55,7 @@ export interface ImageMetadata {
   hiresSteps?: number;
   hiresUpscaler?: string;
   modelHash?: string;
+  generationType?: 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
 }
 
 export interface ParseResult {
@@ -156,6 +157,7 @@ export interface AppSettings {
   enableAI: boolean;
   googleGeminiApiKey?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
+  a1111Path?: string; // New: Root path to Stable Diffusion WebUI (A1111)
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
   lastSyncedAt?: number | null; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync

@@ -10,7 +10,7 @@ const worker = new Worker(new URL('../workers/metadata.worker.ts', import.meta.u
 });
 
 // Helper to wrap worker messaging in a Promise
-const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Partial<ImageMetadata>, extra: any }> => {
+const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ metadata: Partial<ImageMetadata>, extra: any }> => {
     return new Promise((resolve, reject) => {
         // We use a simple one-off handler approach for now.
         // For high concurrency, we might want a proper ID-based pool, 
@@ -36,7 +36,7 @@ const parseInWorker = (chunks: any, filename: string): Promise<{ metadata: Parti
         };
 
         worker.addEventListener('message', handler);
-        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId });
+        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId, path });
 
         // Timeout safety
         setTimeout(() => {
@@ -96,7 +96,7 @@ const processScanResult = async (info: any, path: string): Promise<ParseResult> 
     const filename = path.split(/[\\/]/).pop() || "unknown";
 
     try {
-        const { metadata, extra } = await parseInWorker(info.chunks, filename);
+        const { metadata, extra } = await parseInWorker(info.chunks, filename, path);
         return {
             metadata,
             extra,
@@ -156,9 +156,9 @@ export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, ski
 };
 
 // Helper for buffer (node/drag drop raw)
-export const parseImageBuffer = async (data: Uint8Array, filename: string): Promise<ParseResult> => {
+export const parseImageBuffer = async (data: Uint8Array, filename: string, path?: string): Promise<ParseResult> => {
     try {
-        const { metadata, extra } = await parseInWorker({ buffer: data } as any, filename);
+        const { metadata, extra } = await parseInWorker({ buffer: data } as any, filename, path);
         return {
             metadata,
             extra,
