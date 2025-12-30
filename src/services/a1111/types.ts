@@ -14,3 +14,12 @@ export interface A1111Config {
         isActive: boolean;
     }[];
 }
+
+export interface DiscoveryCandidate {
+    path: string;
+    name: string;
+    imageCount: number;
+    inferredType: A1111FolderType;
+    isAlreadyLinked: boolean;
+    isPriority: boolean;
+}
