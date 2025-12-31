@@ -11,6 +11,9 @@ use tauri::Manager;
 use rusqlite::params;
 use std::collections::HashMap;
 
+mod metadata;
+use metadata::{ImageMetadata, parse_exif, extract_a1111_metadata, extract_invokeai_metadata, detect_generation_type};
+
 #[derive(serde::Deserialize)]
 struct ImageRecord {
     id: String,
@@ -212,260 +215,9 @@ async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     }
     Ok(None)
 }
-
-fn parse_exif(data: &[u8]) -> Option<String> {
-    if data.len() < 8 { return None; }
-
-    let is_le = if &data[0..2] == b"II" {
-        true
-    } else if &data[0..2] == b"MM" {
-        false
-    } else {
-        return None;
-    };
-
-    let get_u16 = |offset: usize| {
-        if offset + 2 > data.len() { return 0; }
-        if is_le {
-            u16::from_le_bytes([data[offset], data[offset+1]])
-        } else {
-            u16::from_be_bytes([data[offset], data[offset+1]])
-        }
-    };
-
-    let get_u32 = |offset: usize| {
-        if offset + 4 > data.len() { return 0; }
-        if is_le {
-            u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]])
-        } else {
-            u32::from_be_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]])
-        }
-    };
-
-    if get_u16(2) != 42 { return None; }
-    let first_ifd_offset = get_u32(4) as usize;
-    if first_ifd_offset < 8 || first_ifd_offset >= data.len() { return None; }
-
-    fn read_ifd_internal(
-        data: &[u8], 
-        offset: usize, 
-        is_le: bool
-    ) -> Option<String> {
-        let get_u16_internal = |o: usize| {
-            if o + 2 > data.len() { 0 }
-            else if is_le { u16::from_le_bytes([data[o], data[o+1]]) }
-            else { u16::from_be_bytes([data[o], data[o+1]]) }
-        };
-        let get_u32_internal = |o: usize| {
-            if o + 4 > data.len() { 0 }
-            else if is_le { u32::from_le_bytes([data[o], data[o+1], data[o+2], data[o+3]]) }
-            else { u32::from_be_bytes([data[o], data[o+1], data[o+2], data[o+3]]) }
-        };
-
-        if offset + 2 > data.len() { return None; }
-        let entry_count = get_u16_internal(offset) as usize;
-        let entries_start = offset + 2;
-
-        let mut exif_sub_ifd_offset = 0;
-
-        for i in 0..entry_count {
-            let entry_offset = entries_start + (i * 12);
-            if entry_offset + 12 > data.len() { break; }
-
-            let tag = get_u16_internal(entry_offset);
-            let count = get_u32_internal(entry_offset + 4);
-            let val_or_off = get_u32_internal(entry_offset + 8) as usize;
-
-            if tag == 0x8769 {
-                exif_sub_ifd_offset = val_or_off;
-            }
-
-            if tag == 0x9286 {
-                if count <= 8 { continue; }
-                let val_offset = if count > 4 { val_or_off } else { entry_offset + 8 };
-                if val_offset + count as usize > data.len() { continue; }
-                
-                let payload = &data[val_offset..val_offset + count as usize];
-                // UserComment has an 8-byte header
-                if payload.len() > 8 {
-                    let header = &payload[0..8];
-                    let text_payload = &payload[8..];
-                    
-                    if header == b"UNICODE\0" {
-                        // UTF-16BE or UTF-16LE - standard says it depends on EXIF endianness
-                        let utf16_data: Vec<u16> = if is_le {
-                            text_payload.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
-                        } else {
-                            text_payload.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect()
-                        };
-                        let s = String::from_utf16_lossy(&utf16_data);
-                        return Some(s.replace('\0', "").trim().to_string());
-                    } else {
-                        // ASCII or other - treat as UTF-8 lossy for safety
-                        let s = String::from_utf8_lossy(text_payload);
-                        return Some(s.replace('\0', "").trim().to_string());
-                    }
-                }
-            }
-        }
-
-        if exif_sub_ifd_offset > 0 && exif_sub_ifd_offset < data.len() {
-            if let Some(res) = read_ifd_internal(data, exif_sub_ifd_offset, is_le) {
-                return Some(res);
-            }
-        }
-        
-        // Next IFD
-        let next_ifd_ptr_pos = entries_start + entry_count * 12;
-        if next_ifd_ptr_pos + 4 <= data.len() {
-            let next_offset = get_u32_internal(next_ifd_ptr_pos) as usize;
-            if next_offset > 0 && next_offset < data.len() {
-                return read_ifd_internal(data, next_offset, is_le);
-            }
-        }
-
-        None
-    }
-
-    read_ifd_internal(data, first_ifd_offset, is_le)
-}
-
-fn scan_jpeg_metadata(path: &Path) -> Result<HashMap<String, String>, String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
-    let mut buffer = [0; 2];
-    if file.read_exact(&mut buffer).is_err() { return Ok(HashMap::new()); }
-    if buffer != [0xFF, 0xD8] { return Ok(HashMap::new()); } // SOI
-
-    let mut chunks = HashMap::new();
-
-    loop {
-        let mut marker = [0; 2];
-        if file.read_exact(&mut marker).is_err() { break; }
-        if marker[0] != 0xFF { break; }
-
-        let m_type = marker[1];
-        if m_type == 0xD9 { break; } // EOI
-
-        // Length
-        let mut len_bytes = [0; 2];
-        if file.read_exact(&mut len_bytes).is_err() { break; }
-        let len = (u16::from_be_bytes(len_bytes) as usize) - 2;
-
-        if m_type == 0xE1 { // APP1 - EXIF
-            let mut app1_data = vec![0; len];
-            if file.read_exact(&mut app1_data).is_ok() {
-                if app1_data.starts_with(b"Exif\0\0") {
-                    if let Some(comment) = parse_exif(&app1_data[6..]) {
-                        chunks.insert("parameters".to_string(), comment);
-                    }
-                }
-            }
-        } else {
-            if file.seek(SeekFrom::Current(len as i64)).is_err() { break; }
-        }
-    }
-
-    Ok(chunks)
-}
-
-fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>, String> {
-    let mut buffer = [0; 8];
-    if reader.read_exact(&mut buffer).is_err() {
-        return Err("Failed to read header".to_string());
-    }
-
-    // Verify PNG header
-    if buffer != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
-        return Err("Not a PNG file".to_string());
-    }
-
-    let mut chunks = HashMap::new();
-    let mut loop_count = 0;
-
-    loop {
-        if loop_count > 10000 { break; }
-        loop_count += 1;
-
-        let mut length_bytes = [0; 4];
-        if reader.read_exact(&mut length_bytes).is_err() { break; }
-        let length = u32::from_be_bytes(length_bytes) as u64;
-
-        let mut type_bytes = [0; 4];
-        if reader.read_exact(&mut type_bytes).is_err() { break; }
-        let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
-
-        if chunk_type == "tEXt" || chunk_type == "iTXt" || chunk_type == "zTXt" || chunk_type == "eXIf" {
-            let mut chunk_data = vec![0; length as usize];
-            if reader.read_exact(&mut chunk_data).is_err() { break; }
-
-            if chunk_type == "eXIf" {
-                if let Some(comment) = parse_exif(&chunk_data) {
-                    chunks.insert("parameters".to_string(), comment);
-                }
-            } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
-                 let key = String::from_utf8_lossy(&chunk_data[0..pos]).to_string();
-                 
-                 if chunk_type == "zTXt" {
-                     if pos + 2 < chunk_data.len() && chunk_data[pos+1] == 0 {
-                         let compressed = &chunk_data[pos+2..];
-                         let mut decoder = ZlibDecoder::new(compressed);
-                         let mut s = String::new();
-                         if decoder.read_to_string(&mut s).is_ok() {
-                             chunks.insert(key, s);
-                         }
-                     }
-                 } else if chunk_type == "tEXt" {
-                     if pos + 1 < chunk_data.len() {
-                         let val = String::from_utf8_lossy(&chunk_data[pos+1..]).to_string();
-                         chunks.insert(key, val);
-                     }
-                 } else if chunk_type == "iTXt" {
-                     // Simplified iTXt parsing
-                     if pos + 2 < chunk_data.len() {
-                         let is_compressed = chunk_data[pos+1] == 1;
-                         // Skip compression method (pos+2)
-                         // Skip lang tags etc - find next nulls
-                         let mut curr = pos + 3;
-                         // Skip lang tag
-                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
-                         curr += 1;
-                         // Skip trans key
-                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
-                         curr += 1;
-                         
-                         if curr < chunk_data.len() {
-                            let data_slice = &chunk_data[curr..];
-                            if is_compressed {
-                                let mut decoder = ZlibDecoder::new(data_slice);
-                                let mut s = String::new();
-                                if decoder.read_to_string(&mut s).is_ok() {
-                                    chunks.insert(key, s);
-                                }
-                            } else {
-                                chunks.insert(key, String::from_utf8_lossy(data_slice).to_string());
-                            }
-                         }
-                     }
-                 }
-            }
-            
-            // Read CRC (4 bytes)
-            let mut crc = [0; 4];
-            let _ = reader.read_exact(&mut crc);
-        } else if chunk_type == "IEND" {
-            break;
-        } else {
-            // Efficiently skip data + CRC
-            let skip_len = length + 4;
-            std::io::copy(&mut reader.by_ref().take(skip_len), &mut std::io::sink()).map_err(|e| e.to_string())?;
-        }
-    }
-
-    Ok(chunks)
-}
  
 #[tauri::command(rename_all = "camelCase")]
-async fn read_image_metadata(path: String) -> Result<ImageMetadata, String> {
+async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata, String> {
     let path_obj = Path::new(&path);
     if !path_obj.exists() {
         return Err("File not found".to_string());
@@ -473,15 +225,15 @@ async fn read_image_metadata(path: String) -> Result<ImageMetadata, String> {
 
     let file = File::open(path_obj).map_err(|e| e.to_string())?;
     let mut reader = BufReader::new(file);
-    let chunks = extract_png_chunks(&mut reader)?;
+    let chunks = metadata::extract_png_chunks(&mut reader)?;
 
     // Parse metadata using our standard logic
-    let mut parsed_metadata = ImageMetadata::default();
+    let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
 
     // A1111 (Higher precedence)
     if let Some(params) = chunks.get("parameters") {
-        parsed_metadata = extract_a1111_metadata(params);
+        parsed_metadata = metadata::extract_a1111_metadata(params);
         found_metadata = true;
     }
 
@@ -493,7 +245,7 @@ async fn read_image_metadata(path: String) -> Result<ImageMetadata, String> {
             .or_else(|| chunks.get("dream_metadata"))
         {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-                parsed_metadata = extract_invokeai_metadata(&json);
+                parsed_metadata = metadata::extract_invokeai_metadata(&json);
                 found_metadata = true;
             }
         }
@@ -788,129 +540,28 @@ fn scan_image_internal(
     let mut chunks = std::collections::HashMap::new();
 
     if is_jpg {
-        if let Ok(c) = scan_jpeg_metadata(&path_buf) {
+        if let Ok(c) = metadata::scan_jpeg_metadata(&path_buf) {
             chunks = c;
         }
     }
 
     // PERFORMANCE: Only scan chunks if specifically requested or if it's not a bulk import
     if is_png && extract_workflow {
-        let mut loop_count = 0;
-        loop {
-            // Safety break
-            if loop_count > 10000 {
-                break;
-            }
-            loop_count += 1;
-
-            let mut length_bytes = [0; 4];
-            if file.read_exact(&mut length_bytes).is_err() {
-                break;
-            }
-            let length = u32::from_be_bytes(length_bytes) as u64;
-
-            let mut type_bytes = [0; 4];
-            if file.read_exact(&mut type_bytes).is_err() {
-                break;
-            }
-            let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
-
-            if chunk_type == "tEXt" || chunk_type == "iTXt" || chunk_type == "zTXt" || chunk_type == "eXIf" {
-                let mut chunk_data = vec![0; length as usize];
-                if file.read_exact(&mut chunk_data).is_err() {
-                    break;
-                }
-
-                if chunk_type == "eXIf" {
-                    if let Some(comment) = parse_exif(&chunk_data) {
-                        chunks.insert("parameters".to_string(), comment);
-                    }
-                } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
-                    let key = String::from_utf8_lossy(&chunk_data[0..pos]).to_string();
-
-                    if chunk_type == "zTXt" {
-                        // zTXt: Keyword (null) Method (0) CompressedData
-                        if pos + 2 < chunk_data.len() {
-                            let method = chunk_data[pos + 1];
-                            if method == 0 {
-                                let compressed_data = &chunk_data[pos + 2..];
-                                let mut decoder = ZlibDecoder::new(compressed_data);
-                                let mut s = String::new();
-                                if decoder.read_to_string(&mut s).is_ok() {
-                                    chunks.insert(key, s);
-                                }
-                            }
-                        }
-                    } else {
-                        // tEXt or iTXt
-                        let mut text_start = pos + 1;
-                        let mut is_compressed = false;
-
-                        if chunk_type == "iTXt" {
-                            // Keyword (null)
-                            // CompFlag (1 byte) [pos+1]
-                            // CompMethod (1 byte) [pos+2]
-                            // LangTag (null term)
-                            // TransKeyword (null term)
-
-                            if pos + 2 < chunk_data.len() {
-                                is_compressed = chunk_data[pos + 1] == 1;
-
-                                let mut current = pos + 3;
-                                // Find end of lang
-                                while current < chunk_data.len() && chunk_data[current] != 0 {
-                                    current += 1;
-                                }
-                                current += 1;
-                                // Find end of trans
-                                while current < chunk_data.len() && chunk_data[current] != 0 {
-                                    current += 1;
-                                }
-                                current += 1;
-                                text_start = current;
-                            }
-                        }
-
-                        if text_start < chunk_data.len() {
-                            if is_compressed {
-                                let compressed_data = &chunk_data[text_start..];
-                                let mut decoder = ZlibDecoder::new(compressed_data);
-                                let mut s = String::new();
-                                if decoder.read_to_string(&mut s).is_ok() {
-                                    chunks.insert(key, s);
-                                }
-                            } else {
-                                let val =
-                                    String::from_utf8_lossy(&chunk_data[text_start..]).to_string();
-                                chunks.insert(key, val);
-                            }
-                        }
-                    }
-                }
-            } else {
-                if chunk_type == "IEND" {
-                    break;
-                }
-                // Skip data
-                if file.seek(SeekFrom::Current(length as i64)).is_err() {
-                    break;
-                }
-            }
-
-            // Skip CRC
-            if file.seek(SeekFrom::Current(4)).is_err() {
-                break;
-            }
+        let mut reader = BufReader::new(file);
+        // Skip PNG header as it's already read
+        reader.seek(SeekFrom::Start(8)).map_err(|e| e.to_string())?;
+        if let Ok(c) = metadata::extract_png_chunks(&mut reader) {
+            chunks.extend(c);
         }
     }
 
     // 5. Parse Metadata (Native Rust)
-    let mut parsed_metadata = ImageMetadata::default();
+    let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
 
     // Check for A1111 parameters chunk (Higher precedence than heuristics)
     if let Some(params) = chunks.get("parameters") {
-        parsed_metadata = extract_a1111_metadata(params);
+        parsed_metadata = metadata::extract_a1111_metadata(params);
         found_metadata = true;
     }
 
@@ -922,7 +573,7 @@ fn scan_image_internal(
             .or_else(|| chunks.get("dream_metadata"))
         {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-                parsed_metadata = extract_invokeai_metadata(&json);
+                parsed_metadata = metadata::extract_invokeai_metadata(&json);
                 found_metadata = true;
             }
         }
@@ -939,17 +590,8 @@ fn scan_image_internal(
     }
 
     // Final heuristics for generation type (if not already set by specific parser)
-    let lower_path = path_buf.to_string_lossy().to_lowercase().replace('\\', "/");
     if parsed_metadata.generation_type == "unknown" {
-        if lower_path.contains("/txt2img-images") || lower_path.contains("/outputs/txt2img") || lower_path.contains("/txt2img/") || lower_path.contains("/text/") {
-            parsed_metadata.generation_type = "txt2img".to_string();
-        } else if lower_path.contains("/img2img-images") || lower_path.contains("/outputs/img2img") || lower_path.contains("/img2img/") || lower_path.contains("/image/") {
-            parsed_metadata.generation_type = "img2img".to_string();
-        } else if lower_path.contains("/extras-images") || lower_path.contains("/outputs/extras") || lower_path.contains("/extras/") || lower_path.contains("/save") || lower_path.contains("/saved") {
-            parsed_metadata.generation_type = "extras".to_string();
-        } else if lower_path.contains("-grids") || lower_path.contains("/grids/") {
-            parsed_metadata.generation_type = "grid".to_string();
-        }
+        parsed_metadata.generation_type = metadata::detect_generation_type(&path_buf);
     }
 
     if parsed_metadata.generation_type != "unknown" {
@@ -980,367 +622,6 @@ fn scan_image_internal(
         "chunks": chunks_to_return,
         "metadata": metadata_value
     }))
-}
-
-// -- Metadata Structures & Parsers --
-
-#[derive(serde::Serialize, Clone)]
-struct ImageMetadata {
-    tool: String,
-    model: String,
-    #[serde(rename = "rawParameters", skip_serializing_if = "Option::is_none")]
-    raw_parameters: Option<String>,
-    steps: u32,
-    cfg: f32,
-    seed: i64,
-    sampler: String,
-    #[serde(rename = "positivePrompt")]
-    positive_prompt: String,
-    #[serde(rename = "negativePrompt")]
-    negative_prompt: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    loras: Vec<String>,
-    #[serde(rename = "controlNets", skip_serializing_if = "Vec::is_empty")]
-    control_nets: Vec<String>,
-    #[serde(rename = "variationId", skip_serializing_if = "Option::is_none")]
-    variation_id: Option<String>,
-    #[serde(rename = "isIntermediate", default)]
-    is_intermediate: bool,
-    #[serde(rename = "workflowJson", skip_serializing_if = "Option::is_none")]
-    workflow_json: Option<String>,
-    // New fields for deeper extraction
-    #[serde(skip_serializing_if = "Option::is_none")]
-    vae: Option<String>,
-    #[serde(rename = "clipSkip", skip_serializing_if = "Option::is_none")]
-    clip_skip: Option<u32>,
-    #[serde(rename = "denoisingStrength", skip_serializing_if = "Option::is_none")]
-    denoising_strength: Option<f32>,
-    #[serde(rename = "hiresUpscale", skip_serializing_if = "Option::is_none")]
-    hires_upscale: Option<f32>,
-    #[serde(rename = "hiresSteps", skip_serializing_if = "Option::is_none")]
-    hires_steps: Option<u32>,
-    #[serde(rename = "hiresUpscaler", skip_serializing_if = "Option::is_none")]
-    hires_upscaler: Option<String>,
-    #[serde(rename = "modelHash", skip_serializing_if = "Option::is_none")]
-    model_hash: Option<String>,
-    #[serde(rename = "generationType")]
-    generation_type: String,
-}
-
-impl Default for ImageMetadata {
-    fn default() -> Self {
-        Self {
-            tool: "Unknown".to_string(),
-            model: "Unknown".to_string(),
-            raw_parameters: None,
-            steps: 0,
-            cfg: 0.0,
-            seed: 0,
-            sampler: "Unknown".to_string(),
-            positive_prompt: String::new(),
-            negative_prompt: String::new(),
-            loras: Vec::new(),
-            control_nets: Vec::new(),
-            variation_id: None,
-            is_intermediate: false,
-            workflow_json: None,
-            vae: None,
-            clip_skip: None,
-            denoising_strength: None,
-            hires_upscale: None,
-            hires_steps: None,
-            hires_upscaler: None,
-            model_hash: None,
-            generation_type: "unknown".to_string(),
-        }
-    }
-}
-
-fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
-    let mut meta = ImageMetadata::default();
-    meta.tool = "InvokeAI".to_string();
-
-    // Handle root vs image wrapped
-    let root = json.get("image").unwrap_or(json);
-
-    // Check optional is_intermediate flag
-    if let Some(val) = root.get("is_intermediate") {
-        if val.as_bool() == Some(true) {
-            meta.is_intermediate = true;
-        }
-    }
-
-    if let Some(s) = root.get("positive_prompt").and_then(|v| v.as_str()) {
-        meta.positive_prompt = s.to_string();
-    } else if let Some(p) = root.get("prompt") {
-        if let Some(arr) = p.as_array() {
-            let prompts: Vec<&str> = arr
-                .iter()
-                .filter_map(|x| x.get("prompt").and_then(|y| y.as_str()))
-                .collect();
-            meta.positive_prompt = prompts.join(" ");
-        } else if let Some(s) = p.as_str() {
-            meta.positive_prompt = s.to_string();
-        }
-    }
-
-    if let Some(s) = root.get("negative_prompt").and_then(|v| v.as_str()) {
-        meta.negative_prompt = s.to_string();
-    }
-    if let Some(v) = root.get("steps").and_then(|v| v.as_u64()) {
-        meta.steps = v as u32;
-    }
-    if let Some(v) = root.get("cfg_scale").and_then(|v| v.as_f64()) {
-        meta.cfg = v as f32;
-    }
-    if let Some(v) = root.get("seed").and_then(|v| v.as_i64()) {
-        meta.seed = v;
-    }
-    if let Some(s) = root.get("scheduler").and_then(|v| v.as_str()) {
-        meta.sampler = s.to_string();
-    }
-
-    // Workflow / Graph
-    if let Some(wf) = root.get("workflow").or(root.get("graph")) {
-        if wf.is_string() {
-            meta.workflow_json = Some(wf.as_str().unwrap().to_string());
-        } else {
-            meta.workflow_json = Some(wf.to_string());
-        }
-    }
-
-    // Model
-    if let Some(model) = root.get("model") {
-        if let Some(s) = model.as_str() {
-            meta.model = s.to_string();
-        } else if let Some(s) = model.get("model_name").and_then(|v| v.as_str()) {
-            meta.model = s.to_string();
-        } else if let Some(s) = model.get("name").and_then(|v| v.as_str()) {
-            meta.model = s.to_string();
-        }
-    }
-
-    // Resources Scan (LoRAs, ControlNets)
-    let mut resources = Resources::default();
-    scan_for_resources(json, &mut resources);
-
-    meta.loras = resources.loras;
-    meta.control_nets = resources.control_nets;
-
-    meta
-}
-
-#[derive(Default)]
-struct Resources {
-    loras: Vec<String>,
-    control_nets: Vec<String>,
-}
-
-fn scan_for_resources(val: &serde_json::Value, res: &mut Resources) {
-    match val {
-        serde_json::Value::Object(map) => {
-            // Check for specific resource keys in this object
-            if let Some(loras) = map.get("loras") {
-                extract_loras(loras, res);
-            }
-            if let Some(cns) = map.get("controlnets").or(map.get("control_adapters")) {
-                extract_controlnets(cns, res);
-            }
-
-            // Recurse
-            for (_, v) in map {
-                // If value is string that looks like JSON, try to parse it (nested configs)
-                if let Some(s) = v.as_str() {
-                    if s.trim_start().starts_with('{') {
-                        if let Ok(nested) = serde_json::from_str(s) {
-                            scan_for_resources(&nested, res);
-                        }
-                    }
-                } else {
-                    scan_for_resources(v, res);
-                }
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for v in arr {
-                scan_for_resources(v, res);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
-    if let Some(arr) = val.as_array() {
-        for l in arr {
-            let name = l
-                .get("lora_name")
-                .and_then(|v| v.as_str())
-                .or_else(|| l.get("model_name").and_then(|v| v.as_str()))
-                .or_else(|| {
-                    l.get("model").and_then(|m| {
-                        m.as_str()
-                            .or_else(|| m.get("model_name").and_then(|v| v.as_str()))
-                    })
-                });
-
-            if let Some(n) = name {
-                let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(0.0);
-                let entry = if weight != 0.0 && weight != 1.0 {
-                    format!("{} ({:.2})", n, weight)
-                } else {
-                    n.to_string()
-                };
-                if !res.loras.contains(&entry) {
-                    res.loras.push(entry);
-                }
-            }
-        }
-    }
-}
-
-fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
-    if let Some(arr) = val.as_array() {
-        for c in arr {
-            let name = c
-                .get("control_model")
-                .and_then(|v| v.as_str())
-                .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
-                .or_else(|| {
-                    c.get("model")
-                        .and_then(|m| m.get("model_name").and_then(|v| v.as_str()))
-                });
-
-            if let Some(n) = name {
-                if !res.control_nets.contains(&n.to_string()) {
-                    res.control_nets.push(n.to_string());
-                }
-            }
-        }
-    }
-}
-
-fn extract_a1111_metadata(text: &str) -> ImageMetadata {
-    let sanitized_text = text.replace('\0', "");
-    let mut meta = ImageMetadata::default();
-    meta.tool = "Automatic1111".to_string();
-    meta.raw_parameters = Some(sanitized_text.clone());
-
-    let lines: Vec<&str> = sanitized_text.lines().map(|l| l.trim()).collect();
-    if lines.is_empty() {
-        return meta;
-    }
-
-    let mut positive_parts = Vec::new();
-    let mut negative_prompt = String::new();
-    let mut params_lines = Vec::new();
-    let mut state = 0; // 0: positive, 1: negative, 2: params
-
-    for line in lines {
-        if line.starts_with("Negative prompt: ") {
-            state = 1;
-            negative_prompt.push_str(&line[17..]);
-        } else if line.starts_with("Steps: ") {
-            state = 2;
-            params_lines.push(line.to_string());
-        } else if state == 0 {
-            positive_parts.push(line);
-        } else if state == 1 {
-            if !negative_prompt.is_empty() {
-                negative_prompt.push(' ');
-            }
-            negative_prompt.push_str(line);
-        } else if state == 2 {
-            params_lines.push(line.to_string());
-        }
-    }
-
-    meta.positive_prompt = positive_parts.join("\n").trim().to_string();
-    meta.negative_prompt = negative_prompt.trim().to_string();
-
-    // Parse params (prefer the line starting with Steps:)
-    let params_line = params_lines.iter().find(|l| l.starts_with("Steps: ")).cloned().unwrap_or_default();
-
-    if params_line.starts_with("Steps: ") {
-        let pairs = params_line.split(", ");
-        let mut variation_seed = String::new();
-        let mut variation_strength = String::new();
-
-        for pair in pairs {
-            if let Some((key, val)) = pair.split_once(": ") {
-                let key = key.trim();
-                let val = val.trim();
-                match key {
-                    "Steps" => meta.steps = val.parse().unwrap_or(0),
-                    "Sampler" => meta.sampler = val.to_string(),
-                    "CFG scale" => meta.cfg = val.parse().unwrap_or(0.0),
-                    "Seed" => meta.seed = val.parse().unwrap_or(0),
-                    "Model" | "Checkpoint" | "Model name" | "SD model" => meta.model = val.to_string(),
-                    "VAE" => meta.vae = Some(val.to_string()),
-                    "Clip skip" => meta.clip_skip = val.parse().ok(),
-                    "Denoising strength" => meta.denoising_strength = val.parse().ok(),
-                    "Hires upscale" => meta.hires_upscale = val.parse().ok(),
-                    "Hires steps" => meta.hires_steps = val.parse().ok(),
-                    "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
-                    "Model hash" => meta.model_hash = Some(val.to_string()),
-                    "App" => {
-                        let low_val = val.to_lowercase();
-                        if low_val.contains("sd.next") || low_val.contains("sdnext") {
-                            meta.tool = "SD.Next".to_string();
-                        } else if low_val.contains("forge") {
-                            meta.tool = "Forge".to_string();
-                        }
-                    }
-                    "Version" => {
-                        let low_val = val.to_lowercase();
-                        if meta.tool == "Automatic1111" {
-                             if low_val.contains("vlad") || low_val.contains("next") || low_val.contains("sd.next") {
-                                 meta.tool = "SD.Next".to_string();
-                             } else if low_val.contains("forge") {
-                                 meta.tool = "Forge".to_string();
-                             }
-                        }
-                    },
-                    "sd_model_hash" => {
-                        if meta.model_hash.is_none() {
-                            meta.model_hash = Some(val.to_string());
-                        }
-                    }
-                    "Variation seed" => variation_seed = val.to_string(),
-                    "Variation seed strength" => variation_strength = val.to_string(),
-                    _ => {
-                        // Special handling for ControlNet
-                        if key.starts_with("ControlNet") {
-                            if let Some(start) = val.find("Model: ") {
-                                let model_part = &val[start + 7..];
-                                let model_name = model_part.split(',').next().unwrap_or("").trim();
-                                if !model_name.is_empty() {
-                                    meta.control_nets.push(model_name.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if !variation_seed.is_empty() && !variation_strength.is_empty() {
-            meta.variation_id = Some(format!("{}:{}", variation_seed, variation_strength));
-        }
-    }
-
-    // Extract LoRAs from positive prompt
-    // regex: <lora:([^:>]+)(?::[^>]+)?>
-    if let Ok(re) = Regex::new(r"<lora:([^:>]+)(?::[^>]+)?>") {
-        for cap in re.captures_iter(&meta.positive_prompt) {
-            let lora_name = cap[1].to_string();
-            if !meta.loras.contains(&lora_name) {
-                meta.loras.push(lora_name);
-            }
-        }
-    }
-
-    meta
 }
 
 #[tauri::command(rename_all = "camelCase")]

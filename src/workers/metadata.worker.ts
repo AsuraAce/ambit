@@ -227,7 +227,7 @@ const traceText = (nodes: any[], nodeId: number, slotIndex: number, depth = 0): 
     return null;
 };
 
-const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
+export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
     const name = filename.replace(/\.[^/.]+$/, "");
     const parts = name.split('_');
     const lastPart = parts[parts.length - 1];
@@ -274,7 +274,27 @@ const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
     };
 };
 
-const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) => {
+export const detectGenerationType = (path: string, currentType?: string): 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown' => {
+    // If we already know it, return it (unless it's unknown/undefined)
+    if (currentType && currentType !== 'unknown') return currentType as any;
+
+    if (!path) return 'unknown';
+
+    const lowerPath = path.toLowerCase().replace(/\\/g, '/');
+    if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img') || lowerPath.includes('/txt2img/') || lowerPath.includes('/text/')) {
+        return 'txt2img';
+    } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img') || lowerPath.includes('/img2img/') || lowerPath.includes('/image/')) {
+        return 'img2img';
+    } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras') || lowerPath.includes('/extras/') || lowerPath.includes('/save') || lowerPath.includes('/saved')) {
+        return 'extras';
+    } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
+        return 'grid';
+    }
+
+    return 'unknown';
+};
+
+export const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) => {
     const sanitized = sanitize(text);
     metadata.rawParameters = sanitized;
     const lines = sanitized.split('\n').map(l => l.trim());
@@ -998,19 +1018,7 @@ self.onmessage = async (e: MessageEvent) => {
 
         // Path-based generation type detection (A1111 standard)
         if (!metadata.generationType || metadata.generationType === 'unknown') {
-            metadata.generationType = 'unknown';
-            if (path) {
-                const lowerPath = path.toLowerCase().replace(/\\/g, '/');
-                if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img') || lowerPath.includes('/txt2img/') || lowerPath.includes('/text/')) {
-                    metadata.generationType = 'txt2img';
-                } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img') || lowerPath.includes('/img2img/') || lowerPath.includes('/image/')) {
-                    metadata.generationType = 'img2img';
-                } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras') || lowerPath.includes('/extras/') || lowerPath.includes('/save') || lowerPath.includes('/saved')) {
-                    metadata.generationType = 'extras';
-                } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
-                    metadata.generationType = 'grid';
-                }
-            }
+            metadata.generationType = detectGenerationType(path || '', metadata.generationType);
         }
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });
