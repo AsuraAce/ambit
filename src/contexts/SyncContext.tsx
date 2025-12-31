@@ -46,8 +46,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             setIsLiveSyncing(true);
         } else {
             setSyncStatus('syncing');
-            setSyncProgress({ current: 0, total: 0 });
         }
+        setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
 
         abortControllerRef.current = new AbortController();
 

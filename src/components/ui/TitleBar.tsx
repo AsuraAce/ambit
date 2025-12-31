@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Monitor, Loader2 } from "lucide-react";
-import { useSearch } from "../../contexts/SearchContext";
+import { useLibraryContext } from "../../hooks/useLibraryContext";
 
 const ProgressOverlay = () => {
-    const { isRegeneratingThumbnails, thumbnailProgress, isImporting, importProgress, syncState } = useSearch() as any;
+    const { isRegeneratingThumbnails, thumbnailProgress, isImporting, importProgress, isLiveSyncing, syncState } = useLibraryContext() as any;
 
-    const isSyncing = syncState?.status === 'syncing';
+    const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
     const active = isRegeneratingThumbnails || isImporting || isSyncing;
 
     const progress = isRegeneratingThumbnails
         ? thumbnailProgress
-        : (isImporting ? importProgress : (isSyncing ? syncState.progress : null));
+        : (isImporting ? importProgress : (isSyncing ? syncState?.progress : null));
 
     const label = isRegeneratingThumbnails
         ? "Optimizing"

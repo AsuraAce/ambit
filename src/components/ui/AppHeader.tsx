@@ -50,7 +50,17 @@ export const AppHeader = React.memo(({
     clearAllFilters,
     isFiltering
 }: AppHeaderProps) => {
-    const { settings, setSettings, recentSearches, setRecentSearches, isLiveWatching, setIsLiveWatching, isImporting, importProgress } = useLibraryContext();
+    const {
+        settings, setSettings,
+        recentSearches, setRecentSearches,
+        isLiveWatching, setIsLiveWatching,
+        isImporting, importProgress,
+        isLiveSyncing, syncState
+    } = useLibraryContext() as any;
+
+    const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
+    const active = isImporting || isSyncing;
+    const progress = (isImporting && importProgress) ? importProgress : (isSyncing ? syncState?.progress : null);
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
@@ -61,14 +71,14 @@ export const AppHeader = React.memo(({
             <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative">
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                    {(isImporting || importProgress) && (
+                    {active && (
                         <div className="absolute top-0 left-0 right-0 h-1 bg-sage-500/10 overflow-hidden">
                             <div
                                 className="h-full bg-sage-500 shadow-[0_0_10px_rgba(110,121,107,0.5)] transition-all duration-300 ease-out"
                                 style={{
-                                    width: importProgress
-                                        ? `${(importProgress.current / importProgress.total) * 100}%`
-                                        : '100%'
+                                    width: progress && progress.total > 0
+                                        ? `${(progress.current / progress.total) * 100}%`
+                                        : (active ? '100%' : '0%')
                                 }}
                             />
                         </div>
@@ -89,7 +99,7 @@ export const AppHeader = React.memo(({
                     <div className="flex items-center gap-1">
                         <button
                             onClick={onImport}
-                            className={`p-2 rounded-xl transition-all border relative group ${isImporting ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                            className={`p-2 rounded-xl transition-all border relative group ${active ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             title="Import Images"
                         >
                             <Import className="w-4 h-4" />
