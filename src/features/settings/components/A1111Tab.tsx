@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus } from 'lucide-react';
 import { AppSettings } from '../../../types';
+import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { A1111FolderType, DiscoveryCandidate } from '../../../services/a1111/types';
 
 interface TabProps {
@@ -10,6 +11,7 @@ interface TabProps {
 }
 
 export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+    const { setIsImporting, setImportProgress, refreshCollections } = useLibraryContext();
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isScanning, setIsScanning] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
@@ -82,16 +84,26 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
         if (alreadyLinked.length > 0) {
             try {
                 const { processNativePaths } = await import('../../../services/importService');
+                const { getThumbnailDir } = await import('../../../services/thumbnailService');
+                const thumbDir = await getThumbnailDir();
+
                 setIsScanning(true);
-                await processNativePaths(alreadyLinked.map(c => c.path), undefined, (curr, tot) => {
-                    // Progress feedback could be added here
+                setIsImporting(true);
+                setImportProgress({ current: 0, total: alreadyLinked.length, message: 'Starting sync...' });
+
+                await processNativePaths(alreadyLinked.map(c => c.path), thumbDir, (curr, tot, msg) => {
+                    setImportProgress({ current: curr, total: tot, message: msg });
                 });
+
+                if (refreshCollections) refreshCollections();
                 setTestResult({ success: true, message: `Successfully synced ${alreadyLinked.length} folders!` });
             } catch (e) {
                 console.error("Manual sync failed", e);
                 setTestResult({ success: false, message: "Sync failed. See console for details." });
             } finally {
                 setIsScanning(false);
+                setIsImporting(false);
+                setImportProgress(null);
             }
         } else {
             setTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });

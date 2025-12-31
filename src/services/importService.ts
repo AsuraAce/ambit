@@ -86,7 +86,7 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
 export const processNativePaths = async (
     paths: string[],
     thumbnailDir: string | undefined,
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number, message?: string) => void
 ): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     let skipped = 0;
@@ -94,7 +94,11 @@ export const processNativePaths = async (
 
     // 1. Resolve all paths (if a path is a directory, expand it recursively)
     const allPaths: string[] = [];
-    for (const p of paths) {
+    if (onProgress) onProgress(0, paths.length, 'Scanning folders...');
+
+    for (let i = 0; i < paths.length; i++) {
+        const p = paths[i];
+        if (onProgress) onProgress(i, paths.length, `Scanning: ${p.split(/[\\/]/).pop() || p}`);
         try {
             const files = await invoke('scan_directory_recursive', { path: p }) as string[];
             if (files && files.length > 0) {
@@ -111,6 +115,15 @@ export const processNativePaths = async (
     // 2. Batch size for bulk scanning
     const BATCH_SIZE = 50;
     const totalToProcess = allPaths.length;
+
+    if (totalToProcess === 0) {
+        return {
+            images: [],
+            stats: { processed: 0, imported: 0, skipped: 0, errors: 0 }
+        };
+    }
+
+    if (onProgress) onProgress(0, totalToProcess, 'Processing images...');
 
     for (let i = 0; i < allPaths.length; i += BATCH_SIZE) {
         const chunk = allPaths.slice(i, i + BATCH_SIZE);
@@ -171,7 +184,10 @@ export const processNativePaths = async (
             errors += chunk.length;
         }
 
-        if (onProgress) onProgress(Math.min(i + BATCH_SIZE, totalToProcess), totalToProcess);
+        if (onProgress) {
+            const current = Math.min(i + BATCH_SIZE, totalToProcess);
+            onProgress(current, totalToProcess, `Importing: ${current} / ${totalToProcess}`);
+        }
     }
 
     return {

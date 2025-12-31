@@ -42,9 +42,9 @@ export interface LibraryContextType {
   isFiltering: boolean;
   isLoaded: boolean;
   isImporting: boolean;
-  importProgress: { current: number; total: number } | null;
+  importProgress: { current: number; total: number; message?: string } | null;
   setIsImporting: (val: boolean) => void;
-  setImportProgress: (val: { current: number; total: number } | null) => void;
+  setImportProgress: (val: { current: number; total: number; message?: string } | null) => void;
   isLiveSyncing: boolean;
   isLiveWatching: boolean;
   setIsLiveWatching: any;

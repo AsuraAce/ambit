@@ -46,8 +46,8 @@ interface SearchContextType {
     togglePin: (id: string, isPinned?: boolean) => Promise<void>;
     isImporting: boolean;
     setIsImporting: React.Dispatch<React.SetStateAction<boolean>>;
-    importProgress: { current: number; total: number } | null;
-    setImportProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
+    importProgress: { current: number; total: number; message?: string } | null;
+    setImportProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; message?: string } | null>>;
     // Thumbnail Regeneration Progress
     isRegeneratingThumbnails: boolean;
     setIsRegeneratingThumbnails: React.Dispatch<React.SetStateAction<boolean>>;
@@ -91,7 +91,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
     const [isImporting, setIsImporting] = useState(false);
-    const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+    const [importProgress, setImportProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
     const [isRegeneratingThumbnails, setIsRegeneratingThumbnails] = useState(false);
     const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number } | null>(null);
 

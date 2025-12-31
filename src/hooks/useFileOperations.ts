@@ -99,8 +99,8 @@ export const useFileOperations = ({
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
-            const result = await processNativePaths(paths, thumbDir, (current, total) => {
-                setImportProgress({ current, total });
+            const result = await processNativePaths(paths, thumbDir, (current, total, message) => {
+                setImportProgress({ current, total, message });
             });
             commitImportResult(result);
         } catch (error) {
@@ -116,8 +116,8 @@ export const useFileOperations = ({
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
-            const result = await processNativePaths([dirPath], thumbDir, (current, total) => {
-                setImportProgress({ current, total });
+            const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
+                setImportProgress({ current, total, message });
             });
             if (result.images.length > 0) {
                 commitImportResult(result, true);

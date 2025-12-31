@@ -180,7 +180,7 @@ export default function App() {
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
-        onScan: fileOps.scanDirectory,
+        onScan: (paths) => fileOps.handleImportPaths(paths),
         addToast
     });
 
