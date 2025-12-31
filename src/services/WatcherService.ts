@@ -8,16 +8,17 @@ export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
     private isWatching = false;
 
-    async startWatching(settings: AppSettings, onChangeEvent: WatcherCallback) {
+    async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
         if (this.isWatching) await this.stopWatching();
 
         this.isWatching = true;
-        const folders = settings.monitoredFolders.filter(f => f.isActive).map(f => f.path);
+
+        if (paths.length === 0) return;
 
         try {
             // Start the native rust watcher which handles multiple paths
-            await invoke('start_native_folder_watcher', { paths: folders });
-            console.log(`[WatcherService] Native watcher started for ${folders.length} paths`);
+            await invoke('start_native_folder_watcher', { paths });
+            console.log(`[WatcherService] Native watcher started for ${paths.length} paths`);
 
             // Listen for the debounced event from Rust
             this.unlistenFn = await listen('folder-change-event', () => {
@@ -47,8 +48,8 @@ export class WatcherService {
         }
     }
 
-    async updateWatcher(settings: AppSettings, onChangeEvent: WatcherCallback) {
-        await this.startWatching(settings, onChangeEvent);
+    async updateWatcher(paths: string[], onChangeEvent: WatcherCallback) {
+        await this.startWatching(paths, onChangeEvent);
     }
 }
 

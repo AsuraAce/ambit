@@ -48,54 +48,77 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         if (isLoaded) refreshMaintenanceCounts();
     }, [isLoaded, refreshMaintenanceCounts]);
 
-    // Standard Watcher (Monitored Folders)
+    // Unified Watcher Logic (Live Sync)
+    // This controls BOTH the generic "Monitored Folders" AND the "InvokeAI" folder.
     const monitoredFoldersConfig = JSON.stringify(settings.monitoredFolders);
+    const invokePathConfig = settings.invokeAiPath;
 
     useEffect(() => {
         if (!isLoaded) return;
+
         const initWatcher = async () => {
-            // Re-fetch settings implicitly via closure or pass just the folders.
-            // But we need the whole settings object for startWatching signature?
-            // Actually WatcherService.startWatching uses 'settings.monitoredFolders'.
-            // Let's assume we pass the current settings, but only triggered by config change.
-            await watcherService.startWatching(settings, (event) => {
+            // If Live Watch is OFF, stop everything.
+            if (!isLiveWatching) {
+                await watcherService.stopWatching();
+                return;
+            }
+
+            // Collect all paths to watch
+            const pathsToWatch: string[] = [];
+
+            // 1. Monitored Folders (Generic)
+            if (settings.monitoredFolders) {
+                settings.monitoredFolders.forEach(f => {
+                    if (f.isActive) pathsToWatch.push(f.path);
+                });
+            }
+
+            // 2. InvokeAI Output Folder (Specialized)
+            // Typically: {root}/outputs/images
+            if (settings.invokeAiPath) {
+                // Ensure correct path joining
+                // Using simple concat with '/' is usually safe enough for JS/Rust bridge
+                // invokeAiPath usually doesn't end with slash if normalized, but let's be safe
+                const cleanRoot = settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
+                const invokeImagesPath = `${cleanRoot}/outputs/images`;
+                pathsToWatch.push(invokeImagesPath);
+            }
+
+            if (pathsToWatch.length === 0) {
+                await watcherService.stopWatching();
+                return;
+            }
+
+            // Start the native watcher
+            await watcherService.startWatching(pathsToWatch, async () => {
+                console.log('[WatcherContext] Global change detected. Refreshing.');
+
+                // 1. Generic Refresh
                 if (onNewImageDetected) onNewImageDetected();
-                refreshMaintenanceCounts();
-            });
-        };
+                await refreshMaintenanceCounts();
 
-        if (settings.monitoredFolders && settings.monitoredFolders.length > 0) {
-            initWatcher();
-        }
-
-        return () => { watcherService.stopWatching(); };
-    }, [isLoaded, monitoredFoldersConfig, onNewImageDetected, refreshMaintenanceCounts]);
-
-    // Live Watch (InvokeAI)
-    useEffect(() => {
-        if (!isLoaded || !isLiveWatching || !settings.invokeAiPath) {
-            liveLinkCleanupRef.current?.();
-            liveLinkCleanupRef.current = null;
-            return;
-        }
-
-        const startLiveWatch = async () => {
-            liveLinkCleanupRef.current = await startLiveLink(
-                settings.invokeAiPath!,
-                async () => {
+                // 2. InvokeAI Specialized Sync
+                // If we have an Invoke Path configured, we should also trigger the DB sync
+                // because the file change might have been an Invoke generation.
+                if (settings.invokeAiPath) {
                     await startInvokeSync({ mode: 'live' });
-                    if (onNewImageDetected) onNewImageDetected();
                 }
-            );
-            addToast('Live Watch Active', 'success');
+            });
+
+            if (pathsToWatch.length > 0) {
+                addToast(`Live Sync Active (${pathsToWatch.length} folders)`, 'success');
+            }
         };
 
-        startLiveWatch();
+        initWatcher();
+
         return () => {
-            liveLinkCleanupRef.current?.();
-            liveLinkCleanupRef.current = null;
+            // Cleanup provided by next run or component unmount
+            // However, we generally want the watcher to PERSIST unless strictly stopped?
+            // React strict mode might double-mount.
+            // WatcherService handles restart logic safely.
         };
-    }, [isLoaded, isLiveWatching, settings.invokeAiPath, startInvokeSync, onNewImageDetected, addToast]);
+    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, addToast]);
 
     // Maintenance interval
     useEffect(() => {

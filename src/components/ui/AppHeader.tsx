@@ -89,7 +89,7 @@ export const AppHeader = React.memo(({
                         <button
                             onClick={() => setIsLiveWatching(!isLiveWatching)}
                             className={`p-2 rounded-xl transition-all border relative group ${isLiveWatching ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/20 animate-pulse' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500'}`}
-                            title={isLiveWatching ? "Live Watch Active" : "Enable Live Watch"}
+                            title={isLiveWatching ? "Live Sync Active (Click to pause)" : "Enable Live Sync"}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
                         </button>
