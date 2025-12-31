@@ -1,0 +1,51 @@
+﻿cargo : warning: field `last_event` is never read
+At line:1 char:1
++ cargo test metadata::parsers 2>&1 | Out-File -Encoding utf8 
+test_outp ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: field ...`  
+   is never read:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ --> src\watcher.rs:9:9
+  |
+7 | pub struct WatcherState {
+  |            ------------ field in this struct
+8 |     pub watcher: Mutex<Option<RecommendedWatcher>>,
+9 |     pub last_event: Mutex<Instant>,
+  |         ^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: `app` (lib) generated 1 warning
+warning: `app` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) 
+in 0.48s
+     Running unittests src\lib.rs 
+(target\debug\deps\app_lib-b8f9f711ea0da5e1.exe)
+
+running 5 tests
+test metadata::parsers::tests::test_extract_png_chunks_basic ... ok
+test metadata::parsers::tests::test_extract_png_chunks_itxt_uncompressed ... ok
+test metadata::parsers::tests::test_parse_exif_le_ascii ... ok
+test metadata::parsers::tests::test_extract_png_chunks_exif_with_header ... FAILED
+test metadata::parsers::tests::test_extract_png_chunks_itxt_compressed ... ok
+
+failures:
+
+---- metadata::parsers::tests::test_extract_png_chunks_exif_with_header stdout ----
+
+thread 'metadata::parsers::tests::test_extract_png_chunks_exif_with_header' (30492) panicked at src\metadata\parsers.rs:477:9:
+assertion `left == right` failed
+  left: Some("ExifValu")
+ right: Some("ExifValue")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    metadata::parsers::tests::test_extract_png_chunks_exif_with_header
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

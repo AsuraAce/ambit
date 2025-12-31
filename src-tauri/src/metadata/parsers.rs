@@ -72,7 +72,14 @@ pub fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, Str
             if reader.read_exact(&mut chunk_data).is_err() { break; }
 
             if chunk_type == "eXIf" {
-                if let Some(comment) = parse_exif(&chunk_data) {
+                // Some writers include the "Exif\0\0" header in the chunk data
+                let data_slice = if chunk_data.len() >= 6 && &chunk_data[0..6] == b"Exif\0\0" {
+                    &chunk_data[6..]
+                } else {
+                    &chunk_data
+                };
+
+                if let Some(comment) = parse_exif(data_slice) {
                     chunks.insert("parameters".to_string(), comment);
                 }
             } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
@@ -337,5 +344,131 @@ mod tests {
         let mut cursor = Cursor::new(png);
         let chunks = extract_png_chunks(&mut cursor).unwrap();
         assert_eq!(chunks.get("Software").map(|s| s.as_str()), Some("Ambit"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_itxt_uncompressed() {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        
+        // iTXt chunk: "Keyword\0(0)(0)en\0Translated\0Value"
+        // Compression flag: 0
+        // Compression method: 0
+        // Lang tag: "en"
+        // Trans keyword: "Translated"
+        // Text: "Value"
+        
+        let keyword = b"Keyword";
+        let lang = b"en";
+        let trans = b"Translated";
+        let text = b"Value";
+        
+        let mut data = Vec::new();
+        data.extend_from_slice(keyword);
+        data.push(0); // null separator
+        data.push(0); // compression flag (uncompressed)
+        data.push(0); // compression method
+        data.extend_from_slice(lang);
+        data.push(0); // null separator
+        data.extend_from_slice(trans);
+        data.push(0); // null separator
+        data.extend_from_slice(text);
+        
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        png.extend_from_slice(b"iTXt");
+        png.extend_from_slice(&data);
+        png.extend_from_slice(&[0; 4]); // CRC
+
+        png.extend_from_slice(&0u32.to_be_bytes()); // IEND
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0; 4]);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert_eq!(chunks.get("Keyword").map(|s| s.as_str()), Some("Value"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_itxt_compressed() {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        
+        let keyword = b"Keyword";
+        let text = b"CompressedValue";
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(text).unwrap();
+        let compressed_text = encoder.finish().unwrap();
+
+        let mut data = Vec::new();
+        data.extend_from_slice(keyword);
+        data.push(0); 
+        data.push(1); // compression flag (compressed)
+        data.push(0); // compression method
+        data.push(0); // empty lang
+        data.push(0); // empty trans
+        data.extend_from_slice(&compressed_text);
+        
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        png.extend_from_slice(b"iTXt");
+        png.extend_from_slice(&data);
+        png.extend_from_slice(&[0; 4]);
+
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0; 4]);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert_eq!(chunks.get("Keyword").map(|s| s.as_str()), Some("CompressedValue"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_exif_with_header() {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        
+        // Construct EXIF data with "Exif\0\0" prefix
+        let mut exif_data = Vec::new();
+        exif_data.extend_from_slice(b"Exif\0\0");
+        
+        // TIFF Header (II)
+        exif_data.extend_from_slice(b"II");
+        exif_data.extend_from_slice(&0x2Au16.to_le_bytes()); // 42
+        exif_data.extend_from_slice(&8u32.to_le_bytes()); // Offset to IFD0
+
+        // IFD0
+        exif_data.extend_from_slice(&1u16.to_le_bytes()); // 1 entry
+        // UserComment tag
+        exif_data.extend_from_slice(&0x9286u16.to_le_bytes());
+        exif_data.extend_from_slice(&7u16.to_le_bytes()); // Undefined
+        exif_data.extend_from_slice(&17u32.to_le_bytes()); // Count (8 + 9)
+        exif_data.extend_from_slice(&30u32.to_le_bytes()); // Offset
+
+        // Next IFD
+        exif_data.extend_from_slice(&0u32.to_le_bytes()); 
+
+        // Padding to offset 30
+        while exif_data.len() < (30 + 6) { // 30 is offset relative to TIFF start (byte 6)
+            exif_data.push(0);
+        }
+
+        // Value at 30+6
+        exif_data.extend_from_slice(b"ASCII\0\0\0");
+        exif_data.extend_from_slice(b"ExifValue");
+
+        png.extend_from_slice(&(exif_data.len() as u32).to_be_bytes());
+        png.extend_from_slice(b"eXIf");
+        png.extend_from_slice(&exif_data);
+        png.extend_from_slice(&[0; 4]);
+
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0; 4]);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert_eq!(chunks.get("parameters").map(|s| s.as_str()), Some("ExifValue"));
     }
 }
