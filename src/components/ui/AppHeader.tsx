@@ -58,15 +58,19 @@ export const AppHeader = React.memo(({
 
     return (
         <header className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
-            <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative overflow-hidden">
-                {importProgress && (
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-sage-500/10 overflow-hidden">
-                        <div
-                            className="h-full bg-sage-500 shadow-[0_0_10px_rgba(110,121,107,0.5)] transition-all duration-300 ease-out"
-                            style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-                        />
-                    </div>
-                )}
+            <div className="h-16 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative">
+                {/* Background clip layer for elements that need rounding (like progress bar) */}
+                <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+                    {importProgress && (
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-sage-500/10 overflow-hidden">
+                            <div
+                                className="h-full bg-sage-500 shadow-[0_0_10px_rgba(110,121,107,0.5)] transition-all duration-300 ease-out"
+                                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                            />
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex items-center gap-4 flex-1">
                     <SearchBar
                         filters={filters}

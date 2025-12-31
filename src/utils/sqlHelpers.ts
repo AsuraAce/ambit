@@ -94,15 +94,18 @@ export const buildSqlWhereClause = (
 
     // 5. Models (Array)
     if (filters.models.length > 0) {
-        // We check overrideModel OR metadata.model
-        // JSON structure: { "model": "..." } or { "overrideModel": "..." }
-        // Simple approach: Check if metadata_json contains the model name
-        // Robust approach: json_extract
         const modelConditions = filters.models.map(m => {
+            if (m === 'Unknown') {
+                return `(
+                    (json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown')
+                    AND 
+                    (json_extract(metadata_json, '$.modelHash') IS NULL OR json_extract(metadata_json, '$.modelHash') = '' OR json_extract(metadata_json, '$.modelHash') = 'Unknown')
+                )`;
+            }
+            params.push(m);
+            params.push(m);
             params.push(`%${m}%`);
-            return `metadata_json LIKE ?`;
-            // Note: This is loose matching. For strict:
-            // json_extract(metadata_json, '$.model') = ?
+            return `(json_extract(metadata_json, '$.model') = ? OR json_extract(metadata_json, '$.modelHash') = ? OR metadata_json LIKE ?)`;
         });
         conditions.push(`(${modelConditions.join(' OR ')})`);
     }
