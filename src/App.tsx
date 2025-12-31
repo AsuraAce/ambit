@@ -393,7 +393,12 @@ export default function App() {
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
                             onOpenSettings={() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }}
                             onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
-                            onSearch={(term) => { setFilters(p => ({ ...p, searchQuery: term })); setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8)); }}
+                            onSearch={(term) => {
+                                import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
+                                    parseAndApplyFilter(term, setFilters);
+                                });
+                                setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
+                            }}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
                             onAddToCollection={(id) => handleOpenCollectionModal('add')}
                             availableTags={availableTags}
