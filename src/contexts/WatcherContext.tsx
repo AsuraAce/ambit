@@ -49,9 +49,15 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     }, [isLoaded, refreshMaintenanceCounts]);
 
     // Standard Watcher (Monitored Folders)
+    const monitoredFoldersConfig = JSON.stringify(settings.monitoredFolders);
+
     useEffect(() => {
         if (!isLoaded) return;
         const initWatcher = async () => {
+            // Re-fetch settings implicitly via closure or pass just the folders.
+            // But we need the whole settings object for startWatching signature?
+            // Actually WatcherService.startWatching uses 'settings.monitoredFolders'.
+            // Let's assume we pass the current settings, but only triggered by config change.
             await watcherService.startWatching(settings, (event) => {
                 if (onNewImageDetected) onNewImageDetected();
                 refreshMaintenanceCounts();
@@ -63,7 +69,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         }
 
         return () => { watcherService.stopWatching(); };
-    }, [isLoaded, settings, onNewImageDetected, refreshMaintenanceCounts]);
+    }, [isLoaded, monitoredFoldersConfig, onNewImageDetected, refreshMaintenanceCounts]);
 
     // Live Watch (InvokeAI)
     useEffect(() => {

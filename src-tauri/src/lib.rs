@@ -1190,36 +1190,32 @@ impl Default for WatcherState {
 }
 
 #[tauri::command]
-fn start_live_link_watcher(
+fn start_native_folder_watcher(
     app: tauri::AppHandle,
-    path: String,
+    paths: Vec<String>,
     state: tauri::State<'_, WatcherState>,
 ) -> Result<(), String> {
-    let path_buf = PathBuf::from(&path);
-    if !path_buf.exists() {
-        return Err("Target path does not exist".into());
+    if paths.is_empty() {
+        // Just stop if empty path list
+         let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
+        if watcher_guard.is_some() {
+            *watcher_guard = None;
+            println!("[Rust Watcher] Stopped watcher");
+        }
+        return Ok(());
     }
 
     let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
 
-    // Drop existing watcher if any (stops watching)
+    // Drop existing watcher to reset everything
     if watcher_guard.is_some() {
         *watcher_guard = None;
-        println!("[Rust Watcher] Stopped previous watcher");
-    }
-
-    if path.is_empty() {
-        return Ok(()); // Just stop if empty path
+        println!("[Rust Watcher] Restarting watcher with new paths...");
     }
 
     let app_handle = app.clone();
-    // We need to share the last_emit time with the closure... but accessing State inside closure is hard if closure is long lived?
-    // Actually, we can clone the State handle if it's cheap? No, State is a wrapper.
-    // We can wrap the last_emit in an Arc<Mutex<Instant>> that we pass to closure?
-    // But State holds it.
-    // Simpler: The closure owns its OWN throttle timer. The Global state is just to allow stopping/starting (replacing the watcher).
-    // The "Global" debounce isn't strictly needed across restarts, just across events.
-
+    
+    // Shared debounce timer state
     let last_emit_local = std::sync::Arc::new(Mutex::new(
         Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
     ));
@@ -1245,11 +1241,11 @@ fn start_live_link_watcher(
                     });
 
                     if has_image {
-                        // Throttle: Max 1 emit per second
+                        // Throttle: Max 1 emit per 2 seconds (Debounce-ish)
                         let mut last = last_emit_local.lock().unwrap();
-                        if last.elapsed() > Duration::from_millis(1000) {
-                            println!("[Rust Watcher] Detected change, emitting event...");
-                            let _ = app_handle.emit("invoke-live-event", ());
+                        if last.elapsed() > Duration::from_millis(2000) {
+                            println!("[Rust Watcher] Detected change in watched folders, emitting event...");
+                            let _ = app_handle.emit("folder-change-event", ());
                             *last = Instant::now();
                         }
                     }
@@ -1262,13 +1258,21 @@ fn start_live_link_watcher(
     let mut watcher =
         RecommendedWatcher::new(event_handler, Config::default()).map_err(|e| e.to_string())?;
 
-    watcher
-        .watch(&path_buf, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+    for path_str in &paths {
+        let path_buf = PathBuf::from(path_str);
+        if path_buf.exists() {
+             // RecursiveMode::Recursive is dangerous for root drives, but necessary for folders.
+             // We rely on the user picking sensible folders. InvokeAI outputs are usually flat or shallow.
+            if let Err(e) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
+                println!("[Rust Watcher] Failed to watch path {}: {}", path_str, e);
+            } else {
+                 println!("[Rust Watcher] Added path: {}", path_str);
+            }
+        }
+    }
 
     *watcher_guard = Some(watcher);
-    println!("[Rust Watcher] Started watching: {}", path);
-
+    
     Ok(())
 }
 
@@ -1297,7 +1301,8 @@ pub fn run() {
             save_images_batch,
             refresh_boards_native,
             scan_directory_recursive,
-            start_live_link_watcher,
+            scan_directory_recursive,
+            start_native_folder_watcher,
             show_in_folder,
             open_file,
             scan_image_workflow

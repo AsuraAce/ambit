@@ -1,58 +1,54 @@
-import { watch, WatchEvent } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
 
-type WatcherCallback = (event: WatchEvent) => void;
+type WatcherCallback = () => void;
 
 export class WatcherService {
-    private unwatchFns: Map<string, () => void> = new Map();
+    private unlistenFn: UnlistenFn | null = null;
     private isWatching = false;
 
-    async startWatching(settings: AppSettings, onEvent: WatcherCallback) {
+    async startWatching(settings: AppSettings, onChangeEvent: WatcherCallback) {
         if (this.isWatching) await this.stopWatching();
 
         this.isWatching = true;
-        const folders = settings.monitoredFolders.filter(f => f.isActive);
+        const folders = settings.monitoredFolders.filter(f => f.isActive).map(f => f.path);
 
-        // Map folders to promises to initialize in parallel
-        const watchPromises = folders.map(async (folder) => {
-            try {
-                // watch returns a promise that resolves to an unwatch function
-                const unwatch = await watch(folder.path, (event) => {
-                    onEvent(event);
-                }, { recursive: true });
+        try {
+            // Start the native rust watcher which handles multiple paths
+            await invoke('start_native_folder_watcher', { paths: folders });
+            console.log(`[WatcherService] Native watcher started for ${folders.length} paths`);
 
-                if (this.isWatching) {
-                    this.unwatchFns.set(folder.id, unwatch);
-                    console.log(`Started watching: ${folder.path}`);
-                } else {
-                    // unexpected race condition, cleanup
-                    unwatch();
-                }
-            } catch (err) {
-                console.error(`Failed to watch ${folder.path}:`, err);
-            }
-        });
+            // Listen for the debounced event from Rust
+            this.unlistenFn = await listen('folder-change-event', () => {
+                console.log('[WatcherService] Folder change detected');
+                onChangeEvent();
+            });
 
-        // Wait for all watchers to initialize in parallel
-        await Promise.all(watchPromises);
+        } catch (err) {
+            console.error(`[WatcherService] Failed to start native watcher:`, err);
+        }
     }
 
     async stopWatching() {
         this.isWatching = false;
-        for (const unwatch of this.unwatchFns.values()) {
-            try {
-                unwatch();
-            } catch (e) {
-                console.error('Error unwatching:', e);
-            }
+
+        if (this.unlistenFn) {
+            this.unlistenFn();
+            this.unlistenFn = null;
         }
-        this.unwatchFns.clear();
-        console.log('Stopped all watchers');
+
+        try {
+            // Send empty list to stop the rust watcher
+            await invoke('start_native_folder_watcher', { paths: [] });
+            console.log('[WatcherService] Stopped native watcher');
+        } catch (e) {
+            console.error('Error stopping native watcher:', e);
+        }
     }
 
-    async updateWatcher(settings: AppSettings, onEvent: WatcherCallback) {
-        // Simple restart strategy for now
-        await this.startWatching(settings, onEvent);
+    async updateWatcher(settings: AppSettings, onChangeEvent: WatcherCallback) {
+        await this.startWatching(settings, onChangeEvent);
     }
 }
 
