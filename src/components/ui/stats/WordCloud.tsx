@@ -43,7 +43,7 @@ export const WordCloud: React.FC<WordCloudProps> = ({ keywords, onWordClick, tot
                         animate={{ scale: 1, opacity: getOpacity(word.value) }}
                         whileHover={{ scale: 1.1, opacity: 1 }}
                         onClick={() => onWordClick(word.text)}
-                        className={`cursor-pointer transition-colors hover:text-white font-medium whitespace-nowrap ${['text-indigo-400', 'text-purple-400', 'text-pink-400', 'text-sage-400', 'text-blue-400', 'text-emerald-400'][i % 6]
+                        className={`cursor-pointer transition-colors hover:text-white font-medium whitespace-nowrap focus:outline-none ${['text-indigo-400', 'text-purple-400', 'text-pink-400', 'text-sage-400', 'text-blue-400', 'text-emerald-400'][i % 6]
                             }`}
                         style={{ fontSize: getFontSize(word.value) }}
                         title={`${word.value} occurrences`}
