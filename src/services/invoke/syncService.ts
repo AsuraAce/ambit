@@ -111,6 +111,8 @@ export const syncImages = async (
                 const mappingObj: Record<string, string> = {};
                 imageToBoardId.forEach((val, key) => { mappingObj[key] = val; });
                 await invoke('refresh_boards_native', { boardMapping: mappingObj });
+                const { syncCollectionImages } = await import('../db/imageRepo');
+                await syncCollectionImages();
             } catch (e) { }
         }
         return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map() };
@@ -129,18 +131,7 @@ export const syncImages = async (
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
 
-    if (options.syncBoards && boards.size > 0) {
-        onProgress(processed, totalToImport, 'Syncing collections...');
-        const { upsertCollection } = await import('../db/collectionRepo');
-        for (const [id, board] of boards.entries()) {
-            await upsertCollection({
-                id,
-                name: board.name,
-                createdAt: board.createdAt || Date.now(),
-                source: 'invoke'
-            });
-        }
-    }
+    const createdBoardIds = new Set<string>();
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
@@ -273,16 +264,43 @@ export const syncImages = async (
             } catch (e) { }
         }
 
-        if (currentBatch.length > 0) await insertImagesBatch(currentBatch);
+        if (currentBatch.length > 0) {
+            // Lazy Board Creation
+            if (options.syncBoards) {
+                const { upsertCollection } = await import('../db/collectionRepo');
+                const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
+                for (const bId of batchBoardIds) {
+                    const boardInfo = boards.get(bId!);
+                    if (boardInfo) {
+                        await upsertCollection({
+                            id: bId!,
+                            name: boardInfo.name,
+                            createdAt: boardInfo.createdAt || Date.now(),
+                            source: 'invoke'
+                        });
+                        createdBoardIds.add(bId!);
+                    }
+                }
+            }
+
+            await insertImagesBatch(currentBatch);
+
+            // Incremental Linking
+            if (options.syncBoards) {
+                const { syncCollectionImages } = await import('../db/imageRepo');
+                await syncCollectionImages(currentBatch.map(img => img.id));
+            }
+        }
         offset += rows.length;
         onProgress(Math.min(processed, totalToImport), totalToImport, `Importing: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
         await new Promise(r => setTimeout(r, 0));
     }
 
-    // Finalize: Link all imported images to their board-based collections in bulk
+    // Final cleanup / sync (optional fallback)
     if (options.syncBoards && boards.size > 0) {
+        // We've already done incremental sync, but this ensures everything is correct
+        // especially for images that might have been updated/synced without being in a new batch
         const { syncCollectionImages } = await import('../db/imageRepo');
-        onProgress(processed, totalToImport, 'Finalizing collection mapping...');
         await syncCollectionImages();
     }
 

@@ -82,18 +82,31 @@ export const insertImagesBatch = async (images: AIImage[]) => {
 
 /**
  * High-performance bulk sync of the collection_images junction table.
- * Links all images to their InvokeAI boards in a single pass.
+ * Links images to their InvokeAI boards.
+ * @param ids Optional array of image IDs to sync. If omitted, syncs all images with board_ids.
  */
-export const syncCollectionImages = async () => {
+export const syncCollectionImages = async (ids?: string[]) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
-        console.log('[DB] Performing bulk collection sync...');
-        await db.execute(`
+        console.log(`[DB] Performing bulk collection sync${ids ? ` for ${ids.length} images` : ''}...`);
+
+        let query = `
             INSERT OR IGNORE INTO collection_images (collection_id, image_id)
             SELECT board_id, id 
             FROM images 
-            WHERE board_id IS NOT NULL;
-        `);
+            WHERE board_id IS NOT NULL
+        `;
+
+        const params: any[] = [];
+        if (ids && ids.length > 0) {
+            // SQLite has a limit on parameters, so we chunk if necessary, 
+            // but for typical batch sizes (500) it's fine.
+            const placeholders = ids.map(() => '?').join(',');
+            query += ` AND id IN (${placeholders})`;
+            params.push(...ids);
+        }
+
+        await db.execute(query, params);
         console.log('[DB] Bulk collection sync complete.');
     });
 };
