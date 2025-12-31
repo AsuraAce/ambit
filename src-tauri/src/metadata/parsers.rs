@@ -1,0 +1,286 @@
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use flate2::read::ZlibDecoder;
+
+pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut buffer = [0; 2];
+    if file.read_exact(&mut buffer).is_err() { return Ok(HashMap::new()); }
+    if buffer != [0xFF, 0xD8] { return Ok(HashMap::new()); } // SOI
+
+    let mut chunks = HashMap::new();
+
+    loop {
+        let mut marker = [0; 2];
+        if file.read_exact(&mut marker).is_err() { break; }
+        if marker[0] != 0xFF { break; }
+
+        let m_type = marker[1];
+        if m_type == 0xD9 { break; } // EOI
+
+        // Length
+        let mut len_bytes = [0; 2];
+        if file.read_exact(&mut len_bytes).is_err() { break; }
+        let len = (u16::from_be_bytes(len_bytes) as usize) - 2;
+
+        if m_type == 0xE1 { // APP1 - EXIF
+            let mut app1_data = vec![0; len];
+            if file.read_exact(&mut app1_data).is_ok() {
+                if app1_data.starts_with(b"Exif\0\0") {
+                    if let Some(comment) = parse_exif(&app1_data[6..]) {
+                        chunks.insert("parameters".to_string(), comment);
+                    }
+                }
+            }
+        } else {
+            if file.seek(SeekFrom::Current(len as i64)).is_err() { break; }
+        }
+    }
+
+    Ok(chunks)
+}
+
+pub fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>, String> {
+    let mut buffer = [0; 8];
+    if reader.read_exact(&mut buffer).is_err() {
+        return Err("Failed to read header".to_string());
+    }
+
+    // Verify PNG header
+    if buffer != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return Err("Not a PNG file".to_string());
+    }
+
+    let mut chunks = HashMap::new();
+    let mut loop_count = 0;
+
+    loop {
+        if loop_count > 10000 { break; }
+        loop_count += 1;
+
+        let mut length_bytes = [0; 4];
+        if reader.read_exact(&mut length_bytes).is_err() { break; }
+        let length = u32::from_be_bytes(length_bytes) as u64;
+
+        let mut type_bytes = [0; 4];
+        if reader.read_exact(&mut type_bytes).is_err() { break; }
+        let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
+
+        if chunk_type == "tEXt" || chunk_type == "iTXt" || chunk_type == "zTXt" || chunk_type == "eXIf" {
+            let mut chunk_data = vec![0; length as usize];
+            if reader.read_exact(&mut chunk_data).is_err() { break; }
+
+            if chunk_type == "eXIf" {
+                if let Some(comment) = parse_exif(&chunk_data) {
+                    chunks.insert("parameters".to_string(), comment);
+                }
+            } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
+                 let key = String::from_utf8_lossy(&chunk_data[0..pos]).to_string();
+                 
+                 if chunk_type == "zTXt" {
+                     if pos + 2 < chunk_data.len() && chunk_data[pos+1] == 0 {
+                         let compressed = &chunk_data[pos+2..];
+                         let mut decoder = ZlibDecoder::new(compressed);
+                         let mut s = String::new();
+                         if decoder.read_to_string(&mut s).is_ok() {
+                             chunks.insert(key, s);
+                         }
+                     }
+                 } else if chunk_type == "tEXt" {
+                     if pos + 1 < chunk_data.len() {
+                         let val = String::from_utf8_lossy(&chunk_data[pos+1..]).to_string();
+                         chunks.insert(key, val);
+                     }
+                 } else if chunk_type == "iTXt" {
+                     // Simplified iTXt parsing
+                     if pos + 2 < chunk_data.len() {
+                         let is_compressed = chunk_data[pos+1] == 1;
+                         // Skip compression method (pos+2)
+                         // Skip lang tags etc - find next nulls
+                         let mut curr = pos + 3;
+                         // Skip lang tag
+                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
+                         curr += 1;
+                         // Skip trans key
+                         while curr < chunk_data.len() && chunk_data[curr] != 0 { curr += 1; }
+                         curr += 1;
+                         
+                         if curr < chunk_data.len() {
+                            let data_slice = &chunk_data[curr..];
+                            if is_compressed {
+                                let mut decoder = ZlibDecoder::new(data_slice);
+                                let mut s = String::new();
+                                if decoder.read_to_string(&mut s).is_ok() {
+                                    chunks.insert(key, s);
+                                }
+                            } else {
+                                chunks.insert(key, String::from_utf8_lossy(data_slice).to_string());
+                            }
+                         }
+                     }
+                 }
+            }
+            
+            // Read CRC (4 bytes)
+            let mut crc = [0; 4];
+            let _ = reader.read_exact(&mut crc);
+        } else if chunk_type == "IEND" {
+            break;
+        } else {
+            // Efficiently skip data + CRC
+            let skip_len = length + 4;
+            std::io::copy(&mut reader.by_ref().take(skip_len), &mut std::io::sink()).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(chunks)
+}
+
+pub fn parse_exif(data: &[u8]) -> Option<String> {
+    // Check for TIFF header
+    let is_little_endian = if data.len() < 8 {
+        return None;
+    } else if data[0] == 0x49 && data[1] == 0x49 {
+        true
+    } else if data[0] == 0x4D && data[1] == 0x4D {
+        false
+    } else {
+        return None;
+    };
+
+    let get_u16 = |offset: usize| -> Option<u16> {
+        if offset + 2 > data.len() { return None; }
+        let slice = &data[offset..offset+2];
+        let arr: [u8; 2] = slice.try_into().ok()?;
+        Some(if is_little_endian { u16::from_le_bytes(arr) } else { u16::from_be_bytes(arr) })
+    };
+
+    let get_u32 = |offset: usize| -> Option<u32> {
+        if offset + 4 > data.len() { return None; }
+        let slice = &data[offset..offset+4];
+        let arr: [u8; 4] = slice.try_into().ok()?;
+        Some(if is_little_endian { u32::from_le_bytes(arr) } else { u32::from_be_bytes(arr) })
+    };
+
+    if get_u16(2)? != 0x002A { return None; }
+
+    let first_ifd_offset = get_u32(4)? as usize;
+    if first_ifd_offset < 8 || first_ifd_offset >= data.len() { return None; }
+
+    // Helper to read IFD
+    fn read_ifd_internal(data: &[u8], offset: usize, is_le: bool) -> Option<String> {
+        if offset + 2 > data.len() { return None; }
+        
+        // Helper closures again inside logic to capture is_le
+        let get_u16_inner = |o: usize| -> Option<u16> {
+            if o + 2 > data.len() { return None; }
+            let s = &data[o..o+2];
+            let a: [u8; 2] = s.try_into().ok()?;
+            Some(if is_le { u16::from_le_bytes(a) } else { u16::from_be_bytes(a) })
+        };
+        let get_u32_inner = |o: usize| -> Option<u32> {
+            if o + 4 > data.len() { return None; }
+            let s = &data[o..o+4];
+            let a: [u8; 4] = s.try_into().ok()?;
+            Some(if is_le { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) })
+        };
+
+        let entry_count = get_u16_inner(offset)?;
+        let entries_start = offset + 2;
+
+        let mut exif_ifd_offset = 0;
+
+        for i in 0..entry_count {
+            let entry_offset = entries_start + (i as usize * 12);
+            if entry_offset + 12 > data.len() { break; }
+
+            let tag = get_u16_inner(entry_offset)?;
+            let count = get_u32_inner(entry_offset + 4)?;
+            let value_offset_or_data = get_u32_inner(entry_offset + 8)?;
+
+            if tag == 0x8769 {
+                exif_ifd_offset = value_offset_or_data as usize;
+            }
+
+            if tag == 0x9286 {
+                let data_offset = value_offset_or_data as usize;
+                // Safety check
+                if data_offset + 8 < data.len() {
+                     // Check specific headers
+                     // "UNICODE\0"
+                    let header_slice = &data[data_offset..data_offset+8];
+                    if header_slice.starts_with(b"UNICODE\0") {
+                        // UTF-16
+                         let payload_start = data_offset + 8;
+                         let payload_len = (count as usize).saturating_sub(8);
+                         let payload_end = payload_start + payload_len;
+                         
+                         if payload_end <= data.len() {
+                             let payload = &data[payload_start..payload_end];
+                             // Convert [u8] to [u16]
+                             let u16_vec: Vec<u16> = payload
+                                 .chunks_exact(2)
+                                 .map(|c| if is_le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
+                                 .collect();
+                             
+                             if let Ok(s) = String::from_utf16(&u16_vec) {
+                                 let clean = s.trim_end_matches('\0').trim().to_string();
+                                 // Further sanitization of null bytes inside
+                                 return Some(clean.replace('\0', ""));
+                             }
+                        }
+                    } else if header_slice.starts_with(b"ASCII\0\0\0") {
+                        let payload_start = data_offset + 8;
+                        let payload_len = (count as usize).saturating_sub(8);
+                         if payload_start + payload_len <= data.len() {
+                            let s = String::from_utf8_lossy(&data[payload_start..payload_start+payload_len]);
+                            return Some(s.trim_matches('\0').trim().to_string());
+                         }
+                    } else if data[data_offset] == 0 {
+                         // Some writers use no header, just 0 pad if undefined type
+                         let payload_len = count as usize;
+                         if data_offset + payload_len <= data.len() {
+                             let s = String::from_utf8_lossy(&data[data_offset..data_offset+payload_len]);
+                             return Some(s.trim_matches('\0').trim().to_string());
+                         }
+                    } else {
+                         // Try raw
+                         let payload_len = count as usize;
+                         if data_offset + payload_len <= data.len() {
+                             let s = String::from_utf8_lossy(&data[data_offset..data_offset+payload_len]);
+                             return Some(s.trim_matches('\0').trim().to_string());
+                         }
+                    }
+                }
+            }
+        }
+
+        if exif_ifd_offset > 0 {
+            return None;
+        }
+
+        None
+    }
+
+    // Pass 1: Root IFD (IFD0)
+    let res = read_ifd_internal(data, first_ifd_offset, is_little_endian);
+    if res.is_some() { return res; }
+
+    // If we didn't find UserComment in IFD0, check if we found an Exif Pointer.
+    let entry_count = get_u16(first_ifd_offset)?;
+    let entries_start = first_ifd_offset + 2;
+    for i in 0..entry_count {
+        let entry_offset = entries_start + (i as usize * 12);
+        if entry_offset + 12 > data.len() { break; }
+        
+        let tag = get_u16(entry_offset)?;
+        if tag == 0x8769 {
+             let value_offset = get_u32(entry_offset + 8)?;
+             // Call reader on Exif IFD
+             return read_ifd_internal(data, value_offset as usize, is_little_endian);
+        }
+    }
+
+    None
+}
