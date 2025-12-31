@@ -107,13 +107,13 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             isPinned: !!c.is_pinned,
             createdAt: c.created_at,
             count: countMap.get(c.id) || 0,
-            imageIds: [], // Removed for performance. Use getCollectionImageIds(id) if needed.
+            imageIds: [] as string[],
             thumbnail: rawThumb ? (rawThumb.startsWith('http') ? rawThumb : convertFileSrc(normalizePath(rawThumb))) : undefined,
             customThumbnail: c.custom_thumbnail,
             filters: c.filter_state ? JSON.parse(c.filter_state) : undefined,
             manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
             source: c.source
-        };
+        } as Collection;
     });
 
     // 2. Process Smart Collections: Calculate Dynamic Counts & Thumbnails

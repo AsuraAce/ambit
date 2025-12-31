@@ -119,7 +119,7 @@ describe('useCollectionOperations', () => {
                 ...props,
                 collections: [
                     ...mockCollections,
-                    { id: 'col2', name: 'Target', createdAt: 200, source: 'ambit', count: 0, imageIds: [] }
+                    { id: 'col2', name: 'Target', createdAt: 200, source: 'ambit' as const, count: 0, imageIds: [] as string[] }
                 ]
             };
             const { result } = renderHook(() => useCollectionOperations(multiProps));

@@ -1,222 +1,180 @@
-
 import * as React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { AIImage, AppSettings, Collection, FilterState } from '../types';
-import { SettingsModal } from './SettingsModal';
-import { ConfirmDialog } from './ConfirmDialog';
-import { RenameModal } from './RenameModal';
-import { CompareModal } from './CompareModal';
-import { ShortcutsModal } from './ShortcutsModal';
-import { MetadataRecoveryModal } from './MetadataRecoveryModal';
-import { SlideshowModal } from './SlideshowModal';
-import { DonationModal } from './DonationModal';
-import { ExportModal } from './ExportModal';
-import { CommandPalette } from './CommandPalette';
-import { AddToCollectionModal } from './AddToCollectionModal';
-import { useLibraryContext } from '../hooks/useLibraryContext';
-import { useToast } from '../hooks/useToast';
+import { SettingsModal } from '../features/settings/components/SettingsModal';
+import { ExportModal } from '../features/library/components/ExportModal';
+import { RenameModal } from '../features/library/components/RenameModal';
+import { ConfirmDialog } from './ui/ConfirmDialog';
+import { SlideshowModal } from '../features/viewer/components/SlideshowModal';
+import { MetadataRecoveryModal } from '../features/library/components/MetadataRecoveryModal';
+import { AddToCollectionModal } from '../features/collections/components/AddToCollectionModal';
+import { CommandPalette } from './ui/CommandPalette';
+import { ShortcutsModal } from './ui/ShortcutsModal';
+import { CompareModal } from '../features/viewer/components/CompareModal';
+import { DonationModal } from './ui/DonationModal';
+import { AIImage, AppSettings } from '../types';
 
 interface GlobalModalsProps {
-  // Modal Visibility States
-  modals: {
-    settings: boolean;
-    addToCollection: boolean;
-    deleteConfirm: boolean;
-    deleteCollection: boolean;
-    rename: boolean;
-    compare: boolean;
-    shortcuts: boolean;
-    recovery: boolean;
-    slideshow: boolean;
-    donation: boolean;
-    export: boolean;
-    commandPalette: boolean;
-  };
-
-  // Setters
-  setModals: React.Dispatch<React.SetStateAction<any>>;
-
-  // Local View Data
-  selectedIds: Set<string>;
-  filteredImages: AIImage[];
-
-  // Actions
-  onSettingsSave?: (s: AppSettings) => void;
-  onExportConfirm: (filename: string, folder: string) => void;
-  onRename: (pattern: string, start: number) => void;
-  onDeleteConfirm: () => void;
-  onDeleteCollectionConfirm: () => void;
-  onRecoverMetadata: (style: any) => void;
-  onCollectionAction: (ids: string[], targetColId: string, mode: 'add' | 'move', sourceColId?: string) => void;
-  onCloseExport?: () => void;
-  exportIds?: Set<string>;
-
-  // Specific Props
-  pendingViewerDeleteId: string | null;
-  collectionToDeleteId: string | null;
-  addToCollectionMode: 'add' | 'move';
-  sourceCollectionId: string | null;
-  isRecoveringMetadata: boolean;
-  isExporting: boolean;
-  slideshowShuffle: boolean;
-  initialSettingsTab: 'general' | 'experiments';
-  shortcutsModalTab: 'shortcuts' | 'search';
-
-  // Command Palette Specifics
-  commandPaletteProps: {
-    onNavigate: (mode: any) => void;
-    onToggleTheme: () => void;
-    onOpenSettings: () => void;
-    onImport: () => void;
-    onCreateCollection: () => void;
-    onToggleAI: () => void;
-  }
+    modals: Record<string, boolean>;
+    setModals: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+    selectedIds: Set<string>;
+    filteredImages: AIImage[];
+    onSettingsSave: (settings: AppSettings) => void;
+    onExportConfirm: (name: string, folder: string) => void;
+    onRename: (pattern: string, startNum: number) => void;
+    onDeleteConfirm: () => void;
+    onDeleteCollectionConfirm: () => void;
+    onRecoverMetadata: (options: any) => void;
+    onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId: string | null) => void;
+    onCloseExport: () => void;
+    exportIds: Set<string>;
+    pendingViewerDeleteId: string | null;
+    collectionToDeleteId: string | null;
+    addToCollectionMode: 'add' | 'move';
+    sourceCollectionId: string | null;
+    isRecoveringMetadata: boolean;
+    isExporting: boolean;
+    slideshowShuffle: boolean;
+    initialSettingsTab: string;
+    shortcutsModalTab: string;
+    commandPaletteProps: {
+        onNavigate: (mode: any) => void;
+        onToggleTheme: () => void;
+        onOpenSettings: () => void;
+        onImport: () => void;
+        onCreateCollection: () => void;
+        onToggleAI: () => void;
+        settings: AppSettings;
+    };
+    collections: any[];
+    smartCollections?: any[];
+    toggleFavorite: (id: string) => void;
+    settings: AppSettings;
 }
 
-import { useSettings } from '../contexts/SettingsContext';
-import { useCollections } from '../contexts/CollectionContext';
-import { useSearch } from '../contexts/SearchContext';
-
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
-  modals,
-  setModals,
-  selectedIds,
-  filteredImages,
-  onSettingsSave,
-  onExportConfirm,
-  onRename,
-  onDeleteConfirm,
-  onDeleteCollectionConfirm,
-  onRecoverMetadata,
-  onCollectionAction,
-  onCloseExport,
-  exportIds,
-  pendingViewerDeleteId,
-  collectionToDeleteId,
-  addToCollectionMode,
-  sourceCollectionId,
-  isRecoveringMetadata,
-  isExporting,
-  slideshowShuffle,
-  initialSettingsTab,
-  shortcutsModalTab,
-  commandPaletteProps
+    modals,
+    setModals,
+    selectedIds,
+    filteredImages,
+    onSettingsSave,
+    onExportConfirm,
+    onRename,
+    onDeleteConfirm,
+    onDeleteCollectionConfirm,
+    onRecoverMetadata,
+    onCollectionAction,
+    onCloseExport,
+    exportIds,
+    pendingViewerDeleteId,
+    collectionToDeleteId,
+    addToCollectionMode,
+    sourceCollectionId,
+    isRecoveringMetadata,
+    isExporting,
+    slideshowShuffle,
+    initialSettingsTab,
+    shortcutsModalTab,
+    commandPaletteProps,
+    collections,
+    smartCollections = [],
+    toggleFavorite,
+    settings
 }) => {
-  const { settings, setSettings } = useSettings();
-  const { collections, smartCollections } = useCollections();
-  const { images, toggleFavorite } = useSearch();
-  const { addToast } = useToast();
+    const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
-  const handleSettingsSave = (s: AppSettings) => {
-    setSettings(s);
-    addToast('Settings saved', 'success');
-  };
-  const close = (key: keyof typeof modals) => setModals((p: any) => ({ ...p, [key]: false }));
+    return (
+        <>
+            <SettingsModal
+                isOpen={modals.settings}
+                onClose={() => closeModal('settings')}
+                onSave={onSettingsSave}
+                settings={settings}
+                initialTab={initialSettingsTab as any}
+            />
 
-  const collectionName = collections.find(c => c.id === collectionToDeleteId)?.name || 'Collection';
+            <ExportModal
+                isOpen={modals.export}
+                onClose={() => { closeModal('export'); onCloseExport(); }}
+                count={exportIds.size > 0 ? exportIds.size : selectedIds.size}
+                onConfirm={onExportConfirm}
+                isExporting={isExporting}
+            />
 
-  return (
-    <>
-      <SettingsModal
-        isOpen={modals.settings}
-        onClose={() => close('settings')}
-        settings={settings}
-        onSave={onSettingsSave}
-        initialTab={initialSettingsTab}
-      />
+            <RenameModal
+                isOpen={modals.rename}
+                onClose={() => closeModal('rename')}
+                onRename={(pattern, startNum) => onRename(pattern, startNum)}
+                selectedCount={selectedIds.size}
+            />
 
-      <ConfirmDialog
-        isOpen={modals.deleteConfirm}
-        title="Move to Trash?"
-        message={`This will move ${pendingViewerDeleteId ? '1' : selectedIds.size} image(s) to the Trash bin. You can restore them later.`}
-        confirmLabel="Move to Trash"
-        isDangerous={true}
-        onConfirm={onDeleteConfirm}
-        onCancel={() => close('deleteConfirm')}
-      />
+            <ConfirmDialog
+                isOpen={modals.deleteConfirm}
+                onCancel={() => closeModal('deleteConfirm')}
+                onConfirm={onDeleteConfirm}
+                title="Delete Images"
+                message={`Are you sure you want to delete ${pendingViewerDeleteId ? 1 : selectedIds.size} image(s)? This action cannot be undone.`}
+                isDangerous={true}
+            />
 
-      <ConfirmDialog
-        isOpen={modals.deleteCollection}
-        title={`Delete "${collectionName}"?`}
-        message="This will delete the collection folder. The images themselves will remain in your library."
-        confirmLabel="Delete Collection"
-        isDangerous={true}
-        onConfirm={onDeleteCollectionConfirm}
-        onCancel={() => close('deleteCollection')}
-      />
+            <ConfirmDialog
+                isOpen={modals.deleteCollection}
+                onCancel={() => closeModal('deleteCollection')}
+                onConfirm={onDeleteCollectionConfirm}
+                title="Delete Collection"
+                message="Are you sure you want to delete this collection? Images will not be deleted from your library."
+                isDangerous={true}
+            />
 
-      <RenameModal
-        isOpen={modals.rename}
-        onClose={() => close('rename')}
-        selectedCount={selectedIds.size}
-        onRename={onRename}
-      />
+            <SlideshowModal
+                isOpen={modals.slideshow}
+                onClose={() => closeModal('slideshow')}
+                images={filteredImages}
+                initialIndex={0}
+                isShuffleDefault={slideshowShuffle}
+            />
 
-      {modals.compare && selectedIds.size === 2 && (
-        <CompareModal
-          imageA={images.find(i => i.id === Array.from(selectedIds)[0])!}
-          imageB={images.find(i => i.id === Array.from(selectedIds)[1])!}
-          onClose={() => close('compare')}
-          onToggleFavorite={toggleFavorite}
-        />
-      )}
+            <MetadataRecoveryModal
+                isOpen={modals.recovery}
+                onClose={() => closeModal('recovery')}
+                onConfirm={onRecoverMetadata}
+                isProcessing={isRecoveringMetadata}
+            />
 
-      <ShortcutsModal
-        isOpen={modals.shortcuts}
-        onClose={() => close('shortcuts')}
-        initialTab={shortcutsModalTab}
-      />
+            <AddToCollectionModal
+                isOpen={modals.addToCollection}
+                onClose={() => closeModal('addToCollection')}
+                collections={collections}
+                smartCollections={smartCollections}
+                selectedIds={Array.from(selectedIds)}
+                onConfirm={onCollectionAction}
+                mode={addToCollectionMode}
+                sourceCollectionId={sourceCollectionId}
+            />
 
-      <MetadataRecoveryModal
-        isOpen={modals.recovery}
-        onClose={() => close('recovery')}
-        isProcessing={isRecoveringMetadata}
-        onConfirm={onRecoverMetadata}
-      />
+            <CommandPalette
+                isOpen={modals.commandPalette}
+                onClose={() => closeModal('commandPalette')}
+                {...commandPaletteProps}
+            />
 
-      {modals.slideshow && (
-        <SlideshowModal
-          isOpen={modals.slideshow}
-          images={filteredImages}
-          initialIndex={0}
-          onClose={() => close('slideshow')}
-          isShuffleDefault={slideshowShuffle}
-        />
-      )}
+            <ShortcutsModal
+                isOpen={modals.shortcuts}
+                onClose={() => closeModal('shortcuts')}
+                initialTab={shortcutsModalTab as any}
+            />
 
-      <DonationModal
-        isOpen={modals.donation}
-        onClose={() => close('donation')}
-      />
+            {filteredImages.length >= 2 && Array.from(selectedIds).length >= 2 && (
+                <CompareModal
+                    imageA={filteredImages.find(i => i.id === Array.from(selectedIds)[0]) || filteredImages[0]}
+                    imageB={filteredImages.find(i => i.id === Array.from(selectedIds)[1]) || filteredImages[1]}
+                    onClose={() => closeModal('compare')}
+                    onToggleFavorite={toggleFavorite}
+                />
+            )}
 
-      <ExportModal
-        isOpen={modals.export}
-        onClose={() => { close('export'); onCloseExport?.(); }}
-        count={exportIds?.size || selectedIds.size}
-        onConfirm={onExportConfirm}
-        isExporting={isExporting}
-      />
-
-      <CommandPalette
-        isOpen={modals.commandPalette}
-        onClose={() => close('commandPalette')}
-        settings={settings}
-        {...commandPaletteProps}
-      />
-
-      <AddToCollectionModal
-        isOpen={modals.addToCollection}
-        onClose={() => close('addToCollection')}
-        collections={collections}
-        smartCollections={smartCollections}
-        selectedIds={Array.from(selectedIds)}
-        mode={addToCollectionMode}
-        sourceCollectionId={sourceCollectionId || undefined}
-        onConfirm={(ids, colId, mode, sourceId) => {
-          onCollectionAction(ids, colId, mode, sourceId);
-          close('addToCollection');
-        }}
-      />
-    </>
-  );
+            <DonationModal
+                isOpen={modals.donation}
+                onClose={() => closeModal('donation')}
+            />
+        </>
+    );
 };

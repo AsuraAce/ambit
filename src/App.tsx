@@ -2,30 +2,19 @@ import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HashRouter } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { Search, Import, Loader2 } from 'lucide-react';
-import { AIImage, ViewMode, LayoutMode, ContextMenuState, GeneratorTool } from './types';
-import { FilterPanel } from './components/FilterPanel';
-import { ImageViewer } from './components/ImageViewer';
-import { StatsDashboard } from './components/Charts';
-import { TimelineView } from './components/TimelineView';
-import { AppContextMenu } from './components/AppContextMenu';
-import { VirtualGrid, VirtualGridHandle } from './components/VirtualGrid';
-import { GridItem } from './components/GridItem';
-import { MaintenanceView } from './components/MaintenanceView';
-import { OnboardingWizard } from './components/OnboardingWizard';
+import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
-import { AppSidebar } from './components/AppSidebar';
-import { AppHeader } from './components/AppHeader';
-import { TitleBar } from './components/TitleBar';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { SelectionBar } from './components/SelectionBar';
-import { PinnedShelf } from './components/PinnedShelf';
-import { LoadingScreen } from './components/LoadingScreen';
-import { GridSkeleton } from './components/GridSkeleton';
-import { DragOverlay } from './components/DragOverlay';
+import { AppContextMenu } from './components/ui/AppContextMenu';
+import { OnboardingWizard } from './components/ui/OnboardingWizard';
+import { ImageViewer } from './features/viewer/components/ImageViewer';
+import { LoadingScreen } from './components/ui/LoadingScreen';
+import { TitleBar } from './components/ui/TitleBar';
+import { DragOverlay } from './components/ui/DragOverlay';
 import { useToast } from './hooks/useToast';
 import { useLibraryContext } from './hooks/useLibraryContext';
-import { isImageMasked } from './utils/maskingUtils';
+import { useAppHandlers } from './hooks/useAppHandlers';
+import { VirtualGridHandle } from './features/library/components/VirtualGrid';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -37,7 +26,6 @@ import { useTheme } from './hooks/useTheme';
 import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
-import { useAppHandlers } from './hooks/useAppHandlers';
 import { useAppActions } from './hooks/useAppActions';
 
 export default function App() {
@@ -256,313 +244,75 @@ export default function App() {
 
     return (
         <HashRouter>
-            <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-gray-100 font-sans selection:bg-sage-500/30 selection:text-white transition-colors duration-300 overflow-hidden flex flex-col">
+            <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
                 <TitleBar />
 
-                <div className="flex-1 flex overflow-hidden min-h-0 pt-10 pb-4 px-4 gap-4">
-
-                    {/* --- Sidebar --- */}
-                    <AppSidebar
-                        viewMode={viewMode}
-                        setViewMode={changeViewMode}
-                        filters={filters}
-                        setFilters={setFilters}
-                        isFilterPanelOpen={isFilterPanelOpen}
-                        setIsFilterPanelOpen={setIsFilterPanelOpen}
-                        onOpenSettings={() => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); }}
-                        onOpenShortcuts={() => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); }}
-                        onOpenDonation={() => modals.openModal('donation')}
-                        onOpenSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
-                        showSupportPulse={showSupportPulse}
-                    />
-
-                    <FilterPanel
-                        isVisible={isFilterPanelOpen}
-                        filters={filters}
-                        setFilters={setFilters}
-                        filteredImages={images}
-                        onCreateCollection={colOps.createCollection}
-                        onSaveSmartCollection={colOps.saveSmartCollection}
-                        onDeleteSmartCollection={colOps.deleteSmartCollection}
-                        onDropOnCollection={async (colId, data) => {
-                            try {
-                                const ids = JSON.parse(data);
-                                await colOps.addImagesToCollection(ids, colId);
-                                clearSelection();
-                                const col = collections.find(c => c.id === colId);
-                                addToast(`Added ${ids.length} images to ${col?.name || 'collection'}`, 'success');
-                            } catch { }
-                        }}
-                        onRenameCollection={colOps.renameCollection}
-                        onDeleteCollection={(id) => {
-                            modals.setCollectionToDelete(id);
-                            modals.openModal('deleteCollection');
-                        }}
-                        onToggleArchiveCollection={colOps.toggleArchiveCollection}
-                        onTogglePinCollection={colOps.togglePinCollection}
-                        onSetCollectionColor={colOps.setCollectionColor}
-                        onResetCollectionThumbnail={colOps.resetCollectionThumbnail}
-                        onPlayCollection={(id) => {
-                            setFilters(prev => ({ ...prev, collectionId: id }));
-                            modals.setSlideshowShuffle(false);
-                            modals.openModal('slideshow');
-                        }}
-                        onExportCollection={async (id) => {
-                            const col = collections.find(c => c.id === id);
-                            if (col) {
-                                try {
-                                    const { getCollectionImageIds } = await import('./services/db/collectionRepo');
-                                    const ids = await getCollectionImageIds(id);
-                                    if (ids.length > 0) {
-                                        setExportIds(new Set(ids));
-                                        modals.openModal('export');
-                                    } else {
-                                        addToast("No images found in this collection to export", "info");
-                                    }
-                                } catch (e) {
-                                    console.error("Failed to prepare collection export", e);
-                                    addToast("Failed to prepare export", "error");
-                                }
-                                return;
-                            }
-
-                            // If not a regular collection, check smart collections
-                            const smartCol = smartCollections.find(c => c.id === id);
-                            if (smartCol && smartCol.filters) {
-                                try {
-                                    const { buildSqlWhereClause } = await import('./utils/sqlHelpers');
-                                    const { searchImageIds } = await import('./services/db/searchRepo');
-
-                                    const allCols = [...collections, ...smartCollections];
-                                    const { where, params } = buildSqlWhereClause(
-                                        smartCol.filters,
-                                        privacyEnabled,
-                                        settings.maskingMode,
-                                        settings.maskedKeywords,
-                                        allCols
-                                    );
-
-                                    const ids = await searchImageIds(where, params);
-                                    if (ids.length > 0) {
-                                        setExportIds(new Set(ids));
-                                        modals.openModal('export');
-                                    } else {
-                                        addToast("No images found in this smart collection to export", "info");
-                                    }
-                                } catch (e) {
-                                    console.error("Failed to prepare smart collection export", e);
-                                    addToast("Failed to prepare export", "error");
-                                }
-                            }
-                        }}
-                    />
-
-                    <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-zinc-800/50 overflow-hidden relative">
-                        {/* Spotlight Effect */}
-                        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.08),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.15),transparent_60%)] z-10" />
-
-                        {isSearchFocused && <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSearchFocused(false)} />}
-
-                        <AppHeader
-                            viewMode={viewMode}
-                            filters={filters}
-                            setFilters={setFilters}
-                            searchProps={searchProps}
-                            layoutMode={layoutMode}
-                            setLayoutMode={setLayoutMode}
-                            sortOption={sortOption}
-                            setSortOption={setSortOption}
-                            displayedCount={totalImages}
-                            totalCount={scopeTotal}
-                            scopeName={scopeName}
-                            isFiltering={isFiltering}
-                            onImport={() => fileOps.fileInputRef.current?.click()}
-                            onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
-                            clearAllFilters={clearAllFilters}
-                        />
-
-                        <div className="flex-1 flex overflow-hidden min-h-0 relative">
-
-
-                            <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
-                                <ErrorBoundary>
-                                    {viewMode === 'dashboard' ? (
-                                        <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); changeViewMode('grid'); }} />
-                                    ) : viewMode === 'maintenance' ? (
-                                        <MaintenanceView
-                                            images={images}
-                                            onResolveDuplicate={handlers.handleResolveDuplicate}
-                                            onRestoreImages={handlers.handleRestoreImages}
-                                            onMoveToTrash={handlers.handleMoveToTrash}
-                                            onDeleteForever={handlers.handleDeleteForever}
-                                            onEmptyTrash={handlers.handleEmptyTrash}
-                                            onGroupImages={handlers.handleGroupImages}
-                                            onViewImage={(id) => setViewingImageId(id)}
-                                            onRegenerateThumbnails={fileOps.regenerateThumbnails}
-                                            maskedKeywords={settings.maskedKeywords}
-                                            privacyEnabled={privacyEnabled}
-                                            onUpdatePrompt={handlers.handleUpdatePrompt}
-                                            onUpdateModel={handlers.handleUpdateModel}
-                                            onUpdateTool={handlers.handleUpdateTool}
-                                            onUpdateNotes={(id, n) => { setImages(p => p.map(i => i.id === id ? { ...i, notes: n } : i)); addToast('Saved', 'success'); }}
-                                            onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); modals.openModal('settings'); } else { modals.openModal('recovery'); } }}
-                                            onToggleFavorite={(id) => toggleFavorite(id)}
-                                            onTogglePin={actions.handlePinImage}
-                                            availableTags={availableTags}
-                                        />
-                                    ) : (images.length > 0 || isFiltering) ? (
-                                        <>
-                                            {isFiltering ? (
-                                                <GridSkeleton layout={layoutMode} />
-                                            ) : (
-                                                <>
-                                                    {(filters.collectionId && viewMode !== 'timeline' && !filters.pinnedOnly) && (
-                                                        <PinnedShelf
-                                                            images={images.filter(i => i.isPinned)}
-                                                            isCollapsed={modals.isPinnedShelfCollapsed}
-                                                            onToggleCollapse={() => modals.setIsPinnedShelfCollapsed(p => !p)}
-                                                            selectedIds={selectedIds}
-                                                            maskedKeywords={settings.maskedKeywords}
-                                                            privacyEnabled={privacyEnabled}
-                                                            setImages={setImages}
-                                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
-                                                            onToggleSelection={handleSelectionToggle}
-                                                            onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                            onTogglePin={async (e, id) => {
-                                                                const img = images.find(i => i.id === id);
-                                                                if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                            }}
-                                                            onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                            thumbnailSize={settings.thumbnailSize}
-                                                            activeThumbnailUrl={activeCollection?.thumbnail || activeSmartCollection?.thumbnail}
-                                                            onRangeSelection={handleRangeSelection}
-                                                            onBackgroundClick={clearSelection}
-                                                        />
-                                                    )}
-                                                    {viewMode === 'timeline' ? (
-                                                        <TimelineView
-                                                            images={images}
-                                                            selectedIds={selectedIds}
-                                                            thumbnailSize={settings.thumbnailSize}
-                                                            sortOption={sortOption}
-                                                            maskedKeywords={settings.maskedKeywords}
-                                                            privacyEnabled={privacyEnabled}
-                                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
-                                                            onSelectionToggle={handleSelectionToggle}
-                                                            onToggleFavorite={(e, id) => { toggleFavorite(id); }}
-                                                            onTogglePin={async (e, id) => {
-                                                                const img = images.find(i => i.id === id);
-                                                                if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                            }}
-                                                            onContextMenu={(e, id) => { setContextMenu({ x: e.clientX, y: e.clientY, imageId: id }); }}
-                                                            onRangeSelection={handleRangeSelection}
-                                                            onBackgroundClick={clearSelection}
-                                                        />
-                                                    ) : (
-                                                        <VirtualGrid<AIImage>
-                                                            ref={gridRef}
-                                                            items={(filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images}
-                                                            layout={layoutMode}
-                                                            minItemWidth={settings.thumbnailSize}
-                                                            gap={16}
-                                                            padding={24}
-                                                            scrollContainerRef={scrollContainerRef}
-                                                            onEndReached={loadMoreImages}
-                                                            getItemRatio={(img) => {
-                                                                const w = img.width || 1;
-                                                                const h = img.height || 1;
-                                                                return w / h;
-                                                            }}
-                                                            onLayoutChange={handleLayoutChange}
-                                                            onRangeSelection={(indices, isAdditive) => {
-                                                                const itemsInGrid = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images;
-                                                                const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
-                                                                const pinnedCount = pinnedInShelf.length;
-                                                                const globalIndices = indices.map(idx => idx + pinnedCount);
-                                                                handleRangeSelection(globalIndices, isAdditive);
-                                                            }}
-                                                            onBackgroundClick={clearSelection}
-                                                            renderItem={(img, style, index, layout) => {
-                                                                const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
-                                                                const pinnedCount = pinnedInShelf.length;
-                                                                return (
-                                                                    <GridItem
-                                                                        key={img.id}
-                                                                        image={img}
-                                                                        style={style}
-                                                                        layoutPos={layout}
-                                                                        index={index + pinnedCount}
-                                                                        isSelected={selectedIds.has(img.id)}
-                                                                        selectedIds={selectedIds}
-                                                                        maskedKeywords={settings.maskedKeywords}
-                                                                        privacyEnabled={privacyEnabled}
-                                                                        setImages={setImages}
-                                                                        onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
-                                                                        onToggleSelection={handleSelectionToggle}
-                                                                        onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                                        onTogglePin={async (e, id) => {
-                                                                            const img = images.find(i => i.id === id);
-                                                                            if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                                        }}
-                                                                        onContextMenu={(e, id) => setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                        isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
-                                                                    />
-                                                                );
-                                                            }}
-                                                        />
-                                                    )}
-                                                </>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                                            {globalTotal === 0 ? (
-                                                <>
-                                                    <div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500">
-                                                        <Import className="w-12 h-12 text-sage-500 opacity-50" />
-                                                    </div>
-                                                    <h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-300">Your Ambit is empty</h3>
-                                                    <button onClick={() => fileOps.fileInputRef.current?.click()} className="px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl font-bold shadow-lg shadow-sage-500/20 transition-all hover:scale-105">Import Images</button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Search className="w-12 h-12 mb-4 opacity-20" />
-                                                    <p className="text-gray-500 dark:text-gray-400">No images match your current filters.</p>
-                                                    <button onClick={clearAllFilters} className="mt-4 text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 text-sm underline">Clear all filters</button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                </ErrorBoundary>
-                            </div>
-                        </div>
-
-                        <SelectionBar
-                            selectedIds={selectedIds}
-                            filteredImages={images}
-                            lastSelectedId={lastSelectedId}
-                            isExporting={fileOps.isExporting}
-                            confirmDelete={settings.confirmDelete}
-                            privacyEnabled={privacyEnabled}
-                            maskedKeywords={settings.maskedKeywords}
-                            onClearSelection={clearSelection}
-                            onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
-                            onExport={() => modals.openModal('export')}
-                            onRename={() => modals.openModal('rename')}
-                            onAddToCollection={() => handleOpenCollectionModal('add')}
-                            onToggleFavorite={actions.handleBulkFavorite}
-                            onTogglePin={actions.handleBulkPin}
-                            onToggleMask={actions.handleBulkMask}
-                            onCompare={() => modals.openModal('compare')}
-                            activeCollectionId={filters.collectionId}
-                            onRemoveFromCollection={handleRemoveFromCollection}
-                        />
-                    </main>
-                </div>
+                <AppLayout
+                    collections={collections}
+                    smartCollections={smartCollections}
+                    filters={filters}
+                    setFilters={setFilters}
+                    isFilterPanelOpen={isFilterPanelOpen}
+                    setIsFilterPanelOpen={setIsFilterPanelOpen}
+                    onRefreshCollections={refreshCollections}
+                    colOps={colOps}
+                    setExportIds={setExportIds}
+                    modals={modals}
+                    addToast={addToast}
+                    viewMode={viewMode}
+                    changeViewMode={changeViewMode}
+                    searchProps={searchProps}
+                    layoutMode={layoutMode}
+                    setLayoutMode={setLayoutMode}
+                    sortOption={sortOption}
+                    setSortOption={setSortOption}
+                    totalImages={totalImages}
+                    scopeTotal={scopeTotal}
+                    scopeName={scopeName}
+                    isFiltering={isFiltering}
+                    fileOps={fileOps}
+                    clearAllFilters={clearAllFilters}
+                    scrollContainerRef={scrollContainerRef}
+                    images={images}
+                    handlers={{ ...handlers, setImages, setContextMenu }}
+                    setViewingImageId={setViewingImageId}
+                    settings={settings}
+                    privacyEnabled={privacyEnabled}
+                    toggleFavorite={toggleFavorite}
+                    actions={actions}
+                    availableTags={availableTags}
+                    selectedIds={selectedIds}
+                    handleImageClick={handleImageClick}
+                    setSelectedImageIndex={setSelectedImageIndex}
+                    handleSelectionToggle={handleSelectionToggle}
+                    activeCollection={activeCollection}
+                    activeSmartCollection={activeSmartCollection}
+                    handleRangeSelection={handleRangeSelection}
+                    clearSelection={clearSelection}
+                    gridRef={gridRef}
+                    loadMoreImages={loadMoreImages}
+                    handleLayoutChange={handleLayoutChange}
+                    isSearchFocused={isSearchFocused}
+                    setIsSearchFocused={setIsSearchFocused}
+                    lastSelectedId={lastSelectedId}
+                    handleRemoveFromCollection={handleRemoveFromCollection}
+                    handleOpenCollectionModal={handleOpenCollectionModal}
+                />
 
                 {/* Overlays & Portals */}
-                <OnboardingWizard isOpen={!settings.hasCompletedOnboarding} onComplete={(s) => { setSettings(p => ({ ...p, ...s })); addToast("Setup complete!", "success"); }} initialApiKey={settings.googleGeminiApiKey || process.env.API_KEY} />
-                <input type="file" ref={fileOps.fileInputRef} className="hidden" multiple accept="image/png,image/jpeg,image/webp" onChange={fileOps.importImages} />
+                <OnboardingWizard
+                    isOpen={!settings.hasCompletedOnboarding}
+                    onComplete={(s) => { setSettings(p => ({ ...p, ...s })); addToast("Setup complete!", "success"); }}
+                    initialApiKey={settings.googleGeminiApiKey || process.env.API_KEY}
+                />
+                <input
+                    type="file"
+                    ref={fileOps.fileInputRef}
+                    className="hidden"
+                    multiple
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={fileOps.importImages}
+                />
                 <DragOverlay isVisible={isDraggingExternal} />
 
                 <GlobalModals
@@ -575,7 +325,7 @@ export default function App() {
                         actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
                         setExportIds(new Set());
                     }}
-                    onRename={actions.handleRename}
+                    onRename={(pattern: string, startNum: number) => actions.handleRename(pattern, startNum)}
                     onDeleteConfirm={actions.executeDelete}
                     onDeleteCollectionConfirm={() => {
                         if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
@@ -608,8 +358,13 @@ export default function App() {
                         onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
                         onImport: () => fileOps.fileInputRef.current?.click(),
                         onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
-                        onToggleAI: toggleAiSearch
+                        onToggleAI: toggleAiSearch,
+                        settings: settings
                     }}
+                    collections={collections}
+                    smartCollections={smartCollections}
+                    toggleFavorite={toggleFavorite}
+                    settings={settings}
                 />
 
                 <AnimatePresence>

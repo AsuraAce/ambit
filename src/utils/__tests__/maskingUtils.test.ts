@@ -5,7 +5,9 @@ import { AIImage } from '../../types';
 describe('maskingUtils', () => {
     const mockImage: AIImage = {
         id: '1',
-        path: 'test.png',
+        url: 'test.png',
+        thumbnailUrl: 'test-thumb.png',
+        filename: 'test.png',
         width: 512,
         height: 512,
         timestamp: Date.now(),
@@ -14,10 +16,14 @@ describe('maskingUtils', () => {
             negativePrompt: '',
             steps: 20,
             cfg: 7,
+            tool: 'Unknown' as any,
+            model: 'Unknown',
+            seed: 0,
+            sampler: 'Euler a',
         },
-        is_deleted: false,
-        is_favorite: false,
-        is_pinned: false,
+        isDeleted: false,
+        isFavorite: false,
+        isPinned: false,
         userMasked: undefined,
     };
 

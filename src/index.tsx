@@ -5,7 +5,7 @@ import './index.css';
 import { ToastProvider } from './contexts/ToastContext';
 import { LibraryProvider } from './contexts/LibraryContext';
 
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

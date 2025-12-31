@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { createContext, useState, useCallback, ReactNode } from 'react';
 import { ToastMessage } from '../types';
-import { ToastContainer } from '../components/Toast';
+import { ToastContainer } from '../components/ui/Toast';
 
 interface ToastContextType {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;

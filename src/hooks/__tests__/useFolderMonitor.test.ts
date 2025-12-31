@@ -12,7 +12,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should NOT scan if not loaded', () => {
-        const folders = [{ id: '1', path: '/test', isActive: true }];
+        const folders = [{ id: '1', path: '/test', isActive: true, imageCount: 0 }];
         renderHook(() => useFolderMonitor({
             isLoaded: false,
             monitoredFolders: folders,
@@ -24,7 +24,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should scan new active folders', () => {
-        const initialFolders = [{ id: '1', path: '/test1', isActive: true }];
+        const initialFolders = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
         const { rerender } = renderHook(({ folders }) => useFolderMonitor({
             isLoaded: true,
             monitoredFolders: folders,
@@ -37,7 +37,7 @@ describe('useFolderMonitor', () => {
         // Add new folder
         const updatedFolders = [
             ...initialFolders,
-            { id: '2', path: '/test2', isActive: true }
+            { id: '2', path: '/test2', isActive: true, imageCount: 0 }
         ];
 
         rerender({ folders: updatedFolders });
@@ -57,7 +57,7 @@ describe('useFolderMonitor', () => {
         });
 
         // Set loaded and add folder
-        rerender({ folders: [{ id: '1', path: '/test', isActive: true }], isLoaded: true });
+        rerender({ folders: [{ id: '1', path: '/test', isActive: true, imageCount: 0 }], isLoaded: true });
 
         expect(mockOnScan).toHaveBeenCalledWith('/test', true);
         expect(mockAddToast).not.toHaveBeenCalled(); // No toast on startup scan
