@@ -86,7 +86,8 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
 export const processNativePaths = async (
     paths: string[],
     thumbnailDir: string | undefined,
-    onProgress?: (current: number, total: number, message?: string) => void
+    onProgress?: (current: number, total: number, message?: string) => void,
+    defaultTool?: GeneratorTool // Added argument
 ): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     let skipped = 0;
@@ -157,6 +158,15 @@ export const processNativePaths = async (
                 const assetUrl = convertFileSrc(normPath);
                 const thumbPath = result.thumbnail || normPath;
 
+                // Apply Folder Variant Logic
+                // If the tool is "Automatic1111" (generic) or "Unknown", and we have a specific folder variant (e.g. Forge),
+                // we upgrade the tool type to the specific variant.
+                let finalTool = result.metadata.tool || GeneratorTool.UNKNOWN;
+                if ((finalTool === GeneratorTool.AUTOMATIC1111 || finalTool === GeneratorTool.UNKNOWN) &&
+                    defaultTool && defaultTool !== GeneratorTool.UNKNOWN && (defaultTool as string) !== 'Unknown') {
+                    finalTool = defaultTool;
+                }
+
                 const newImg: AIImage = {
                     id: normPath,
                     url: assetUrl,
@@ -169,7 +179,10 @@ export const processNativePaths = async (
                     isFavorite: !!result.extra.isFavorite,
                     isDeleted: false,
                     isMissing: false,
-                    metadata: mapMetadata(result.metadata)
+                    metadata: {
+                        ...mapMetadata(result.metadata),
+                        tool: finalTool
+                    }
                 };
 
                 batchImages.push(newImg);

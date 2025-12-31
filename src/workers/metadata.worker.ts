@@ -7,6 +7,9 @@ export enum GeneratorTool {
     COMFYUI = 'ComfyUI',
     INVOKEAI = 'InvokeAI',
     MIDJOURNEY = 'Midjourney',
+    SDNEXT = 'SD.Next',
+    FORGE = 'Forge',
+    ANAPNOE = 'Anapnoe',
     UNKNOWN = 'Unknown'
 }
 
@@ -341,6 +344,22 @@ const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) =>
 
         if (key === 'Version' && value.toLowerCase().includes('comfy')) {
             metadata.tool = GeneratorTool.COMFYUI;
+        }
+
+        // SD.Next often sets "App: SD.Next"
+        if (key === 'App' && value.toLowerCase().includes('sd.next')) {
+            metadata.tool = GeneratorTool.SDNEXT;
+        }
+
+        // Forge might not set "App" but if Version says Forge?
+        // (This is heuristic based on common behavior in forks)
+        if (key === 'App' && value.toLowerCase().includes('forge')) {
+            metadata.tool = GeneratorTool.FORGE;
+        }
+
+        // Some versions of Forge might put it in Version
+        if (key === 'Version' && value.toLowerCase().includes('forge')) {
+            metadata.tool = GeneratorTool.FORGE;
         }
 
         if (!foundModel && !metadata.model && key === 'VAE' && value === 'FLUX') {

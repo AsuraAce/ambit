@@ -124,7 +124,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
             <div className="flex-1 flex flex-col min-w-0 bg-background">
               <div className="flex items-center justify-between p-8 pb-4 shrink-0">
                 <div className="flex flex-col">
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white capitalize">{activeTab}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white capitalize">
+                    {activeTab === 'a1111' ? 'SD WebUI' : activeTab}
+                  </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and connections.</p>
                 </div>
                 <button type="button" onClick={onClose} className="p-2 bg-gray-200 dark:bg-white/5 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">

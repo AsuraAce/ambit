@@ -1,8 +1,82 @@
-import { readDir } from '@tauri-apps/plugin-fs';
-import { A1111Config, A1111FolderType, DiscoveryCandidate } from './types';
+import { readDir, readFile } from '@tauri-apps/plugin-fs';
+import { A1111Config, A1111FolderType, DiscoveryCandidate, WebUIVariant } from './types';
 import { normalizePath } from '../../utils/pathUtils';
 
 const MAX_DEPTH = 4;
+
+/**
+ * Attempts to detect the specific WebUI variant (A1111, Forge, SD.Next, Anapnoe)
+ * based on file structure signatures.
+ */
+export const detectWebUIVariation = async (rootPath: string): Promise<WebUIVariant> => {
+    try {
+        const entries = await readDir(rootPath);
+        const fileNames = new Set(entries.map(e => e.name.toLowerCase()));
+
+        // 1. Forge Detection (Robust)
+        // Newer Forge has 'modules_forge' folder
+        if (fileNames.has('modules_forge')) {
+            return WebUIVariant.FORGE;
+        }
+
+        // 2. Read README.md for definitive identification
+        // This is safe and reliable for identifying forks
+        if (fileNames.has('readme.md')) {
+            try {
+                // Find potential readme file with correct casing
+                const readmeName = entries.find(e => e.name.toLowerCase() === 'readme.md')?.name;
+                if (readmeName) {
+                    const bytes = await readFile(`${rootPath}/${readmeName}`);
+                    const content = new TextDecoder('utf-8').decode(bytes);
+                    const lowerContent = content.slice(0, 1000).toLowerCase(); // Scan first 1000 chars
+
+                    if (lowerContent.includes('sd.next') || lowerContent.includes('vladmandic')) {
+                        return WebUIVariant.SDNEXT;
+                    }
+                    if (lowerContent.includes('forge') && lowerContent.includes('webui')) {
+                        return WebUIVariant.FORGE;
+                    }
+                    if (lowerContent.includes('anapnoe')) {
+                        return WebUIVariant.ANAPNOE;
+                    }
+                }
+            } catch (e) {
+                // Ignore read errors, fall back to file structure
+            }
+        }
+
+        // 3. Fallback File Structure Checks
+        // Scan modules folder if it exists
+        let modulesFiles = new Set<string>();
+        if (fileNames.has('modules')) {
+            try {
+                const modEntries = await readDir(`${rootPath}/modules`);
+                modEntries.forEach(e => modulesFiles.add(e.name.toLowerCase()));
+            } catch (e) { }
+        }
+
+        // Forge Fallback
+        if (modulesFiles.has('forge_legacy.py') || fileNames.has('entry_with_update.py')) {
+            return WebUIVariant.FORGE;
+        }
+
+        // SD.Next Fallback
+        if (modulesFiles.has('installer.py') || modulesFiles.has('sd_next_impl.py')) {
+            return WebUIVariant.SDNEXT;
+        }
+
+        // 4. Final Fallback to A1111 if webui.py exists
+        if (fileNames.has('webui.py') || fileNames.has('webui.sh') || fileNames.has('webui.bat')) {
+            return WebUIVariant.A1111;
+        }
+
+        return WebUIVariant.UNKNOWN;
+
+    } catch (e) {
+        console.error("Failed to detect WebUI variant", e);
+        return WebUIVariant.UNKNOWN;
+    }
+};
 
 /**
  * Perform a dynamic discovery of potential A1111/SD folders.
@@ -18,6 +92,10 @@ export const discoverA1111Candidates = async (
     const normalizedRoot = normalizePath(rootPath);
 
     log(`Starting scan of ${normalizedRoot}`);
+
+    // Detect Variant First
+    const detectedVariant = await detectWebUIVariation(rootPath);
+    log(`Detected Installation Type: ${detectedVariant}`);
 
     // Helper to recursively count images in a folder
     const countImagesRecursive = async (path: string): Promise<number> => {
@@ -81,7 +159,8 @@ export const discoverA1111Candidates = async (
                         imageCount: totalImageCount,
                         inferredType: type,
                         isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
-                        isPriority: true
+                        isPriority: true,
+                        variant: detectedVariant
                     });
                     log(`  -> Added Priority: ${path} (Images: ${totalImageCount})`);
                 } else {
@@ -112,7 +191,8 @@ export const discoverA1111Candidates = async (
                         imageCount: totalImageCount,
                         inferredType: A1111FolderType.UNKNOWN,
                         isAlreadyLinked: existingPaths.has(normalizedPath.toLowerCase()),
-                        isPriority: false
+                        isPriority: false,
+                        variant: detectedVariant
                     });
                     log(`  -> Added Consolidated: ${path} (Images: ${totalImageCount})`);
                     // Consolidate here, don't recurse deeper if we found images and it's a "clean" custom folder
@@ -153,3 +233,4 @@ const inferTypeFromPath = (path: string): A1111FolderType => {
 
     return A1111FolderType.UNKNOWN;
 };
+

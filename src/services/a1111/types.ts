@@ -6,6 +6,14 @@ export enum A1111FolderType {
     UNKNOWN = 'unknown'
 }
 
+export enum WebUIVariant {
+    A1111 = 'Automatic1111',
+    FORGE = 'Forge',
+    SDNEXT = 'SD.Next',
+    ANAPNOE = 'Anapnoe',
+    UNKNOWN = 'Unknown'
+}
+
 export interface A1111Config {
     rootPath: string;
     folders: {
@@ -22,4 +30,5 @@ export interface DiscoveryCandidate {
     inferredType: A1111FolderType;
     isAlreadyLinked: boolean;
     isPriority: boolean;
+    variant?: WebUIVariant;
 }

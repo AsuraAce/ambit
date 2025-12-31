@@ -5,6 +5,9 @@ export enum GeneratorTool {
   AUTOMATIC1111 = 'Automatic1111',
   MIDJOURNEY = 'Midjourney',
   INVOKEAI = 'InvokeAI',
+  SDNEXT = 'SD.Next',
+  FORGE = 'Forge',
+  ANAPNOE = 'Anapnoe',
   UNKNOWN = 'Unknown'
 }
 
@@ -141,6 +144,7 @@ export interface MonitoredFolder {
   path: string;
   isActive: boolean;
   imageCount: number;
+  variant?: GeneratorTool; // Store the detected/assigned variant
 }
 
 export interface AppSettings {
