@@ -53,6 +53,8 @@ interface SearchContextType {
     setIsRegeneratingThumbnails: React.Dispatch<React.SetStateAction<boolean>>;
     thumbnailProgress: { current: number; total: number } | null;
     setThumbnailProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
+    isActivityDockDismissed: boolean;
+    setIsActivityDockDismissed: (val: boolean) => void;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -94,6 +96,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [importProgress, setImportProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
     const [isRegeneratingThumbnails, setIsRegeneratingThumbnails] = useState(false);
     const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number } | null>(null);
+    const [isActivityDockDismissed, setIsActivityDockDismissed] = useState(false);
 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
@@ -347,7 +350,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isRegeneratingThumbnails,
             setIsRegeneratingThumbnails,
             thumbnailProgress,
-            setThumbnailProgress
+            setThumbnailProgress,
+            isActivityDockDismissed,
+            setIsActivityDockDismissed
         }}>
             {children}
         </SearchContext.Provider>

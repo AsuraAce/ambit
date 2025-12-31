@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, ReactNode, useMemo, useCallback } from 'react';
+import { createContext, useContext, ReactNode, useMemo, useCallback, useEffect } from 'react';
 import { SettingsProvider, useSettings } from './SettingsContext';
 import { SyncProvider, useSync } from './SyncContext';
 import { CollectionProvider, useCollections } from './CollectionContext';
@@ -59,6 +59,8 @@ export interface LibraryContextType {
   activeSqlParams: any[];
   maintenanceCounts: any;
   refreshMaintenanceCounts: () => Promise<void>;
+  isActivityDockDismissed: boolean;
+  setIsActivityDockDismissed: (val: boolean) => void;
   privacyEnabled: boolean;
   setPrivacyEnabled: (val: boolean) => void;
 }
@@ -125,6 +127,14 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
   const searchCtx = useSearch();
   const syncCtx = useSync();
   const watcherCtx = useWatchers();
+
+  const isAnyTaskActive = searchCtx.isImporting || searchCtx.isRegeneratingThumbnails || syncCtx.syncStatus === 'syncing';
+
+  useEffect(() => {
+    if (isAnyTaskActive) {
+      searchCtx.setIsActivityDockDismissed(false);
+    }
+  }, [isAnyTaskActive]);
 
   const value = useMemo(() => ({
     ...settingsCtx,

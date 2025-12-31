@@ -11,6 +11,7 @@ import { PinnedShelf } from '../features/library/components/PinnedShelf';
 import { TimelineView } from '../features/library/components/TimelineView';
 import { VirtualGrid } from '../features/library/components/VirtualGrid';
 import { GridItem } from '../features/library/components/GridItem';
+import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
 import { Import, Search } from 'lucide-react';
 
@@ -341,6 +342,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     activeCollectionId={filters.collectionId}
                     onRemoveFromCollection={handleRemoveFromCollection}
                 />
+
+                <ActivityDock />
             </main>
         </div>
     );

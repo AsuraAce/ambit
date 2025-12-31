@@ -3,52 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Monitor, Loader2 } from "lucide-react";
 import { useLibraryContext } from "../../hooks/useLibraryContext";
 
-const ProgressOverlay = () => {
-    const { isRegeneratingThumbnails, thumbnailProgress, isImporting, importProgress, isLiveSyncing, syncState } = useLibraryContext() as any;
 
-    const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
-    const active = isRegeneratingThumbnails || isImporting || isSyncing;
-
-    const progress = isRegeneratingThumbnails
-        ? thumbnailProgress
-        : (isImporting ? importProgress : (isSyncing ? syncState?.progress : null));
-
-    const label = isRegeneratingThumbnails
-        ? "Optimizing"
-        : (isImporting ? "Importing" : (isSyncing ? "Syncing" : "Working"));
-
-    if (!active) return null;
-
-    const current = progress?.current || 0;
-    const total = progress?.total || 0;
-    const message = progress?.message || "";
-    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
-
-    return (
-        <div className="flex items-center gap-3 px-4 py-1.5 bg-sage-500/10 border border-sage-500/20 rounded-full animate-in fade-in zoom-in duration-300">
-            <Loader2 className="w-3.5 h-3.5 text-sage-500 animate-spin" />
-            <div className="flex flex-col min-w-[140px]">
-                <div className="flex items-center justify-between gap-4">
-                    <span className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-widest">{label}</span>
-                    <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 tabular-nums">
-                        {total > 0 ? `${current.toLocaleString()} / ${total.toLocaleString()}` : '...'}
-                    </span>
-                </div>
-                <div className="w-full h-1 bg-gray-200 dark:bg-zinc-800 rounded-full overflow-hidden mt-1 relative">
-                    <div
-                        className="h-full bg-sage-500 shadow-[0_0_8px_rgba(139,174,124,0.4)] transition-all duration-300 ease-out"
-                        style={{ width: `${percent}%` }}
-                    />
-                </div>
-                {message && (
-                    <span className="text-[8px] text-gray-400 dark:text-gray-500 truncate max-w-[180px] mt-0.5 font-medium italic">
-                        {message}
-                    </span>
-                )}
-            </div>
-        </div>
-    );
-};
 
 export const TitleBar = () => {
     const [appWindow, setAppWindow] = useState<any>(null);
@@ -95,8 +50,7 @@ export const TitleBar = () => {
                 <span className="text-xs font-bold text-gray-500 dark:text-gray-400">AMBIT</span>
             </div>
 
-            {/* Global Progress Indicator */}
-            <ProgressOverlay />
+
 
             <div className="flex h-full">
                 <button
