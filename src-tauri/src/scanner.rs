@@ -381,7 +381,7 @@ pub fn scan_image_internal(
 
     if is_png && extract_workflow {
         let mut reader = BufReader::new(file);
-        reader.seek(SeekFrom::Start(8)).map_err(|e| e.to_string())?;
+        reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
         if let Ok(c) = metadata::extract_png_chunks(&mut reader) {
             chunks.extend(c);
         }
@@ -390,7 +390,10 @@ pub fn scan_image_internal(
     let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
 
-    if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
+    if let Some(params) = chunks.get("parameters")
+        .or_else(|| chunks.get("Parameters"))
+        .or_else(|| chunks.get("PARAMETERS")) 
+    {
         parsed_metadata = metadata::extract_a1111_metadata(params);
         found_metadata = true;
     }
