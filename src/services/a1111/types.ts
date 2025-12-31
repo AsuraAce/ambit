@@ -3,6 +3,7 @@ export enum A1111FolderType {
     IMG2IMG = 'img2img',
     EXTRAS = 'extras',
     GRID = 'grid',
+    SAVED = 'saved',
     UNKNOWN = 'unknown'
 }
 

@@ -226,10 +226,11 @@ const inferTypeFromPath = (path: string): A1111FolderType => {
 
     // Check specific folder names (not just containing the word)
     const parts = lower.split(/[\\/]/);
-    if (parts.some(p => p === 'txt2img-images' || p === 'txt2img')) return A1111FolderType.TXT2IMG;
-    if (parts.some(p => p === 'img2img-images' || p === 'img2img')) return A1111FolderType.IMG2IMG;
+    if (parts.some(p => p === 'txt2img-images' || p === 'txt2img' || p === 'text')) return A1111FolderType.TXT2IMG;
+    if (parts.some(p => p === 'img2img-images' || p === 'img2img' || p === 'image')) return A1111FolderType.IMG2IMG;
     if (parts.some(p => p === 'extras-images' || p === 'extras' || p === 'upscale')) return A1111FolderType.EXTRAS;
     if (parts.some(p => p === 'grids' || p === 'grids-images')) return A1111FolderType.GRID;
+    if (parts.some(p => p === 'save' || p === 'saved')) return A1111FolderType.SAVED;
 
     return A1111FolderType.UNKNOWN;
 };

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown } from 'lucide-react';
+import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { A1111FolderType, DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
@@ -197,6 +197,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                 </div>
                                 <button
                                     type="button"
+                                    title="Browse"
                                     onClick={async () => {
                                         try {
                                             const { open } = await import('@tauri-apps/plugin-dialog');
@@ -207,9 +208,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                             }
                                         } catch (e) { console.error(e); }
                                     }}
-                                    className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
+                                    className="aspect-square h-[42px] flex items-center justify-center bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all"
                                 >
-                                    Browse
+                                    <FolderOpen className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
@@ -371,6 +372,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                                         <option value="img2img">img2img</option>
                                                         <option value="extras">Extras</option>
                                                         <option value="grid">Grids</option>
+                                                        <option value="saved">Saved</option>
                                                         <option value="unknown">Unknown</option>
                                                     </select>
                                                 </td>
@@ -418,7 +420,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                     )}
 
                 </div>
-            </section>
-        </div>
+            </section >
+        </div >
     );
 });
