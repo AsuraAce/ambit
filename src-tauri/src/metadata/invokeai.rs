@@ -77,3 +77,64 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
 
     meta
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_invokeai_metadata_legacy() {
+        let payload = json!({
+            "prompt": [
+                { "prompt": "a professional portrait" },
+                { "prompt": "extreme detail" }
+            ],
+            "steps": 30,
+            "cfg_scale": 7.5,
+            "seed": 42,
+            "scheduler": "k_euler_a"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.tool, "InvokeAI");
+        assert_eq!(meta.positive_prompt, "a professional portrait extreme detail");
+        assert_eq!(meta.steps, 30);
+        assert_eq!(meta.cfg, 7.5);
+        assert_eq!(meta.seed, 42);
+        assert_eq!(meta.sampler, "k_euler_a");
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_graph() {
+        let payload = json!({
+            "positive_prompt": "modern house in the hills",
+            "negative_prompt": "low quality, blurry",
+            "steps": 25,
+            "cfg": 8.0,
+            "seed": 123456,
+            "sampler_name": "dpmpp_2m",
+            "model": {
+                "model_name": "stable-diffusion-xl-base-1.0"
+            }
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "modern house in the hills");
+        assert_eq!(meta.negative_prompt, "low quality, blurry");
+        assert_eq!(meta.cfg, 8.0);
+        assert_eq!(meta.sampler, "dpmpp_2m");
+        assert_eq!(meta.model, "stable-diffusion-xl-base-1.0");
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_conditioning() {
+        let payload = json!({
+            "positive_conditioning": "mountain landscape",
+            "negative_conditioning": "clouds",
+            "is_intermediate": true
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "mountain landscape");
+        assert_eq!(meta.negative_prompt, "clouds");
+        assert!(meta.is_intermediate);
+    }
+}

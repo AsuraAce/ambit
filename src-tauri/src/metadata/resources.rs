@@ -84,3 +84,80 @@ pub fn scan_for_resources(val: &serde_json::Value, res: &mut Resources) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_loras_basic() {
+        let mut res = Resources::default();
+        let payload = json!([
+            { "lora_name": "epiNoiseOffset", "weight": 1.0 },
+            { "model_name": "detailer", "weight": 0.5 }
+        ]);
+        extract_loras(&payload, &mut res);
+        assert_eq!(res.loras.len(), 2);
+        assert!(res.loras.contains(&"epiNoiseOffset".to_string()));
+        assert!(res.loras.contains(&"detailer (0.50)".to_string()));
+    }
+
+    #[test]
+    fn test_extract_controlnets_basic() {
+        let mut res = Resources::default();
+        let payload = json!([
+            { "control_model": "control_v11p_sd15_canny" },
+            { "model_name": "control_v11f1p_sd15_depth" }
+        ]);
+        extract_controlnets(&payload, &mut res);
+        assert_eq!(res.control_nets.len(), 2);
+        assert!(res.control_nets.contains(&"control_v11p_sd15_canny".to_string()));
+        assert!(res.control_nets.contains(&"control_v11f1p_sd15_depth".to_string()));
+    }
+
+    #[test]
+    fn test_scan_for_resources_nested() {
+        let mut res = Resources::default();
+        let payload = json!({
+            "metadata": {
+                "loras": [
+                    { "lora_name": "style1", "weight": 0.8 }
+                ],
+                "controlnets": [
+                    { "control_model": "canny" }
+                ]
+            },
+            "nodes": {
+                "1": {
+                    "loras": [
+                        { "model_name": "style2", "weight": 1.0 }
+                    ]
+                }
+            }
+        });
+        scan_for_resources(&payload, &mut res);
+        assert_eq!(res.loras.len(), 2);
+        assert!(res.loras.contains(&"style1 (0.80)".to_string()));
+        assert!(res.loras.contains(&"style2".to_string()));
+        assert_eq!(res.control_nets.len(), 1);
+        assert!(res.control_nets.contains(&"canny".to_string()));
+    }
+
+    #[test]
+    fn test_scan_for_resources_deduplication() {
+        let mut res = Resources::default();
+        let payload = json!({
+            "loras": [
+                { "lora_name": "style1", "weight": 1.0 }
+            ],
+            "nested": {
+                "loras": [
+                    { "lora_name": "style1", "weight": 1.0 }
+                ]
+            }
+        });
+        scan_for_resources(&payload, &mut res);
+        assert_eq!(res.loras.len(), 1);
+    }
+}

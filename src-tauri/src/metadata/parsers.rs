@@ -284,3 +284,58 @@ pub fn parse_exif(data: &[u8]) -> Option<String> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_parse_exif_le_ascii() {
+        // Simple case: UserComment directly in IFD0
+        let mut data = vec![0u8; 100];
+        data[0..2].copy_from_slice(b"II");
+        data[2..4].copy_from_slice(&0x2Au16.to_le_bytes());
+        data[4..8].copy_from_slice(&8u32.to_le_bytes()); 
+
+        // IFD0: 1 entry
+        data[8..10].copy_from_slice(&1u16.to_le_bytes());
+        
+        // Entry 1: UserComment (0x9286)
+        let entry_offset = 10;
+        data[entry_offset..entry_offset+2].copy_from_slice(&0x9286u16.to_le_bytes());
+        data[entry_offset+2..entry_offset+4].copy_from_slice(&7u16.to_le_bytes()); // Undefined type
+        data[entry_offset+4..entry_offset+8].copy_from_slice(&19u32.to_le_bytes()); // Count (8 + 11)
+        data[entry_offset+8..entry_offset+12].copy_from_slice(&30u32.to_le_bytes()); // Offset 30
+
+        // Data at offset 30
+        let data_start = 30;
+        data[data_start..data_start+8].copy_from_slice(b"ASCII\0\0\0");
+        data[data_start+8..data_start+19].copy_from_slice(b"Hello World");
+        
+        let result = parse_exif(&data);
+        assert!(result.is_some(), "Result should be Some");
+        assert_eq!(result.unwrap(), "Hello World");
+    }
+
+    #[test]
+    fn test_extract_png_chunks_basic() {
+        // Mock a minimal PNG with a tEXt chunk
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
+        
+        // chunk 1: tEXt (14 bytes: Software\0Ambit)
+        png.extend_from_slice(&14u32.to_be_bytes());
+        png.extend_from_slice(b"tEXt");
+        png.extend_from_slice(b"Software\0Ambit");
+        png.extend_from_slice(&[0; 4]); // CRC
+        
+        // chunk 2: IEND
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0xAE, 0x42, 0x60, 0x82]); // IEND CRC
+        
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert_eq!(chunks.get("Software").map(|s| s.as_str()), Some("Ambit"));
+    }
+}
