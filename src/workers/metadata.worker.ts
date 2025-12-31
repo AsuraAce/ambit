@@ -54,6 +54,10 @@ export interface ParseResult {
 // Note: In a worker, TextDecoder is available in global scope in modern browsers.
 const textDecoder = new TextDecoder('utf-8');
 
+const sanitize = (text: string): string => {
+    return text.replace(/\0/g, '').trim();
+};
+
 const findNodeByOutputLink = (nodes: any[], linkId: number | string): { node: any, slotIndex: number } | null => {
     if (!linkId) return null;
     for (const node of nodes) {
@@ -271,27 +275,34 @@ const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
 };
 
 const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) => {
-    const lines = text.split('\n');
-    let positivePrompt = [];
-    let negativePrompt = '';
-    let paramsLine = '';
-    let isNegative = false;
+    const sanitized = sanitize(text);
+    metadata.rawParameters = sanitized;
+    const lines = sanitized.split('\n').map(l => l.trim());
+    if (lines.length === 0) return;
+
+    let positiveParts: string[] = [];
+    let negativePrompt = "";
+    let paramsLine = "";
+    let state = 0; // 0: positive, 1: negative, 2: params
 
     for (const line of lines) {
-        if (line.startsWith('Negative prompt:')) {
-            isNegative = true;
-            negativePrompt += line.substring(16).trim();
-        } else if (line.startsWith('Steps: ')) {
-            paramsLine = line;
-        } else if (isNegative) {
-            if (!line.startsWith('Steps: ')) negativePrompt += ' ' + line.trim();
-            else paramsLine = line;
-        } else {
-            positivePrompt.push(line);
+        if (line.startsWith("Negative prompt: ")) {
+            state = 1;
+            negativePrompt = line.substring(17).trim();
+        } else if (line.startsWith("Steps: ")) {
+            state = 2;
+            paramsLine = line.trim();
+        } else if (state === 0) {
+            positiveParts.push(line);
+        } else if (state === 1) {
+            negativePrompt += " " + line;
+        } else if (state === 2) {
+            // Some versions might have extra info lines
+            if (!paramsLine.includes("Steps: ")) paramsLine = line;
         }
     }
 
-    metadata.positivePrompt = positivePrompt.join(' ').trim();
+    metadata.positivePrompt = positiveParts.join("\n").trim();
     metadata.negativePrompt = negativePrompt.trim();
 
     const loraRegex = /<lora:([^:>]+)(?::[^>]+)?>/g;
@@ -302,70 +313,72 @@ const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) =>
     }
     if (loras.size > 0) metadata.loras = Array.from(loras);
 
-    const pairs = paramsLine.split(', ');
-    let foundModel = false;
     let variationSeed = '';
     let variationStrength = '';
 
-    pairs.forEach(pair => {
-        const [key, value] = pair.split(': ');
-        if (!value) return;
-        if (key === 'Steps') metadata.steps = parseInt(value);
-        if (key === 'Sampler') metadata.sampler = value;
-        if (key === 'CFG scale') metadata.cfg = parseFloat(value);
-        if (key === 'Seed') metadata.seed = parseInt(value);
-        if (key === 'Variation seed') variationSeed = value;
-        if (key === 'Variation seed strength') variationStrength = value;
-        if (key === 'Model' && value.trim().length > 0 && value !== 'Unknown') {
-            metadata.model = value;
-            foundModel = true;
-        }
+    if (paramsLine) {
+        const parts = paramsLine.split(', ');
+        for (const part of parts) {
+            const [key, ...valParts] = part.split(': ');
+            if (valParts.length > 0) {
+                const k = key.trim();
+                const v = valParts.join(': ').trim();
 
-        if (key === 'VAE') metadata.vae = value;
-        if (key === 'Clip skip') metadata.clipSkip = parseInt(value);
-        if (key === 'Denoising strength') metadata.denoisingStrength = parseFloat(value);
-        if (key === 'Hires upscale') metadata.hiresUpscale = parseFloat(value);
-        if (key === 'Hires steps') metadata.hiresSteps = parseInt(value);
-        if (key === 'Hires upscaler') metadata.hiresUpscaler = value;
-        if (key === 'Model hash' || key === 'sd_model_hash') {
-            if (!metadata.modelHash) metadata.modelHash = value;
-        }
+                switch (k) {
+                    case 'Steps': metadata.steps = parseInt(v); break;
+                    case 'Sampler': metadata.sampler = v; break;
+                    case 'CFG scale': metadata.cfg = parseFloat(v); break;
+                    case 'Seed': metadata.seed = parseInt(v); break;
+                    case 'Model':
+                    case 'Checkpoint':
+                    case 'Model name':
+                    case 'SD model':
+                        metadata.model = v;
+                        break;
+                    case 'VAE': metadata.vae = v; break;
+                    case 'Clip skip': metadata.clipSkip = parseInt(v); break;
+                    case 'Denoising strength': metadata.denoisingStrength = parseFloat(v); break;
+                    case 'Hires upscale': metadata.hiresUpscale = parseFloat(v); break;
+                    case 'Hires steps': metadata.hiresSteps = parseInt(v); break;
+                    case 'Hires upscaler': metadata.hiresUpscaler = v; break;
+                    case 'Model hash': metadata.modelHash = v; break;
+                    case 'App': {
+                        const lowVal = v.toLowerCase();
+                        if (lowVal.includes('sd.next') || lowVal.includes('sdnext')) {
+                            metadata.tool = GeneratorTool.SDNEXT;
+                        } else if (lowVal.includes('forge')) {
+                            metadata.tool = GeneratorTool.FORGE;
+                        }
+                        break;
+                    }
+                    case 'Version': {
+                        const lowVal = v.toLowerCase();
+                        if (metadata.tool === GeneratorTool.AUTOMATIC1111 || !metadata.tool) {
+                            if (lowVal.includes('vlad') || lowVal.includes('next') || lowVal.includes('sd.next')) {
+                                metadata.tool = GeneratorTool.SDNEXT;
+                            } else if (lowVal.includes('forge')) {
+                                metadata.tool = GeneratorTool.FORGE;
+                            }
+                        }
+                        break;
+                    }
+                    case 'Variation seed': variationSeed = v; break;
+                    case 'Variation seed strength': variationStrength = v; break;
+                }
 
-        if (key.startsWith('ControlNet')) {
-            const modelMatch = value.match(/Model: ([^,]+)/);
-            if (modelMatch) {
-                if (!metadata.controlNets) metadata.controlNets = [];
-                const modelName = modelMatch[1].trim();
-                if (!metadata.controlNets.includes(modelName)) {
-                    metadata.controlNets.push(modelName);
+                if (k.startsWith('ControlNet')) {
+                    const modelMatch = v.match(/Model: ([^,]+)/);
+                    if (modelMatch) {
+                        if (!metadata.controlNets) metadata.controlNets = [];
+                        const modelName = modelMatch[1].trim();
+                        if (!metadata.controlNets.includes(modelName)) {
+                            metadata.controlNets.push(modelName);
+                        }
+                    }
                 }
             }
         }
-
-        if (key === 'Version' && value.toLowerCase().includes('comfy')) {
-            metadata.tool = GeneratorTool.COMFYUI;
-        }
-
-        // SD.Next often sets "App: SD.Next"
-        if (key === 'App' && value.toLowerCase().includes('sd.next')) {
-            metadata.tool = GeneratorTool.SDNEXT;
-        }
-
-        // Forge might not set "App" but if Version says Forge?
-        // (This is heuristic based on common behavior in forks)
-        if (key === 'App' && value.toLowerCase().includes('forge')) {
-            metadata.tool = GeneratorTool.FORGE;
-        }
-
-        // Some versions of Forge might put it in Version
-        if (key === 'Version' && value.toLowerCase().includes('forge')) {
-            metadata.tool = GeneratorTool.FORGE;
-        }
-
-        if (!foundModel && !metadata.model && key === 'VAE' && value === 'FLUX') {
-            metadata.model = 'Flux.1';
-        }
-    });
+    }
 
     if (variationSeed && variationStrength) {
         metadata.variationId = `${variationSeed}:${variationStrength}`;
@@ -698,12 +711,206 @@ const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
     return chunks;
 };
 
+const parseExifData = (data: Uint8Array): string | null => {
+    // Basic EXIF parser focused on UserComment (0x9286)
+    // EXIF blob usually starts with TIFF header if it's raw
+    // or 'Exif\0\0' if it's JPEG APP1 style, but PNG 'eXIf' chunk is just the raw block (TIFF header).
+
+    // Check for TIFF header
+    let isLittleEndian = false;
+    if (data[0] === 0x49 && data[1] === 0x49) {
+        isLittleEndian = true;
+    } else if (data[0] === 0x4D && data[1] === 0x4D) {
+        isLittleEndian = false;
+    } else {
+        return null; // Not valid TIFF/EXIF
+    }
+
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+
+    // Helper to read data respecting endianness
+    const getU16 = (offset: number) => view.getUint16(offset, isLittleEndian);
+    const getU32 = (offset: number) => view.getUint32(offset, isLittleEndian);
+
+    // Verify 42 (0x002A) signature
+    if (getU16(2) !== 0x002A) return null;
+
+    const firstIfdOffset = getU32(4);
+    if (firstIfdOffset < 8 || firstIfdOffset >= data.length) return null;
+
+    // We need to traverse IFDs. UserComment is usually in the Exif IFD.
+    // IFD Structure: [count u16] [entry 12bytes]... [nextIFD u32]
+
+    const readIfd = (offset: number): string | null => {
+        if (offset >= data.length) return null;
+        const entryCount = getU16(offset);
+        const entriesStart = offset + 2;
+
+        // Look for Exif Offset Tag (0x8769) or UserComment (0x9286)
+        // 0x8769 is pointer to Exif IFD
+
+        let exifIfdOffset = 0;
+
+        for (let i = 0; i < entryCount; i++) {
+            const entryOffset = entriesStart + (i * 12);
+            if (entryOffset + 12 > data.length) break;
+
+            const tag = getU16(entryOffset);
+            const type = getU16(entryOffset + 2);
+            const count = getU32(entryOffset + 4);
+            const valueOffsetOrData = getU32(entryOffset + 8); // This implies value fits in 4 bytes if < 4 bytes, else it's offset
+
+            // Tag 0x8769: Exif Offset
+            if (tag === 0x8769) {
+                exifIfdOffset = valueOffsetOrData;
+            }
+
+            // Tag 0x9286: UserComment
+            if (tag === 0x9286) {
+                // UserComment is type 7 (undefined) usually
+                // It points to a data block
+                const dataOffset = valueOffsetOrData;
+                if (dataOffset + 8 < data.length) { // Minimum header size
+                    // Read 'ASCII\0\0\0' or 'UNICODE\0' etc
+                    // SDNext/A1111 usually use ASCII header or just UTF-8
+
+                    // The standard usually requires an 8-byte header:
+                    // ASCII\0\0\0 (41 53 43 49 49 00 00 00)
+                    // UNICODE\0 (55 4E 49 43 4F 44 45 00)
+                    // or \0\0\0\0\0\0\0\0 for undefined.
+
+                    const encodingKey = textDecoder.decode(data.slice(dataOffset, dataOffset + 8));
+                    let start = dataOffset + 8;
+
+                    if (encodingKey.startsWith('ASCII')) {
+                        // It is ASCII (utf-8 compatible usually)
+                        return sanitize(textDecoder.decode(data.slice(start, start + count - 8)));
+                    } else if (encodingKey.startsWith('UNICODE')) {
+                        // Is typically UCS-2 or UTF-16
+                        // TextDecoder supports utf-16
+                        const payload = data.slice(start, start + count - 8);
+                        const decoder = new TextDecoder(isLittleEndian ? 'utf-16le' : 'utf-16be');
+                        return sanitize(decoder.decode(payload));
+                    } else if (data[dataOffset] === 0) {
+                        // Try default decode
+                        return sanitize(textDecoder.decode(data.slice(start, start + count - 8)));
+                    } else {
+                        // No header? Try raw
+                        return sanitize(textDecoder.decode(data.slice(dataOffset, dataOffset + count)));
+                    }
+                }
+            }
+        }
+
+        // If we found Exif Pointer, recurse
+        if (exifIfdOffset > 0) {
+            return readIfd(exifIfdOffset);
+        }
+
+        return null;
+    };
+
+    return readIfd(firstIfdOffset);
+};
+
+// Decompression helper using browser-native DecompressionStream
+const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array | null> => {
+    try {
+        // DecompressionStream is available in modern browser environments (webview2/webkit)
+        const ds = new (globalThis as any).DecompressionStream('deflate');
+        const decompressedStream = new Response(buffer as any).body?.pipeThrough(ds);
+        if (!decompressedStream) return null;
+        const res = await new Response(decompressedStream).arrayBuffer();
+        return new Uint8Array(res);
+    } catch (e) {
+        // Fallback or fail
+        return null;
+    }
+};
+
 // Worker Message Handler
-self.onmessage = (e: MessageEvent) => {
+self.onmessage = async (e: MessageEvent) => {
     let { chunks, buffer, filename, requestId, path } = e.data;
 
+    // Modified parsePngChunks to include eXIf and supported compressed chunks
+    const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record<string, string>> => {
+        const chunks: Record<string, string> = {};
+        const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+        if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) return chunks;
+
+        let pos = 8;
+        while (pos + 8 < buffer.length) {
+            const length = view.getUint32(pos);
+            const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
+            pos += 8;
+
+            if (type === 'tEXt') {
+                const data = buffer.slice(pos, pos + length);
+                const nullPos = data.indexOf(0);
+                if (nullPos !== -1) {
+                    const key = textDecoder.decode(data.slice(0, nullPos));
+                    chunks[key] = textDecoder.decode(data.slice(nullPos + 1));
+                }
+            } else if (type === 'zTXt') {
+                const data = buffer.slice(pos, pos + length);
+                const nullPos = data.indexOf(0);
+                if (nullPos !== -1) {
+                    const key = textDecoder.decode(data.slice(0, nullPos));
+                    // zTXt: key (null) method (1 byte, must be 0 for deflate) compressedData
+                    if (data[nullPos + 1] === 0) { // Compression method 0 (deflate)
+                        const compressed = data.slice(nullPos + 2);
+                        const decompressed = await decompressDeflate(compressed);
+                        if (decompressed) {
+                            chunks[key] = textDecoder.decode(decompressed);
+                        }
+                    }
+                }
+            } else if (type === 'iTXt') {
+                const data = buffer.slice(pos, pos + length);
+                const nullPos = data.indexOf(0);
+                if (nullPos !== -1) {
+                    const key = textDecoder.decode(data.slice(0, nullPos));
+                    const isCompressed = data[nullPos + 1] === 1;
+                    const method = data[nullPos + 2]; // Compression method (0 for deflate)
+
+                    let textStart = nullPos + 3;
+                    while (textStart < data.length && data[textStart] !== 0) textStart++;
+                    textStart++; // Skip Lang
+                    while (textStart < data.length && data[textStart] !== 0) textStart++;
+                    textStart++; // Skip Trans
+
+                    if (isCompressed) {
+                        if (method === 0) { // Compression method 0 (deflate)
+                            const compressed = data.slice(textStart);
+                            const decompressed = await decompressDeflate(compressed);
+                            if (decompressed) {
+                                chunks[key] = textDecoder.decode(decompressed);
+                            }
+                        }
+                    } else {
+                        chunks[key] = textDecoder.decode(data.slice(textStart));
+                    }
+                }
+            } else if (type === 'eXIf') {
+                const data = buffer.slice(pos, pos + length);
+                const exifComment = parseExifData(data);
+                if (exifComment) {
+                    // Try to avoid overwriting standard parameters if already found, 
+                    // but usually eXIf is the fallback.
+                    if (!chunks['parameters']) chunks['parameters'] = exifComment;
+                }
+            } else if (type === 'IEND') {
+                break;
+            }
+
+            pos += length + 4; // Data + CRC
+        }
+        return chunks;
+    };
+
     if (!chunks && buffer) {
-        chunks = parsePngChunks(buffer);
+        chunks = await parsePngChunksEnhanced(buffer);
     }
 
     if (!chunks && !filename) {
@@ -718,17 +925,37 @@ self.onmessage = (e: MessageEvent) => {
         let foundAuthoritative = false;
 
         if (chunks) {
-            // A1111
+            // A1111 / SD.Next
             if (chunks.parameters) {
                 parseA1111Parameters(chunks.parameters, metadata);
                 metadata.rawParameters = chunks.parameters;
-                metadata.tool = GeneratorTool.AUTOMATIC1111;
+                if (!metadata.tool) metadata.tool = GeneratorTool.AUTOMATIC1111;
                 foundAuthoritative = true;
             }
 
-            // ComfyUI
+            // SD.Next specific JSON chunks (fallback)
+            const sdNextMetadata = chunks['sd-metadata'] || chunks['metadata'];
+            if (sdNextMetadata && !foundAuthoritative) {
+                try {
+                    const json = JSON.parse(sdNextMetadata);
+                    // SD.Next JSON often contains a 'parameters' key or direct keys
+                    if (json.parameters) {
+                        parseA1111Parameters(json.parameters, metadata);
+                        metadata.rawParameters = json.parameters;
+                    } else if (json.prompt) {
+                        metadata.positivePrompt = json.prompt;
+                        if (json.negative_prompt) metadata.negativePrompt = json.negative_prompt;
+                        if (json.seed) metadata.seed = Number(json.seed);
+                        if (json.steps) metadata.steps = Number(json.steps);
+                    }
+                    metadata.tool = GeneratorTool.SDNEXT;
+                    foundAuthoritative = true;
+                } catch { }
+            }
+
+            // ComfyUI (Skip if already found A1111 meta, usually they don't overlap)
             const workflow = chunks.workflow || chunks.prompt;
-            if (workflow) {
+            if (workflow && !foundAuthoritative) {
                 try {
                     const json = JSON.parse(workflow);
                     parseComfyUIMetadata(json, metadata);
@@ -740,7 +967,7 @@ self.onmessage = (e: MessageEvent) => {
 
             // InvokeAI
             const invokeMeta = chunks.invokeai_metadata || chunks['sd-metadata'] || chunks.dream_metadata;
-            if (invokeMeta) {
+            if (invokeMeta && !foundAuthoritative) {
                 try {
                     const json = JSON.parse(invokeMeta);
                     parseInvokeAIMetadata(json, metadata, extra);
@@ -751,7 +978,7 @@ self.onmessage = (e: MessageEvent) => {
 
             // InvokeAI Workflow
             const workflowChunk = chunks.invokeai_workflow || chunks.invokeai_graph || chunks.workflow || chunks.graph;
-            if (workflowChunk) {
+            if (workflowChunk && !foundAuthoritative) {
                 metadata.workflowJson = workflowChunk;
                 metadata.tool = GeneratorTool.INVOKEAI;
                 foundAuthoritative = true;
@@ -770,16 +997,19 @@ self.onmessage = (e: MessageEvent) => {
         }
 
         // Path-based generation type detection (A1111 standard)
-        if (path) {
-            const lowerPath = path.toLowerCase().replace(/\\/g, '/');
-            if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img')) {
-                metadata.generationType = 'txt2img';
-            } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img')) {
-                metadata.generationType = 'img2img';
-            } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras')) {
-                metadata.generationType = 'extras';
-            } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
-                metadata.generationType = 'grid';
+        if (!metadata.generationType || metadata.generationType === 'unknown') {
+            metadata.generationType = 'unknown';
+            if (path) {
+                const lowerPath = path.toLowerCase().replace(/\\/g, '/');
+                if (lowerPath.includes('/txt2img-images') || lowerPath.includes('/outputs/txt2img') || lowerPath.includes('/txt2img/') || lowerPath.includes('/text/')) {
+                    metadata.generationType = 'txt2img';
+                } else if (lowerPath.includes('/img2img-images') || lowerPath.includes('/outputs/img2img') || lowerPath.includes('/img2img/') || lowerPath.includes('/image/')) {
+                    metadata.generationType = 'img2img';
+                } else if (lowerPath.includes('/extras-images') || lowerPath.includes('/outputs/extras') || lowerPath.includes('/extras/') || lowerPath.includes('/save') || lowerPath.includes('/saved')) {
+                    metadata.generationType = 'extras';
+                } else if (lowerPath.includes('-grids') || lowerPath.includes('/grids/')) {
+                    metadata.generationType = 'grid';
+                }
             }
         }
 
