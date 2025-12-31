@@ -163,7 +163,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
                         <ErrorBoundary>
                             {viewMode === 'dashboard' ? (
-                                <StatsDashboard images={images} onFilter={(t, v) => { if (t === 'model') setFilters(p => ({ ...p, models: [...p.models, v] })); changeViewMode('grid'); }} />
+                                <StatsDashboard images={images} onFilter={(t, v) => {
+                                    if (t === 'model') {
+                                        setFilters(p => ({
+                                            ...p,
+                                            models: p.models.includes(v) ? p.models : [...p.models, v]
+                                        }));
+                                    }
+                                    changeViewMode('grid');
+                                }} />
                             ) : viewMode === 'maintenance' ? (
                                 <MaintenanceView
                                     images={images}

@@ -28,6 +28,14 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
         filters.searchQuery !== '' ||
         !!activeSmartCol;
 
+    // Deduplicate logic: Filter out manual chips that are already in the smart collection
+    const smartModels = activeSmartCol?.filters?.models || [];
+    const smartTools = activeSmartCol?.filters?.tools || [];
+
+    const visibleModels = Array.from(new Set(filters.models)).filter(m => !smartModels.includes(m));
+    const visibleTools = Array.from(new Set(filters.tools)).filter(t => !smartTools.includes(t));
+    const visibleLoras = Array.from(new Set(filters.loras));
+
     if (!hasActiveFilters) return null;
 
     return (
@@ -78,21 +86,21 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
                 </div>
             )}
 
-            {filters.models.map(m => (
+            {visibleModels.map(m => (
                 <div key={m} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 text-xs border border-blue-200 dark:border-blue-500/30">
                     <span className="truncate max-w-[100px]">{m}</span>
                     <button onClick={() => setFilters(f => ({ ...f, models: f.models.filter(x => x !== m) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
-            {filters.tools.map(t => (
+            {visibleTools.map(t => (
                 <div key={t} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-200 text-xs border border-amber-200 dark:border-amber-500/30">
                     <span>{t}</span>
                     <button onClick={() => setFilters(f => ({ ...f, tools: f.tools.filter(x => x !== t) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
-            {filters.loras.map(l => (
+            {visibleLoras.map(l => (
                 <div key={l} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 text-xs border border-purple-200 dark:border-purple-500/30">
                     <span className="truncate max-w-[100px]">{l}</span>
                     <button onClick={() => setFilters(f => ({ ...f, loras: f.loras.filter(x => x !== l) }))}><X className="w-3 h-3" /></button>
