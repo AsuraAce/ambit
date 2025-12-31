@@ -41,6 +41,10 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
     Ok(chunks)
 }
 
+/// Extracts metadata chunks from a PNG file.
+///
+/// **IMPORTANT**: This function expects the reader to be positioned at the **beginning** of the file
+/// (byte 0) because it verifies the 8-byte PNG header before scanning chunks.
 pub fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>, String> {
     let mut buffer = [0; 8];
     if reader.read_exact(&mut buffer).is_err() {

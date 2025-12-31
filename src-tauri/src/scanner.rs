@@ -381,6 +381,8 @@ pub fn scan_image_internal(
 
     if is_png && extract_workflow {
         let mut reader = BufReader::new(file);
+        // IMPORTANT: metadata::extract_png_chunks expects the reader at the start of the file
+        // to verify the 8-byte PNG signature. Do not seek past the header here.
         reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
         if let Ok(c) = metadata::extract_png_chunks(&mut reader) {
             chunks.extend(c);
@@ -449,4 +451,83 @@ pub fn scan_image_internal(
         "chunks": chunks_to_return,
         "metadata": metadata_value
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xFFFFFFFFu32;
+        for &b in data {
+            crc ^= b as u32;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB88320;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn test_scan_image_internal_png_metadata() {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
+        
+        // IHDR
+        let mut ihdr_data = Vec::new();
+        ihdr_data.extend_from_slice(b"IHDR");
+        ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // width
+        ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // height
+        ihdr_data.extend_from_slice(&[1, 0, 0, 0, 0]); // bit depth 1, color type 0 (greyscale)
+        
+        png.extend_from_slice(&13u32.to_be_bytes());
+        let crc = crc32(&ihdr_data);
+        png.extend_from_slice(&ihdr_data);
+        png.extend_from_slice(&crc.to_be_bytes());
+
+        // tEXt chunk
+        let mut text_data = Vec::new();
+        text_data.extend_from_slice(b"tEXt");
+        text_data.extend_from_slice(b"parameters\0");
+        text_data.extend_from_slice(b"Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: test-model");
+        
+        png.extend_from_slice(&((text_data.len() - 4) as u32).to_be_bytes());
+        let text_crc = crc32(&text_data);
+        png.extend_from_slice(&text_data);
+        png.extend_from_slice(&text_crc.to_be_bytes());
+
+        // IDAT (empty or minimal)
+        let mut idat_data = Vec::new();
+        idat_data.extend_from_slice(b"IDAT");
+        // For a 1x1 1-bit greyscale, we need at least some zlib data.
+        // Easiest is to just use a valid minimal IDAT if we want image crate to load it.
+        // Actually, we don't strictly need it to be LOADABLE by image crate for THIS test 
+        // IF we only care about metadata, BUT scan_image_internal calls into_dimensions().
+        // into_dimensions() only needs IHDR!
+        
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IDAT");
+        png.extend_from_slice(&crc32(b"IDAT").to_be_bytes());
+
+        // IEND
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&0xAE426082u32.to_be_bytes());
+
+        let test_path = "test_metadata_fix.png";
+        let mut f = File::create(test_path).unwrap();
+        f.write_all(&png).unwrap();
+
+        let result = scan_image_internal(test_path.to_string(), None, true, true).unwrap();
+        let _ = std::fs::remove_file(test_path);
+
+        let metadata = result.get("metadata").expect("Metadata should exist");
+        assert!(!metadata.is_null(), "Metadata should not be null");
+        assert_eq!(metadata["steps"], 20);
+        assert_eq!(metadata["model"], "test-model");
+    }
 }
