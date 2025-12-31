@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { RefreshCw, Zap, ZapOff, History, Trash2, XCircle, Loader2, Globe, CheckCircle2, Boxes } from 'lucide-react';
+import { RefreshCw, Zap, ZapOff, XCircle, Loader2, Globe, CheckCircle2, Boxes } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useLibrary } from '../../../contexts/LibraryContext';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+
 
 interface SyncSectionProps {
     settings: AppSettings;
@@ -11,15 +11,13 @@ interface SyncSectionProps {
 }
 
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
-    const { syncState, startInvokeSync, cancelSync, cleanLibrary } = useLibrary();
+    const { syncState, startInvokeSync, cancelSync } = useLibrary();
     const { status, progress } = syncState;
 
     // Local state for sync options
     const [syncFavorites, setSyncFavorites] = useState(true);
     const [syncBoards, setSyncBoards] = useState(true);
-    const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
 
-    const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
 
     const handleSync = () => {
         if (!settings.invokeAiPath) return;
@@ -140,24 +138,6 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}
                             </button>
-
-                            <div className="flex items-center p-1 bg-black/5 dark:bg-white/5 rounded-xl border border-black/5 dark:border-white/5">
-                                <button
-                                    type="button"
-                                    onClick={() => setConfirmAction({ type: 'reset', isOpen: true })}
-                                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-sage-600 transition-colors flex items-center gap-2"
-                                >
-                                    <History className="w-3 h-3" /> Reset Cursor
-                                </button>
-                                <div className="w-px h-3 bg-black/10 dark:bg-white/10 mx-1"></div>
-                                <button
-                                    type="button"
-                                    onClick={() => setConfirmAction({ type: 'purge', isOpen: true })}
-                                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-700 transition-colors flex items-center gap-2"
-                                >
-                                    <Trash2 className="w-3 h-3" /> Purge Database
-                                </button>
-                            </div>
                         </div>
                     ) : (
                         <button
@@ -169,32 +149,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     )}
                 </div>
 
-                <ConfirmDialog
-                    isOpen={confirmAction.isOpen && confirmAction.type === 'reset'}
-                    title="Reset Sync Cursor?"
-                    message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE InvokeAI library from the beginning. This process may take some time.`}
-                    confirmLabel="Reset Cursor"
-                    onConfirm={() => {
-                        setSettings(p => ({ ...p, lastSyncedAt: null }));
-                        closeConfirm();
-                    }}
-                    onCancel={closeConfirm}
-                    zIndex={220}
-                />
 
-                <ConfirmDialog
-                    isOpen={confirmAction.isOpen && confirmAction.type === 'purge'}
-                    title="Purge Application Database?"
-                    message="DANGER: This will delete ALL images and metadata from your Ambit library. Your actual image files on disk will NOT be touched, but you will lose all Ambit-specific data (collections, tags, favorites). Are you sure?"
-                    confirmLabel="Purge Database"
-                    isDangerous={true}
-                    onConfirm={() => {
-                        cleanLibrary();
-                        closeConfirm();
-                    }}
-                    onCancel={closeConfirm}
-                    zIndex={220}
-                />
 
                 {status === 'syncing' && (
                     <div className="p-5 bg-sage-50 dark:bg-sage-500/5 rounded-xl border border-sage-500/10 space-y-3 animate-in fade-in zoom-in-95 duration-500">
