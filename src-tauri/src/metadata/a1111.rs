@@ -77,7 +77,7 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                         if meta.tool == "Automatic1111" {
                              if low_val.contains("vlad") || low_val.contains("next") || low_val.contains("sd.next") {
                                  meta.tool = "SD.Next".to_string();
-                             } else if low_val.contains("forge") {
+                             } else if low_val.contains("forge") || low_val.starts_with('f') {
                                  meta.tool = "Forge".to_string();
                              }
                         }
@@ -155,6 +155,10 @@ mod tests {
         let raw_forge = "Prompt\nSteps: 20, Version: forge";
         let meta_forge = extract_a1111_metadata(raw_forge);
         assert_eq!(meta_forge.tool, "Forge");
+
+        let raw_forge_v2 = "Prompt\nSteps: 20, Version: f2.0.1v1.10.1-previous-224-g90019688";
+        let meta_forge_v2 = extract_a1111_metadata(raw_forge_v2);
+        assert_eq!(meta_forge_v2.tool, "Forge");
     }
     
     #[test]

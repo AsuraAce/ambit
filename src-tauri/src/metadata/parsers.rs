@@ -471,4 +471,6 @@ mod tests {
         let chunks = extract_png_chunks(&mut cursor).unwrap();
         assert_eq!(chunks.get("parameters").map(|s| s.as_str()), Some("ExifValue"));
     }
+
+
 }

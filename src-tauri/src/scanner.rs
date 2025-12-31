@@ -104,7 +104,7 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
     let chunks = metadata::extract_png_chunks(&mut reader)?;
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
-    if let Some(params) = chunks.get("parameters") {
+    if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
         parsed_metadata = metadata::extract_a1111_metadata(params);
     }
 
@@ -390,7 +390,7 @@ pub fn scan_image_internal(
     let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
 
-    if let Some(params) = chunks.get("parameters") {
+    if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
         parsed_metadata = metadata::extract_a1111_metadata(params);
         found_metadata = true;
     }
