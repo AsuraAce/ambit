@@ -75,6 +75,15 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     meta.loras = resources.loras;
     meta.control_nets = resources.control_nets;
 
+    // Extract embedded workflow/graph if present
+    if let Some(wf) = root.get("workflow").or_else(|| root.get("graph")) {
+        meta.workflow_json = Some(if wf.is_string() {
+            wf.as_str().unwrap().to_string()
+        } else {
+            wf.to_string()
+        });
+    }
+
     meta
 }
 

@@ -100,12 +100,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         }
     }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading]);
 
-    // Sync local state if prop changes
+    // Sync local state if prop changes OR if image changes
     React.useEffect(() => {
-        if (image.metadata.workflowJson) {
-            setLocalWorkflow(image.metadata.workflowJson);
-        }
-    }, [image.metadata.workflowJson]);
+        setLocalWorkflow(image.metadata.workflowJson);
+    }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
         const wf = localWorkflow || image.metadata.workflowJson;
@@ -143,7 +141,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         const wf = localWorkflow || image.metadata.workflowJson;
         if (!wf) return [];
         try {
-            const json = JSON.parse(wf);
+            // Robust JSON Extraction: 
+            // Handle cases where the string might be "poisoned" with a keyword or null-bytes
+            let parseTarget = wf;
+            if (!wf.trim().startsWith('{') && !wf.trim().startsWith('[')) {
+                const start = wf.indexOf('{');
+                const end = wf.lastIndexOf('}');
+                if (start !== -1 && end !== -1 && end > start) {
+                    parseTarget = wf.substring(start, end + 1);
+                }
+            }
+
+            const json = JSON.parse(parseTarget);
             const nodes: any[] = [];
 
             // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
@@ -221,7 +230,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         } catch (e) {
             return [];
         }
-    }, [image.metadata.workflowJson]);
+    }, [image.metadata.workflowJson, localWorkflow]);
 
     const filteredNodes = useMemo(() => {
         if (!searchQuery) return workflowNodes;

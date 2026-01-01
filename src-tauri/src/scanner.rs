@@ -57,38 +57,37 @@ pub async fn scan_images_bulk(
 
 #[tauri::command]
 pub async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
-    let mut file = File::open(&path).map_err(|e| e.to_string())?;
-    let mut buffer = [0; 8];
-    if file.read_exact(&mut buffer).is_err() { return Ok(None); }
-    if buffer != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] { return Ok(None); }
-
-    loop {
-        let mut length_bytes = [0; 4];
-        if file.read_exact(&mut length_bytes).is_err() { break; }
-        let length = u32::from_be_bytes(length_bytes) as u64;
-
-        let mut type_bytes = [0; 4];
-        if file.read_exact(&mut type_bytes).is_err() { break; }
-        let chunk_type = String::from_utf8_lossy(&type_bytes).to_string();
-
-        if chunk_type == "workflow" || chunk_type == "graph" || chunk_type == "invokeai_workflow" || chunk_type == "invokeai_graph" {
-            let mut chunk_data = vec![0; length as usize];
-            file.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
-            return Ok(Some(String::from_utf8_lossy(&chunk_data).to_string()));
-        } else if chunk_type == "zTXt" || chunk_type == "tEXt" || chunk_type == "iTXt" {
-            let mut chunk_data = vec![0; length as usize];
-            file.read_exact(&mut chunk_data).map_err(|e| e.to_string())?;
-            let content = String::from_utf8_lossy(&chunk_data).to_string();
-            
-            if content.contains("invokeai_metadata") || content.contains("sd-metadata") {
-                return Ok(Some(content));
-            }
-        } else if chunk_type == "IEND" {
-            break;
-        }
-
-        if file.seek(SeekFrom::Current((length + 4) as i64)).is_err() { break; }
+    let path_obj = std::path::Path::new(&path);
+    if !path_obj.exists() {
+        return Ok(None);
     }
+
+    let file = File::open(path_obj).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(file);
+    
+    // We use the robust parser which handles headers, decompression, and key-value splitting
+    let chunks = match metadata::extract_png_chunks(&mut reader) {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+
+    // 1. Prioritize Dedicated Workflow Chunks
+    if let Some(workflow) = chunks.get("invokeai_workflow")
+        .or_else(|| chunks.get("workflow"))
+        .or_else(|| chunks.get("invokeai_graph"))
+        .or_else(|| chunks.get("graph"))
+    {
+        return Ok(Some(workflow.clone()));
+    }
+
+    // 2. Fallback to Metadata Chunks
+    if let Some(content) = chunks.get("invokeai_metadata")
+        .or_else(|| chunks.get("sd-metadata"))
+        .or_else(|| chunks.get("dream_metadata"))
+    {
+        return Ok(Some(content.clone()));
+    }
+
     Ok(None)
 }
 
