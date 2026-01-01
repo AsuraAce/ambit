@@ -83,24 +83,25 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     if !ksampler_id.is_empty() {
         let ksampler_node = nodes_map.get(&ksampler_id).unwrap();
         
-        // Extract direct KSampler properties
-        if let Some(seed) = get_node_param(ksampler_node, "seed").and_then(|v| v.as_i64()) {
+        
+        // Extract direct KSampler properties with tracing
+        if let Some(seed) = trace_node_param(&nodes_map, ksampler_node, "seed").and_then(|v| v.as_i64()) {
             meta.seed = seed;
-        } else if let Some(seed) = get_node_param(ksampler_node, "noise_seed").and_then(|v| v.as_i64()) {
+        } else if let Some(seed) = trace_node_param(&nodes_map, ksampler_node, "noise_seed").and_then(|v| v.as_i64()) {
             meta.seed = seed;
         }
 
-        if let Some(steps) = get_node_param(ksampler_node, "steps").and_then(|v| v.as_u64()) {
+        if let Some(steps) = trace_node_param(&nodes_map, ksampler_node, "steps").and_then(|v| v.as_u64()) {
             meta.steps = steps as u32;
         }
 
-        if let Some(cfg) = get_node_param(ksampler_node, "cfg").and_then(|v| v.as_f64()) {
+        if let Some(cfg) = trace_node_param(&nodes_map, ksampler_node, "cfg").and_then(|v| v.as_f64()) {
             meta.cfg = cfg as f32;
         }
 
-        if let Some(sampler) = get_node_param(ksampler_node, "sampler_name").and_then(|s| s.as_str()) {
+        if let Some(sampler) = trace_node_param(&nodes_map, ksampler_node, "sampler_name").and_then(|s| s.as_str()) {
             meta.sampler = sampler.to_string();
-            if let Some(scheduler) = get_node_param(ksampler_node, "scheduler").and_then(|s| s.as_str()) {
+            if let Some(scheduler) = trace_node_param(&nodes_map, ksampler_node, "scheduler").and_then(|s| s.as_str()) {
                 meta.sampler = format!("{} ({})", meta.sampler, scheduler);
             }
         }
@@ -122,6 +123,48 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
             if let Some(text) = trace_text_source(&nodes_map, &neg_id) {
                 meta.negative_prompt = text;
             }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Extract Resources (LoRAs)
+    // ---------------------------------------------------------
+    for (_id, node) in &nodes_map {
+        let class_type = get_node_type(node);
+        
+        // Standard LoraLoader / LoraLoaderModelOnly
+        if class_type == "LoraLoader" || class_type == "LoraLoaderModelOnly" {
+            if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
+                 let name = name.replace(".safetensors", "").replace(".ckpt", "");
+                 let strength = get_node_param(node, "strength_model").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                 let entry = if strength != 1.0 { format!("{} ({:.2})", name, strength) } else { name };
+                 if !meta.loras.contains(&entry) { meta.loras.push(entry); }
+            }
+        }
+        
+        // Custom LoraManager (User Request)
+        if class_type == "Lora Loader (LoraManager)" {
+            // Structure: inputs: { "loras": { "__value__": [ { "name": "...", "strength": ... } ] } }
+             if let Some(loras_obj) = node.get("inputs").and_then(|v| v.get("loras")) {
+                 if let Some(values) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
+                     for lora in values {
+                         if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
+                             let name = name.replace(".safetensors", "").replace(".ckpt", "");
+                             let strength = lora.get("strength").and_then(|v| v.as_f64())
+                                 .or_else(|| lora.get("strength").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok()))
+                                 .unwrap_or(1.0);
+                             
+                             // Check if active (sometimes provided)
+                             let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
+                             
+                             if active {
+                                 let entry = if strength != 1.0 { format!("{} ({:.2})", name, strength) } else { name };
+                                 if !meta.loras.contains(&entry) { meta.loras.push(entry); }
+                             }
+                         }
+                     }
+                 }
+             }
         }
     }
 
@@ -340,6 +383,7 @@ fn trace_model_source(nodes: &std::collections::HashMap<String, Value>, start_id
 }
 
 /// Traces upstream from a KSampler to find the Positive/Negative Prompt text.
+/// Traces upstream from a KSampler to find the Positive/Negative Prompt text.
 fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id: &str) -> Option<String> {
     let mut current_id = start_id.to_string();
     let mut loop_safety = 0;
@@ -350,18 +394,69 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
         if let Some(node) = nodes.get(&current_id) {
             let class_type = get_node_type(node);
 
+            // 1. Standard CLIPTextEncode
             if class_type == "CLIPTextEncode" || class_type == "CLIPTextEncodeSDXL" {
-                return get_node_param(node, "text").and_then(|s| s.as_str()).map(|s| s.to_string());
+                // Try direct string
+                if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
+                    return Some(text.to_string());
+                }
+                // Try linked text
+                if let Some(next_id) = get_node_input_link(node, "text") {
+                    current_id = next_id;
+                    continue;
+                }
             }
             
-            if class_type == "PrimitiveNode" {
-                 if let Some(val) = get_node_param(node, "value").or_else(|| get_node_param(node, "text")).and_then(|s| s.as_str()) {
+            // 2. Primitives / Simple Text
+            if class_type == "PrimitiveNode" || class_type == "ShowText" || class_type == "String Literal" {
+                 if let Some(val) = get_node_param(node, "value").or_else(|| get_node_param(node, "text")).or_else(|| get_node_param(node, "string")).and_then(|s| s.as_str()) {
                      return Some(val.to_string());
                  }
             }
 
-            // Passthrough for conditioning area etc
-            if let Some(next_id) = get_node_input_link(node, "conditioning") {
+            // 3. ImpactWildcardProcessor (Specific to user report)
+            if class_type == "ImpactWildcardProcessor" {
+                if let Some(text) = get_node_param(node, "populated_text").and_then(|s| s.as_str()) {
+                     return Some(text.to_string());
+                }
+            }
+
+            // 4. JoinStringMulti (Recursively join inputs)
+            if class_type == "JoinStringMulti" {
+                let mut parts = Vec::new();
+                // Check string_1 to string_10
+                for i in 1..=10 {
+                    let key = format!("string_{}", i);
+                    // Try direct param
+                    if let Some(s) = get_node_param(node, &key).and_then(|v| v.as_str()) {
+                        if !s.is_empty() { parts.push(s.to_string());}
+                    }
+                    // Try linked param
+                    else if let Some(link_id) = get_node_input_link(node, &key) {
+                        // Recursively resolve one level deep
+                         if let Some(linked_text) = trace_text_source(nodes, &link_id) {
+                             if !linked_text.is_empty() { parts.push(linked_text); }
+                         }
+                    }
+                }
+                
+                let delimiter = get_node_param(node, "delimiter").and_then(|s| s.as_str()).unwrap_or(" ");
+                if !parts.is_empty() {
+                    return Some(parts.join(delimiter));
+                }
+            }
+            
+            // 5. TriggerWord Toggle (LoraManager)
+             if class_type == "TriggerWord Toggle (LoraManager)" {
+                 if let Some(text) = get_node_param(node, "trigger_words").and_then(|s| s.as_str()) {
+                     return Some(text.to_string());
+                 }
+            }
+
+            // Passthrough logic
+            if let Some(next_id) = get_node_input_link(node, "conditioning")
+                .or_else(|| get_node_input_link(node, "string")) // Simple string passthrough
+            {
                 current_id = next_id;
                 continue;
             }
@@ -420,6 +515,29 @@ fn extract_model_from_node(node: &Value) -> Option<String> {
     None
 }
 
+
+// Helper to trace back a parameter value recursively (e.g. steps linked to an input node)
+// Helper to trace back a parameter value recursively (e.g. steps linked to an input node)
+fn trace_node_param<'a>(nodes: &'a std::collections::HashMap<String, Value>, node: &'a Value, key: &str) -> Option<&'a Value> {
+    
+    // 1. Try linked param FIRST (priority to upstream)
+    if let Some(link_id) = get_node_input_link(node, key) {
+        // Find the upstream node
+        if let Some(upstream_node) = nodes.get(&link_id) {
+            // Recursively check the same key (or specific logic for Input Parameters nodes)
+            if let Some(val) = trace_node_param(nodes, upstream_node, key) {
+                return Some(val);
+            }
+            // If recursive trace with same key fails, check "value" (PrimitiveNode)
+            if let Some(val) = trace_node_param(nodes, upstream_node, "value") {
+                 return Some(val);
+            }
+        }
+    }
+
+    // 2. Try direct param
+    get_node_param(node, key)
+}
 
 #[cfg(test)]
 mod tests {
@@ -667,6 +785,115 @@ mod tests {
         // Fallback scan looks for "KSampler" in class name.
         // Node 932 class is "Input Parameters (Image Saver)". It DOES NOT contain "KSampler".
         // So steps might be 0. This is a potential separate issue.
-        // Let's assert what we expect currently (model found is priority).
+        assert_eq!(meta.model, "flux/flux1KreaDevFP8_fp8E4m3fn"); 
+        
+        // Steps/Seed come from 932 via link in 870
+        // ... (existing comments)
+    }
+
+    #[test]
+    fn test_extract_comfyui_complex_prompt() {
+        // User report: CLIPTextEncode text input linked to JoinStringMulti -> ImpactWildcardProcessor
+        let prompt = r#"{
+            "870": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["877", 0],
+                    "model": ["854", 0]
+                }
+            },
+            "877": {
+                "class_type": "FluxGuidance",
+                "inputs": {
+                    "conditioning": ["855", 0]
+                }
+            },
+            "855": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": ["942", 0]
+                }
+            },
+            "942": {
+                "class_type": "JoinStringMulti",
+                "inputs": {
+                    "string_1": ["943", 0],
+                    "string_2": ["941", 0],
+                    "delimiter": ", "
+                }
+            },
+            "943": {
+                "class_type": "TriggerWord Toggle (LoraManager)",
+                "inputs": {
+                    "trigger_words": "trigger_abc" 
+                }
+            },
+            "941": {
+                "class_type": "ImpactWildcardProcessor",
+                "inputs": {
+                    "populated_text": "A battle-hardened mercenary captain..."
+                }
+            },
+            "854": { "class_type": "ApplyFBCacheOnModel", "inputs": { "model": ["1",0] } },
+            "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "flux.safetensors" } }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        // Current implementation fails here because it doesn't follow the 'text' link in CLIPTextEncode
+        // nor does it handle JoinStringMulti or ImpactWildcardProcessor
+        assert_eq!(meta.positive_prompt, "trigger_abc, A battle-hardened mercenary captain...");
+    }
+
+    #[test]
+    fn test_extract_comfyui_recursive_params_and_loras() {
+        // Test 1: Recursive Parameters (KSampler -> Input Parameters)
+        // Test 2: Custom Lora Manager extraction
+        let prompt = r#"{
+            "870": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "steps": ["932", 1], 
+                    "cfg": ["932", 2],
+                    "model": ["10", 0]
+                }
+            },
+            "932": {
+                "class_type": "Input Parameters (Image Saver)",
+                "inputs": {
+                    "steps": 20,
+                    "cfg": 7.5
+                }
+            },
+            "10": {
+                "class_type": "Lora Loader (LoraManager)",
+                "inputs": {
+                    "model": ["4", 0],
+                    "loras": {
+                        "__value__": [
+                            { "name": "Detailer.safetensors", "strength": 0.8, "active": true },
+                            { "name": "Style.safetensors", "strength": 0.5, "active": false }
+                        ]
+                    }
+                }
+            },
+            "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "base.safetensors" } }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        // Assert recursive params
+        assert_eq!(meta.steps, 20);
+        assert_eq!(meta.cfg, 7.5);
+        
+        // Assert LoRAs
+        assert_eq!(meta.loras.len(), 1); // Only active one
+        assert_eq!(meta.loras[0], "Detailer (0.80)");
     }
 }
