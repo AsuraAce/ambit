@@ -24,6 +24,8 @@ pub fn run() {
             scanner::audit_invokeai_folder,
             scanner::list_invokeai_images,
             scanner::scan_directory_recursive,
+            scanner::open_file,
+            scanner::show_in_folder,
             watcher::start_native_folder_watcher,
         ])
         .run(tauri::generate_context!())

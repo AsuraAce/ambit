@@ -301,6 +301,78 @@ pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, Strin
     Ok(files)
 }
 
+#[tauri::command]
+pub async fn open_file(path: String) -> Result<(), String> {
+    let path_obj = Path::new(&path);
+    if !path_obj.exists() {
+        return Err("File not found".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let windows_path = path.replace("/", "\\");
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &windows_path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_in_folder(path: String) -> Result<(), String> {
+    let path_obj = Path::new(&path);
+    if !path_obj.exists() {
+        return Err("File not found".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let windows_path = path.replace("/", "\\");
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", windows_path))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = path_obj.parent().ok_or("No parent directory")?;
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 pub fn scan_image_internal(
     path: String,
     thumbnail_dir: Option<String>,
