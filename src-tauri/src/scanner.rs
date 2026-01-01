@@ -103,54 +103,31 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
     let chunks = metadata::extract_png_chunks(&mut reader)?;
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
+    
+    // 1. A1111/Forge (Compatibility)
     if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
         parsed_metadata = metadata::extract_a1111_metadata(params);
     }
 
-    // InvokeAI (Fallback)
-    if parsed_metadata.tool == "Unknown" {
-         if let Some(content) = chunks
-            .get("invokeai_metadata")
-            .or_else(|| chunks.get("sd-metadata"))
-            .or_else(|| chunks.get("dream_metadata"))
-        {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-                parsed_metadata = metadata::extract_invokeai_metadata(&json);
-            }
+    // 2. InvokeAI (Cumulative Merge)
+    if let Some(content) = chunks
+        .get("invokeai_metadata")
+        .or_else(|| chunks.get("sd-metadata"))
+        .or_else(|| chunks.get("dream_metadata"))
+    {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+            let invoke_meta = metadata::extract_invokeai_metadata(&json);
+            metadata::merge_metadata(&mut parsed_metadata, invoke_meta);
         }
     }
 
-    // ComfyUI (Fallback & Validation)
-    // If we have ComfyUI chunks, we should ensure the tool is labeled correctly,
-    // even if A1111 metadata was found (often used in Comfy workflows for compatibility).
+    // 3. ComfyUI (Cumulative Merge & Tool Finalization)
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-        if parsed_metadata.tool == "Unknown" || parsed_metadata.tool == "Automatic1111" {
-             parsed_metadata.tool = "ComfyUI".to_string();
-        }
+        let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
+        metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
         
-        // Populate workflow if missing
-        if parsed_metadata.workflow_json.is_none() {
-            if let Some(wf) = chunks.get("workflow").or_else(|| chunks.get("prompt")) {
-                parsed_metadata.workflow_json = Some(wf.clone());
-            }
-        }
-
-        // If we have no metadata values, or some are missing, merge from Comfy native chunks
-        if parsed_metadata.steps == 0 || parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() || parsed_metadata.sampler == "Unknown" {
-             let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
-             if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
-                 // Merge Comfy values: only fill in what is missing or Unknown
-                 if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
-                 if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
-                 if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
-                 if parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() { parsed_metadata.model = comfy_meta.model; }
-                 if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
-                 
-                 // Prompts: only fill in if empty
-                 if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
-                 if parsed_metadata.negative_prompt.is_empty() { parsed_metadata.negative_prompt = comfy_meta.negative_prompt; }
-             }
-        }
+        // Finalize tool label: ComfyUI chunks exist, so it's a ComfyUI generation
+        parsed_metadata.tool = "ComfyUI".to_string();
     }
 
     Ok(parsed_metadata)
@@ -488,6 +465,7 @@ pub fn scan_image_internal(
     let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
 
+    // 1. A1111/Forge (Compatibility)
     if let Some(params) = chunks.get("parameters")
         .or_else(|| chunks.get("Parameters"))
         .or_else(|| chunks.get("PARAMETERS")) 
@@ -496,45 +474,27 @@ pub fn scan_image_internal(
         found_metadata = true;
     }
 
-    if !found_metadata {
-        if let Some(content) = chunks
-            .get("invokeai_metadata")
-            .or_else(|| chunks.get("sd-metadata"))
-            .or_else(|| chunks.get("dream_metadata"))
-        {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
-                parsed_metadata = metadata::extract_invokeai_metadata(&json);
-                found_metadata = true;
-            }
+    // 2. InvokeAI (Cumulative Merge)
+    if let Some(content) = chunks
+        .get("invokeai_metadata")
+        .or_else(|| chunks.get("sd-metadata"))
+        .or_else(|| chunks.get("dream_metadata"))
+    {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+            let invoke_meta = metadata::extract_invokeai_metadata(&json);
+            metadata::merge_metadata(&mut parsed_metadata, invoke_meta);
+            found_metadata = true;
         }
     }
 
-    // ComfyUI (Fallback & Validation)
+    // 3. ComfyUI (Cumulative Merge & Tool Finalization)
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-        if parsed_metadata.tool == "Unknown" || parsed_metadata.tool == "Automatic1111" {
-             parsed_metadata.tool = "ComfyUI".to_string();
-        }
-
-        if parsed_metadata.workflow_json.is_none() {
-            if let Some(wf) = chunks.get("workflow").or_else(|| chunks.get("prompt")) {
-                parsed_metadata.workflow_json = Some(wf.clone());
-                found_metadata = true;
-            }
-        }
-
-        // Merge from Comfy native chunks if basic fields are missing
-        if parsed_metadata.steps == 0 || parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() || parsed_metadata.sampler == "Unknown" || parsed_metadata.positive_prompt.is_empty() {
-             let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
-             if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
-                 if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
-                 if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
-                 if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
-                 if parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() { parsed_metadata.model = comfy_meta.model; }
-                 if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
-                 if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
-                 found_metadata = true;
-             }
-        }
+        let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
+        metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
+        
+        // Finalize tool label
+        parsed_metadata.tool = "ComfyUI".to_string();
+        found_metadata = true;
     }
 
     if let Some(workflow) = chunks.get("graph")

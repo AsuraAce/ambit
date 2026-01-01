@@ -83,6 +83,57 @@ impl Default for ImageMetadata {
     }
 }
 
+pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
+    if base.tool == "Unknown" && secondary.tool != "Unknown" {
+        base.tool = secondary.tool;
+    }
+    
+    if base.model == "Unknown" || base.model.is_empty() {
+        base.model = secondary.model;
+    }
+    
+    if base.steps == 0 { base.steps = secondary.steps; }
+    if base.cfg == 0.0 { base.cfg = secondary.cfg; }
+    if base.seed == 0 { base.seed = secondary.seed; }
+    
+    if base.sampler == "Unknown" || base.sampler.is_empty() {
+        base.sampler = secondary.sampler;
+    }
+    
+    if base.positive_prompt.is_empty() {
+        base.positive_prompt = secondary.positive_prompt;
+    }
+    
+    if base.negative_prompt.is_empty() {
+        base.negative_prompt = secondary.negative_prompt;
+    }
+    
+    if base.workflow_json.is_none() {
+        base.workflow_json = secondary.workflow_json;
+    }
+    
+    if base.vae.is_none() { base.vae = secondary.vae; }
+    if base.clip_skip.is_none() { base.clip_skip = secondary.clip_skip; }
+    if base.denoising_strength.is_none() { base.denoising_strength = secondary.denoising_strength; }
+    if base.hires_upscale.is_none() { base.hires_upscale = secondary.hires_upscale; }
+    if base.hires_steps.is_none() { base.hires_steps = secondary.hires_steps; }
+    if base.hires_upscaler.is_none() { base.hires_upscaler = secondary.hires_upscaler; }
+    if base.model_hash.is_none() { base.model_hash = secondary.model_hash; }
+    
+    // Union for resources
+    for lora in secondary.loras {
+        if !base.loras.contains(&lora) {
+            base.loras.push(lora);
+        }
+    }
+    
+    for cn in secondary.control_nets {
+        if !base.control_nets.contains(&cn) {
+            base.control_nets.push(cn);
+        }
+    }
+}
+
 pub fn detect_generation_type(path: &std::path::Path) -> String {
     let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
     if lower_path.contains("/txt2img-images") || lower_path.contains("/outputs/txt2img") || lower_path.contains("/txt2img/") || lower_path.contains("/text/") {

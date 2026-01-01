@@ -656,7 +656,6 @@ const parseInvokeAIMetadata = (json: any, metadata: Partial<ImageMetadata>, extr
         const wf = json.workflow || json.graph;
         metadata.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
     }
-
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 
@@ -678,6 +677,55 @@ const parseInvokeDreamCommand = (cmd: string, metadata: Partial<ImageMetadata>) 
         const seed = rest.match(/-S\s*(\d+)/);
         if (seed) metadata.seed = parseInt(seed[1]);
     }
+};
+
+const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
+    if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
+        base.tool = secondary.tool;
+    }
+    if ((!base.model || base.model === 'Unknown') && secondary.model) {
+        base.model = secondary.model;
+    }
+    if (!base.steps && secondary.steps) base.steps = secondary.steps;
+    if (!base.cfg && secondary.cfg) base.cfg = secondary.cfg;
+    if (!base.seed && secondary.seed) base.seed = secondary.seed;
+    if ((!base.sampler || base.sampler === 'Unknown') && secondary.sampler) {
+        base.sampler = secondary.sampler;
+    }
+    if (!base.positivePrompt && secondary.positivePrompt) {
+        base.positivePrompt = secondary.positivePrompt;
+    }
+    if (!base.negativePrompt && secondary.negativePrompt) {
+        base.negativePrompt = secondary.negativePrompt;
+    }
+    if (!base.workflowJson && secondary.workflowJson) {
+        base.workflowJson = secondary.workflowJson;
+    }
+
+    // Merge Loras
+    if (secondary.loras) {
+        if (!base.loras) base.loras = [];
+        for (const lora of secondary.loras) {
+            if (!base.loras.includes(lora)) base.loras.push(lora);
+        }
+    }
+
+    // Merge ControlNets
+    if (secondary.controlNets) {
+        if (!base.controlNets) base.controlNets = [];
+        for (const cn of secondary.controlNets) {
+            if (!base.controlNets.includes(cn)) base.controlNets.push(cn);
+        }
+    }
+
+    // Merge other fields
+    if (base.vae === undefined) base.vae = secondary.vae;
+    if (base.clipSkip === undefined) base.clipSkip = secondary.clipSkip;
+    if (base.denoisingStrength === undefined) base.denoisingStrength = secondary.denoisingStrength;
+    if (base.hiresUpscale === undefined) base.hiresUpscale = secondary.hiresUpscale;
+    if (base.hiresSteps === undefined) base.hiresSteps = secondary.hiresSteps;
+    if (base.hiresUpscaler === undefined) base.hiresUpscaler = secondary.hiresUpscaler;
+    if (base.modelHash === undefined) base.modelHash = secondary.modelHash;
 };
 
 const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
@@ -942,70 +990,72 @@ self.onmessage = async (e: MessageEvent) => {
         const metadata: Partial<ImageMetadata> = {};
         const extra: ParseResult['extra'] = {};
         let isIntermediate = false;
-        let foundAuthoritative = false;
-
         if (chunks) {
-            // A1111 / SD.Next
+            // 1. A1111 / SD.Next (Compatibility)
             if (chunks.parameters) {
                 parseA1111Parameters(chunks.parameters, metadata);
                 metadata.rawParameters = chunks.parameters;
                 if (!metadata.tool) metadata.tool = GeneratorTool.AUTOMATIC1111;
-                foundAuthoritative = true;
             }
 
-            // SD.Next specific JSON chunks (fallback)
+            // 2. SD.Next specific JSON chunks (Cumulative)
             const sdNextMetadata = chunks['sd-metadata'] || chunks['metadata'];
-            if (sdNextMetadata && !foundAuthoritative) {
+            if (sdNextMetadata) {
                 try {
                     const json = JSON.parse(sdNextMetadata);
-                    // SD.Next JSON often contains a 'parameters' key or direct keys
+                    const secondary: Partial<ImageMetadata> = {};
                     if (json.parameters) {
-                        parseA1111Parameters(json.parameters, metadata);
-                        metadata.rawParameters = json.parameters;
+                        parseA1111Parameters(json.parameters, secondary);
                     } else if (json.prompt) {
-                        metadata.positivePrompt = json.prompt;
-                        if (json.negative_prompt) metadata.negativePrompt = json.negative_prompt;
-                        if (json.seed) metadata.seed = Number(json.seed);
-                        if (json.steps) metadata.steps = Number(json.steps);
+                        secondary.positivePrompt = json.prompt;
+                        if (json.negative_prompt) secondary.negativePrompt = json.negative_prompt;
+                        if (json.seed) secondary.seed = Number(json.seed);
+                        if (json.steps) secondary.steps = Number(json.steps);
                     }
-                    metadata.tool = GeneratorTool.SDNEXT;
-                    foundAuthoritative = true;
+                    secondary.tool = GeneratorTool.SDNEXT;
+                    mergeMetadata(metadata, secondary);
                 } catch { }
             }
 
-            // ComfyUI (Skip if already found A1111 meta, usually they don't overlap)
+            // 3. ComfyUI (Cumulative)
             const workflow = chunks.workflow || chunks.prompt;
-            if (workflow && !foundAuthoritative) {
+            if (workflow) {
                 try {
                     const json = JSON.parse(workflow);
-                    parseComfyUIMetadata(json, metadata);
+                    const secondary: Partial<ImageMetadata> = {};
+                    parseComfyUIMetadata(json, secondary);
+                    secondary.tool = GeneratorTool.COMFYUI;
+                    secondary.workflowJson = workflow;
+                    mergeMetadata(metadata, secondary);
+                    // Finalize tool label
                     metadata.tool = GeneratorTool.COMFYUI;
-                    metadata.workflowJson = workflow;
-                    foundAuthoritative = true;
                 } catch { }
             }
 
-            // InvokeAI
+            // 4. InvokeAI (Cumulative)
             const invokeMeta = chunks.invokeai_metadata || chunks['sd-metadata'] || chunks.dream_metadata;
-            if (invokeMeta && !foundAuthoritative) {
+            if (invokeMeta) {
                 try {
                     const json = JSON.parse(invokeMeta);
-                    parseInvokeAIMetadata(json, metadata, extra);
-                    metadata.rawParameters = invokeMeta;
-                    foundAuthoritative = true;
+                    const secondary: Partial<ImageMetadata> = {};
+                    parseInvokeAIMetadata(json, secondary, extra);
+                    mergeMetadata(metadata, secondary);
                 } catch { }
             }
 
-            // InvokeAI Workflow
+            // 5. InvokeAI Workflow / Graph (Cumulative)
             const workflowChunk = chunks.invokeai_workflow || chunks.invokeai_graph || chunks.workflow || chunks.graph;
-            if (workflowChunk && !foundAuthoritative) {
-                metadata.workflowJson = workflowChunk;
-                metadata.tool = GeneratorTool.INVOKEAI;
-                foundAuthoritative = true;
+            if (workflowChunk) {
+                const secondary: Partial<ImageMetadata> = {
+                    workflowJson: workflowChunk,
+                    tool: GeneratorTool.INVOKEAI
+                };
+                mergeMetadata(metadata, secondary);
             }
         }
 
-        if (!foundAuthoritative) {
+        // Final tool check
+        if (!metadata.tool || metadata.tool === GeneratorTool.UNKNOWN) {
             const filenameMeta = parseFilenameMetadata(filename || 'unknown');
             metadata.positivePrompt = metadata.positivePrompt || filenameMeta.positivePrompt;
             metadata.tool = metadata.tool || filenameMeta.tool;
