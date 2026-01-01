@@ -62,7 +62,7 @@ interface SearchContextType {
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
 
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { settings, privacyEnabled } = useSettings();
+    const { settings, setSettings, privacyEnabled } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded } = useCollections();
 
     const [images, setImages] = useState<AIImage[]>([]);
@@ -273,9 +273,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (state.recentSearches) setRecentSearches(state.recentSearches);
             setGlobalTotal(globalCount);
             setAvailableHiddenContent(availability);
+
+            // Important: Sync persisted grid toggle to filter state
+            if (state.settings.libraryShowGrids !== undefined) {
+                setFilters(prev => ({ ...prev, showGrids: state.settings.libraryShowGrids }));
+            }
         };
         loadInitial();
     }, []);
+
+    // 2. Persist Grid Toggle Change to Settings
+    useEffect(() => {
+        if (settings.libraryShowGrids !== filters.showGrids) {
+            setSettings(prev => ({ ...prev, libraryShowGrids: filters.showGrids }));
+        }
+    }, [filters.showGrids]);
 
     // Persistence save
     useEffect(() => {

@@ -40,6 +40,7 @@ export class LocalStorageRepository implements IRepository {
               maskingMode: 'blur',
               enableAI: false,
               hasCompletedOnboarding: true,
+              libraryShowGrids: false,
               ...saved.settings
             }
           });

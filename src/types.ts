@@ -170,6 +170,7 @@ export interface AppSettings {
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
+  libraryShowGrids?: boolean; // Persisted view preference
 }
 
 export interface ToastMessage {
