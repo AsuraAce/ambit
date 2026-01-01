@@ -42,11 +42,8 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
             const objectUrl = URL.createObjectURL(file);
             const { metadata: meta, extra, isIntermediate } = await parseImageFile(file);
 
-            if (isIntermediate) {
-                skipped++;
-                URL.revokeObjectURL(objectUrl);
-                continue;
-            }
+            // Intermediates are now imported but hidden by default in UI
+            // Previously they were skipped here.
 
             const img = new Image();
             img.src = objectUrl;
@@ -148,10 +145,8 @@ export const processNativePaths = async (
                     continue;
                 }
 
-                if (result.isIntermediate) {
-                    skipped++;
-                    continue;
-                }
+                // Intermediates are now imported but hidden by default in UI
+                // Previously they were skipped here.
 
                 const filename = path.split(/[\\/]/).pop() || 'unknown.png';
                 const normPath = normalizePath(path);

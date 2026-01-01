@@ -29,7 +29,8 @@ export const useFileOperations = ({
     const {
         isImporting, setIsImporting, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
-        thumbnailProgress, setThumbnailProgress
+        thumbnailProgress, setThumbnailProgress,
+        refreshHiddenAvailability
     } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
@@ -57,6 +58,9 @@ export const useFileOperations = ({
             if (stats.errors > 0) msg += ` ${stats.errors} failed.`;
 
             if (!silent) addToast(msg, stats.errors > 0 ? 'info' : 'success');
+
+            // Refresh View Options availability
+            refreshHiddenAvailability();
         } else {
             if (dupeCount > 0 && stats.skipped === 0 && stats.errors === 0) {
                 console.log(`Scan complete: ${dupeCount} duplicates found.`);

@@ -108,11 +108,12 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
 };
 
 const WatcherProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { fetchData } = useSearch();
+  const { fetchData, refreshMetadata } = useSearch();
 
   const handleNewImage = useCallback(async () => {
     await fetchData(false);
-  }, [fetchData]);
+    await refreshMetadata(); // Ensure View Options update on live events
+  }, [fetchData, refreshMetadata]);
 
   return (
     <WatcherProvider onNewImageDetected={handleNewImage}>

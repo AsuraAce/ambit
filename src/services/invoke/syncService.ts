@@ -70,9 +70,8 @@ export const syncImages = async (
     }
 
     const conditions: string[] = [];
-    if (!options.importIntermediates && hasIsIntermediate) {
-        conditions.push('i.is_intermediate = 0');
-    }
+    // We now always import intermediates so that the "View Options" toggle can work.
+    // They are hidden by default in the Ambit UI.
 
     if (options.afterTimestamp && options.afterTimestamp > 0) {
         const bufferedTimestamp = options.afterTimestamp; // Remove 60s buffer

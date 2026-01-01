@@ -10,7 +10,7 @@ const worker = new Worker(new URL('../workers/metadata.worker.ts', import.meta.u
 });
 
 // Helper to wrap worker messaging in a Promise
-const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ metadata: Partial<ImageMetadata>, extra: any }> => {
+const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ metadata: Partial<ImageMetadata>, extra: any, isIntermediate?: boolean }> => {
     return new Promise((resolve, reject) => {
         // We use a simple one-off handler approach for now.
         // For high concurrency, we might want a proper ID-based pool, 
@@ -96,10 +96,16 @@ const processScanResult = async (info: any, path: string): Promise<ParseResult> 
     const filename = path.split(/[\\/]/).pop() || "unknown";
 
     try {
-        const { metadata, extra } = await parseInWorker(info.chunks, filename, path);
+        const { metadata, extra, isIntermediate } = (await parseInWorker(info.chunks, filename, path)) as any;
+        const finalIsIntermediate = isIntermediate || metadata.isIntermediate;
         return {
-            metadata,
+            metadata: {
+                ...metadata,
+                isIntermediate: finalIsIntermediate,
+                isGrid: metadata.isGrid || metadata.generationType === 'grid'
+            },
             extra,
+            isIntermediate: finalIsIntermediate,
             width: info.width,
             height: info.height,
             fileSize: info.size,

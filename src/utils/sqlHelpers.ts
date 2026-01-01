@@ -16,11 +16,10 @@ export const buildSqlWhereClause = (
         conditions.push('is_deleted = 0');
 
         if (!filters.showIntermediates) {
-            conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
+            conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1) AND (json_extract(metadata_json, '$.is_intermediate') IS NULL OR json_extract(metadata_json, '$.is_intermediate') != 1)");
         }
-
         if (!filters.showGrids) {
-            conditions.push("(json_extract(metadata_json, '$.isGrid') IS NULL OR json_extract(metadata_json, '$.isGrid') != 1) AND (json_extract(metadata_json, '$.generationType') IS NULL OR json_extract(metadata_json, '$.generationType') != 'grid')");
+            conditions.push("(json_extract(metadata_json, '$.isGrid') IS NULL OR json_extract(metadata_json, '$.isGrid') != 1) AND (json_extract(metadata_json, '$.is_grid') IS NULL OR json_extract(metadata_json, '$.is_grid') != 1) AND (json_extract(metadata_json, '$.generationType') IS NULL OR json_extract(metadata_json, '$.generationType') != 'grid') AND (json_extract(metadata_json, '$.generation_type') IS NULL OR json_extract(metadata_json, '$.generation_type') != 'grid')");
         }
     }
 

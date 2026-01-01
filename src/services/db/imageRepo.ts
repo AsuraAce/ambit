@@ -312,8 +312,8 @@ export const purgeLibrary = async () => {
 export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
     const db = await getDb();
     const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%"isIntermediate":true%\' LIMIT 1'),
-        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%"isGrid":true%\' OR metadata_json LIKE \'%"generationType":"grid"%\' LIMIT 1')
+        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%isIntermediate":true%\' OR metadata_json LIKE \'%is_intermediate":true%\' LIMIT 1'),
+        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%isGrid":true%\' OR metadata_json LIKE \'%is_grid":true%\' OR metadata_json LIKE \'%generationType":"grid"%\' OR metadata_json LIKE \'%generation_type":"grid"%\' LIMIT 1')
     ]);
 
     return {
