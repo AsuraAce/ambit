@@ -389,7 +389,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             {/* Tabs */}
             <div className="flex border-b border-gray-200 dark:border-white/5 shrink-0 bg-white dark:bg-zinc-900 p-2 gap-2">
                 {(['info', 'edit', 'workflow'] as const).map(tab => (
-                    (tab !== 'workflow' || image.metadata.workflowJson || image.metadata.tool === 'InvokeAI') && (
+                    (tab !== 'workflow' || image.metadata.workflowJson || image.metadata.tool === 'InvokeAI' || image.metadata.hasWorkflowHint) && (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
