@@ -120,6 +120,13 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
         }
     }
 
+    // ComfyUI (Fallback)
+    if parsed_metadata.tool == "Unknown" {
+        if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
+            parsed_metadata = metadata::extract_comfyui_metadata(&chunks);
+        }
+    }
+
     if let Some(workflow) = chunks.get("workflow")
         .or_else(|| chunks.get("graph"))
         .or_else(|| chunks.get("invokeai_workflow"))
@@ -481,6 +488,13 @@ pub fn scan_image_internal(
                 parsed_metadata = metadata::extract_invokeai_metadata(&json);
                 found_metadata = true;
             }
+        }
+    }
+
+    if !found_metadata {
+        if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
+            parsed_metadata = metadata::extract_comfyui_metadata(&chunks);
+            found_metadata = true;
         }
     }
 

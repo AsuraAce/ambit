@@ -165,6 +165,7 @@ export interface AppSettings {
   googleGeminiApiKey?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   a1111Path?: string; // New: Root path to Stable Diffusion WebUI (A1111)
+  comfyUiPath?: string; // New: Root path to ComfyUI output (used for output discovery)
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
   lastSyncedAt?: number | null; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync

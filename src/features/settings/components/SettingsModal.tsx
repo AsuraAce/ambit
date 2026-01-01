@@ -3,17 +3,17 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
 import { AppSettings } from '../../../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, DevTab } from './';
+import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab } from './';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
-  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'dev';
+  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
 }
 
-type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'dev';
+type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
 
 interface TabButtonProps {
   id: SettingsTab;
@@ -100,6 +100,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Generators</h4>
                     <TabButton id="invokeai" label="InvokeAI" icon={<DatabaseZap className="w-4 h-4" />} isActive={activeTab === 'invokeai'} onClick={setActiveTab} />
                     <TabButton id="a1111" label="SD WebUI" icon={<Palette className="w-4 h-4" />} isActive={activeTab === 'a1111'} onClick={setActiveTab} />
+                    <TabButton id="comfyui" label="ComfyUI" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'comfyui'} onClick={setActiveTab} />
                   </div>
 
                   <div>
@@ -139,6 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'invokeai' && <InvokeAITab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'comfyui' && <ComfyUITab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'dev' && <DevTab />}

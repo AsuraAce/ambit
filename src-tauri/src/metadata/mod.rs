@@ -1,10 +1,12 @@
 pub mod a1111;
 pub mod invokeai;
+pub mod comfyui;
 pub mod parsers;
 pub mod resources;
 
 pub use a1111::extract_a1111_metadata;
 pub use invokeai::extract_invokeai_metadata;
+pub use comfyui::extract_comfyui_metadata;
 pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 
 #[derive(serde::Serialize, Clone)]
