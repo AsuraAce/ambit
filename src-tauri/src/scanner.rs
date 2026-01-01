@@ -120,19 +120,37 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
         }
     }
 
-    // ComfyUI (Fallback)
-    if parsed_metadata.tool == "Unknown" {
-        if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-            parsed_metadata = metadata::extract_comfyui_metadata(&chunks);
+    // ComfyUI (Fallback & Validation)
+    // If we have ComfyUI chunks, we should ensure the tool is labeled correctly,
+    // even if A1111 metadata was found (often used in Comfy workflows for compatibility).
+    if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
+        if parsed_metadata.tool == "Unknown" || parsed_metadata.tool == "Automatic1111" {
+             parsed_metadata.tool = "ComfyUI".to_string();
         }
-    }
+        
+        // Populate workflow if missing
+        if parsed_metadata.workflow_json.is_none() {
+            if let Some(wf) = chunks.get("workflow").or_else(|| chunks.get("prompt")) {
+                parsed_metadata.workflow_json = Some(wf.clone());
+            }
+        }
 
-    if let Some(workflow) = chunks.get("workflow")
-        .or_else(|| chunks.get("graph"))
-        .or_else(|| chunks.get("invokeai_workflow"))
-        .or_else(|| chunks.get("invokeai_graph")) 
-    {
-        parsed_metadata.workflow_json = Some(workflow.clone());
+        // If we still have no metadata values (Steps/CFG/etc), try to extract from Comfy chunks
+        if parsed_metadata.steps == 0 && parsed_metadata.model == "Unknown" {
+             let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
+             if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
+                 // Merge Comfy values if they are better
+                 if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
+                 if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
+                 if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
+                 if parsed_metadata.model == "Unknown" { parsed_metadata.model = comfy_meta.model; }
+                 if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
+                 
+                 // Append prompts if missing
+                 if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
+                 if parsed_metadata.negative_prompt.is_empty() { parsed_metadata.negative_prompt = comfy_meta.negative_prompt; }
+             }
+        }
     }
 
     Ok(parsed_metadata)
@@ -491,15 +509,35 @@ pub fn scan_image_internal(
         }
     }
 
-    if !found_metadata {
-        if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-            parsed_metadata = metadata::extract_comfyui_metadata(&chunks);
-            found_metadata = true;
+    // ComfyUI (Fallback & Validation)
+    if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
+        if parsed_metadata.tool == "Unknown" || parsed_metadata.tool == "Automatic1111" {
+             parsed_metadata.tool = "ComfyUI".to_string();
+        }
+
+        if parsed_metadata.workflow_json.is_none() {
+            if let Some(wf) = chunks.get("workflow").or_else(|| chunks.get("prompt")) {
+                parsed_metadata.workflow_json = Some(wf.clone());
+                found_metadata = true;
+            }
+        }
+
+        // If we still lack basic metadata, try to extract from Comfy
+        if parsed_metadata.steps == 0 && parsed_metadata.model == "Unknown" {
+             let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
+             if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
+                 if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
+                 if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
+                 if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
+                 if parsed_metadata.model == "Unknown" { parsed_metadata.model = comfy_meta.model; }
+                 if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
+                 if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
+                 found_metadata = true;
+             }
         }
     }
 
-    if let Some(workflow) = chunks.get("workflow")
-        .or_else(|| chunks.get("graph"))
+    if let Some(workflow) = chunks.get("graph")
         .or_else(|| chunks.get("invokeai_workflow"))
         .or_else(|| chunks.get("invokeai_graph")) 
     {

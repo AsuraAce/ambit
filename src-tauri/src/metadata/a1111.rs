@@ -79,6 +79,8 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                                  meta.tool = "SD.Next".to_string();
                              } else if low_val.contains("forge") || low_val.starts_with('f') {
                                  meta.tool = "Forge".to_string();
+                             } else if low_val.contains("comfy") {
+                                 meta.tool = "ComfyUI".to_string();
                              }
                         }
                     },
