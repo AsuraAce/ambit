@@ -40,7 +40,34 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
     meta.negative_prompt = negative_prompt.trim().to_string();
 
     // Parse params (prefer the line starting with Steps:)
-    let params_line = params_lines.iter().find(|l| l.starts_with("Steps: ")).cloned().unwrap_or_default();
+    let mut params_line = params_lines.iter().find(|l| l.starts_with("Steps: ")).cloned().unwrap_or_default();
+    
+    // Fallback: If strict parsing failed, but text contains "Steps: ", try to extract it from the raw blob
+    if params_line.is_empty() && sanitized_text.contains("Steps: ") {
+        if let Some(pos) = sanitized_text.find("Steps: ") {
+            // Find "Negative prompt:" before Steps to verify if we missed the prompt split
+            // Or just take everything from Steps: onwards
+            let tail = &sanitized_text[pos..];
+            // If it ends with newlines, take the line. If it's single line, take it all.
+            params_line = tail.lines().next().unwrap_or("").to_string();
+            
+            // Also try to recover positive/negative if they were missed due to single-line format
+            // This is a heuristic attempt for the "JK" node format
+            if meta.negative_prompt.is_empty() {
+                 if let Some(neg_pos) = sanitized_text.find("Negative prompt: ") {
+                     if neg_pos < pos {
+                         let neg_part = &sanitized_text[neg_pos..pos];
+                         meta.negative_prompt = neg_part.replace("Negative prompt: ", "").trim().to_string();
+                         
+                         // And Positive is likely everything before Negative
+                         if meta.positive_prompt.is_empty() {
+                             meta.positive_prompt = sanitized_text[..neg_pos].trim().to_string();
+                         }
+                     }
+                 }
+            }
+        }
+    }
 
     if params_line.starts_with("Steps: ") {
         let pairs = params_line.split(", ");
@@ -169,5 +196,17 @@ mod tests {
         let meta = extract_a1111_metadata(raw);
         assert!(meta.loras.contains(&"cool_style".to_string()));
         assert!(meta.loras.contains(&"other_one".to_string()));
+    }
+
+    #[test]
+    fn test_a1111_parsing_weird_string() {
+        let raw = r#"masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire.",masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." Negative prompt: low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor, Steps: 36, Sampler: deis beta, CFG scale: 6.0, Seed: 287184813799736, Size: 896x1152, Model: novaAnimeXL_ilV30HappyNewYear, VAE: sdxl_vae, Clip skip: 1, RNG: CPU, TI hashes: "masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." , low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,", Version: ComfyUI"#;
+        
+        let meta = extract_a1111_metadata(raw);
+        
+        assert_eq!(meta.tool, "ComfyUI");
+        assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
+        assert_eq!(meta.steps, 36);
+        assert_eq!(meta.sampler, "deis beta");
     }
 }

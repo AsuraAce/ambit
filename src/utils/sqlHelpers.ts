@@ -110,8 +110,7 @@ export const buildSqlWhereClause = (
             }
             params.push(m);
             params.push(m);
-            params.push(`%${m}%`);
-            return `(json_extract(metadata_json, '$.model') = ? OR json_extract(metadata_json, '$.modelHash') = ? OR metadata_json LIKE ?)`;
+            return `(json_extract(metadata_json, '$.model') = ? OR json_extract(metadata_json, '$.modelHash') = ?)`;
         });
         conditions.push(`(${modelConditions.join(' OR ')})`);
     }

@@ -175,9 +175,12 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     // If Model is still unknown, scan all nodes for ANY valid loader
     if meta.model == "Unknown" || meta.model.is_empty() {
         for (_id, node) in &nodes_map {
-            if let Some(model_name) = extract_model_from_node(node) {
-                meta.model = model_name;
-                break;
+            // ONLY scan model loaders to avoid picking up secondary models from Save nodes
+            if is_model_loader(get_node_type(node)) {
+                if let Some(model_name) = extract_model_from_node(&nodes_map, node) {
+                    meta.model = model_name;
+                    break;
+                }
             }
         }
     }
@@ -209,19 +212,38 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
         }
     }
 
-    // Final Prompt Fallback
-    if meta.positive_prompt.is_empty() && meta.negative_prompt.is_empty() {
-        let mut prompts = Vec::new();
-        for (_id, node) in &nodes_map {
-            let t = get_node_type(node);
-            if t == "CLIPTextEncode" || t == "CLIPTextEncodeSDXL" {
-                if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-                    if !text.trim().is_empty() { prompts.push(text.to_string()); }
+    // Final Prompt Fallback (for disconnected graphs)
+    if meta.positive_prompt.is_empty() {
+        let mut best_positive = None;
+        for (id, node) in &nodes_map {
+            let t = get_node_type(node).to_lowercase();
+            let title = get_node_title(node).unwrap_or("").to_lowercase();
+            
+            // Candidates for positive prompt
+            if title.contains("positive") || (t.contains("cliptextencode") && !title.contains("negative")) || t.contains("showanything") {
+                if let Some(text) = trace_text_source(&nodes_map, id) {
+                    if !text.trim().is_empty() {
+                        best_positive = Some(text);
+                        if title.contains("positive") { break; } // High confidence
+                    }
                 }
             }
         }
-        if !prompts.is_empty() {
-            meta.positive_prompt = prompts.join("\n -- \n");
+        if let Some(p) = best_positive { meta.positive_prompt = p; }
+    }
+
+    if meta.negative_prompt.is_empty() {
+        for (id, node) in &nodes_map {
+            let title = get_node_title(node).unwrap_or("").to_lowercase();
+            
+            if title.contains("negative") {
+                if let Some(text) = trace_text_source(&nodes_map, id) {
+                    if !text.trim().is_empty() {
+                        meta.negative_prompt = text;
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -237,6 +259,10 @@ fn get_node_type(node: &Value) -> &str {
 
 fn is_output_node(t: &str) -> bool {
     t == "SaveImage" || t == "PreviewImage" || t == "ImageSave" || t.contains("SaveImage")
+}
+
+fn get_node_title(node: &Value) -> Option<&str> {
+    node.get("_meta").and_then(|m| m.get("title")).and_then(|v| v.as_str())
 }
 
 fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
@@ -326,7 +352,12 @@ fn find_sampler_upstream(nodes: &std::collections::HashMap<String, Value>, start
             if let Some(next_id) = get_node_input_link(node, "samples")
                 .or_else(|| get_node_input_link(node, "latent"))
                 .or_else(|| get_node_input_link(node, "image"))
-                .or_else(|| get_node_input_link(node, "images")) 
+                .or_else(|| get_node_input_link(node, "images"))
+                .or_else(|| get_node_input_link(node, "inpainted_image")) // InpaintStitch
+                .or_else(|| get_node_input_link(node, "stitch"))          // InpaintStitch
+                .or_else(|| get_node_input_link(node, "image_a"))         // Image Comparer
+                .or_else(|| get_node_input_link(node, "image_b"))
+                .or_else(|| get_node_input_link(node, "pipe"))            // Reactor/Impact Pack 
             {
                 current_id = next_id;
                 continue;
@@ -353,8 +384,15 @@ fn trace_model_source(nodes: &std::collections::HashMap<String, Value>, start_id
 
             // If it's a model source, extract and return
             if is_model_loader(class_type) {
-                if let Some(name) = extract_model_from_node(node) {
+                if let Some(name) = extract_model_from_node(nodes, node) {
                     return Some(name);
+                }
+                // If it's a loader but linked dynamically (e.g. Ckpt Loader JK -> CheckpointLoaderSimple)
+                if let Some(next_id) = get_node_input_link(node, "ckpt_name")
+                    .or_else(|| get_node_input_link(node, "checkpoint"))
+                {
+                    current_id = next_id;
+                    continue;
                 }
             }
 
@@ -366,10 +404,13 @@ fn trace_model_source(nodes: &std::collections::HashMap<String, Value>, start_id
                 }
             }
 
-            // Generic passthrough (Switchers, etc)
+            // Generic passthrough (Switchers, Use Everywhere, etc)
             if let Some(next_id) = get_node_input_link(node, "model")
                 .or_else(|| get_node_input_link(node, "unet"))
                 .or_else(|| get_node_input_link(node, "diffusion_model"))
+                .or_else(|| get_node_input_link(node, "clip"))
+                .or_else(|| get_node_input_link(node, "vae"))
+                .or_else(|| get_node_input_link(node, "anything")) // Use Everywhere
             {
                 current_id = next_id;
                 continue;
@@ -395,7 +436,7 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
             let class_type = get_node_type(node);
 
             // 1. Standard CLIPTextEncode
-            if class_type == "CLIPTextEncode" || class_type == "CLIPTextEncodeSDXL" {
+            if class_type.contains("CLIPTextEncode") {
                 // Try direct string
                 if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
                     return Some(text.to_string());
@@ -408,16 +449,31 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
             }
             
             // 2. Primitives / Simple Text
-            if class_type == "PrimitiveNode" || class_type == "ShowText" || class_type == "String Literal" {
-                 if let Some(val) = get_node_param(node, "value").or_else(|| get_node_param(node, "text")).or_else(|| get_node_param(node, "string")).and_then(|s| s.as_str()) {
+            if class_type == "PrimitiveNode" || class_type == "ShowText" || class_type == "String Literal" || 
+               class_type == "StringConstantMultiline" || class_type == "String" || class_type == "Text" || 
+               class_type.contains("showAnything") 
+            {
+                 if let Some(val) = get_node_param(node, "value")
+                    .or_else(|| get_node_param(node, "text"))
+                    .or_else(|| get_node_param(node, "string"))
+                    .or_else(|| get_node_param(node, "STRING")) // Handle uppercase for some nodes
+                    .and_then(|s| s.as_str()) 
+                 {
                      return Some(val.to_string());
                  }
             }
 
-            // 3. ImpactWildcardProcessor (Specific to user report)
+            // 3. ImpactWildcardProcessor & Qwen / LLM Encoders
             if class_type == "ImpactWildcardProcessor" {
                 if let Some(text) = get_node_param(node, "populated_text").and_then(|s| s.as_str()) {
                      return Some(text.to_string());
+                }
+            }
+            
+            if class_type.contains("Qwen") || class_type.contains("LLM") {
+                // LLM nodes often use "0" or "text" or "prompt"
+                if let Some(text) = get_node_param(node, "0").or_else(|| get_node_param(node, "text")).or_else(|| get_node_param(node, "prompt")).and_then(|s| s.as_str()) {
+                    return Some(text.to_string());
                 }
             }
 
@@ -455,7 +511,11 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
 
             // Passthrough logic
             if let Some(next_id) = get_node_input_link(node, "conditioning")
-                .or_else(|| get_node_input_link(node, "string")) // Simple string passthrough
+                .or_else(|| get_node_input_link(node, "positive")) // Follow positive path
+                .or_else(|| get_node_input_link(node, "negative")) // Follow negative path
+                .or_else(|| get_node_input_link(node, "string"))   // Simple string passthrough
+                .or_else(|| get_node_input_link(node, "anything")) // Use Everywhere
+                .or_else(|| get_node_input_link(node, "everything")) // Use Everywhere
             {
                 current_id = next_id;
                 continue;
@@ -471,18 +531,19 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
 fn is_model_loader(t: &str) -> bool {
     t == "CheckpointLoaderSimple" || t == "CheckpointLoader" || t == "CheckpointLoader|Lib" || 
     t == "CheckpointSelector" || t == "UNETLoader" || t == "LoadDiffusionModel" || 
-    t == "DiffusionLoader" || t == "DualCLIPLoader" || t.contains("EasyLoader")
+    t == "DiffusionLoader" || t == "DualCLIPLoader" || t.contains("EasyLoader") ||
+    t.contains("ParameterGenerator") || t.contains("Ckpt Loader") // Support SDParameterGenerator, Ckpt Loader JK, etc
 }
 
 /// Extracts the model filename from a node, supporting various loader types.
 /// Uses a liberal scan of all string fields if standard keys are missing (common in UI format).
-fn extract_model_from_node(node: &Value) -> Option<String> {
-    // 1. Try standard fields
-    let found = get_node_param(node, "ckpt_name")
-        .or_else(|| get_node_param(node, "checkpoint"))
-        .or_else(|| get_node_param(node, "unet_name"))
-        .or_else(|| get_node_param(node, "model_name"))
-        .or_else(|| get_node_param(node, "0")) // Common in some UI formats
+fn extract_model_from_node(nodes: &std::collections::HashMap<String, Value>, node: &Value) -> Option<String> {
+    // 1. Try standard fields (prefer TRACED values)
+    let found = trace_node_param(nodes, node, "ckpt_name")
+        .or_else(|| trace_node_param(nodes, node, "checkpoint"))
+        .or_else(|| trace_node_param(nodes, node, "unet_name"))
+        .or_else(|| trace_node_param(nodes, node, "model_name"))
+        .or_else(|| trace_node_param(nodes, node, "0")) // Common in some UI formats
         .and_then(|v| v.as_str());
 
     if let Some(name) = found {
@@ -895,5 +956,262 @@ mod tests {
         // Assert LoRAs
         assert_eq!(meta.loras.len(), 1); // Only active one
         assert_eq!(meta.loras[0], "Detailer (0.80)");
+    }
+
+    #[test]
+    fn test_extract_comfyui_show_anything() {
+        // User provided case with "easy showAnything" and "JoinStringMulti"
+        let prompt = r#"{
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["176", 0],
+                    "negative": ["177", 0],
+                    "model": ["803", 2],
+                    "steps": 20,
+                    "cfg": 8.0,
+                    "sampler_name": "deis",
+                    "scheduler": "beta",
+                    "seed": 12345
+                }
+            },
+            "176": {
+                "class_type": "smZ CLIPTextEncode",
+                "inputs": {
+                    "text": ["798", 0],
+                    "clip": ["803", 3]
+                }
+            },
+            "798": {
+                "class_type": "JoinStringMulti",
+                "inputs": {
+                    "string_1": ["118", 0],
+                    "string_2": ["792", 0],
+                    "delimiter": " Break, "
+                }
+            },
+            "118": {
+                "class_type": "StringConstantMultiline",
+                "inputs": { "string": "\n" }
+            },
+            "792": {
+                "class_type": "easy showAnything",
+                "inputs": {
+                    "text": "hentai, female anime character, Naruto franchise",
+                    "anything": ["795", 0]
+                }
+            },
+            "177": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative prompt text" } },
+            "803": { "class_type": "SDParameterGenerator", "inputs": { "model": "test.safetensors" } }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+
+        assert!(meta.positive_prompt.contains("hentai, female anime character"));
+    }
+
+    #[test]
+    fn test_extract_comfyui_failed_case_2() {
+        // User provided failure case #2 (JoinStringMulti + smZ CLIPTextEncode + easy showAnything)
+        // This validates if the mix of these specific nodes causes issues.
+        let prompt = r#"{
+            "3": {
+                "inputs": {
+                    "seed": ["803", 5], "steps": ["803", 6], "cfg": ["803", 8], "sampler_name": ["803", 9], "scheduler": ["803", 10], "denoise": 1.0, "model": ["361", 0], "positive": ["176", 0], "negative": ["177", 0], "latent_image": ["33", 0]
+                },
+                "class_type": "KSampler", "_meta": {"title": "KSampler"}
+            },
+            "176": {
+                "inputs": {"text": ["798", 0], "clip": ["803", 3]}, 
+                "class_type": "smZ CLIPTextEncode", "_meta": {"title": "CLIP Text Encode++"}
+            },
+            "798": {
+                "inputs": {"inputcount": 2, "string_1": ["118", 0], "string_2": ["792", 0], "delimiter": " Break, "},
+                "class_type": "JoinStringMulti", "_meta": {"title": "Join String Multi"}
+            },
+            "118": {
+                "inputs": {"string": "\n"}, "class_type": "StringConstantMultiline"
+            },
+            "792": {
+                "inputs": {"text": "A highly detailed and dynamic figure drawing reference pose..."},
+                "class_type": "easy showAnything", "_meta": {"title": "Show Any"}
+            },
+            "177": { "inputs": { "text": "negative..." }, "class_type": "smZ CLIPTextEncode" },
+            "803": { "inputs": { "seed": 123456 }, "class_type": "SDParameterGenerator" },
+            "361": { "inputs": { "model": ["803", 2] }, "class_type": "Automatic CFG" }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+
+        assert!(meta.positive_prompt.contains("A highly detailed"));
+        assert!(meta.positive_prompt.contains("Break"));
+    }
+
+    #[test]
+    fn test_extract_comfyui_passthrough() {
+        // Test case where text encoders are separated from KSampler by intermediate nodes
+        let prompt = r#"{
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["100", 0],
+                    "negative": ["101", 0],
+                    "model": ["803", 2],
+                    "seed": 123
+                }
+            },
+            "100": {
+                "class_type": "InpaintModelConditioning",
+                "inputs": {
+                    "positive": ["10", 0],
+                    "negative": ["11", 0]
+                }
+            },
+            "101": {
+                "class_type": "ControlNetApply",
+                "inputs": {
+                    "conditioning": ["11", 0]
+                }
+            },
+            "10": {
+                "class_type": "CLIPTextEncode",
+                "inputs": { "text": "positive prompt" }
+            },
+            "11": {
+                "class_type": "CLIPTextEncode",
+                "inputs": { "text": "negative prompt" }
+            },
+            "803": {
+                "class_type": "SDParameterGenerator",
+                "inputs": { "ckpt_name": "model.safetensors" }
+            }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        assert_eq!(meta.positive_prompt, "positive prompt");
+        assert_eq!(meta.negative_prompt, "negative prompt");
+        assert_eq!(meta.model, "model");
+    }
+
+    #[test]
+    fn test_extract_comfyui_qwen() {
+        let prompt = r#"{
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "positive": ["10", 0],
+                    "model": ["20", 0]
+                }
+            },
+            "10": {
+                "class_type": "TextEncodeQwenImageEditPlus",
+                "inputs": {
+                    "0": "A realistic portrait of a cat",
+                    "model": ["20", 0]
+                }
+            },
+            "20": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": { "ckpt_name": "base.safetensors" }
+            }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        assert_eq!(meta.model, "base");
+    }
+
+    #[test]
+    fn test_extract_comfyui_wireless_titled_nodes() {
+        // Disconnected KSampler + Prompt nodes with titles
+        let prompt = r#"{
+            "3": {
+                "class_type": "KSampler",
+                "inputs": { "seed": 1234 }
+            },
+            "10": {
+                "class_type": "CLIPTextEncode",
+                "_meta": { "title": "Positive Prompt" },
+                "inputs": { "text": ["12", 0] }
+            },
+            "11": {
+                "class_type": "CLIPTextEncode",
+                "_meta": { "title": "Negative Prompt" },
+                "inputs": { "text": "ugly hands" }
+            },
+            "12": {
+                "class_type": "String",
+                "inputs": { "STRING": "landscape, sunset" }
+            },
+            "20": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": { "ckpt_name": "base.safetensors" }
+            }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        // Fallback should find model and prompts by labels/types
+        assert_eq!(meta.model, "base");
+        assert_eq!(meta.positive_prompt, "landscape, sunset");
+        assert_eq!(meta.negative_prompt, "ugly hands");
+    }
+
+    #[test]
+    fn test_extract_comfyui_supir_conflict() {
+        // User reported case where "SUPIR" (refine ckpt) is detected instead of "novaAnimeXL" (main ckpt)
+        let prompt = r#"{
+            "3": {
+                "class_type": "KSampler",
+                "inputs": { 
+                    "model": ["144", 0]
+                }
+            },
+            "144": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": { 
+                    "ckpt_name": ["438", 1]
+                }
+            },
+            "435": {
+                "class_type": "Save Image with Metadata JK",
+                "inputs": {
+                    "ckpt_name": ["438", 1],
+                    "refine_ckpt_name": "SUPIR\\SUPIR-v0F.ckpt"
+                }
+            },
+            "438": {
+                "class_type": "Ckpt Loader JK",
+                "inputs": { "checkpoint": "novaAnimeXL_ilV30HappyNewYear.safetensors" }
+            },
+            "output": {
+                "class_type": "SaveImage",
+                "inputs": { "images": ["435", 0] }
+            }
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        // Should find the actual KSampler model (novaAnimeXL), NOT SUPIR
+        assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
     }
 }
