@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye } from 'lucide-react';
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
@@ -38,6 +38,24 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     const { filters, setFilters, availableHiddenContent } = useSearch();
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showViewMenu, setShowViewMenu] = useState(false);
+
+    const sortMenuRef = useRef<HTMLDivElement>(null);
+    const viewMenuRef = useRef<HTMLDivElement>(null);
+
+    // Click outside listener
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+                setShowSortMenu(false);
+            }
+            if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
+                setShowViewMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
         <div className="flex items-center gap-4">
@@ -81,7 +99,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
             )}
 
-            <div className="relative">
+            <div className="relative" ref={sortMenuRef}>
                 <button
                     onClick={() => setShowSortMenu(!showSortMenu)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
@@ -126,7 +144,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
             {/* View Options Menu */}
             {(availableHiddenContent.hasIntermediates || availableHiddenContent.hasGrids) && (
-                <div className="relative">
+                <div className="relative" ref={viewMenuRef}>
                     <button
                         onClick={() => setShowViewMenu(!showViewMenu)}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${showViewMenu ? 'bg-sage-600 border-sage-500 text-white' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300'}`}

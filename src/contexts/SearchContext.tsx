@@ -56,6 +56,7 @@ interface SearchContextType {
     isActivityDockDismissed: boolean;
     setIsActivityDockDismissed: (val: boolean) => void;
     availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean };
+    refreshHiddenAvailability: () => Promise<void>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -102,6 +103,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number } | null>(null);
     const [isActivityDockDismissed, setIsActivityDockDismissed] = useState(false);
 
+    const refreshHiddenAvailability = useCallback(async () => {
+        const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
+        const availability = await checkHiddenContentAvailability();
+        setAvailableHiddenContent(availability);
+    }, []);
+
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
     const prevCollectionIdRef = useRef<string | null>(null);
@@ -121,9 +128,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             ]);
             setFacets(newFacets);
             setStats(newStats);
-            await refreshCollections();
+            await Promise.all([
+                refreshCollections(),
+                refreshHiddenAvailability()
+            ]);
         } catch (e) { console.error("Failed to refresh metadata", e); }
-    }, [activeSqlWhere, activeSqlParams, refreshCollections]);
+    }, [activeSqlWhere, activeSqlParams, refreshCollections, refreshHiddenAvailability]);
 
     // Internal debounced metadata refresh to avoid thread locks during search
     const metadataTimerRef = useRef<any>(null);
@@ -360,7 +370,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setThumbnailProgress,
             isActivityDockDismissed,
             setIsActivityDockDismissed,
-            availableHiddenContent
+            availableHiddenContent,
+            refreshHiddenAvailability
         }}>
             {children}
         </SearchContext.Provider>
