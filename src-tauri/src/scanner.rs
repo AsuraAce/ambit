@@ -135,18 +135,18 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
             }
         }
 
-        // If we still have no metadata values (Steps/CFG/etc), try to extract from Comfy chunks
-        if parsed_metadata.steps == 0 && parsed_metadata.model == "Unknown" {
+        // If we have no metadata values, or some are missing, merge from Comfy native chunks
+        if parsed_metadata.steps == 0 || parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() || parsed_metadata.sampler == "Unknown" {
              let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
              if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
-                 // Merge Comfy values if they are better
+                 // Merge Comfy values: only fill in what is missing or Unknown
                  if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
                  if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
                  if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
-                 if parsed_metadata.model == "Unknown" { parsed_metadata.model = comfy_meta.model; }
+                 if parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() { parsed_metadata.model = comfy_meta.model; }
                  if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
                  
-                 // Append prompts if missing
+                 // Prompts: only fill in if empty
                  if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
                  if parsed_metadata.negative_prompt.is_empty() { parsed_metadata.negative_prompt = comfy_meta.negative_prompt; }
              }
@@ -522,14 +522,14 @@ pub fn scan_image_internal(
             }
         }
 
-        // If we still lack basic metadata, try to extract from Comfy
-        if parsed_metadata.steps == 0 && parsed_metadata.model == "Unknown" {
+        // Merge from Comfy native chunks if basic fields are missing
+        if parsed_metadata.steps == 0 || parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() || parsed_metadata.sampler == "Unknown" {
              let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
              if comfy_meta.steps > 0 || comfy_meta.model != "Unknown" {
                  if parsed_metadata.steps == 0 { parsed_metadata.steps = comfy_meta.steps; }
                  if parsed_metadata.cfg == 0.0 { parsed_metadata.cfg = comfy_meta.cfg; }
                  if parsed_metadata.seed == 0 { parsed_metadata.seed = comfy_meta.seed; }
-                 if parsed_metadata.model == "Unknown" { parsed_metadata.model = comfy_meta.model; }
+                 if parsed_metadata.model == "Unknown" || parsed_metadata.model.is_empty() { parsed_metadata.model = comfy_meta.model; }
                  if parsed_metadata.sampler == "Unknown" { parsed_metadata.sampler = comfy_meta.sampler; }
                  if parsed_metadata.positive_prompt.is_empty() { parsed_metadata.positive_prompt = comfy_meta.positive_prompt; }
                  found_metadata = true;

@@ -9,7 +9,7 @@ pub use invokeai::extract_invokeai_metadata;
 pub use comfyui::extract_comfyui_metadata;
 pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, Debug)]
 pub struct ImageMetadata {
     pub tool: String,
     pub model: String,
