@@ -1,9 +1,8 @@
 // Helper to map InvokeAI metadata to Ambit's format
 export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): any {
     const rawVal = row[metaCol];
-    const sessionWorkflow = row.session_workflow; // From JOIN
 
-    if (!rawVal && !sessionWorkflow) return {};
+    if (!rawVal) return {};
 
     let meta: any = {};
     if (rawVal) {
@@ -51,31 +50,13 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
         }).filter(Boolean);
     }
 
-    // -- DATA AUTOPSY --
-    if (processedIndex === 0 || row.image_name?.includes('autopsy')) {
-        console.log('[InvokeAI Data Autopsy]', {
-            image: row.image_name,
-            col_workflow: !!row.workflow,
-            col_graph: !!row.graph,
-            col_session_workflow: !!row.session_workflow,
-            meta_workflow: !!root.workflow,
-            meta_graph: !!root.graph,
-            meta_keys: Object.keys(root)
-        });
-    }
-
-    // Extract Workflow - Prioritize Session Workflow if found via JOIN
-    if (sessionWorkflow) {
-        mapped.workflowJson = typeof sessionWorkflow === 'string' ? sessionWorkflow : JSON.stringify(sessionWorkflow);
-        console.log('[InvokeAI Sync Trace] Workflow found via session_queue JOIN for', row.image_name, 'Length:', mapped.workflowJson.length);
-    } else if (root.workflow || root.graph) {
-        const wf = root.workflow || root.graph;
-        mapped.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
-        console.log('[InvokeAI Sync Trace] Workflow found in metadata blob for', row.image_name, 'Length:', mapped.workflowJson.length);
-    } else if (row.workflow || row.graph || row.workflow_json || row.workflowJson) {
-        const wf = row.workflow || row.graph || row.workflow_json || row.workflowJson;
-        mapped.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
-        console.log('[InvokeAI Sync Trace] Workflow found in row fallback for', row.image_name || row.path, 'Length:', mapped.workflowJson.length);
+    // Extract Workflow - Only from embedded metadata, never from columns (too heavy)
+    if (root.workflow || root.graph) {
+        // Optional: We could even skip this to force 100% lazy loading
+        // but if it's already in the JSON blob we parsed, might as well keep it?
+        // User requested "lightweight" so let's skip unless it's tiny.
+        // Actually, let's just NOT map it. The Viewer will lazy load.
+        // mapped.workflowJson = ... 
     }
 
     return mapped;

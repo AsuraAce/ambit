@@ -37,7 +37,6 @@ export const syncImages = async (
 
     const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'");
     const allTables = allTablesRows.map((t: any) => t.name);
-    const hasSessionQueue = allTables.includes('session_queue');
     const hasGraphsTable = allTables.includes('graphs');
 
     const hasMetadataJson = columns.includes('metadata_json');
@@ -46,8 +45,6 @@ export const syncImages = async (
     const hasStarred = columns.includes('starred');
     const hasIsStarred = columns.includes('is_starred');
     const hasThumbnailName = columns.includes('thumbnail_name');
-    const hasWorkflow = columns.includes('workflow');
-    const hasGraph = columns.includes('graph');
     const hasHasWorkflow = columns.includes('has_workflow');
     const hasUpdatedAt = columns.includes('updated_at');
 
@@ -127,9 +124,9 @@ export const syncImages = async (
 
     const favCol = hasStarred ? ', i.starred' : (hasIsStarred ? ', i.is_starred' : '');
     const thumbCol = hasThumbnailName ? ', i.thumbnail_name' : '';
-    const workflowCol = hasWorkflow ? ', i.workflow' : (hasGraph ? ', i.graph as workflow' : '');
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
+    const intermediateCol = hasIsIntermediate ? ', i.is_intermediate' : '';
 
     const createdBoardIds = new Set<string>();
 
@@ -138,10 +135,8 @@ export const syncImages = async (
 
         const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${workflowCol} ${hasWfCol} ${updatedCol}
-            ${hasSessionQueue ? ', sq.workflow as session_workflow' : ''}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol}
             FROM images i
-            ${hasSessionQueue ? 'LEFT JOIN session_queue sq ON i.session_id = sq.session_id' : ''}
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
