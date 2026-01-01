@@ -48,6 +48,7 @@ export interface ImageMetadata {
   variationId?: string; // A signature (e.g. "seed:strength") for sub-noise variations
   upscaled?: boolean;
   isIntermediate?: boolean;
+  isGrid?: boolean;
   hasWorkflowHint?: boolean; // New: Hint from external DB if workflow exists
 
   // New fields for deeper extraction
@@ -112,6 +113,8 @@ export interface FilterState {
   minCfg?: number;
   maxCfg?: number;
   pinnedOnly?: boolean;
+  showIntermediates?: boolean;
+  showGrids?: boolean;
   sortOption?: SortOption;
 }
 

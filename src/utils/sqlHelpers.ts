@@ -11,10 +11,17 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // Base Condition: Not Deleted and Not Intermediate (Skip if recursive as they are added by parent)
+    // Base Condition: Not Deleted
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
-        conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
+
+        if (!filters.showIntermediates) {
+            conditions.push("(json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)");
+        }
+
+        if (!filters.showGrids) {
+            conditions.push("(json_extract(metadata_json, '$.isGrid') IS NULL OR json_extract(metadata_json, '$.isGrid') != 1) AND (json_extract(metadata_json, '$.generationType') IS NULL OR json_extract(metadata_json, '$.generationType') != 'grid')");
+        }
     }
 
     // 1. Privacy Logic

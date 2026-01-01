@@ -29,6 +29,8 @@ pub struct ImageMetadata {
     pub variation_id: Option<String>,
     #[serde(rename = "isIntermediate", default)]
     pub is_intermediate: bool,
+    #[serde(rename = "isGrid", default)]
+    pub is_grid: bool,
     #[serde(rename = "workflowJson", skip_serializing_if = "Option::is_none")]
     pub workflow_json: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,6 +67,7 @@ impl Default for ImageMetadata {
             control_nets: Vec::new(),
             variation_id: None,
             is_intermediate: false,
+            is_grid: false,
             workflow_json: None,
             vae: None,
             clip_skip: None,

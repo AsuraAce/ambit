@@ -425,6 +425,10 @@ pub fn scan_image_internal(
         parsed_metadata.generation_type = metadata::detect_generation_type(&path_buf);
     }
 
+    if parsed_metadata.generation_type == "grid" {
+        parsed_metadata.is_grid = true;
+    }
+
     if parsed_metadata.generation_type != "unknown" {
         found_metadata = true;
     }

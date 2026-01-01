@@ -55,6 +55,7 @@ interface SearchContextType {
     setThumbnailProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
     isActivityDockDismissed: boolean;
     setIsActivityDockDismissed: (val: boolean) => void;
+    availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean };
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -72,7 +73,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null,
+        showIntermediates: false,
+        showGrids: false
     });
+    const [availableHiddenContent, setAvailableHiddenContent] = useState({ hasIntermediates: false, hasGrids: false });
     const [sortOption, setSortOption] = useState<SortOption>('date_desc');
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
@@ -246,16 +250,19 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [sortOption, filters.collectionId, smartCollections, refreshCollections, isLoaded]);
 
-    // Persistence load & Global count
+    // Persistence load & Global count & Hidden availability
     useEffect(() => {
         const loadInitial = async () => {
             const { countImages } = await import('../services/db/searchRepo');
-            const [state, globalCount] = await Promise.all([
+            const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
+            const [state, globalCount, availability] = await Promise.all([
                 appRepository.load(),
-                countImages('WHERE is_deleted = 0', [])
+                countImages('WHERE is_deleted = 0', []),
+                checkHiddenContentAvailability()
             ]);
             if (state.recentSearches) setRecentSearches(state.recentSearches);
             setGlobalTotal(globalCount);
+            setAvailableHiddenContent(availability);
         };
         loadInitial();
     }, []);
@@ -352,7 +359,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             thumbnailProgress,
             setThumbnailProgress,
             isActivityDockDismissed,
-            setIsActivityDockDismissed
+            setIsActivityDockDismissed,
+            availableHiddenContent
         }}>
             {children}
         </SearchContext.Provider>

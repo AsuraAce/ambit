@@ -15,7 +15,8 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
         tool: 'InvokeAI',
         positivePrompt: '',
         negativePrompt: '',
-        hasWorkflowHint: row.has_workflow === 1 || row.has_workflow === true
+        hasWorkflowHint: row.has_workflow === 1 || row.has_workflow === true,
+        isIntermediate: row.is_intermediate === 1 || row.is_intermediate === true || (meta && meta.is_intermediate === true)
     };
 
     const root = meta.image || meta.generation || meta;

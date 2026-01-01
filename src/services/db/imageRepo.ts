@@ -117,13 +117,27 @@ export const isImageNew = async (id: string): Promise<boolean> => {
     return (result[0]?.count || 0) === 0;
 };
 
-export const getAllImages = async (limit?: number, offset: number = 0, prioritizePinned: boolean = false): Promise<AIImage[]> => {
+export const getAllImages = async (
+    limit?: number,
+    offset: number = 0,
+    prioritizePinned: boolean = false,
+    showIntermediates: boolean = false,
+    showGrids: boolean = false
+): Promise<AIImage[]> => {
     const db = await getDb();
     const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
 
+    let filterClauses = 'WHERE is_deleted = 0';
+    if (!showIntermediates) {
+        filterClauses += ' AND metadata_json NOT LIKE \'%"isIntermediate":true%\'';
+    }
+    if (!showGrids) {
+        filterClauses += ' AND metadata_json NOT LIKE \'%"isGrid":true%\' AND metadata_json NOT LIKE \'%"generationType":"grid"%\'';
+    }
+
     const query = limit
-        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 0 ${orderBy}`;
+        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<any[]>(query);
     return rows.map(mapRowToImage);
@@ -293,4 +307,17 @@ export const purgeLibrary = async () => {
 
         console.log('[DB] Library purged. Triggers will be recreated on next load.');
     });
+};
+
+export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
+    const db = await getDb();
+    const [intermediateCheck, gridCheck] = await Promise.all([
+        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%"isIntermediate":true%\' LIMIT 1'),
+        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%"isGrid":true%\' OR metadata_json LIKE \'%"generationType":"grid"%\' LIMIT 1')
+    ]);
+
+    return {
+        hasIntermediates: intermediateCheck.length > 0,
+        hasGrids: gridCheck.length > 0
+    };
 };
