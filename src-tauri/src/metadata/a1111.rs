@@ -105,6 +105,16 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
         }
     }
 
+    // Extract Hypernetworks from positive prompt
+    if let Ok(re) = Regex::new(r"<hypernet:([^:>]+)(?::[^>]+)?>") {
+        for cap in re.captures_iter(&meta.positive_prompt) {
+            let hn_name = cap[1].to_string();
+            if !meta.hypernetworks.contains(&hn_name) {
+                meta.hypernetworks.push(hn_name);
+            }
+        }
+    }
+
     if params_line.contains("Steps: ") {
         // If the parameters line contains prompt text before "Steps: ", try to isolate parameters
         if let Some(pos) = params_line.find("Steps: ") {

@@ -130,24 +130,24 @@ export const buildSqlWhereClause = (
     // 6. LoRAs, Embeddings, Hypernetworks (Arrays)
     if (filters.loras.length > 0) {
         const loraConditions = filters.loras.map(l => {
-            params.push(`%${l}%`);
-            return `json_extract(metadata_json, '$.loras') LIKE ?`;
+            params.push(l);
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.loras') WHERE value = ?)`;
         });
         conditions.push(`(${loraConditions.join(' OR ')})`);
     }
 
     if (filters.embeddings.length > 0) {
         const embConditions = filters.embeddings.map(e => {
-            params.push(`%${e}%`);
-            return `json_extract(metadata_json, '$.embeddings') LIKE ?`;
+            params.push(e);
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.embeddings') WHERE value = ?)`;
         });
         conditions.push(`(${embConditions.join(' OR ')})`);
     }
 
     if (filters.hypernetworks.length > 0) {
         const hnConditions = filters.hypernetworks.map(h => {
-            params.push(`%${h}%`);
-            return `json_extract(metadata_json, '$.hypernetworks') LIKE ?`;
+            params.push(h);
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.hypernetworks') WHERE value = ?)`;
         });
         conditions.push(`(${hnConditions.join(' OR ')})`);
     }

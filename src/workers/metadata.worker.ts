@@ -432,8 +432,12 @@ export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool):
                     const name = v.split('(')[0].trim().replace(/^"|"$/g, '');
                     if (name) {
                         if (!metadata.loras) metadata.loras = [];
-                        if (!metadata.loras.includes(name)) {
-                            metadata.loras.push(name);
+                        try {
+                            if (!metadata.loras.includes(name)) {
+                                metadata.loras.push(name);
+                            }
+                        } catch (e) {
+                            // ignore invalid lora tag
                         }
                     }
                 } else if (k === 'Lora hashes') {
