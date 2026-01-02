@@ -12,6 +12,14 @@ export interface LibraryStats {
     keywordStats: { text: string; value: number }[];
 }
 
+export interface Facets {
+    models: string[];
+    loras: { name: string; count: number }[];
+    embeddings: { name: string; count: number }[];
+    hypernetworks: { name: string; count: number }[];
+    tools: string[];
+}
+
 export const countImages = async (whereClause: string, params: any[]): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
@@ -162,7 +170,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     }
 };
 
-export const getFacets = async (whereClause: string = '', params: any[] = []) => {
+export const getFacets = async (whereClause: string = '', params: any[] = []): Promise<Facets> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
@@ -200,6 +208,26 @@ export const getFacets = async (whereClause: string = '', params: any[] = []) =>
             count: r.count
         }));
 
+        const embeddedStatsRows = await db.select<any[]>(`
+            SELECT 
+                j.value as name,
+                count(*) as count
+            FROM images, json_each(metadata_json, '$.embeddings') j
+            ${finalWhere}
+            GROUP BY name
+            ORDER BY count DESC
+        `, params);
+
+        const hnStatsRows = await db.select<any[]>(`
+            SELECT 
+                j.value as name,
+                count(*) as count
+            FROM images, json_each(metadata_json, '$.hypernetworks') j
+            ${finalWhere}
+            GROUP BY name
+            ORDER BY count DESC
+        `, params);
+
         const tools = await db.select<any[]>(`
             SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as name 
             FROM images ${finalWhere} 
@@ -209,11 +237,13 @@ export const getFacets = async (whereClause: string = '', params: any[] = []) =>
         return {
             models: models.map(m => m.name).filter(Boolean),
             loras: loraStats,
+            embeddings: embeddedStatsRows.map(r => ({ name: r.name, count: r.count })),
+            hypernetworks: hnStatsRows.map(r => ({ name: r.name, count: r.count })),
             tools: tools.map(t => t.name).filter(Boolean)
         };
 
     } catch (e) {
         console.error('[DB] Failed to get facets', e);
-        return { models: [], loras: [], tools: [] };
+        return { models: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
     }
 };

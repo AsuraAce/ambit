@@ -29,6 +29,8 @@ export interface ImageMetadata {
     notes?: string;
     variationId?: string;
     loras?: string[];
+    embeddings?: string[];
+    hypernetworks?: string[];
     controlNets?: string[];
     ipAdapters?: string[];
     vae?: string;
@@ -392,6 +394,29 @@ export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool):
                     }
                     case 'Variation seed': variationSeed = v; break;
                     case 'Variation seed strength': variationStrength = v; break;
+                    case 'Hypernet':
+                    case 'Hypernetwork': {
+                        const name = v.split('(')[0].trim().replace(/^"|"$/g, '');
+                        if (name) {
+                            if (!metadata.hypernetworks) metadata.hypernetworks = [];
+                            if (!metadata.hypernetworks.includes(name)) {
+                                metadata.hypernetworks.push(name);
+                            }
+                        }
+                        break;
+                    }
+                    case 'TI hashes': {
+                        if (!metadata.embeddings) metadata.embeddings = [];
+                        const parts = v.split(',');
+                        for (const part of parts) {
+                            const [name] = part.split(':');
+                            const embName = name.trim().replace(/^"|"$/g, '');
+                            if (embName && !metadata.embeddings.includes(embName)) {
+                                metadata.embeddings.push(embName);
+                            }
+                        }
+                        break;
+                    }
                 }
 
                 if (k.startsWith('ControlNet')) {

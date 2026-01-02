@@ -27,6 +27,10 @@ pub struct ImageMetadata {
     pub loras: Vec<String>,
     #[serde(rename = "controlNets", skip_serializing_if = "Vec::is_empty")]
     pub control_nets: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub embeddings: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hypernetworks: Vec<String>,
     #[serde(rename = "variationId", skip_serializing_if = "Option::is_none")]
     pub variation_id: Option<String>,
     #[serde(rename = "isIntermediate", default)]
@@ -67,6 +71,8 @@ impl Default for ImageMetadata {
             negative_prompt: String::new(),
             loras: Vec::new(),
             control_nets: Vec::new(),
+            embeddings: Vec::new(),
+            hypernetworks: Vec::new(),
             variation_id: None,
             is_intermediate: false,
             is_grid: false,
@@ -130,6 +136,18 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     for cn in secondary.control_nets {
         if !base.control_nets.contains(&cn) {
             base.control_nets.push(cn);
+        }
+    }
+    
+    for emb in secondary.embeddings {
+        if !base.embeddings.contains(&emb) {
+            base.embeddings.push(emb);
+        }
+    }
+    
+    for hn in secondary.hypernetworks {
+        if !base.hypernetworks.contains(&hn) {
+            base.hypernetworks.push(hn);
         }
     }
 }

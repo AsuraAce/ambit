@@ -6,11 +6,7 @@ import { useCollections } from './CollectionContext';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { appRepository } from '../services/repository';
 
-interface Facets {
-    models: string[];
-    loras: { name: string; count: number }[];
-    tools: string[];
-}
+import { Facets } from '../services/db/searchRepo';
 
 interface LibraryStats {
     totalImages: number;
@@ -71,6 +67,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         models: [],
         tools: [],
         loras: [],
+        embeddings: [],
+        hypernetworks: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null,
@@ -81,7 +79,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [sortOption, setSortOption] = useState<SortOption>('date_desc');
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-    const [facets, setFacets] = useState<Facets>({ models: [], loras: [], tools: [] });
+    const [facets, setFacets] = useState<Facets>({ models: [], loras: [], embeddings: [], hypernetworks: [], tools: [] });
     const [stats, setStats] = useState<LibraryStats>({
         totalImages: 0,
         totalGenerations: 0,
@@ -316,6 +314,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             models: [],
             tools: [],
             loras: [],
+            embeddings: [],
+            hypernetworks: [],
             collectionId: null,
             minSteps: undefined,
             maxSteps: undefined,

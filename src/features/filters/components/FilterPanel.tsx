@@ -58,6 +58,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         generator: false,
         model: false,
         resources: false,
+        embeddings: false,
+        hypernetworks: false,
         date: true
     });
 
@@ -148,9 +150,27 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     />
 
                     <ResourceSection
+                        title="Resources (LoRA)"
+                        type="loras"
                         filters={filters} setFilters={setFilters}
-                        loras={facets.loras}
+                        data={facets.loras}
                         isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
+                    />
+
+                    <ResourceSection
+                        title="Resources (Embedding)"
+                        type="embeddings"
+                        filters={filters} setFilters={setFilters}
+                        data={facets.embeddings}
+                        isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                    />
+
+                    <ResourceSection
+                        title="Resources (Hypernet)"
+                        type="hypernetworks"
+                        filters={filters} setFilters={setFilters}
+                        data={facets.hypernetworks}
+                        isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
                     />
                 </div>
             </div>

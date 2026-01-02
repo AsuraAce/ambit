@@ -127,13 +127,29 @@ export const buildSqlWhereClause = (
         conditions.push(`(${toolConditions.join(' OR ')})`);
     }
 
-    // 6. LoRAs (Array)
+    // 6. LoRAs, Embeddings, Hypernetworks (Arrays)
     if (filters.loras.length > 0) {
         const loraConditions = filters.loras.map(l => {
             params.push(`%${l}%`);
             return `json_extract(metadata_json, '$.loras') LIKE ?`;
         });
         conditions.push(`(${loraConditions.join(' OR ')})`);
+    }
+
+    if (filters.embeddings.length > 0) {
+        const embConditions = filters.embeddings.map(e => {
+            params.push(`%${e}%`);
+            return `json_extract(metadata_json, '$.embeddings') LIKE ?`;
+        });
+        conditions.push(`(${embConditions.join(' OR ')})`);
+    }
+
+    if (filters.hypernetworks.length > 0) {
+        const hnConditions = filters.hypernetworks.map(h => {
+            params.push(`%${h}%`);
+            return `json_extract(metadata_json, '$.hypernetworks') LIKE ?`;
+        });
+        conditions.push(`(${hnConditions.join(' OR ')})`);
     }
 
     // 7. Search Query (Advanced)

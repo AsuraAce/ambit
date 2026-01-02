@@ -41,6 +41,8 @@ export interface ImageMetadata {
 
   // Advanced Metadata
   loras?: string[];
+  embeddings?: string[];
+  hypernetworks?: string[];
   controlNets?: string[];
   ipAdapters?: string[];
 
@@ -105,6 +107,8 @@ export interface FilterState {
   models: string[];
   tools: GeneratorTool[];
   loras: string[]; // New: Filter by LoRA usage
+  embeddings: string[];
+  hypernetworks: string[];
   dateRange: 'all' | 'today' | 'week' | 'month';
   favoritesOnly: boolean;
   collectionId: string | null;

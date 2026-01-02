@@ -166,6 +166,23 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     }
                     "Variation seed" => variation_seed = val.to_string(),
                     "Variation seed strength" => variation_strength = val.to_string(),
+                    "Hypernet" | "Hypernetwork" => {
+                        let name = val.split('(').next().unwrap_or("").trim().trim_matches('"');
+                        if !name.is_empty() && !meta.hypernetworks.contains(&name.to_string()) {
+                            meta.hypernetworks.push(name.to_string());
+                        }
+                    }
+                    "TI hashes" => {
+                        // Format: "name: hash, name: hash"
+                        for part in val.split(',') {
+                            if let Some((name, _)) = part.split_once(':') {
+                                let emb_name = name.trim().trim_matches('"');
+                                if !emb_name.is_empty() && !meta.embeddings.contains(&emb_name.to_string()) {
+                                    meta.embeddings.push(emb_name.to_string());
+                                }
+                            }
+                        }
+                    }
                     _ => {
                         // Special handling for ControlNet
                         if key.starts_with("ControlNet") {
@@ -303,5 +320,15 @@ mod tests {
         assert!(meta.loras.contains(&"some_lora".to_string()));
         assert!(meta.loras.contains(&"lora1".to_string()));
         assert!(meta.loras.contains(&"lora2".to_string()));
+    }
+
+    #[test]
+    fn test_extract_embeddings_and_hypernets() {
+        let raw = "Prompt\nSteps: 20, Hypernet: cool_style(0.8), TI hashes: \"emb1: abc, emb2: def\"";
+        let meta = extract_a1111_metadata(raw, None);
+        
+        assert!(meta.hypernetworks.contains(&"cool_style".to_string()));
+        assert!(meta.embeddings.contains(&"emb1".to_string()));
+        assert!(meta.embeddings.contains(&"emb2".to_string()));
     }
 }
