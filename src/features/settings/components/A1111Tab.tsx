@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen } from 'lucide-react';
+import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen, RefreshCw } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { A1111FolderType, DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
@@ -11,19 +11,26 @@ interface TabProps {
 }
 
 export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
-    const { setIsImporting, setImportProgress, refreshCollections } = useLibraryContext();
+    const {
+        setIsImporting,
+        setImportProgress,
+        refreshCollections,
+        isResolvingModels: isResolving,
+        setIsResolvingModels: setIsResolving,
+        modelResolutionProgress: resolutionProgress,
+        setModelResolutionProgress: setResolutionProgress
+    } = useLibraryContext() as any;
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-    const [isScanning, setIsScanning] = useState(false);
+    const [isDiscovering, setIsDiscovering] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [scanLogs, setScanLogs] = useState<string[]>([]);
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
     const [showAllFolders, setShowAllFolders] = useState(false);
     const [forceVariant, setForceVariant] = useState<WebUIVariant | 'Auto'>('Auto');
-    const [resolutionProgress, setResolutionProgress] = useState<{ current: number, total: number, message: string } | null>(null);
 
     const handleDiscover = async () => {
         if (!settings.a1111Path) return;
-        setIsScanning(true);
+        setIsDiscovering(true);
         setTestResult(null);
         try {
             const { discoverA1111Candidates } = await import('../../../services/a1111/config');
@@ -57,7 +64,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
             console.error(e);
             setTestResult({ success: false, message: "Discovery failed. Check path permissions." });
         } finally {
-            setIsScanning(false);
+            setIsDiscovering(false);
         }
     };
 
@@ -110,7 +117,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
 
                 const thumbDir = await getThumbnailDir();
 
-                setIsScanning(true);
+                setIsDiscovering(true);
                 setIsImporting(true);
                 setImportProgress({ current: 0, total: alreadyLinked.length, message: 'Starting sync...' });
 
@@ -149,7 +156,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                 console.error("Manual sync failed", e);
                 setTestResult({ success: false, message: "Sync failed. See console for details." });
             } finally {
-                setIsScanning(false);
+                setIsDiscovering(false);
                 setIsImporting(false);
                 setImportProgress(null);
             }
@@ -248,13 +255,14 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                     <div className="flex items-center justify-between">
                         <button
                             onClick={handleDiscover}
-                            disabled={isScanning || !settings.a1111Path}
+                            disabled={isDiscovering || !settings.a1111Path}
                             className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.a1111Path
+                                || isDiscovering
                                 ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
                                 : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
                                 }`}
                         >
-                            {isScanning ? (
+                            {isDiscovering ? (
                                 <>
                                     <Loader2 className="w-4 h-4 animate-spin" />
                                     Scanning...
@@ -419,19 +427,60 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                             )}
                         </div>
                     )}
-
                 </div>
             </section >
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-blue-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-blue-500/20">
-                    <FolderSearch className="w-4 h-4" /> Model Hash Resolution
-                </h4>
+                <div className="flex items-center justify-between mb-6">
+                    <h4 className="text-[10px] font-black text-white px-4 py-2 bg-blue-600 rounded-lg inline-flex items-center gap-3 uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                        <FolderSearch className="w-4 h-4" /> Model Hash Resolution
+                    </h4>
+                    <button
+                        onClick={async () => {
+                            if (!window.confirm("This will clear all currently resolved model names and re-trigger the resolution process. Continue?")) return;
+
+                            setTestResult(null);
+                            setResolutionProgress(null);
+                            setIsResolving(true);
+
+                            try {
+                                const { invoke } = await import('@tauri-apps/api/core');
+                                const { listen } = await import('@tauri-apps/api/event');
+
+                                await invoke('clear_model_cache');
+
+                                let unlisten: (() => void) | undefined;
+                                unlisten = await listen<{ current: number, total: number, message: string }>('model_resolution_progress', (event) => {
+                                    setResolutionProgress(event.payload);
+                                });
+
+                                const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online', { skipHarvest: true });
+                                setTestResult({
+                                    success: true,
+                                    message: `Resolution re-run finished: ${res.resolvedCount} resolved, ${res.failedCount} failed.`
+                                });
+                                if (unlisten) unlisten();
+                            } catch (e: any) {
+                                console.error(e);
+                                setTestResult({ success: false, message: `Re-run failed: ${e.message || e}` });
+                            } finally {
+                                setIsResolving(false);
+                                setResolutionProgress(null);
+                            }
+                        }}
+                        disabled={isResolving}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-blue-600 hover:bg-blue-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                        title="Clear cache and re-run resolution"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isResolving ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} />
+                        Re-run Hashing
+                    </button>
+                </div>
 
                 <div className="space-y-4">
                     <div className="px-1">
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Resolve unknown model hashes (e.g., from archived images) to their readable names.
+                            Resolve unknown model hashes from image metadata using local caches or CivitAI.
                         </p>
                     </div>
 
@@ -481,8 +530,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                             </p>
                             <button
                                 onClick={async () => {
-                                    setIsScanning(true);
+                                    setIsResolving(true);
                                     setResolutionProgress(null);
+                                    setTestResult(null); // Clear previous results
 
                                     let unlisten: (() => void) | undefined;
 
@@ -494,7 +544,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                             setResolutionProgress(event.payload);
                                         });
 
-                                        const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online');
+                                        const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online', { skipHarvest: false });
                                         setTestResult({
                                             success: true,
                                             message: `Online lookup finished: ${res.resolvedCount} resolved, ${res.failedCount} failed.`
@@ -504,14 +554,14 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                         setTestResult({ success: false, message: `Lookup failed: ${e.message || e}` });
                                     } finally {
                                         if (unlisten) unlisten();
-                                        setIsScanning(false);
+                                        setIsResolving(false);
                                         setResolutionProgress(null);
                                     }
                                 }}
-                                disabled={isScanning}
+                                disabled={isResolving}
                                 className="mt-auto w-full py-2 bg-blue-600 hover:bg-blue-500 border border-transparent rounded-lg text-xs font-bold transition-all text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
                             >
-                                {isScanning ? (
+                                {isResolving ? (
                                     resolutionProgress ? (
                                         <div className="relative z-10 flex items-center justify-center gap-2">
                                             <span>{resolutionProgress.message}</span>
@@ -523,10 +573,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                     'Resolve Online'
                                 )}
 
-                                {isScanning && resolutionProgress && (
+                                {isResolving && resolutionProgress && (
                                     <div
                                         className="absolute top-0 left-0 h-full bg-blue-400 transition-all duration-300 pointer-events-none"
-                                        style={{ width: `${(resolutionProgress.current / resolutionProgress.total) * 100}%` }}
+                                        style={{ width: `${(resolutionProgress.current / (resolutionProgress.total || 100)) * 100}%` }}
                                     />
                                 )}
                             </button>

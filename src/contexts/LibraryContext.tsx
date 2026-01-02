@@ -129,7 +129,7 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
   const syncCtx = useSync();
   const watcherCtx = useWatchers();
 
-  const isAnyTaskActive = searchCtx.isImporting || searchCtx.isRegeneratingThumbnails || syncCtx.syncStatus === 'syncing';
+  const isAnyTaskActive = searchCtx.isImporting || searchCtx.isRegeneratingThumbnails || syncCtx.syncStatus === 'syncing' || searchCtx.isResolvingModels;
 
   useEffect(() => {
     if (isAnyTaskActive) {

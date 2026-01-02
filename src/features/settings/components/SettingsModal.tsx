@@ -57,8 +57,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   }, [isOpen, settings, initialTab]);
 
 
+  const isDirty = JSON.stringify(localSettings) !== JSON.stringify(settings);
 
   const handleSave = () => {
+    if (!isDirty) return;
     onSave(localSettings);
     onClose();
   };
@@ -157,7 +159,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="px-6 py-2.5 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sage-500/20 flex items-center gap-2 transition-all transform active:scale-95"
+                  disabled={!isDirty}
+                  className={`px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all transform active:scale-95 ${isDirty
+                      ? 'bg-sage-600 hover:bg-sage-500 text-white shadow-sage-500/20 cursor-pointer'
+                      : 'bg-gray-200 dark:bg-white/5 text-gray-400 dark:text-gray-500 shadow-none cursor-not-allowed opacity-50'
+                    }`}
                 >
                   <Save className="w-4 h-4" /> Save Changes
                 </button>

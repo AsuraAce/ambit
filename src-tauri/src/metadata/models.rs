@@ -2,7 +2,7 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use crate::db::resolve_db_path;
 use serde_json;
 
@@ -174,44 +174,56 @@ struct ProgressPayload {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, String> {
+pub async fn resolve_hashes_online(app: tauri::AppHandle, skip_harvest: bool) -> Result<ResolutionResult, String> {
     use tauri::Emitter;
 
     let db_path = resolve_db_path(&app)?;
-    let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
-    // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
-    let _ = app.emit("model_resolution_progress", ProgressPayload {
-        current: 0,
-        total: 100,
-        message: "Harvesting existing local metadata...".to_string()
-    });
-    
-    let harvest_count = conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at) 
-         SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1
-         FROM images 
-         WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
-         AND json_extract(metadata_json, '$.model') IS NOT NULL",
-         params![now]
-    ).unwrap_or(0);
-    
-    // 1. Find all images with missing model names or hash-like model names
-    // And where we don't have a resolution in the models table
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
-         FROM images 
-         WHERE hash IS NOT NULL 
-         AND hash NOT IN (SELECT hash FROM models)"
-    ).map_err(|e| e.to_string())?;
+    let mut harvest_count = 0;
+    let mut hashes_to_resolve = Vec::new();
 
-    let hashes_to_resolve: Vec<String> = stmt.query_map([], |row| row.get(0))
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+    // 1. Collect hashes and do initial harvest
+    {
+        let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
-    drop(stmt);
+        if !skip_harvest {
+            // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
+            let _ = app.emit("model_resolution_progress", ProgressPayload {
+                current: 0,
+                total: 100,
+                message: "Harvesting existing local metadata...".to_string()
+            });
+            
+            harvest_count = conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at) 
+                 SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1
+                 FROM images 
+                 WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+                 AND json_extract(metadata_json, '$.model') IS NOT NULL",
+                 params![now]
+            ).unwrap_or(0);
+        } else {
+            let _ = app.emit("model_resolution_progress", ProgressPayload {
+                current: 0,
+                total: 100,
+                message: "Skipping harvest, searching unknown hashes...".to_string()
+            });
+        }
+        
+        // Find all images with missing model names or hash-like model names
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
+             FROM images 
+             WHERE hash IS NOT NULL 
+             AND hash NOT IN (SELECT hash FROM models)"
+        ).map_err(|e| e.to_string())?;
+
+        hashes_to_resolve = stmt.query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(|e| e.to_string())?;
+    }
 
     let total = hashes_to_resolve.len();
     if total == 0 {
@@ -219,15 +231,13 @@ pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, 
     }
 
     let client = Client::new();
-    let mut resolved = harvest_count;
+    let mut resolved_items = Vec::new();
     let mut failed = 0;
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    for (i, hash) in hashes_to_resolve.iter().enumerate() {
+    for (i, hash) in hashes_to_resolve.into_iter().enumerate() {
         // Rate limit kindness
         if i > 0 && i % 5 == 0 {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
         let _ = app.emit("model_resolution_progress", ProgressPayload {
@@ -237,16 +247,12 @@ pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, 
         });
 
         let url = format!("https://civitai.com/api/v1/model-versions/by-hash/{}", hash);
-        match client.get(&url).send() {
+        match client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    if let Ok(version) = resp.json::<CivitAiVersion>() {
+                    if let Ok(version) = resp.json::<CivitAiVersion>().await {
                         let full_name = format!("{} {}", version.model.name, version.name);
-                        tx.execute(
-                            "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at) VALUES (?1, ?2, 'civitai', ?3, ?4)",
-                            params![hash, full_name, version.id, now]
-                        ).unwrap_or(0);
-                        resolved += 1;
+                        resolved_items.push((hash, full_name, version.id));
                     } else {
                         failed += 1;
                     }
@@ -260,7 +266,28 @@ pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, 
         }
     }
 
-    tx.commit().map_err(|e| e.to_string())?;
+    // 2. Save results
+    let newly_resolved = resolved_items.len();
+    if newly_resolved > 0 {
+        let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        
+        for (hash, name, version_id) in resolved_items {
+            let _ = tx.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at) VALUES (?1, ?2, 'civitai', ?3, ?4)",
+                params![hash, name, version_id, now]
+            );
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+    }
 
-    Ok(ResolutionResult { resolved_count: resolved, failed_count: failed })
+    Ok(ResolutionResult { resolved_count: harvest_count + newly_resolved, failed_count: failed })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
+    let db_path = resolve_db_path(&app)?;
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM models", []).map_err(|e| e.to_string())?;
+    Ok(())
 }
