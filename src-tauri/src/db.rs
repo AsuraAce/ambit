@@ -118,7 +118,21 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5]
+    let migration6 = Migration {
+        version: 6,
+        description: "create_models_table",
+        sql: "CREATE TABLE IF NOT EXISTS models (
+            hash TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            filename TEXT,
+            lookup_source TEXT,
+            civitai_version_id INTEGER,
+            scanned_at INTEGER
+        );",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6]
 }
 
 // Helper to resolve the correct DB path used by tauri-plugin-sql

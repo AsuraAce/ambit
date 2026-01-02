@@ -33,6 +33,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 rusqlite = "0.31"
 notify = { version = "8.2.0", features = ["serde"] }
 regex = "1.12.2"
+reqwest = { version = "0.13.1", default-features = false, features = ["json", "blocking", "native-tls"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"

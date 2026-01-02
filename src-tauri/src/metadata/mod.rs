@@ -3,6 +3,7 @@ pub mod invokeai;
 pub mod comfyui;
 pub mod parsers;
 pub mod resources;
+pub mod models;
 
 pub use a1111::extract_a1111_metadata;
 pub use invokeai::extract_invokeai_metadata;

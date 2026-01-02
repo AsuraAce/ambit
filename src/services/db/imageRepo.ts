@@ -136,8 +136,8 @@ export const getAllImages = async (
     }
 
     const query = limit
-        ? `SELECT ${IMAGE_FIELDS_LIGHT} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${IMAGE_FIELDS_LIGHT} FROM images ${filterClauses} ${orderBy}`;
+        ? `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<any[]>(query);
     return rows.map(mapRowToImage);
@@ -153,7 +153,7 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE id IN (${placeholders})`;
+        const query = `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash WHERE images.id IN (${placeholders})`;
         const rows = await db.select<any[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }

@@ -421,6 +421,89 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
 
                 </div>
             </section >
+
+            <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-blue-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                    <FolderSearch className="w-4 h-4" /> Model Hash Resolution
+                </h4>
+
+                <div className="space-y-4">
+                    <div className="px-1">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Resolve unknown model hashes (e.g., from archived images) to their readable names.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                                <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 1: Local Cache</h5>
+                                <span className="text-[10px] font-mono bg-gray-200 dark:bg-white/10 px-2 py-0.5 rounded text-gray-500">Fast & Offline</span>
+                            </div>
+                            <p className="text-[11px] text-gray-500">
+                                Import <code className="text-xs bg-gray-200 dark:bg-white/10 px-1 rounded mx-0.5">cache.json</code> from your A1111 installation.
+                            </p>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const { open } = await import('@tauri-apps/plugin-dialog');
+                                        const { invoke } = await import('@tauri-apps/api/core');
+
+                                        const selected = await open({
+                                            multiple: false,
+                                            filters: [{ name: 'JSON', extensions: ['json'] }],
+                                            defaultPath: settings.a1111Path
+                                        });
+
+                                        if (selected && typeof selected === 'string') {
+                                            const count = await invoke<number>('import_a1111_cache', { cachePath: selected });
+                                            setTestResult({ success: true, message: `Imported ${count} models from local cache.` });
+                                        }
+                                    } catch (e: any) {
+                                        console.error(e);
+                                        setTestResult({ success: false, message: `Import failed: ${e.message || e}` });
+                                    }
+                                }}
+                                className="mt-auto w-full py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 rounded-lg text-xs font-bold transition-all text-gray-700 dark:text-gray-200 mb-1"
+                            >
+                                Import cache.json
+                            </button>
+                        </div>
+
+                        <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                                <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 2: External API</h5>
+                                <span className="text-[10px] font-mono bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded">CivitAI Lookup</span>
+                            </div>
+                            <p className="text-[11px] text-gray-500">
+                                Query CivitAI for unknown hashes. Required for deleted/archived models.
+                            </p>
+                            <button
+                                onClick={async () => {
+                                    setIsScanning(true);
+                                    try {
+                                        const { invoke } = await import('@tauri-apps/api/core');
+                                        const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online');
+                                        setTestResult({
+                                            success: true,
+                                            message: `Online lookup finished: ${res.resolvedCount} resolved, ${res.failedCount} failed.`
+                                        });
+                                    } catch (e: any) {
+                                        console.error(e);
+                                        setTestResult({ success: false, message: `Lookup failed: ${e.message || e}` });
+                                    } finally {
+                                        setIsScanning(false);
+                                    }
+                                }}
+                                disabled={isScanning}
+                                className="mt-auto w-full py-2 bg-blue-600 hover:bg-blue-500 border border-transparent rounded-lg text-xs font-bold transition-all text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isScanning ? 'Querying CivitAI...' : 'Resolve Online'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div >
     );
 });

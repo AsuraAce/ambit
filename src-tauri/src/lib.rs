@@ -27,6 +27,8 @@ pub fn run() {
             scanner::open_file,
             scanner::show_in_folder,
             watcher::start_native_folder_watcher,
+            metadata::models::import_a1111_cache,
+            metadata::models::resolve_hashes_online,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,6 +14,11 @@ export function mapRowToImage(row: any): AIImage {
     const normalizedPath = normalizePath(row.path);
     const thumbPath = row.thumbnail_path ? normalizePath(row.thumbnail_path) : null;
 
+    const metadata = JSON.parse(row.metadata_json || '{}');
+    if (row.resolved_model_name) {
+        metadata.model = row.resolved_model_name;
+    }
+
     return {
         id: row.id,
         url: convertFileSrc(normalizedPath),
@@ -31,7 +36,7 @@ export function mapRowToImage(row: any): AIImage {
         groupId: row.group_id,
         boardId: row.board_id,
         notes: row.notes,
-        metadata: JSON.parse(row.metadata_json || '{}'),
+        metadata: metadata,
         originalMetadata: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined
     };
 }
