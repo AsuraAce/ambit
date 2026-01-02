@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useRef, useCallback } from 'react';
-import { AIImage, AppSettings, RecoveryStyle } from '../types';
+import { AIImage, AppSettings, RecoveryStyle, GeneratorTool } from '../types';
 import { exportImagesToZip } from '../services/exportService';
 import { imageToBase64 } from '../services/imageService';
 import { recoverImageMetadata } from '../services/geminiService';
@@ -27,7 +27,7 @@ export const useFileOperations = ({
 }: UseFileOperationsProps) => {
     const { addToast } = useToast();
     const {
-        isImporting, setIsImporting, setImportProgress,
+        isImporting, setIsImporting, importProgress, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
         thumbnailProgress, setThumbnailProgress,
         refreshHiddenAvailability
@@ -98,14 +98,29 @@ export const useFileOperations = ({
         }
     };
 
-    const handleImportPaths = async (paths: string[]) => {
+    const handleImportFolders = async (folders: { path: string, variant?: string }[]) => {
+        // Group by variant to optimize bulk processing
+        const byVariant: Record<string, string[]> = {};
+        for (const { path, variant } of folders) {
+            const v = variant || 'Unknown';
+            if (!byVariant[v]) byVariant[v] = [];
+            byVariant[v].push(path);
+        }
+
+        for (const [variant, paths] of Object.entries(byVariant)) {
+            const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
+            await handleImportPaths(paths, v);
+        }
+    };
+
+    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool) => {
         setIsImporting(true);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths(paths, thumbDir, (current, total, message) => {
                 setImportProgress({ current, total, message });
-            });
+            }, defaultTool);
             commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
@@ -272,17 +287,19 @@ export const useFileOperations = ({
 
     return {
         isImporting,
+        importProgress,
         isExporting,
         isRecoveringMetadata,
         isRegeneratingThumbnails,
         fileInputRef,
         importImages,
-        handleImportFiles: handleWebFiles,
         handleImportPaths,
+        handleImportFolders,
+        handleImportFiles: handleWebFiles,
+        scanDirectory,
         exportImages,
         deleteImages,
         recoverMetadata,
-        scanDirectory,
         regenerateThumbnails
     };
 };

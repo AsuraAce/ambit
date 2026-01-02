@@ -27,8 +27,9 @@ pub async fn scan_image(
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
     extract_workflow: bool,
+    default_tool: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow)
+    scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow, default_tool)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -37,11 +38,12 @@ pub async fn scan_images_bulk(
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
     extract_workflow: bool,
+    default_tool: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let results: Vec<serde_json::Value> = paths
         .par_iter()
         .map(|path| {
-            match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail, extract_workflow) {
+            match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail, extract_workflow, default_tool.clone()) {
                 Ok(json) => json,
                 Err(e) => serde_json::json!({
                     "id": path,
@@ -92,7 +94,7 @@ pub async fn scan_image_workflow(path: String) -> Result<Option<String>, String>
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata, String> {
+pub async fn read_image_metadata(path: String, default_tool: Option<String>) -> Result<metadata::ImageMetadata, String> {
     let path_obj = Path::new(&path);
     if !path_obj.exists() {
         return Err("File not found".to_string());
@@ -106,7 +108,7 @@ pub async fn read_image_metadata(path: String) -> Result<metadata::ImageMetadata
     
     // 1. A1111/Forge (Compatibility)
     if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
-        parsed_metadata = metadata::extract_a1111_metadata(params);
+        parsed_metadata = metadata::extract_a1111_metadata(params, default_tool);
     }
 
     // 2. InvokeAI (Cumulative Merge)
@@ -380,6 +382,7 @@ pub fn scan_image_internal(
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
     extract_workflow: bool,
+    default_tool: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let path_buf = PathBuf::from(&path);
     if path_buf.is_dir() {
@@ -470,7 +473,7 @@ pub fn scan_image_internal(
         .or_else(|| chunks.get("Parameters"))
         .or_else(|| chunks.get("PARAMETERS")) 
     {
-        parsed_metadata = metadata::extract_a1111_metadata(params);
+        parsed_metadata = metadata::extract_a1111_metadata(params, default_tool.clone());
         found_metadata = true;
     }
 
@@ -609,7 +612,7 @@ mod tests {
         let mut f = File::create(test_path).unwrap();
         f.write_all(&png).unwrap();
 
-        let result = scan_image_internal(test_path.to_string(), None, true, true).unwrap();
+        let result = scan_image_internal(test_path.to_string(), None, true, true, None).unwrap();
         let _ = std::fs::remove_file(test_path);
 
         let metadata = result.get("metadata").expect("Metadata should exist");

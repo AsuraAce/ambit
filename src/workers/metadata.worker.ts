@@ -294,11 +294,13 @@ export const detectGenerationType = (path: string, currentType?: string): 'txt2i
     return 'unknown';
 };
 
-export const parseA1111Parameters = (text: string, metadata: Partial<ImageMetadata>) => {
-    const sanitized = sanitize(text);
-    metadata.rawParameters = sanitized;
-    const lines = sanitized.split('\n').map(l => l.trim());
-    if (lines.length === 0) return;
+export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool): Partial<ImageMetadata> => {
+    const metadata: Partial<ImageMetadata> = {
+        tool: defaultTool || GeneratorTool.AUTOMATIC1111
+    };
+    metadata.rawParameters = text;
+    const lines = text.split('\n').map(l => l.trim());
+    if (lines.length === 0) return metadata;
 
     let positiveParts: string[] = [];
     let negativePrompt = "";
@@ -368,6 +370,8 @@ export const parseA1111Parameters = (text: string, metadata: Partial<ImageMetada
                             metadata.tool = GeneratorTool.SDNEXT;
                         } else if (lowVal.includes('forge')) {
                             metadata.tool = GeneratorTool.FORGE;
+                        } else if (lowVal.includes('anapnoe')) {
+                            metadata.tool = GeneratorTool.ANAPNOE;
                         }
                         break;
                     }
@@ -376,8 +380,12 @@ export const parseA1111Parameters = (text: string, metadata: Partial<ImageMetada
                         if (metadata.tool === GeneratorTool.AUTOMATIC1111 || !metadata.tool) {
                             if (lowVal.includes('vlad') || lowVal.includes('next') || lowVal.includes('sd.next')) {
                                 metadata.tool = GeneratorTool.SDNEXT;
-                            } else if (lowVal.includes('forge')) {
+                            } else if (lowVal.includes('forge') || lowVal.startsWith('f')) {
                                 metadata.tool = GeneratorTool.FORGE;
+                            } else if (lowVal.includes('anapnoe')) {
+                                metadata.tool = GeneratorTool.ANAPNOE;
+                            } else if (lowVal.includes('comfy')) {
+                                metadata.tool = GeneratorTool.COMFYUI;
                             }
                         }
                         break;
@@ -399,10 +407,7 @@ export const parseA1111Parameters = (text: string, metadata: Partial<ImageMetada
             }
         }
     }
-
-    if (variationSeed && variationStrength) {
-        metadata.variationId = `${variationSeed}:${variationStrength}`;
-    }
+    return metadata;
 };
 
 const parseComfyUIMetadata = (json: any, metadata: Partial<ImageMetadata>) => {
@@ -992,10 +997,10 @@ self.onmessage = async (e: MessageEvent) => {
         let isIntermediate = false;
         if (chunks) {
             // 1. A1111 / SD.Next (Compatibility)
-            if (chunks.parameters) {
-                parseA1111Parameters(chunks.parameters, metadata);
-                metadata.rawParameters = chunks.parameters;
-                if (!metadata.tool) metadata.tool = GeneratorTool.AUTOMATIC1111;
+            if (chunks.parameters || chunks.Parameters || chunks.PARAMETERS) {
+                const text = chunks.parameters || chunks.Parameters || chunks.PARAMETERS;
+                const a1111 = parseA1111Parameters(text, e.data.defaultTool);
+                mergeMetadata(metadata, a1111);
             }
 
             // 2. SD.Next specific JSON chunks (Cumulative)
@@ -1005,7 +1010,8 @@ self.onmessage = async (e: MessageEvent) => {
                     const json = JSON.parse(sdNextMetadata);
                     const secondary: Partial<ImageMetadata> = {};
                     if (json.parameters) {
-                        parseA1111Parameters(json.parameters, secondary);
+                        const a1111 = parseA1111Parameters(json.parameters);
+                        mergeMetadata(secondary, a1111);
                     } else if (json.prompt) {
                         secondary.positivePrompt = json.prompt;
                         if (json.negative_prompt) secondary.negativePrompt = json.negative_prompt;

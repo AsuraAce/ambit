@@ -128,7 +128,7 @@ export const processNativePaths = async (
 
         try {
             // Optimization: Skip thumbnails for bulk import -> true
-            const results = await scanImagesBulk(chunk, thumbnailDir || '', true);
+            const results = await scanImagesBulk(chunk, thumbnailDir || '', true, true, defaultTool);
             const batchImages: AIImage[] = [];
 
             for (let j = 0; j < results.length; j++) {

@@ -10,7 +10,7 @@ const worker = new Worker(new URL('../workers/metadata.worker.ts', import.meta.u
 });
 
 // Helper to wrap worker messaging in a Promise
-const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ metadata: Partial<ImageMetadata>, extra: any, isIntermediate?: boolean }> => {
+const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool?: GeneratorTool): Promise<{ metadata: Partial<ImageMetadata>, extra: any, isIntermediate?: boolean }> => {
     return new Promise((resolve, reject) => {
         // We use a simple one-off handler approach for now.
         // For high concurrency, we might want a proper ID-based pool, 
@@ -36,7 +36,7 @@ const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ 
         };
 
         worker.addEventListener('message', handler);
-        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId, path });
+        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId, path, defaultTool });
 
         // Timeout safety
         setTimeout(() => {
@@ -51,7 +51,7 @@ const parseInWorker = (chunks: any, filename: string, path?: string): Promise<{ 
 
 // -- Internal Helpers --
 
-const processScanResult = async (info: any, path: string): Promise<ParseResult> => {
+const processScanResult = async (info: any, path: string, defaultTool?: GeneratorTool): Promise<ParseResult> => {
     if (info.failed || info.error) {
         if (!info.is_directory) console.error(`Scan failed for ${path}:`, info.error);
         return {
@@ -96,7 +96,7 @@ const processScanResult = async (info: any, path: string): Promise<ParseResult> 
     const filename = path.split(/[\\/]/).pop() || "unknown";
 
     try {
-        const { metadata, extra, isIntermediate } = (await parseInWorker(info.chunks, filename, path)) as any;
+        const { metadata, extra, isIntermediate } = (await parseInWorker(info.chunks, filename, path, defaultTool)) as any;
         const finalIsIntermediate = isIntermediate || metadata.isIntermediate;
         return {
             metadata: {
@@ -128,10 +128,10 @@ const processScanResult = async (info: any, path: string): Promise<ParseResult> 
 
 // -- Public API --
 
-export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult> => {
+export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult> => {
     try {
-        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow }) as any;
-        return await processScanResult(info, path);
+        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) as any;
+        return await processScanResult(info, path, defaultTool);
     } catch (e) {
         console.error("Native scan failed", e);
         return {
@@ -145,13 +145,13 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
     }
 };
 
-export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true): Promise<ParseResult[]> => {
+export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult[]> => {
     try {
-        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail, extractWorkflow }) as any[];
+        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) as any[];
 
         const tasks = results.map((info, index) => {
             const path = paths[index];
-            return processScanResult(info, path);
+            return processScanResult(info, path, defaultTool);
         });
 
         return Promise.all(tasks);

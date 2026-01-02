@@ -1,10 +1,40 @@
 use regex::Regex;
 use super::ImageMetadata;
 
-pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
+fn split_a1111_params(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' {
+            in_quotes = !in_quotes;
+            current.push(c);
+        } else if c == ',' && !in_quotes {
+            result.push(current.trim().to_string());
+            current = String::new();
+            // Skip the potential space after comma
+            if i + 1 < chars.len() && chars[i + 1] == ' ' {
+                i += 1;
+            }
+        } else {
+            current.push(c);
+        }
+        i += 1;
+    }
+    if !current.trim().is_empty() {
+        result.push(current.trim().to_string());
+    }
+    result
+}
+
+pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> ImageMetadata {
     let sanitized_text = text.replace('\0', "");
     let mut meta = ImageMetadata::default();
-    meta.tool = "Automatic1111".to_string();
+    meta.tool = default_tool.unwrap_or_else(|| "Automatic1111".to_string());
     meta.raw_parameters = Some(sanitized_text.clone());
 
     let lines: Vec<&str> = sanitized_text.lines().map(|l| l.trim()).collect();
@@ -70,14 +100,14 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
     }
 
     if params_line.starts_with("Steps: ") {
-        let pairs = params_line.split(", ");
+        let pairs = split_a1111_params(&params_line);
         let mut variation_seed = String::new();
         let mut variation_strength = String::new();
 
         for pair in pairs {
             if let Some((key, val)) = pair.split_once(": ") {
                 let key = key.trim();
-                let val = val.trim();
+                let val = val.trim().trim_matches('"');
                 match key {
                     "Steps" => meta.steps = val.parse().unwrap_or(0),
                     "Sampler" => meta.sampler = val.to_string(),
@@ -97,6 +127,8 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                             meta.tool = "SD.Next".to_string();
                         } else if low_val.contains("forge") {
                             meta.tool = "Forge".to_string();
+                        } else if low_val.contains("anapnoe") {
+                            meta.tool = "Anapnoe".to_string();
                         }
                     }
                     "Version" => {
@@ -106,6 +138,8 @@ pub fn extract_a1111_metadata(text: &str) -> ImageMetadata {
                                  meta.tool = "SD.Next".to_string();
                              } else if low_val.contains("forge") || low_val.starts_with('f') {
                                  meta.tool = "Forge".to_string();
+                             } else if low_val.contains("anapnoe") {
+                                 meta.tool = "Anapnoe".to_string();
                              } else if low_val.contains("comfy") {
                                  meta.tool = "ComfyUI".to_string();
                              }
@@ -159,7 +193,7 @@ mod tests {
     #[test]
     fn test_extract_a1111_metadata_basic() {
         let raw = "Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde";
-        let meta = extract_a1111_metadata(raw);
+        let meta = extract_a1111_metadata(raw, None);
         
         assert_eq!(meta.tool, "Automatic1111");
         assert_eq!(meta.positive_prompt, "Positive prompt here");
@@ -174,26 +208,37 @@ mod tests {
     #[test]
     fn test_extract_a1111_sdnext_detection() {
         let raw_app = "Prompt\nSteps: 20, App: SD.Next, Version: 1.0";
-        let meta_app = extract_a1111_metadata(raw_app);
+        let meta_app = extract_a1111_metadata(raw_app, None);
         assert_eq!(meta_app.tool, "SD.Next");
 
+        let raw_anapnoe = "Prompt\nSteps: 20, App: anapnoe, Version: 1.0";
+        let meta_anapnoe = extract_a1111_metadata(raw_anapnoe, None);
+        assert_eq!(meta_anapnoe.tool, "Anapnoe");
+
         let raw_vlad = "Prompt\nSteps: 20, Version: Vlad Mandic";
-        let meta_vlad = extract_a1111_metadata(raw_vlad);
+        let meta_vlad = extract_a1111_metadata(raw_vlad, None);
         assert_eq!(meta_vlad.tool, "SD.Next");
 
         let raw_forge = "Prompt\nSteps: 20, Version: forge";
-        let meta_forge = extract_a1111_metadata(raw_forge);
+        let meta_forge = extract_a1111_metadata(raw_forge, None);
         assert_eq!(meta_forge.tool, "Forge");
 
         let raw_forge_v2 = "Prompt\nSteps: 20, Version: f2.0.1v1.10.1-previous-224-g90019688";
-        let meta_forge_v2 = extract_a1111_metadata(raw_forge_v2);
+        let meta_forge_v2 = extract_a1111_metadata(raw_forge_v2, None);
         assert_eq!(meta_forge_v2.tool, "Forge");
+    }
+
+    #[test]
+    fn test_extract_a1111_hint_override() {
+        let raw = "Positive prompt here\nSteps: 20";
+        let meta = extract_a1111_metadata(raw, Some("Anapnoe".to_string()));
+        assert_eq!(meta.tool, "Anapnoe");
     }
     
     #[test]
     fn test_extract_loras() {
         let raw = "A beautiful <lora:cool_style:0.8> painting <lora:other_one:1>";
-        let meta = extract_a1111_metadata(raw);
+        let meta = extract_a1111_metadata(raw, None);
         assert!(meta.loras.contains(&"cool_style".to_string()));
         assert!(meta.loras.contains(&"other_one".to_string()));
     }
@@ -202,11 +247,22 @@ mod tests {
     fn test_a1111_parsing_weird_string() {
         let raw = r#"masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire.",masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." Negative prompt: low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor, Steps: 36, Sampler: deis beta, CFG scale: 6.0, Seed: 287184813799736, Size: 896x1152, Model: novaAnimeXL_ilV30HappyNewYear, VAE: sdxl_vae, Clip skip: 1, RNG: CPU, TI hashes: "masterpiece,best quality, newest, absurdres, highres, 1990s style, berserk by Tsutomu Nihei, "A muscular anime knight swinging his sword in a wide arc, sparks flying, surrounded by a battlefield with smoke and fire." , low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,", Version: ComfyUI"#;
         
-        let meta = extract_a1111_metadata(raw);
+        let meta = extract_a1111_metadata(raw, None);
         
         assert_eq!(meta.tool, "ComfyUI");
         assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
         assert_eq!(meta.steps, 36);
         assert_eq!(meta.sampler, "deis beta");
+    }
+
+    #[test]
+    fn test_extract_a1111_with_controlnet() {
+        let raw = "parameters: Negative prompt: (hands, feet, teeth), (low resolution, lowres, blurry), (watermark, signature, patreon reward, patreon username), [(worst quality, low quality:1.75), (interlocked finger:1.15), (low resolution, lowres, blurry), (watermark, signature, patreon) (hands, feet, teeth),(zombie,horror)::0.95] Steps: 48, Sampler: Restart, CFG scale: 5, Seed: 83289333, Size: 512x768, Model hash: 41e59d8b2e, Model: realcartoonSpecial_sp1, ControlNet 0: \"Module: ip-adapter_clip_sd15, Model: ip-adapter_sd15_light [932b88cf], Weight: 0.75, Resize Mode: Crop and Resize, Low Vram: False, Processor Res: 512, Guidance Start: 0, Guidance End: 0.77, Pixel Perfect: True, Control Mode: Balanced, Save Detected Map: True\", BMAB_face_option: \"disable_extra_networks=False\", Version: 1.7.0";
+        let meta = extract_a1111_metadata(raw, None);
+        
+        assert_eq!(meta.model, "realcartoonSpecial_sp1");
+        assert_eq!(meta.seed, 83289333);
+        assert_eq!(meta.steps, 48);
+        assert!(meta.control_nets.contains(&"ip-adapter_sd15_light [932b88cf]".to_string()));
     }
 }
