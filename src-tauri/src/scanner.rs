@@ -198,15 +198,24 @@ fn scan_dir_recursive(root: &std::path::Path, current: &std::path::Path, stats: 
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    stats.image_files += 1;
+                    let is_thumbnail = p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
+                        .unwrap_or(false);
 
-                    if let Ok(rel) = p.strip_prefix(root) {
-                        if let Some(parent) = rel.parent() {
-                            let path_str = parent.to_string_lossy().to_string();
-                            if !path_str.is_empty() {
-                                *stats.subfolders.entry(path_str).or_insert(0) += 1;
-                            } else {
-                                *stats.subfolders.entry("root".to_string()).or_insert(0) += 1;
+                    if is_thumbnail {
+                        stats.thumbnail_files += 1;
+                    } else {
+                        stats.image_files += 1;
+
+                        if let Ok(rel) = p.strip_prefix(root) {
+                            if let Some(parent) = rel.parent() {
+                                let path_str = parent.to_string_lossy().to_string();
+                                if !path_str.is_empty() {
+                                    *stats.subfolders.entry(path_str).or_insert(0) += 1;
+                                } else {
+                                    *stats.subfolders.entry("root".to_string()).or_insert(0) += 1;
+                                }
                             }
                         }
                     }
@@ -254,8 +263,15 @@ fn collect_images_recursive(
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    if let Ok(rel) = p.strip_prefix(root) {
-                        files.push(rel.to_string_lossy().replace("\\", "/"));
+                    let is_thumbnail = p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
+                        .unwrap_or(false);
+
+                    if !is_thumbnail {
+                        if let Ok(rel) = p.strip_prefix(root) {
+                            files.push(rel.to_string_lossy().replace("\\", "/"));
+                        }
                     }
                 }
             }
@@ -286,7 +302,14 @@ fn collect_images_recursive_absolute(
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    files.push(p.to_string_lossy().replace("\\", "/"));
+                    let is_thumbnail = p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
+                        .unwrap_or(false);
+
+                    if !is_thumbnail {
+                        files.push(p.to_string_lossy().replace("\\", "/"));
+                    }
                 }
             }
         }

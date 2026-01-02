@@ -56,12 +56,24 @@ pub fn start_native_folder_watcher(
 
                 if is_relevant {
                     let has_image = event.paths.iter().any(|p| {
-                        p.extension()
+                        let is_image = p.extension()
                             .map(|e| {
                                 let s = e.to_string_lossy().to_lowercase();
                                 ["png", "jpg", "jpeg", "webp"].contains(&s.as_str())
                             })
-                            .unwrap_or(false)
+                            .unwrap_or(false);
+
+                        if !is_image {
+                            return false;
+                        }
+
+                        // Filter out A1111 thumbnails
+                        let is_thumbnail = p.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
+                            .unwrap_or(false);
+
+                        !is_thumbnail
                     });
 
                     if has_image {
