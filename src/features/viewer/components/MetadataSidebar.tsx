@@ -88,7 +88,11 @@ const ResourceSection = ({ title, items, icon: Icon, onSearch, onClose }: { titl
                             key={i}
                             onClick={() => {
                                 // Smart Search Prefixing
-                                const prefix = title === 'LoRAs' ? 'lora:' : '';
+                                let prefix = '';
+                                if (title === 'LoRAs') prefix = 'lora:';
+                                else if (title === 'Embeddings') prefix = 'embedding:';
+                                else if (title === 'Hypernetworks') prefix = 'hypernet:';
+
                                 onSearch(`${prefix}${name}`);
                                 onClose();
                             }}
@@ -632,11 +636,13 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                 )}
 
                                 {/* Resources & Addons (Moved Here) */}
-                                {(image.metadata.loras || image.metadata.controlNets || image.metadata.ipAdapters) && (
+                                {(image.metadata.loras || image.metadata.controlNets || image.metadata.ipAdapters || image.metadata.embeddings || image.metadata.hypernetworks) && (
                                     <div className="bg-white dark:bg-zinc-900/40 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                        <ResourceSection title="LoRAs" items={image.metadata.loras} icon={Puzzle} onSearch={onSearch} onClose={onClose} />
-                                        <ResourceSection title="ControlNet" items={image.metadata.controlNets} icon={Target} onSearch={onSearch} onClose={onClose} />
-                                        <ResourceSection title="IP-Adapters" items={image.metadata.ipAdapters} icon={Link} onSearch={onSearch} onClose={onClose} />
+                                        <ResourceSection title="LoRAs" items={image.metadata.loras || []} icon={Puzzle} onSearch={onSearch} onClose={onClose} />
+                                        <ResourceSection title="Embeddings" items={image.metadata.embeddings || []} icon={Code} onSearch={onSearch} onClose={onClose} />
+                                        <ResourceSection title="Hypernetworks" items={image.metadata.hypernetworks || []} icon={Sparkles} onSearch={onSearch} onClose={onClose} />
+                                        <ResourceSection title="ControlNet" items={image.metadata.controlNets || []} icon={Target} onSearch={onSearch} onClose={onClose} />
+                                        <ResourceSection title="IP-Adapters" items={image.metadata.ipAdapters || []} icon={Link} onSearch={onSearch} onClose={onClose} />
                                     </div>
                                 )}
                             </div>

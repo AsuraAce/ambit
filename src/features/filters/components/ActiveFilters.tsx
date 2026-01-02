@@ -25,6 +25,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
         filters.models.length > 0 ||
         filters.tools.length > 0 ||
         filters.loras.length > 0 ||
+        filters.embeddings.length > 0 ||
+        filters.hypernetworks.length > 0 ||
         filters.searchQuery !== '' ||
         !!activeSmartCol;
 
@@ -35,6 +37,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
     const visibleModels = Array.from(new Set(filters.models)).filter(m => !smartModels.includes(m));
     const visibleTools = Array.from(new Set(filters.tools)).filter(t => !smartTools.includes(t));
     const visibleLoras = Array.from(new Set(filters.loras));
+    const visibleEmbeddings = Array.from(new Set(filters.embeddings));
+    const visibleHypernetworks = Array.from(new Set(filters.hypernetworks));
 
     if (!hasActiveFilters) return null;
 
@@ -104,6 +108,20 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
                 <div key={l} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 text-xs border border-purple-200 dark:border-purple-500/30">
                     <span className="truncate max-w-[100px]">{l}</span>
                     <button onClick={() => setFilters(f => ({ ...f, loras: f.loras.filter(x => x !== l) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {visibleEmbeddings.map(e => (
+                <div key={e} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200 text-xs border border-emerald-200 dark:border-emerald-500/30">
+                    <span className="truncate max-w-[100px]">{e}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, embeddings: f.embeddings.filter(x => x !== e) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {visibleHypernetworks.map(h => (
+                <div key={h} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 text-xs border border-rose-200 dark:border-rose-500/30">
+                    <span className="truncate max-w-[100px]">{h}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, hypernetworks: f.hypernetworks.filter(x => x !== h) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
