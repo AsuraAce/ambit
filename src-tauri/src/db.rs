@@ -98,12 +98,12 @@ pub fn init_db() -> Vec<Migration> {
                 PRIMARY KEY (collection_id, image_id),
                 FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
             );
-            INSERT INTO collections (id, name, created_at, source)
+            INSERT OR IGNORE INTO collections (id, name, created_at, source)
             SELECT DISTINCT board_id, board_id, (strftime('%s', 'now') * 1000), 'invoke'
             FROM images 
             WHERE board_id IS NOT NULL;
             
-            INSERT INTO collection_images (collection_id, image_id)
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
             SELECT board_id, id 
             FROM images 
             WHERE board_id IS NOT NULL;

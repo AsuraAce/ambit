@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
@@ -29,54 +28,78 @@ struct CivitAiModel {
     name: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    count: usize,
+    message: String,
+}
+
 #[tauri::command(rename_all = "camelCase")]
-pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<usize, String> {
+pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<ImportResult, String> {
     let content = fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
     
-    // A1111 cache.json structure: 
-    // { "hashes": { "checkpoint": { "hash1": { "mtime": ..., "sha256": ... }, ... } } }
-    // Or simpler: { "hash1": "name1", ... } depending on version?
-    // Actually, A1111 often uses `cache.json` which maps path -> hash info, OR `cache.json` in root which maps hash -> name?
-    // Let's assume the classic { "hashes": { ... } } or simple key-value for now, but commonly it's:
-    // "checkpoint": { "hash": { "name": ..., "sha256": ... } } 
-    // Wait, let's look at a typical structure. 
-    // Often: { "hashes": { "model-filename": { "mtime": 123, "sha256": "..." } } }
-    // This maps File -> Hash. We need Hash -> File/Name. We can invert it.
-    
-    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
     let mut entries = Vec::new();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
+    let mut debug_info = String::new();
+
     if let Some(hashes) = json.get("hashes") {
-        if let Some(checkpoints) = hashes.get("checkpoint") {
-            if let Some(map) = checkpoints.as_object() {
-                for (filename, data) in map {
-                    if let Some(sha256) = data.get("sha256").and_then(|h| h.as_str()) {
-                        // A1111 uses first 10 chars for short hash usually
-                        let short_hash = &sha256[..10]; 
-                        entries.push(ModelCacheEntry {
+        if let Some(obj) = hashes.as_object() {
+            for (key, val) in obj {
+                if let Some(inner_obj) = val.as_object() {
+                    // Check if Flat structure: "checkpoint/foo": { "sha256": "..." }
+                    if let Some(sha256) = inner_obj.get("sha256").and_then(|s| s.as_str()) {
+                         let name = key.split(&['/', '\\'][..]).last().unwrap_or(key);
+                         let short_hash = &sha256[..10];
+                         
+                         entries.push(ModelCacheEntry {
                             hash: short_hash.to_string(),
-                            name: filename.clone(), // In A1111 cache, key is usually filename
-                            filename: Some(filename.clone()),
-                            lookup_source: "local_cache".to_string(),
+                            name: name.to_string(),
+                            filename: Some(name.to_string()),
+                            lookup_source: "local_cache_flat".to_string(),
                             scanned_at: now,
                         });
-                        
-                        // Also Add full hash just in case
                         entries.push(ModelCacheEntry {
                             hash: sha256.to_string(),
-                            name: filename.clone(),
-                            filename: Some(filename.clone()),
-                            lookup_source: "local_cache".to_string(),
+                            name: name.to_string(),
+                            filename: Some(name.to_string()),
+                            lookup_source: "local_cache_flat".to_string(),
                             scanned_at: now,
                         });
+                    } else {
+                        // Check if Nested structure: "checkpoint": { "foo": { "sha256": "..." } }
+                        for (filename, data) in inner_obj {
+                            if let Some(sha256) = data.get("sha256").and_then(|h| h.as_str()) {
+                                let short_hash = &sha256[..10];
+                                entries.push(ModelCacheEntry {
+                                    hash: short_hash.to_string(),
+                                    name: filename.clone(),
+                                    filename: Some(filename.clone()),
+                                    lookup_source: "local_cache_nested".to_string(),
+                                    scanned_at: now,
+                                });
+                                entries.push(ModelCacheEntry {
+                                    hash: sha256.to_string(),
+                                    name: filename.clone(),
+                                    filename: Some(filename.clone()),
+                                    lookup_source: "local_cache_nested".to_string(),
+                                    scanned_at: now,
+                                });
+                            }
+                        }
                     }
                 }
             }
+        } else {
+            debug_info.push_str("'hashes' is not an object. ");
         }
     } else {
-        // Try fallback format: simple "hash": "name" map if expected
+        debug_info.push_str("No 'hashes' key. ");
+        // Fallback
         if let Some(obj) = json.as_object() {
+             let mut added = 0;
              for (key, val) in obj {
                  if let Some(v_str) = val.as_str() {
                      entries.push(ModelCacheEntry {
@@ -86,20 +109,28 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<u
                          lookup_source: "local_cache_simple".to_string(),
                          scanned_at: now,
                      });
+                     added += 1;
                  }
              }
+             if added == 0 {
+                 debug_info.push_str("Fallback: top-level object was empty or had non-string values. ");
+             }
+        } else {
+            debug_info.push_str("Root is not an object. ");
         }
     }
 
     if entries.is_empty() {
-        return Ok(0);
+        return Ok(ImportResult { count: 0, message: format!("No models found. {}", debug_info) });
     }
 
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let count = entries.len();
+    let count = entries.len(); // Doubles (short+long)
+    let actual_files = count / 2; // Roughly
+
     {
         let mut stmt = tx.prepare(
             "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5)"
@@ -111,19 +142,56 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<u
     }
 
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(count)
+    
+    // We return entries.len() / 2 as a heuristic of "models imported" since we insert 2 records per model
+    // But let's just return the unique filenames count if possible, or just entries.len() is fine
+    // Actually, distinct names is better.
+    let unique_count = if entries.first().map(|e| e.lookup_source.starts_with("local_cache")).unwrap_or(false) {
+        entries.len() / 2 
+    } else {
+        entries.len()
+    };
+
+    Ok(ImportResult { count: unique_count, message: format!("Imported {} models.", unique_count) })
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResolutionResult {
     resolved_count: usize,
     failed_count: usize,
 }
 
+#[derive(Clone, Serialize)]
+struct ProgressPayload {
+    current: usize,
+    total: usize,
+    message: String,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, String> {
+    use tauri::Emitter;
+
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+    // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
+    let _ = app.emit("model_resolution_progress", ProgressPayload {
+        current: 0,
+        total: 100,
+        message: "Harvesting existing local metadata...".to_string()
+    });
+    
+    let harvest_count = conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at) 
+         SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1
+         FROM images 
+         WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+         AND json_extract(metadata_json, '$.model') IS NOT NULL",
+         params![now]
+    ).unwrap_or(0);
     
     // 1. Find all images with missing model names or hash-like model names
     // And where we don't have a resolution in the models table
@@ -141,18 +209,28 @@ pub fn resolve_hashes_online(app: tauri::AppHandle) -> Result<ResolutionResult, 
 
     drop(stmt);
 
+    let total = hashes_to_resolve.len();
+    if total == 0 {
+        return Ok(ResolutionResult { resolved_count: harvest_count, failed_count: 0 });
+    }
+
     let client = Client::new();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let mut resolved = 0;
+    let mut resolved = harvest_count;
     let mut failed = 0;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    for hash in hashes_to_resolve {
+    for (i, hash) in hashes_to_resolve.iter().enumerate() {
         // Rate limit kindness
-        if resolved > 0 && resolved % 5 == 0 {
+        if i > 0 && i % 5 == 0 {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+
+        let _ = app.emit("model_resolution_progress", ProgressPayload {
+            current: i + 1,
+            total,
+            message: format!("Resolving online {}/{}", i + 1, total)
+        });
 
         let url = format!("https://civitai.com/api/v1/model-versions/by-hash/{}", hash);
         match client.get(&url).send() {

@@ -19,6 +19,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
     const [showAllFolders, setShowAllFolders] = useState(false);
     const [forceVariant, setForceVariant] = useState<WebUIVariant | 'Auto'>('Auto');
+    const [resolutionProgress, setResolutionProgress] = useState<{ current: number, total: number, message: string } | null>(null);
 
     const handleDiscover = async () => {
         if (!settings.a1111Path) return;
@@ -456,8 +457,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                         });
 
                                         if (selected && typeof selected === 'string') {
-                                            const count = await invoke<number>('import_a1111_cache', { cachePath: selected });
-                                            setTestResult({ success: true, message: `Imported ${count} models from local cache.` });
+                                            const res = await invoke<{ count: number, message: string }>('import_a1111_cache', { cachePath: selected });
+                                            setTestResult({ success: res.count > 0, message: res.message });
                                         }
                                     } catch (e: any) {
                                         console.error(e);
@@ -481,8 +482,18 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                             <button
                                 onClick={async () => {
                                     setIsScanning(true);
+                                    setResolutionProgress(null);
+
+                                    let unlisten: (() => void) | undefined;
+
                                     try {
                                         const { invoke } = await import('@tauri-apps/api/core');
+                                        const { listen } = await import('@tauri-apps/api/event');
+
+                                        unlisten = await listen<{ current: number, total: number, message: string }>('model_resolution_progress', (event) => {
+                                            setResolutionProgress(event.payload);
+                                        });
+
                                         const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online');
                                         setTestResult({
                                             success: true,
@@ -492,13 +503,32 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                         console.error(e);
                                         setTestResult({ success: false, message: `Lookup failed: ${e.message || e}` });
                                     } finally {
+                                        if (unlisten) unlisten();
                                         setIsScanning(false);
+                                        setResolutionProgress(null);
                                     }
                                 }}
                                 disabled={isScanning}
-                                className="mt-auto w-full py-2 bg-blue-600 hover:bg-blue-500 border border-transparent rounded-lg text-xs font-bold transition-all text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="mt-auto w-full py-2 bg-blue-600 hover:bg-blue-500 border border-transparent rounded-lg text-xs font-bold transition-all text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
                             >
-                                {isScanning ? 'Querying CivitAI...' : 'Resolve Online'}
+                                {isScanning ? (
+                                    resolutionProgress ? (
+                                        <div className="relative z-10 flex items-center justify-center gap-2">
+                                            <span>{resolutionProgress.message}</span>
+                                        </div>
+                                    ) : (
+                                        'Starting...'
+                                    )
+                                ) : (
+                                    'Resolve Online'
+                                )}
+
+                                {isScanning && resolutionProgress && (
+                                    <div
+                                        className="absolute top-0 left-0 h-full bg-blue-400 transition-all duration-300 pointer-events-none"
+                                        style={{ width: `${(resolutionProgress.current / resolutionProgress.total) * 100}%` }}
+                                    />
+                                )}
                             </button>
                         </div>
                     </div>
