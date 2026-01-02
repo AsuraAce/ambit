@@ -178,30 +178,27 @@ export const getFacets = async (whereClause: string = '', params: any[] = []) =>
             ORDER BY name ASC
         `, params);
 
-        const lorasRows = await db.select<any[]>(`
-            SELECT json_extract(metadata_json, '$.loras') as loras 
-            FROM images 
-            ${finalWhere}
-            AND json_extract(metadata_json, '$.loras') IS NOT NULL
+        const loraStatsRows = await db.select<any[]>(`
+            SELECT 
+                clean_name as name,
+                count(*) as count
+            FROM (
+                SELECT 
+                    CASE 
+                        WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                        ELSE j.value 
+                    END as clean_name
+                FROM images, json_each(metadata_json, '$.loras') j
+                ${finalWhere}
+            )
+            GROUP BY name
+            ORDER BY count DESC
         `, params);
 
-        const loraCounts: Record<string, number> = {};
-        lorasRows.forEach(row => {
-            try {
-                const arr = typeof row.loras === 'string' ? JSON.parse(row.loras) : row.loras;
-                if (Array.isArray(arr)) {
-                    arr.forEach((l: string) => {
-                        let name = l.replace(/\.(safetensors|pt|ckpt)$/i, '');
-                        name = name.replace(/\s+\(-?\d+(\.\d+)?\)$/, '').trim();
-                        if (name) loraCounts[name] = (loraCounts[name] || 0) + 1;
-                    });
-                }
-            } catch (e) { }
-        });
-
-        const loraStats = Object.entries(loraCounts)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count);
+        const loraStats = loraStatsRows.map(r => ({
+            name: r.name ? r.name.replace(/\.(safetensors|pt|ckpt)$/i, '').trim() : 'Unknown',
+            count: r.count
+        }));
 
         const tools = await db.select<any[]>(`
             SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as name 

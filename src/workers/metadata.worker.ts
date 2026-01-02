@@ -395,12 +395,30 @@ export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool):
                 }
 
                 if (k.startsWith('ControlNet')) {
-                    const modelMatch = v.match(/Model: ([^,]+)/);
+                    const modelMatch = v.match(/Model: ([^,"]+)/);
                     if (modelMatch) {
                         if (!metadata.controlNets) metadata.controlNets = [];
                         const modelName = modelMatch[1].trim();
                         if (!metadata.controlNets.includes(modelName)) {
                             metadata.controlNets.push(modelName);
+                        }
+                    }
+                } else if (k.startsWith('AddNet Model')) {
+                    const name = v.split('(')[0].trim().replace(/^"|"$/g, '');
+                    if (name) {
+                        if (!metadata.loras) metadata.loras = [];
+                        if (!metadata.loras.includes(name)) {
+                            metadata.loras.push(name);
+                        }
+                    }
+                } else if (k === 'Lora hashes') {
+                    if (!metadata.loras) metadata.loras = [];
+                    const parts = v.split(',');
+                    for (const part of parts) {
+                        const [name] = part.split(':');
+                        const loraName = name.trim().replace(/^"|"$/g, '');
+                        if (loraName && !metadata.loras.includes(loraName)) {
+                            metadata.loras.push(loraName);
                         }
                     }
                 }

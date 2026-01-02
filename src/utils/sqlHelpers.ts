@@ -129,11 +129,9 @@ export const buildSqlWhereClause = (
 
     // 6. LoRAs (Array)
     if (filters.loras.length > 0) {
-        // LoRA names are inside an array in JSON or string. 
-        // We'll use simple LIKE for now as it's efficient enough for JSON text
         const loraConditions = filters.loras.map(l => {
             params.push(`%${l}%`);
-            return `metadata_json LIKE ?`;
+            return `json_extract(metadata_json, '$.loras') LIKE ?`;
         });
         conditions.push(`(${loraConditions.join(' OR ')})`);
     }

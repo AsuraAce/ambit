@@ -5,6 +5,7 @@ fn split_a1111_params(s: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
+    let mut depth = 0;
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;
 
@@ -13,7 +14,13 @@ fn split_a1111_params(s: &str) -> Vec<String> {
         if c == '"' {
             in_quotes = !in_quotes;
             current.push(c);
-        } else if c == ',' && !in_quotes {
+        } else if (c == '(' || c == '[' || c == '{') && !in_quotes {
+            depth += 1;
+            current.push(c);
+        } else if (c == ')' || c == ']' || c == '}') && !in_quotes {
+            if depth > 0 { depth -= 1; }
+            current.push(c);
+        } else if c == ',' && !in_quotes && depth == 0 {
             result.push(current.trim().to_string());
             current = String::new();
             // Skip the potential space after comma
@@ -75,10 +82,9 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     // Fallback: If strict parsing failed, but text contains "Steps: ", try to extract it from the raw blob
     if params_line.is_empty() && sanitized_text.contains("Steps: ") {
         if let Some(pos) = sanitized_text.find("Steps: ") {
-            // Find "Negative prompt:" before Steps to verify if we missed the prompt split
-            // Or just take everything from Steps: onwards
-            let tail = &sanitized_text[pos..];
-            // If it ends with newlines, take the line. If it's single line, take it all.
+            // Find the start of the line containing "Steps: "
+            let start_of_line = sanitized_text[..pos+6].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+            let tail = &sanitized_text[start_of_line..];
             params_line = tail.lines().next().unwrap_or("").to_string();
             
             // Also try to recover positive/negative if they were missed due to single-line format
@@ -99,7 +105,15 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
         }
     }
 
-    if params_line.starts_with("Steps: ") {
+    if params_line.contains("Steps: ") {
+        // If the parameters line contains prompt text before "Steps: ", try to isolate parameters
+        if let Some(pos) = params_line.find("Steps: ") {
+            if pos > 0 {
+                // We'll use everything from Steps: onwards for pairs, 
+                // as everything before it on the same line is likely a dangling prompt
+                params_line = params_line[pos..].to_string();
+            }
+        }
         let pairs = split_a1111_params(&params_line);
         let mut variation_seed = String::new();
         let mut variation_strength = String::new();
@@ -157,9 +171,24 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         if key.starts_with("ControlNet") {
                             if let Some(start) = val.find("Model: ") {
                                 let model_part = &val[start + 7..];
-                                let model_name = model_part.split(',').next().unwrap_or("").trim();
+                                let model_name = model_part.split(',').next().unwrap_or("").trim().trim_matches('"');
                                 if !model_name.is_empty() {
                                     meta.control_nets.push(model_name.to_string());
+                                }
+                            }
+                        } else if key.starts_with("AddNet Model") {
+                            let name = val.split('(').next().unwrap_or("").trim().trim_matches('"');
+                            if !name.is_empty() && !meta.loras.contains(&name.to_string()) {
+                                meta.loras.push(name.to_string());
+                            }
+                        } else if key == "Lora hashes" {
+                            // Format: "name: hash, name: hash"
+                            for part in val.split(',') {
+                                if let Some((name, _)) = part.split_once(':') {
+                                    let lora_name = name.trim().trim_matches('"');
+                                    if !lora_name.is_empty() && !meta.loras.contains(&lora_name.to_string()) {
+                                        meta.loras.push(lora_name.to_string());
+                                    }
                                 }
                             }
                         }
@@ -264,5 +293,15 @@ mod tests {
         assert_eq!(meta.seed, 83289333);
         assert_eq!(meta.steps, 48);
         assert!(meta.control_nets.contains(&"ip-adapter_sd15_light [932b88cf]".to_string()));
+    }
+
+    #[test]
+    fn test_extract_loras_advanced() {
+        let raw = "Prompt\nSteps: 20, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: some_lora(hash), AddNet Weight A 1: 0.7, Lora hashes: \"lora1: abc, lora2: def\"";
+        let meta = extract_a1111_metadata(raw, None);
+        
+        assert!(meta.loras.contains(&"some_lora".to_string()));
+        assert!(meta.loras.contains(&"lora1".to_string()));
+        assert!(meta.loras.contains(&"lora2".to_string()));
     }
 }
