@@ -31,7 +31,8 @@ struct CivitAiModel {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
-    count: usize,
+    added: usize,
+    total_found: usize,
     message: String,
 }
 
@@ -121,38 +122,41 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
     }
 
     if entries.is_empty() {
-        return Ok(ImportResult { count: 0, message: format!("No models found. {}", debug_info) });
+        return Ok(ImportResult { added: 0, total_found: 0, message: format!("No models found. {}", debug_info) });
     }
 
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let count = entries.len(); // Doubles (short+long)
-    let actual_files = count / 2; // Roughly
-
+    let mut added_count = 0;
     {
         let mut stmt = tx.prepare(
             "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5)"
         ).map_err(|e| e.to_string())?;
 
         for entry in &entries {
-            stmt.execute(params![entry.hash, entry.name, entry.filename, entry.lookup_source, entry.scanned_at]).map_err(|e| e.to_string())?;
+             if let Ok(rows) = stmt.execute(params![entry.hash, entry.name, entry.filename, entry.lookup_source, entry.scanned_at]) {
+                 added_count += rows;
+             }
         }
     }
 
     tx.commit().map_err(|e| e.to_string())?;
     
-    // We return entries.len() / 2 as a heuristic of "models imported" since we insert 2 records per model
-    // But let's just return the unique filenames count if possible, or just entries.len() is fine
-    // Actually, distinct names is better.
-    let unique_count = if entries.first().map(|e| e.lookup_source.starts_with("local_cache")).unwrap_or(false) {
+    // Divide by 2 because we insert 2 entries per model (short hash + long hash)
+    let added_unique = added_count / 2;
+    let total_unique = if entries.first().map(|e| e.lookup_source.starts_with("local_cache")).unwrap_or(false) {
         entries.len() / 2 
     } else {
         entries.len()
     };
 
-    Ok(ImportResult { count: unique_count, message: format!("Imported {} models.", unique_count) })
+    Ok(ImportResult { 
+        added: added_unique, 
+        total_found: total_unique,
+        message: format!("Imported {} new models ({} found in file).", added_unique, total_unique) 
+    })
 }
 
 #[derive(Serialize)]

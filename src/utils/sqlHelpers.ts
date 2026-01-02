@@ -103,14 +103,16 @@ export const buildSqlWhereClause = (
         const modelConditions = filters.models.map(m => {
             if (m === 'Unknown') {
                 return `(
-                    (json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown')
+                    (json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown')
                     AND 
-                    (json_extract(metadata_json, '$.modelHash') IS NULL OR json_extract(metadata_json, '$.modelHash') = '' OR json_extract(metadata_json, '$.modelHash') = 'Unknown')
+                    (json_extract(images.metadata_json, '$.modelHash') IS NULL OR json_extract(images.metadata_json, '$.modelHash') = '' OR json_extract(images.metadata_json, '$.modelHash') = 'Unknown')
+                    AND m.name IS NULL
                 )`;
             }
             params.push(m);
             params.push(m);
-            return `(json_extract(metadata_json, '$.model') = ? OR json_extract(metadata_json, '$.modelHash') = ?)`;
+            params.push(m);
+            return `(m.name = ? OR json_extract(images.metadata_json, '$.model') = ? OR json_extract(images.metadata_json, '$.modelHash') = ?)`;
         });
         conditions.push(`(${modelConditions.join(' OR ')})`);
     }

@@ -457,8 +457,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                         });
 
                                         if (selected && typeof selected === 'string') {
-                                            const res = await invoke<{ count: number, message: string }>('import_a1111_cache', { cachePath: selected });
-                                            setTestResult({ success: res.count > 0, message: res.message });
+                                            const res = await invoke<{ added: number, totalFound: number, message: string }>('import_a1111_cache', { cachePath: selected });
+                                            setTestResult({ success: (res.added > 0 || res.totalFound > 0), message: res.message });
                                         }
                                     } catch (e: any) {
                                         console.error(e);

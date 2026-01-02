@@ -24,7 +24,13 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
-    const query = `SELECT count(*) as count FROM images ${finalWhere}`;
+    // Use "FROM images" but include the JOIN for model filtering consistency
+    const query = `
+        SELECT count(*) as count 
+        FROM images 
+        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+        ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+    `;
     const result = await db.select<any[]>(query, params);
     return result[0]?.count || 0;
 };
@@ -32,7 +38,12 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
 export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
-    const query = `SELECT id FROM images ${finalWhere}`;
+    const query = `
+        SELECT images.id 
+        FROM images 
+        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+        ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+    `;
     const rows = await db.select<{ id: string }[]>(query, params);
     return rows.map(r => r.id);
 };
@@ -50,12 +61,14 @@ export const searchImages = async (
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
 
     const orderBy = prioritizePinned
-        ? `ORDER BY is_pinned DESC, ${sortField} ${sortOrder}`
-        : `ORDER BY ${sortField} ${sortOrder}`;
+        ? `ORDER BY images.is_pinned DESC, ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`
+        : `ORDER BY ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`;
 
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
-        ${finalWhere} 
+        SELECT ${IMAGE_FIELDS_LIGHT.replace(/id,/, 'images.id,').replace(/metadata_json,/, 'images.metadata_json,')}, m.name as resolved_model_name
+        FROM images 
+        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+        ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 
         ${orderBy}
         LIMIT ${limit} OFFSET ${offset}
     `;
@@ -72,9 +85,10 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         const statsQuery = `
             SELECT 
                 count(*) as total, 
-                avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
+                avg(cast(json_extract(images.metadata_json, '$.steps') as integer)) as avg_steps
             FROM images 
-            ${finalWhere}
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
         `;
         const basicStats = await db.select<any[]>(statsQuery, params);
         const total = basicStats[0]?.total || 0;
@@ -83,13 +97,15 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         const modelQuery = `
             SELECT 
                 CASE 
-                    WHEN json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown'
-                    THEN COALESCE(json_extract(metadata_json, '$.modelHash'), 'Unknown')
-                    ELSE json_extract(metadata_json, '$.model')
+                    WHEN m.name IS NOT NULL THEN m.name
+                    WHEN json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown'
+                    THEN COALESCE(json_extract(images.metadata_json, '$.modelHash'), 'Unknown')
+                    ELSE json_extract(images.metadata_json, '$.model')
                 END as name, 
                 count(*) as count
             FROM images
-            ${finalWhere}
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
             GROUP BY name
             ORDER BY count DESC
             LIMIT 20
@@ -178,19 +194,22 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
         const models = await db.select<any[]>(`
             SELECT DISTINCT 
                 CASE 
-                    WHEN json_extract(metadata_json, '$.model') IS NULL OR json_extract(metadata_json, '$.model') = '' OR json_extract(metadata_json, '$.model') = 'Unknown'
-                    THEN COALESCE(json_extract(metadata_json, '$.modelHash'), 'Unknown')
-                    ELSE json_extract(metadata_json, '$.model')
+                    WHEN m.name IS NOT NULL THEN m.name
+                    WHEN json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown'
+                    THEN COALESCE(json_extract(images.metadata_json, '$.modelHash'), 'Unknown')
+                    ELSE json_extract(images.metadata_json, '$.model')
                 END as name
-            FROM images ${finalWhere} 
+            FROM images 
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 
             ORDER BY name ASC
         `, params);
 
         const loraStatsRows = await db.select<any[]>(`
             SELECT 
                 clean_name as name,
-                count(*) as count
-            FROM (
+            count(*) as count
+            FROM(
                 SELECT 
                     CASE 
                         WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
@@ -201,7 +220,7 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
             )
             GROUP BY name
             ORDER BY count DESC
-        `, params);
+            `, params);
 
         const loraStats = loraStatsRows.map(r => ({
             name: r.name ? r.name.replace(/\.(safetensors|pt|ckpt)$/i, '').trim() : 'Unknown',
@@ -211,28 +230,28 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
         const embeddedStatsRows = await db.select<any[]>(`
             SELECT 
                 j.value as name,
-                count(*) as count
+            count(*) as count
             FROM images, json_each(metadata_json, '$.embeddings') j
             ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
-        `, params);
+            `, params);
 
         const hnStatsRows = await db.select<any[]>(`
             SELECT 
                 j.value as name,
-                count(*) as count
+            count(*) as count
             FROM images, json_each(metadata_json, '$.hypernetworks') j
             ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
-        `, params);
+            `, params);
 
         const tools = await db.select<any[]>(`
             SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as name 
             FROM images ${finalWhere} 
             ORDER BY name ASC
-        `, params);
+            `, params);
 
         return {
             models: models.map(m => m.name).filter(Boolean),
