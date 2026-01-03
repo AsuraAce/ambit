@@ -60,7 +60,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         smart: true,
         params: true,
         generator: true,
-        model: true,
+        checkpoints: true,
         resources: true,
         embeddings: false,
         hypernetworks: false,
@@ -76,8 +76,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     // Tab-Specific Dirty Checks (for dot indicators)
     const isOrganizeDirty = !!(filters.collectionId || filters.dateRange !== 'all' || filters.favoritesOnly || filters.pinnedOnly);
-    const isGenerateDirty = !!(filters.models.length > 0 || filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
-    const isResourcesDirty = !!(filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
+    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
 
     return (
         <div
@@ -192,18 +192,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 tools={facets.tools}
                                 isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
                             />
-
-                            <ArchitectureSection
-                                filters={filters} setFilters={setFilters}
-                                models={facets.models}
-                                isOpen={expanded.model} onToggle={() => toggleSection('model')}
-                            />
                         </div>
                     )}
 
                     {/* RESOURCES TAB */}
                     {activeTab === 'resources' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                            <ResourceSection
+                                title="Checkpoints"
+                                type="models"
+                                filters={filters} setFilters={setFilters}
+                                data={facets.checkpoints}
+                                isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
+                            />
+
                             <ResourceSection
                                 title="Resources (LoRA)"
                                 type="loras"

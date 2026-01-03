@@ -1,15 +1,24 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Search, Puzzle, Check } from 'lucide-react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, MoreHorizontal } from 'lucide-react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { SectionHeader, SearchInput } from './FilterPrimitives';
 
+interface ResourceItem {
+    name: string;
+    count: number;
+    thumbnailPath?: string;
+    previewUrl?: string;
+    hash?: string;
+}
+
 interface ResourceSectionProps {
     title: string;
-    type: 'loras' | 'embeddings' | 'hypernetworks';
+    type: 'loras' | 'embeddings' | 'hypernetworks' | 'models';
     filters: FilterState;
     setFilters: (update: (prev: FilterState) => FilterState) => void;
-    data: { name: string; count: number }[];
+    data: ResourceItem[];
     isOpen: boolean;
     onToggle: () => void;
 }
@@ -25,10 +34,11 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
     const toggleItem = (name: string) => {
         setFilters(prev => {
-            const currentList = prev[type] || [];
+            const currentList = (prev[type] as string[]) || [];
             const newList = currentList.includes(name)
                 ? currentList.filter(l => l !== name)
                 : [...currentList, name];
@@ -36,40 +46,112 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         });
     };
 
-    const filteredItems = data.filter(l =>
+    const filteredItems = (data || []).filter(l =>
         l.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const renderRow = (item: { name: string, count: number }) => {
+    const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'models' ? 'Checkpoint' : 'Hypernetwork';
+
+    const renderGridItem = (item: ResourceItem) => {
         const isSelected = (filters[type] || []).includes(item.name);
+        const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
+
         return (
             <div
-                key={item.name}
+                key={item.hash || item.name}
                 onClick={() => toggleItem(item.name)}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${isSelected
-                    ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
-                    : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
+                className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
+                    ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
+                    : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
                     }`}
             >
-                <div className="flex items-center gap-2 overflow-hidden">
-                    <Puzzle className="w-3 h-3 flex-shrink-0 opacity-50" />
-                    <span className="truncate" title={item.name}>{item.name}</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 rounded-md">{item.count}</span>
-                    {isSelected ? (
-                        <div className="w-3.5 h-3.5 rounded-full bg-sage-500 flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
-                        </div>
+                {/* Thumbnail */}
+                <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
+                    {thumbUrl ? (
+                        <img
+                            src={thumbUrl}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                        />
                     ) : (
-                        <div className="w-3.5 h-3.5 rounded-full border border-gray-300 dark:border-gray-600" />
+                        <div className="w-full h-full flex items-center justify-center opacity-10">
+                            <Puzzle className="w-8 h-8" />
+                        </div>
                     )}
+                </div>
+
+                {/* Overlay Info */}
+                <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                    <p className="text-[10px] font-medium text-white line-clamp-2 leading-tight drop-shadow-sm">
+                        {item.name}
+                    </p>
+                </div>
+
+                {/* Selection Indicator */}
+                {isSelected && (
+                    <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center shadow-sm animate-in zoom-in-50 duration-200">
+                        <Check className="w-2.5 h-2.5 text-white" />
+                    </div>
+                )}
+
+                {/* Count Badge */}
+                <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                    {item.count}
                 </div>
             </div>
         );
     };
 
-    const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : 'Hypernetwork';
+    const renderListItem = (item: ResourceItem) => {
+        const isSelected = (filters[type] || []).includes(item.name);
+        const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
+
+        return (
+            <div
+                key={item.hash || item.name}
+                onClick={() => toggleItem(item.name)}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border group ${isSelected
+                    ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+                    : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
+                    }`}
+            >
+                <div className="flex items-center gap-3 overflow-hidden">
+                    {/* Tiny Avatar Thumbnail */}
+                    <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
+                        {thumbUrl ? (
+                            <img
+                                src={thumbUrl}
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                            />
+                        ) : (
+                            <Puzzle className="w-3 h-3 opacity-30" />
+                        )}
+                    </div>
+
+                    <span className="truncate" title={item.name}>{item.name}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 rounded-md transition-opacity group-hover:opacity-100 opacity-60">{item.count}</span>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); /* TODO: Context Menu */ }}
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-all"
+                    >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                    {isSelected ? (
+                        <div className="w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center animate-in zoom-in-50 duration-200">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                        </div>
+                    ) : (
+                        <div className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600 group-hover:border-sage-400 transition-colors" />
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-2">
@@ -78,30 +160,41 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 isOpen={isOpen}
                 onToggle={onToggle}
                 action={isOpen && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); }}
-                        className={`p-1 rounded ${isSearchOpen ? 'text-sage-500' : 'text-gray-400 hover:text-gray-600'}`}
-                        title={`Filter ${singularType}s`}
-                    >
-                        <Search className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setViewMode(viewMode === 'list' ? 'grid' : 'list'); }}
+                            className={`p-1 rounded transition-colors ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                            title={viewMode === 'list' ? "Switch to Grid View" : "Switch to List View"}
+                        >
+                            {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); }}
+                            className={`p-1 rounded ${isSearchOpen ? 'text-sage-500' : 'text-gray-400 hover:text-gray-600'}`}
+                            title={`Filter ${singularType}s`}
+                        >
+                            <Search className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 )}
             />
             {isOpen && (
-                <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
+                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300 ease-spring">
                     {isSearchOpen && (
                         <SearchInput
                             value={searchQuery}
                             onChange={setSearchQuery}
                             placeholder={`Search ${singularType}s...`}
-                            className="px-1 pb-1"
+                            className="px-1"
                         />
                     )}
-                    <div className="space-y-1 pr-1">
-                        {filteredItems.map(item => renderRow(item))}
+
+                    <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
+                        {filteredItems.map(item => viewMode === 'grid' ? renderGridItem(item) : renderListItem(item))}
+
                         {filteredItems.length === 0 && (
-                            <div className="text-xs text-gray-400 text-center py-2 italic">
-                                {data.length === 0 ? `No ${singularType}s found in library` : `No matching ${singularType}s`}
+                            <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
+                                {data.length === 0 ? `No ${singularType}s found` : `No matching ${singularType}s`}
                             </div>
                         )}
                     </div>

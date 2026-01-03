@@ -86,7 +86,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [sortOption, setSortOption] = useState<SortOption>('date_desc');
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-    const [facets, setFacets] = useState<Facets>({ models: [], loras: [], embeddings: [], hypernetworks: [], tools: [] });
+    const [facets, setFacets] = useState<Facets>({ checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] });
     const [stats, setStats] = useState<LibraryStats>({
         totalImages: 0,
         totalGenerations: 0,

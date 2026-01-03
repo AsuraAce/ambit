@@ -13,10 +13,10 @@ export interface LibraryStats {
 }
 
 export interface Facets {
-    models: string[];
-    loras: { name: string; count: number }[];
-    embeddings: { name: string; count: number }[];
-    hypernetworks: { name: string; count: number }[];
+    checkpoints: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    loras: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    embeddings: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    hypernetworks: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
     tools: string[];
 }
 
@@ -65,7 +65,7 @@ export const searchImages = async (
         : `ORDER BY ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`;
 
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT.replace(/id,/, 'images.id,').replace(/metadata_json,/, 'images.metadata_json,')}, m.name as resolved_model_name
+        SELECT ${IMAGE_FIELDS_LIGHT.replace(/id,/, 'images.id,').replace(/metadata_json,/, 'images.metadata_json,').replace(/thumbnail_path,/, 'images.thumbnail_path,').replace(/timestamp,/, 'images.timestamp,').replace(/file_size,/, 'images.file_size,')}, m.name as resolved_model_name
         FROM images 
         LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
         ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 
@@ -189,80 +189,133 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
 export const getFacets = async (whereClause: string = '', params: any[] = []): Promise<Facets> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const imagesWhere = finalWhere.replace(/WHERE /i, 'WHERE images.');
 
     try {
-        const models = await db.select<any[]>(`
-            SELECT DISTINCT 
-                CASE 
-                    WHEN m.name IS NOT NULL THEN m.name
-                    WHEN json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown'
-                    THEN COALESCE(json_extract(images.metadata_json, '$.modelHash'), 'Unknown')
-                    ELSE json_extract(images.metadata_json, '$.model')
-                END as name
-            FROM images 
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 
-            ORDER BY name ASC
+        // 1. Optimized Checkpoints Facet
+        const checkpointStatsRows = await db.select<any[]>(`
+            WITH counts AS (
+                SELECT 
+                    json_extract(metadata_json, '$.modelHash') as hash,
+                    count(*) as count
+                FROM images 
+                ${finalWhere}
+                GROUP BY hash
+            )
+            SELECT 
+                m.name,
+                m.hash,
+                IFNULL(c.count, 0) as count,
+                m.thumbnail_path,
+                m.preview_url
+            FROM models m
+            LEFT JOIN counts c ON m.hash = c.hash
+            WHERE m.resource_type = 'checkpoint'
+            ORDER BY count DESC, m.name ASC
         `, params);
 
+        // 2. Optimized LoRAs Facet
         const loraStatsRows = await db.select<any[]>(`
-            SELECT 
-                clean_name as name,
-            count(*) as count
-            FROM(
+            WITH lora_names AS (
                 SELECT 
                     CASE 
                         WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                        WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
                         ELSE j.value 
                     END as clean_name
                 FROM images, json_each(metadata_json, '$.loras') j
                 ${finalWhere}
+            ),
+            counts AS (
+                SELECT clean_name, count(*) as count
+                FROM lora_names
+                GROUP BY clean_name
             )
-            GROUP BY name
-            ORDER BY count DESC
-            `, params);
+            SELECT 
+                m.name,
+                m.hash,
+                IFNULL(c.count, 0) as count,
+                m.thumbnail_path,
+                m.preview_url
+            FROM models m
+            LEFT JOIN counts c ON m.name = c.clean_name
+            WHERE m.resource_type = 'loras'
+            ORDER BY count DESC, m.name ASC
+        `, params);
 
-        const loraStats = loraStatsRows.map(r => ({
-            name: r.name ? r.name.replace(/\.(safetensors|pt|ckpt)$/i, '').trim() : 'Unknown',
-            count: r.count
-        }));
-
+        // 3. Optimized Embeddings Facet
         const embeddedStatsRows = await db.select<any[]>(`
+            WITH counts AS (
+                SELECT j.value as resource_name, count(*) as count
+                FROM images, json_each(metadata_json, '$.embeddings') j
+                ${finalWhere}
+                GROUP BY resource_name
+            )
             SELECT 
-                j.value as name,
-            count(*) as count
-            FROM images, json_each(metadata_json, '$.embeddings') j
-            ${finalWhere}
-            GROUP BY name
-            ORDER BY count DESC
-            `, params);
+                m.name,
+                m.hash,
+                IFNULL(c.count, 0) as count,
+                m.thumbnail_path,
+                m.preview_url
+            FROM models m
+            LEFT JOIN counts c ON m.name = c.resource_name
+            WHERE m.resource_type = 'embeddings'
+            ORDER BY count DESC, m.name ASC
+        `, params);
 
+        // 4. Optimized Hypernetworks Facet
         const hnStatsRows = await db.select<any[]>(`
+            WITH counts AS (
+                SELECT j.value as resource_name, count(*) as count
+                FROM images, json_each(metadata_json, '$.hypernetworks') j
+                ${finalWhere}
+                GROUP BY resource_name
+            )
             SELECT 
-                j.value as name,
-            count(*) as count
-            FROM images, json_each(metadata_json, '$.hypernetworks') j
-            ${finalWhere}
-            GROUP BY name
-            ORDER BY count DESC
-            `, params);
+                m.name,
+                m.hash,
+                IFNULL(c.count, 0) as count,
+                m.thumbnail_path,
+                m.preview_url
+            FROM models m
+            LEFT JOIN counts c ON m.name = c.resource_name
+            WHERE m.resource_type = 'hypernetworks'
+            ORDER BY count DESC, m.name ASC
+        `, params);
 
         const tools = await db.select<any[]>(`
-            SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as name 
-            FROM images ${finalWhere} 
-            ORDER BY name ASC
+            SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as tool_name 
+            FROM images 
+            ${imagesWhere} 
+            ORDER BY tool_name ASC
             `, params);
 
         return {
-            models: models.map(m => m.name).filter(Boolean),
-            loras: loraStats,
-            embeddings: embeddedStatsRows.map(r => ({ name: r.name, count: r.count })),
-            hypernetworks: hnStatsRows.map(r => ({ name: r.name, count: r.count })),
-            tools: tools.map(t => t.name).filter(Boolean)
+            checkpoints: checkpointStatsRows.map(r => ({
+                name: r.name || 'Unknown',
+                hash: r.hash,
+                count: r.count,
+                thumbnailPath: r.thumbnail_path,
+                previewUrl: r.preview_url
+            })),
+            loras: loraStatsRows.map(r => ({
+                name: r.name ? r.name.replace(/\.(safetensors|pt|ckpt)$/i, '').trim() : 'Unknown',
+                hash: r.hash,
+                count: r.count,
+                thumbnailPath: r.thumbnail_path,
+                previewUrl: r.preview_url
+            })),
+            embeddings: embeddedStatsRows.map(r => ({
+                name: r.name, hash: r.hash, count: r.count, thumbnailPath: r.thumbnail_path, previewUrl: r.preview_url
+            })),
+            hypernetworks: hnStatsRows.map(r => ({
+                name: r.name, hash: r.hash, count: r.count, thumbnailPath: r.thumbnail_path, previewUrl: r.preview_url
+            })),
+            tools: tools.map(t => t.tool_name).filter(Boolean)
         };
 
     } catch (e) {
         console.error('[DB] Failed to get facets', e);
-        return { models: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
     }
 };

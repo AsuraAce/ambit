@@ -208,3 +208,13 @@ export const processNativePaths = async (
         }
     };
 };
+
+export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: number; updated: number }> => {
+    try {
+        const result = await invoke<{ found: number; updated: number }>('scan_model_thumbnails', { paths });
+        return result;
+    } catch (e) {
+        console.error('Failed to scan resource thumbnails', e);
+        return { found: 0, updated: 0 };
+    }
+};

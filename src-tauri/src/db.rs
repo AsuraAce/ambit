@@ -132,7 +132,32 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6]
+    let migration7 = Migration {
+        version: 7,
+        description: "add_model_thumbnails",
+        sql: "ALTER TABLE models ADD COLUMN thumbnail_path TEXT;
+              ALTER TABLE models ADD COLUMN preview_url TEXT;",
+        kind: MigrationKind::Up,
+    };
+
+    let migration8 = Migration {
+        version: 8,
+        description: "add_indices_to_models",
+        sql: "CREATE INDEX IF NOT EXISTS idx_models_name ON models(name);
+              CREATE INDEX IF NOT EXISTS idx_models_filename ON models(filename);",
+        kind: MigrationKind::Up,
+    };
+
+    let migration9 = Migration {
+        version: 9,
+        description: "add_resource_type_to_models",
+        sql: "ALTER TABLE models ADD COLUMN resource_type TEXT;
+              CREATE INDEX IF NOT EXISTS idx_models_resource_type ON models(resource_type);
+              UPDATE models SET resource_type = 'checkpoint' WHERE resource_type IS NULL OR resource_type = '';",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9]
 }
 
 // Helper to resolve the correct DB path used by tauri-plugin-sql

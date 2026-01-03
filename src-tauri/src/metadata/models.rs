@@ -26,6 +26,9 @@ pub struct ModelCacheEntry {
     pub filename: Option<String>,
     pub lookup_source: String,
     pub scanned_at: u64,
+    pub thumbnail_path: Option<String>,
+    pub preview_url: Option<String>,
+    pub resource_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -74,6 +77,9 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                             filename: Some(name.to_string()),
                             lookup_source: "local_cache_flat".to_string(),
                             scanned_at: now,
+                            thumbnail_path: None,
+                            preview_url: None,
+                            resource_type: Some("checkpoint".to_string()),
                         });
                         entries.push(ModelCacheEntry {
                             hash: sha256.to_string(),
@@ -81,18 +87,24 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                             filename: Some(name.to_string()),
                             lookup_source: "local_cache_flat".to_string(),
                             scanned_at: now,
+                            thumbnail_path: None,
+                            preview_url: None,
+                            resource_type: Some("checkpoint".to_string()),
                         });
                     } else {
                         // Check if Nested structure: "checkpoint": { "foo": { "sha256": "..." } }
                         for (filename, data) in inner_obj {
                             if let Some(sha256) = data.get("sha256").and_then(|h| h.as_str()) {
                                 let short_hash = &sha256[..10];
-                                entries.push(ModelCacheEntry {
+                                 entries.push(ModelCacheEntry {
                                     hash: short_hash.to_string(),
                                     name: filename.clone(),
                                     filename: Some(filename.clone()),
                                     lookup_source: "local_cache_nested".to_string(),
                                     scanned_at: now,
+                                    thumbnail_path: None,
+                                    preview_url: None,
+                                    resource_type: Some("checkpoint".to_string()),
                                 });
                                 entries.push(ModelCacheEntry {
                                     hash: sha256.to_string(),
@@ -100,6 +112,9 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                                     filename: Some(filename.clone()),
                                     lookup_source: "local_cache_nested".to_string(),
                                     scanned_at: now,
+                                    thumbnail_path: None,
+                                    preview_url: None,
+                                    resource_type: Some("checkpoint".to_string()),
                                 });
                             }
                         }
@@ -122,6 +137,9 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                          filename: None,
                          lookup_source: "local_cache_simple".to_string(),
                          scanned_at: now,
+                         thumbnail_path: None,
+                         preview_url: None,
+                         resource_type: Some("checkpoint".to_string()),
                      });
                      added += 1;
                  }
@@ -145,11 +163,11 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
     let mut added_count = 0;
     {
         let mut stmt = tx.prepare(
-            "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5)"
+            "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at, thumbnail_path, preview_url, resource_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
         ).map_err(|e| e.to_string())?;
 
         for entry in &entries {
-             if let Ok(rows) = stmt.execute(params![entry.hash, entry.name, entry.filename, entry.lookup_source, entry.scanned_at]) {
+             if let Ok(rows) = stmt.execute(params![entry.hash, entry.name, entry.filename, entry.lookup_source, entry.scanned_at, entry.thumbnail_path, entry.preview_url, entry.resource_type]) {
                  added_count += rows;
              }
         }
@@ -217,8 +235,8 @@ pub async fn resolve_hashes_online(
             });
             
             harvest_count = conn.execute(
-                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at) 
-                 SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1, 'checkpoint'
                  FROM images 
                  WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
                  AND json_extract(metadata_json, '$.model') IS NOT NULL",
@@ -306,7 +324,7 @@ pub async fn resolve_hashes_online(
         
         for (hash, name, version_id) in resolved_items {
             let _ = tx.execute(
-                "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at) VALUES (?1, ?2, 'civitai', ?3, ?4)",
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at, resource_type) VALUES (?1, ?2, 'civitai', ?3, ?4, 'checkpoint')",
                 params![hash, name, version_id, now]
             );
         }
@@ -369,4 +387,209 @@ pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command(rename_all = "camelCase")]
 pub fn cancel_model_resolution(state: tauri::State<'_, ModelResolutionState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailScanResult {
+    found: usize,
+    updated: usize,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) -> Result<ThumbnailScanResult, String> {
+    let mut models_found = Vec::new();
+    let mut images_map = std::collections::HashSet::new();
+
+    for root_path in paths {
+        let path_buf = std::path::PathBuf::from(root_path);
+        if path_buf.exists() && path_buf.is_dir() {
+            scan_dir_for_resources(&path_buf, &mut models_found, &mut images_map);
+        }
+    }
+
+    if models_found.is_empty() {
+        return Ok(ThumbnailScanResult { found: 0, updated: 0 });
+    }
+
+    let db_path = resolve_db_path(&app)?;
+    let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+    // 1. Harvest resource names from library if not already in models table
+    harvest_resource_names(&mut conn, now)?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let mut updated_count = 0;
+
+    {
+        // 2. Full Discovery: Upsert all found models into the database
+        let mut upsert_stmt = tx.prepare_cached(
+            "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at, resource_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        ).map_err(|e| e.to_string())?;
+
+        for model_path in &models_found {
+            let model_path_buf = std::path::PathBuf::from(model_path);
+            let filename = model_path_buf.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let stem = model_path_buf.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            
+            // Infer type from path
+            let path_lower = model_path.to_lowercase();
+            let r_type = if path_lower.contains("lora") {
+                "loras"
+            } else if path_lower.contains("embedding") {
+                "embeddings"
+            } else if path_lower.contains("hypernetwork") {
+                "hypernetworks"
+            } else {
+                "checkpoint"
+            };
+
+            // For full discovery, we use the filename as a temporary 'hash' if we don't have one
+            // This is just to ensure it's in the table so it can be matched.
+            let pseudo_hash = format!("file:{}", model_path);
+            
+            let _ = upsert_stmt.execute(params![
+                pseudo_hash,
+                stem,
+                filename,
+                "disk_scan",
+                now,
+                r_type
+            ]);
+        }
+
+        // 3. Match Thumbnails
+        let mut update_stmt = tx.prepare_cached(
+            "UPDATE models SET thumbnail_path = ?1 WHERE (filename = ?2 COLLATE NOCASE OR name = ?3 COLLATE NOCASE OR name = ?4 COLLATE NOCASE) AND (thumbnail_path IS NULL OR thumbnail_path = '')"
+        ).map_err(|e| e.to_string())?;
+
+        for model_path in &models_found {
+            let model_path_buf = std::path::PathBuf::from(&model_path);
+            
+            let parent = match model_path_buf.parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            
+            let stem = match model_path_buf.file_stem().and_then(|s| s.to_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            
+            let filename = match model_path_buf.file_name().and_then(|s| s.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            let candidates = [
+                format!("{}.preview.png", stem),
+                format!("{}.png", stem),
+                format!("{}.jpg", stem),
+                format!("{}.webp", stem),
+                format!("{}.jpeg", stem),
+            ];
+
+            let mut best_thumb: Option<String> = None;
+
+            for cand_name in candidates {
+                let candidate_path = parent.join(&cand_name).to_string_lossy().to_string();
+                if images_map.contains(&candidate_path) {
+                    best_thumb = Some(candidate_path);
+                    break;
+                }
+            }
+
+            if let Some(thumb_path) = best_thumb {
+                 if let Ok(rows) = update_stmt.execute(params![thumb_path, filename, stem, filename]) {
+                     if rows > 0 {
+                         updated_count += 1;
+                     }
+                 }
+            }
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    
+    Ok(ThumbnailScanResult { found: models_found.len(), updated: updated_count }) 
+}
+
+// Helper function override
+fn scan_dir_for_resources(
+    dir: &std::path::Path, 
+    models: &mut Vec<String>, 
+    images: &mut std::collections::HashSet<String> 
+) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                scan_dir_for_resources(&p, models, images);
+            } else if p.is_file() {
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                if ["safetensors", "ckpt", "pt", "bin", "pth"].contains(&ext.as_str()) {
+                    models.push(p.to_string_lossy().to_string());
+                } else if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                    images.insert(p.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+}
+
+fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String> {
+    // 1. Loras
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            'lora_' || clean_name, 
+            clean_name, 
+            'harvest_lora', 
+            ?1,
+            'loras'
+         FROM (
+             SELECT 
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END as clean_name
+             FROM images, json_each(metadata_json, '$.loras') j
+         ) 
+         WHERE clean_name IS NOT NULL AND clean_name != ''",
+         params![now]
+    ).map_err(|e| e.to_string())?;
+
+    // 2. Embeddings
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            'emb_' || j.value, 
+            j.value, 
+            'harvest_embedding', 
+            ?1,
+            'embeddings'
+         FROM images, json_each(metadata_json, '$.embeddings') j
+         WHERE j.value IS NOT NULL AND j.value != ''",
+         params![now]
+    ).map_err(|e| e.to_string())?;
+
+    // 3. Hypernetworks
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            'hyper_' || j.value, 
+            j.value, 
+            'harvest_hypernet', 
+            ?1,
+            'hypernetworks'
+         FROM images, json_each(metadata_json, '$.hypernetworks') j
+         WHERE j.value IS NOT NULL AND j.value != ''",
+         params![now]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
 }

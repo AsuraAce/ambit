@@ -33,6 +33,7 @@ pub fn run() {
             metadata::models::resolve_hashes_online,
             metadata::models::clear_model_cache,
             metadata::models::cancel_model_resolution,
+            metadata::models::scan_model_thumbnails,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
