@@ -97,7 +97,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             className="px-1 pb-1"
                         />
                     )}
-                    <div className={`space-y-1 ${filteredItems.length > 8 ? 'max-h-48 overflow-y-auto custom-scrollbar pr-1' : ''}`}>
+                    <div className="space-y-1 pr-1">
                         {filteredItems.map(item => renderRow(item))}
                         {filteredItems.length === 0 && (
                             <div className="text-xs text-gray-400 text-center py-2 italic">

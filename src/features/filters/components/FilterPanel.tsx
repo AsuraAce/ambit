@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Check, Filter, Github } from 'lucide-react';
-import { FilterState, Collection, AIImage } from '../../../types';
+import { Check, Filter, Github, FolderOpen, Sliders, Puzzle } from 'lucide-react';
+import { FilterState, AIImage } from '../../../types';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { CollectionsSection } from './CollectionsSection';
 import { SmartCollectionsSection } from './SmartCollectionsSection';
@@ -30,6 +30,8 @@ interface FilterPanelProps {
     className?: string;
 }
 
+type FilterTab = 'organize' | 'generate' | 'resources';
+
 export const FilterPanel: React.FC<FilterPanelProps> = ({
     filters,
     setFilters,
@@ -50,14 +52,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     className
 }) => {
     const { collections, smartCollections, facets, clearAllFilters } = useLibraryContext();
+    const [activeTab, setActiveTab] = React.useState<FilterTab>('organize');
 
+    // Section expansion states (internal to tabs now)
     const [expanded, setExpanded] = React.useState<Record<string, boolean>>({
         collections: true,
         smart: true,
         params: true,
-        generator: false,
-        model: false,
-        resources: false,
+        generator: true,
+        model: true,
+        resources: true,
         embeddings: false,
         hypernetworks: false,
         date: true
@@ -67,116 +71,169 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
     };
 
+    // Global Dirty Check
     const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.pinnedOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+
+    // Tab-Specific Dirty Checks (for dot indicators)
+    const isOrganizeDirty = !!(filters.collectionId || filters.dateRange !== 'all' || filters.favoritesOnly || filters.pinnedOnly);
+    const isGenerateDirty = !!(filters.models.length > 0 || filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    const isResourcesDirty = !!(filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
 
     return (
         <div
             className={`bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-3xl flex flex-col h-full transition-all duration-500 ease-spring shadow-2xl ${isVisible ? 'w-72 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-4 overflow-hidden'} ${className}`}
         >
-            <div className="p-5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between min-w-[18rem]">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between min-w-[18rem]">
                 <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-sage-600 dark:text-sage-400" />
-                    <h2 className="font-bold text-sm text-gray-800 dark:text-gray-200 uppercase tracking-wider">Gallery Filters</h2>
+                    <h2 className="font-bold text-sm text-gray-800 dark:text-gray-200 uppercase tracking-wider">Library</h2>
                 </div>
+                {isDirty && (
+                    <button
+                        onClick={clearAllFilters}
+                        className="text-[10px] font-bold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
+                    >
+                        Reset All
+                    </button>
+                )}
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 flex flex-col min-w-[18rem]">
-                <div className="space-y-6">
-                    {/* View All Reset */}
+            {/* Tab Toolbar */}
+            <div className="px-2 pt-2 border-b border-gray-100 dark:border-white/5 min-w-[18rem]">
+                <div className="flex items-center gap-1 bg-gray-100/50 dark:bg-black/20 p-1 rounded-xl">
                     <button
-                        onClick={() => {
-                            if (isDirty) {
-                                clearAllFilters();
-                            }
-                        }}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all shadow-sm font-medium flex items-center justify-between group ease-spring duration-300 ${!isDirty
-                            ? 'bg-sage-600 text-white shadow-sage-500/20'
-                            : 'bg-gray-100 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'
+                        onClick={() => setActiveTab('organize')}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'organize'
+                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
                             }`}
                     >
-                        All Photos
-                        {!isDirty && <Check className="w-4 h-4" />}
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        Organize
+                        {isOrganizeDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
                     </button>
-
-                    <CollectionsSection
-                        collections={collections} filters={filters} setFilters={setFilters}
-                        isOpen={expanded.collections} onToggle={() => toggleSection('collections')}
-                        onCreateCollection={onCreateCollection}
-                        onDropOnCollection={onDropOnCollection}
-                        onRenameCollection={onRenameCollection}
-                        onDeleteCollection={onDeleteCollection}
-                        onToggleArchiveCollection={onToggleArchiveCollection}
-                        onTogglePinCollection={onTogglePinCollection}
-                        onSetCollectionColor={onSetCollectionColor}
-                        onPlayCollection={onPlayCollection}
-                        onExportCollection={onExportCollection}
-                        onResetCollectionThumbnail={onResetCollectionThumbnail}
-                    />
-
-                    <SmartCollectionsSection
-                        filters={filters} setFilters={setFilters}
-                        smartCollections={smartCollections}
-                        isOpen={expanded.smart} onToggle={() => toggleSection('smart')}
-                        onSaveSmartCollection={onSaveSmartCollection}
-                        onDeleteSmartCollection={onDeleteSmartCollection}
-                        onDropOnCollection={onDropOnCollection}
-                        onRenameCollection={onRenameCollection}
-                        onToggleArchiveCollection={onToggleArchiveCollection}
-                        onTogglePinCollection={onTogglePinCollection}
-                        onSetCollectionColor={onSetCollectionColor}
-                        onPlayCollection={onPlayCollection}
-                        onExportCollection={onExportCollection}
-                        onResetCollectionThumbnail={onResetCollectionThumbnail}
-                        isDirty={isDirty}
-                    />
-
-                    <div className="h-px bg-gray-200 dark:bg-white/5" />
-
-                    <ParameterSection
-                        filters={filters} setFilters={setFilters}
-                        isOpen={expanded.params} onToggle={() => toggleSection('params')}
-                    />
-
-                    <GeneratorSection
-                        filters={filters} setFilters={setFilters}
-                        tools={facets.tools}
-                        isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
-                    />
-
-                    <ArchitectureSection
-                        filters={filters} setFilters={setFilters}
-                        models={facets.models}
-                        isOpen={expanded.model} onToggle={() => toggleSection('model')}
-                    />
-
-                    <ResourceSection
-                        title="Resources (LoRA)"
-                        type="loras"
-                        filters={filters} setFilters={setFilters}
-                        data={facets.loras}
-                        isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
-                    />
-
-                    <ResourceSection
-                        title="Resources (Embedding)"
-                        type="embeddings"
-                        filters={filters} setFilters={setFilters}
-                        data={facets.embeddings}
-                        isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
-                    />
-
-                    <ResourceSection
-                        title="Resources (Hypernet)"
-                        type="hypernetworks"
-                        filters={filters} setFilters={setFilters}
-                        data={facets.hypernetworks}
-                        isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
-                    />
+                    <button
+                        onClick={() => setActiveTab('generate')}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'generate'
+                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                            }`}
+                    >
+                        <Sliders className="w-3.5 h-3.5" />
+                        Filters
+                        {isGenerateDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('resources')}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'resources'
+                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                            }`}
+                    >
+                        <Puzzle className="w-3.5 h-3.5" />
+                        Assets
+                        {isResourcesDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                    </button>
                 </div>
             </div>
 
-            <div className="p-4 pt-0 border-t border-transparent">
-                <DateRangeSection filters={filters} setFilters={setFilters} />
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 flex flex-col min-w-[18rem]">
+                <div className="space-y-6">
+
+                    {/* ORGANIZE TAB */}
+                    {activeTab === 'organize' && (
+                        <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
+                            <CollectionsSection
+                                collections={collections} filters={filters} setFilters={setFilters}
+                                isOpen={expanded.collections} onToggle={() => toggleSection('collections')}
+                                onCreateCollection={onCreateCollection}
+                                onDropOnCollection={onDropOnCollection}
+                                onRenameCollection={onRenameCollection}
+                                onDeleteCollection={onDeleteCollection}
+                                onToggleArchiveCollection={onToggleArchiveCollection}
+                                onTogglePinCollection={onTogglePinCollection}
+                                onSetCollectionColor={onSetCollectionColor}
+                                onPlayCollection={onPlayCollection}
+                                onExportCollection={onExportCollection}
+                                onResetCollectionThumbnail={onResetCollectionThumbnail}
+                            />
+
+                            <SmartCollectionsSection
+                                filters={filters} setFilters={setFilters}
+                                smartCollections={smartCollections}
+                                isOpen={expanded.smart} onToggle={() => toggleSection('smart')}
+                                onSaveSmartCollection={onSaveSmartCollection}
+                                onDeleteSmartCollection={onDeleteSmartCollection}
+                                onDropOnCollection={onDropOnCollection}
+                                onRenameCollection={onRenameCollection}
+                                onToggleArchiveCollection={onToggleArchiveCollection}
+                                onTogglePinCollection={onTogglePinCollection}
+                                onSetCollectionColor={onSetCollectionColor}
+                                onPlayCollection={onPlayCollection}
+                                onExportCollection={onExportCollection}
+                                onResetCollectionThumbnail={onResetCollectionThumbnail}
+                                isDirty={isDirty}
+                            />
+
+                            <div className="h-px bg-gray-200 dark:bg-white/5" />
+                            <DateRangeSection filters={filters} setFilters={setFilters} />
+                        </div>
+                    )}
+
+                    {/* GENERATE TAB */}
+                    {activeTab === 'generate' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                            <ParameterSection
+                                filters={filters} setFilters={setFilters}
+                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
+                            />
+
+                            <GeneratorSection
+                                filters={filters} setFilters={setFilters}
+                                tools={facets.tools}
+                                isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
+                            />
+
+                            <ArchitectureSection
+                                filters={filters} setFilters={setFilters}
+                                models={facets.models}
+                                isOpen={expanded.model} onToggle={() => toggleSection('model')}
+                            />
+                        </div>
+                    )}
+
+                    {/* RESOURCES TAB */}
+                    {activeTab === 'resources' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                            <ResourceSection
+                                title="Resources (LoRA)"
+                                type="loras"
+                                filters={filters} setFilters={setFilters}
+                                data={facets.loras}
+                                isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
+                            />
+
+                            <ResourceSection
+                                title="Resources (Embedding)"
+                                type="embeddings"
+                                filters={filters} setFilters={setFilters}
+                                data={facets.embeddings}
+                                isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                            />
+
+                            <ResourceSection
+                                title="Resources (Hypernet)"
+                                type="hypernetworks"
+                                filters={filters} setFilters={setFilters}
+                                data={facets.hypernetworks}
+                                isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
+                            />
+                        </div>
+                    )}
+
+                </div>
             </div>
 
             {/* Footer / Status */}

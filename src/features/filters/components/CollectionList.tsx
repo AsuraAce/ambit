@@ -179,7 +179,7 @@ export function CollectionList<T extends Collection>({
 
             {renderCreationForm?.()}
 
-            <div className="max-h-[35vh] overflow-y-auto custom-scrollbar space-y-1 pr-1">
+            <div className="space-y-1 pr-1">
                 {pinned.length > 0 && (
                     <div className="mb-2">
                         <div className="px-2 pb-1.5 text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-wider flex items-center gap-1">
