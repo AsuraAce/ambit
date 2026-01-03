@@ -1,4 +1,3 @@
-use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -178,6 +177,8 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
 pub struct ResolutionResult {
     resolved_count: usize,
     failed_count: usize,
+    named_fallback_count: usize,
+    unknown_count: usize,
 }
 
 #[derive(Clone, Serialize)]
@@ -248,7 +249,12 @@ pub async fn resolve_hashes_online(
 
     let total = hashes_to_resolve.len();
     if total == 0 {
-        return Ok(ResolutionResult { resolved_count: harvest_count, failed_count: 0 });
+        return Ok(ResolutionResult { 
+            resolved_count: harvest_count, 
+            failed_count: 0,
+            named_fallback_count: 0,
+            unknown_count: 0
+        });
     }
 
     let client = Client::new();
@@ -307,7 +313,49 @@ pub async fn resolve_hashes_online(
         tx.commit().map_err(|e| e.to_string())?;
     }
 
-    Ok(ResolutionResult { resolved_count: harvest_count + newly_resolved, failed_count: failed })
+    // 3. Post-Analysis: How many "failed" hashes actually have a name in the DB?
+    let mut named_fallback = 0;
+    let mut truly_unknown = 0;
+
+    // Only analyze if we had failures
+    if failed > 0 {
+        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        
+        // Find hashes that are NOT in models table (failed lookups)
+        // And check if they have a 'model' name in images table
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
+             FROM images 
+             WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+             AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
+             AND json_extract(metadata_json, '$.model') IS NOT NULL"
+        ).map_err(|e| e.to_string())?;
+
+        let fallback_count: usize = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        
+        named_fallback = fallback_count;
+        // Total Failures - Named Fallbacks = Truly Unknown (No hash match AND No name match)
+        // We calculate truly_unknown based on total active failures in the library, not just this session's failures
+        // But for this return value, 'failed' tracks session failures. 
+        // Let's rely on the DB query for truth.
+        
+        let mut stmt_unknown = conn.prepare(
+             "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
+             FROM images 
+             WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+             AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
+             AND json_extract(metadata_json, '$.model') IS NULL"
+        ).map_err(|e| e.to_string())?;
+        
+        truly_unknown = stmt_unknown.query_row([], |row| row.get(0)).unwrap_or(0);
+    }
+
+    Ok(ResolutionResult { 
+        resolved_count: harvest_count + newly_resolved, 
+        failed_count: failed,
+        named_fallback_count: named_fallback,
+        unknown_count: truly_unknown
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]

@@ -58,6 +58,8 @@ interface SearchContextType {
     setIsResolvingModels: React.Dispatch<React.SetStateAction<boolean>>;
     modelResolutionProgress: { current: number; total: number; message?: string } | null;
     setModelResolutionProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; message?: string } | null>>;
+    lastModelResolutionResult: { success: boolean; message: string } | null;
+    setLastModelResolutionResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -107,6 +109,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [isActivityDockDismissed, setIsActivityDockDismissed] = useState(false);
     const [isResolvingModels, setIsResolvingModels] = useState(false);
     const [modelResolutionProgress, setModelResolutionProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
+    const [lastModelResolutionResult, setLastModelResolutionResult] = useState<{ success: boolean; message: string } | null>(null);
 
     const refreshHiddenAvailability = useCallback(async () => {
         const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
@@ -394,7 +397,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isResolvingModels,
             setIsResolvingModels,
             modelResolutionProgress,
-            setModelResolutionProgress
+            setModelResolutionProgress,
+            lastModelResolutionResult,
+            setLastModelResolutionResult
         }}>
             {children}
         </SearchContext.Provider>

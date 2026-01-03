@@ -141,7 +141,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 {activeTab === 'general' && <GeneralTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'invokeai' && <InvokeAITab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} onClose={onClose} />}
                 {activeTab === 'comfyui' && <ComfyUITab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
@@ -161,8 +161,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   onClick={handleSave}
                   disabled={!isDirty}
                   className={`px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all transform active:scale-95 ${isDirty
-                      ? 'bg-sage-600 hover:bg-sage-500 text-white shadow-sage-500/20 cursor-pointer'
-                      : 'bg-gray-200 dark:bg-white/5 text-gray-400 dark:text-gray-500 shadow-none cursor-not-allowed opacity-50'
+                    ? 'bg-sage-600 hover:bg-sage-500 text-white shadow-sage-500/20 cursor-pointer'
+                    : 'bg-gray-200 dark:bg-white/5 text-gray-400 dark:text-gray-500 shadow-none cursor-not-allowed opacity-50'
                     }`}
                 >
                   <Save className="w-4 h-4" /> Save Changes

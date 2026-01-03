@@ -181,7 +181,7 @@ export interface AppSettings {
 export interface ToastMessage {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
 }
 
 export interface ContextMenuState {

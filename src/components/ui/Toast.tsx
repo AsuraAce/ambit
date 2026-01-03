@@ -20,7 +20,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, removeTo
 
 const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ toast, onRemove }) => {
   const onRemoveRef = useRef(onRemove);
-  
+
   useEffect(() => {
     onRemoveRef.current = onRemove;
   }, [onRemove]);
@@ -35,9 +35,10 @@ const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ to
   }, []);
 
   const icons = {
-    success: <CheckCircle className="w-4 h-4 text-green-400" />,
-    error: <AlertCircle className="w-4 h-4 text-red-400" />,
-    info: <Info className="w-4 h-4 text-blue-400" />
+    success: <CheckCircle className="w-4 h-4 text-emerald-400" />,
+    error: <AlertCircle className="w-4 h-4 text-rose-400" />,
+    info: <Info className="w-4 h-4 text-blue-400" />,
+    warning: <AlertCircle className="w-4 h-4 text-amber-400" />
   };
 
   return (
@@ -46,8 +47,8 @@ const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ to
         {icons[toast.type]}
       </div>
       <span className="text-sm font-medium tracking-tight mr-1">{toast.message}</span>
-      <button 
-        onClick={onRemove} 
+      <button
+        onClick={onRemove}
         className="p-1 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
       >
         <X className="w-3.5 h-3.5" />

@@ -10,9 +10,10 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+    onClose?: () => void;
 }
 
-export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings, onClose }) => {
     const {
         setIsImporting,
         setImportProgress,
@@ -20,10 +21,12 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
         isResolvingModels: isResolving,
         setIsResolvingModels: setIsResolving,
         modelResolutionProgress: resolutionProgress,
-        setModelResolutionProgress: setResolutionProgress
+        setModelResolutionProgress: setResolutionProgress,
+        lastModelResolutionResult: resolutionResult,
+        setLastModelResolutionResult: setResolutionResult
     } = useLibraryContext() as any;
     const { addToast } = useToast();
-    const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [localTestResult, setLocalTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [confirmState, setConfirmState] = useState<{
         isOpen: boolean;
         title: string;
@@ -46,7 +49,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
     const handleDiscover = async () => {
         if (!settings.a1111Path) return;
         setIsDiscovering(true);
-        setTestResult(null);
+        setLocalTestResult(null);
         try {
             const { discoverA1111Candidates } = await import('../../../services/a1111/config');
             const existing = new Set(settings.monitoredFolders.map(f => f.path.replace(/\\/g, '/').toLowerCase()));
@@ -73,11 +76,11 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
             }
 
             if (results.length === 0) {
-                setTestResult({ success: false, message: "No potential folders containing images found." });
+                setLocalTestResult({ success: false, message: "No potential folders containing images found." });
             }
         } catch (e) {
             console.error(e);
-            setTestResult({ success: false, message: "Discovery failed. Check path permissions." });
+            setLocalTestResult({ success: false, message: "Discovery failed. Check path permissions." });
         } finally {
             setIsDiscovering(false);
         }
@@ -166,17 +169,17 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                 }
 
                 if (refreshCollections) refreshCollections();
-                setTestResult({ success: true, message: `Successfully synced ${alreadyLinked.length} folders!` });
+                setLocalTestResult({ success: true, message: `Successfully synced ${alreadyLinked.length} folders!` });
             } catch (e) {
                 console.error("Manual sync failed", e);
-                setTestResult({ success: false, message: "Sync failed. See console for details." });
+                setLocalTestResult({ success: false, message: "Sync failed. See console for details." });
             } finally {
                 setIsDiscovering(false);
                 setIsImporting(false);
                 setImportProgress(null);
             }
         } else {
-            setTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });
+            setLocalTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });
         }
 
         setCandidates([]);
@@ -459,9 +462,11 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                 confirmLabel: "Re-run Hashing",
                                 onConfirm: async () => {
                                     setConfirmState(prev => ({ ...prev, isOpen: false }));
-                                    setTestResult(null);
+                                    setResolutionResult(null);
                                     setResolutionProgress(null);
                                     setIsResolving(true);
+                                    // Auto-close modal for better UX (User Request)
+                                    if (onClose) onClose();
                                     addToast("Starting model resolution...", "info");
 
                                     try {
@@ -475,19 +480,27 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                             setResolutionProgress(event.payload);
                                         });
 
-                                        const res = await invoke<{ resolvedCount: number, failedCount: number }>('resolve_hashes_online', { skipHarvest: true });
-                                        setTestResult({
-                                            success: true,
-                                            message: `Resolution re-run finished: ${res.resolvedCount} resolved, ${res.failedCount} failed.`
+                                        const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: true });
+
+                                        // Determine success state based on "unknown_count" (user impact), not just technical "failed_count"
+                                        const isSafe = res.unknownCount === 0;
+                                        setResolutionResult({
+                                            success: isSafe,
+                                            message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
                                         });
-                                        addToast(`Resolution finished: ${res.resolvedCount} resolved`, "success");
+
+                                        if (isSafe) {
+                                            addToast(`Resolution finished: ${res.resolvedCount} verified`, "success");
+                                        } else {
+                                            addToast(`Resolution finished with ${res.unknownCount} unknown models`, "warning");
+                                        }
                                         if (unlisten) unlisten();
                                     } catch (e: any) {
                                         if (e.includes("cancelled")) {
                                             addToast("Resolution cancelled", "info");
                                         } else {
                                             console.error(e);
-                                            setTestResult({ success: false, message: `Re-run failed: ${e.message || e}` });
+                                            setResolutionResult({ success: false, message: `Re-run failed: ${e.message || e}` });
                                             addToast("Resolution failed", "error");
                                         }
                                     } finally {
@@ -562,11 +575,12 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
 
                                         if (selected && typeof selected === 'string') {
                                             const res = await invoke<{ added: number, totalFound: number, message: string }>('import_a1111_cache', { cachePath: selected });
-                                            setTestResult({ success: (res.added > 0 || res.totalFound > 0), message: res.message });
+                                            // More explicit message: "X new imported (Y total found)"
+                                            setResolutionResult({ success: (res.added > 0 || res.totalFound > 0), message: `${res.added} new models imported (${res.totalFound} found in file).` });
                                         }
                                     } catch (e: any) {
                                         console.error(e);
-                                        setTestResult({ success: false, message: `Import failed: ${e.message || e}` });
+                                        setResolutionResult({ success: false, message: `Import failed: ${e.message || e}` });
                                     }
                                 }}
                                 className="mt-auto w-full py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 rounded-lg text-xs font-bold transition-all text-gray-700 dark:text-gray-200 mb-1"
@@ -602,7 +616,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                             setConfirmState(prev => ({ ...prev, isOpen: false }));
                                             setIsResolving(true);
                                             setResolutionProgress(null);
-                                            setTestResult(null);
+                                            setResolutionResult(null);
+                                            // Auto-close modal for better UX
+                                            if (onClose) onClose();
                                             addToast("Resolving unknown hashes...", "info");
 
                                             let unlisten: (() => void) | undefined;
@@ -615,18 +631,26 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                                     setResolutionProgress(event.payload);
                                                 });
 
-                                                const res = await invoke<{ resolved_count: number, failed_count: number }>('resolve_hashes_online', { skipHarvest: false });
-                                                setTestResult({
-                                                    success: true,
-                                                    message: `Online lookup finished: ${res.resolved_count} resolved, ${res.failed_count} failed.`
+                                                const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: false });
+
+                                                // Determine success state based on "unknownCount" (user impact), not just technical "failedCount"
+                                                const isSafe = res.unknownCount === 0;
+                                                setResolutionResult({
+                                                    success: isSafe,
+                                                    message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
                                                 });
-                                                addToast(`Lookup finished: ${res.resolved_count} resolved`, "success");
+
+                                                if (isSafe) {
+                                                    addToast(`Lookup finished: ${res.resolvedCount} verified`, "success");
+                                                } else {
+                                                    addToast(`Lookup finished with ${res.unknownCount} unknown models`, "warning");
+                                                }
                                             } catch (e: any) {
                                                 if (e.includes("cancelled")) {
                                                     addToast("Resolution cancelled", "info");
                                                 } else {
                                                     console.error(e);
-                                                    setTestResult({ success: false, message: `Lookup failed: ${e.message || e}` });
+                                                    setResolutionResult({ success: false, message: `Lookup failed: ${e.message || e}` });
                                                     addToast("Lookup failed", "error");
                                                 }
                                             } finally {
@@ -681,16 +705,31 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                     </div>
                 </div >
 
-                {testResult && (
+                {localTestResult && (
                     <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
-                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${testResult.success
+                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${localTestResult.success
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
-                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shadow-sm shadow-rose-500/5'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
                             }`}>
-                            {testResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <XCircle className="w-5 h-5 flex-shrink-0" />}
+                            {localTestResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
                             <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{testResult.success ? 'Operation Successful' : 'Operation Failed'}</span>
-                                <span className="text-sm truncate">{testResult.message}</span>
+                                <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{localTestResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
+                                <span className="text-sm truncate">{localTestResult.message}</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {resolutionResult && (
+                    <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
+                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${resolutionResult.success
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
+                            }`}>
+                            {resolutionResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{resolutionResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
+                                <span className="text-sm truncate">{resolutionResult.message}</span>
                             </div>
                         </div>
                     </div>
