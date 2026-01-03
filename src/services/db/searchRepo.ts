@@ -148,14 +148,15 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     try {
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
 
-        // Fix ambiguity for JOIN: replace and ensure 'id' becomes 'images.id'
-        const finalWhere = whereClause ? whereClause : "WHERE images.is_deleted = 0";
-        const safeWhere = finalWhere.replace(/\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match) => `images.${match}`);
+        // Fix ambiguity for JOIN: replace and ensure 'id' becomes 'images.id' unless already prefixed
+        const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
+        const safeWhere = finalWhere.replace(/(\bimages\.)?\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match, prefix, col) => prefix ? match : `images.${col}`);
 
         const promptQuery = `
             SELECT positive_prompt 
             FROM images_fts
             JOIN images ON images.id = images_fts.id
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
             ${safeWhere}
             LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
         `;
@@ -189,28 +190,31 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
 export const getFacets = async (whereClause: string = '', params: any[] = []): Promise<Facets> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
-    const imagesWhere = finalWhere.replace(/WHERE /i, 'WHERE images.');
+    const safeWhere = finalWhere.replace(/(\bimages\.)?\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match, prefix, col) => prefix ? match : `images.${col}`);
+    const imagesWhere = safeWhere;
 
     try {
         // 1. Optimized Checkpoints Facet
         const checkpointStatsRows = await db.select<any[]>(`
             WITH counts AS (
                 SELECT 
-                    json_extract(metadata_json, '$.modelHash') as hash,
+                    json_extract(images.metadata_json, '$.modelHash') as hash,
                     count(*) as count
                 FROM images 
-                ${finalWhere}
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${safeWhere}
                 GROUP BY hash
             )
             SELECT 
                 m.name,
-                m.hash,
-                IFNULL(c.count, 0) as count,
-                m.thumbnail_path,
-                m.preview_url
+                MIN(m.hash) as hash,
+                SUM(IFNULL(c.count, 0)) as count,
+                MAX(m.thumbnail_path) as thumbnail_path,
+                MAX(m.preview_url) as preview_url
             FROM models m
             LEFT JOIN counts c ON m.hash = c.hash
             WHERE m.resource_type = 'checkpoint'
+            GROUP BY m.name
             ORDER BY count DESC, m.name ASC
         `, params);
 
@@ -223,8 +227,9 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
                         WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
                         ELSE j.value 
                     END as clean_name
-                FROM images, json_each(metadata_json, '$.loras') j
-                ${finalWhere}
+                FROM images, json_each(images.metadata_json, '$.loras') j
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${safeWhere}
             ),
             counts AS (
                 SELECT clean_name, count(*) as count
@@ -247,8 +252,9 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
         const embeddedStatsRows = await db.select<any[]>(`
             WITH counts AS (
                 SELECT j.value as resource_name, count(*) as count
-                FROM images, json_each(metadata_json, '$.embeddings') j
-                ${finalWhere}
+                FROM images, json_each(images.metadata_json, '$.embeddings') j
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${safeWhere}
                 GROUP BY resource_name
             )
             SELECT 
@@ -267,8 +273,9 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
         const hnStatsRows = await db.select<any[]>(`
             WITH counts AS (
                 SELECT j.value as resource_name, count(*) as count
-                FROM images, json_each(metadata_json, '$.hypernetworks') j
-                ${finalWhere}
+                FROM images, json_each(images.metadata_json, '$.hypernetworks') j
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${safeWhere}
                 GROUP BY resource_name
             )
             SELECT 
@@ -286,6 +293,7 @@ export const getFacets = async (whereClause: string = '', params: any[] = []): P
         const tools = await db.select<any[]>(`
             SELECT DISTINCT IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown') as tool_name 
             FROM images 
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
             ${imagesWhere} 
             ORDER BY tool_name ASC
             `, params);

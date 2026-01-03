@@ -427,7 +427,9 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
     {
         // 2. Full Discovery: Upsert all found models into the database
         let mut upsert_stmt = tx.prepare_cached(
-            "INSERT OR IGNORE INTO models (hash, name, filename, lookup_source, scanned_at, resource_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename, resource_type = excluded.resource_type WHERE filename IS NULL OR filename = ''"
         ).map_err(|e| e.to_string())?;
 
         for model_path in &models_found {
@@ -588,6 +590,21 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
             'hypernetworks'
          FROM images, json_each(metadata_json, '$.hypernetworks') j
          WHERE j.value IS NOT NULL AND j.value != ''",
+         params![now]
+    ).map_err(|e| e.to_string())?;
+ 
+    // 4. Checkpoints
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            json_extract(metadata_json, '$.modelHash'), 
+            json_extract(metadata_json, '$.model'), 
+            'harvest_checkpoint', 
+            ?1,
+            'checkpoint'
+         FROM images
+         WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+         AND json_extract(metadata_json, '$.model') IS NOT NULL",
          params![now]
     ).map_err(|e| e.to_string())?;
 
