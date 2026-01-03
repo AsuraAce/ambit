@@ -4,6 +4,7 @@ mod scanner;
 mod watcher;
 
 use watcher::WatcherState;
+use metadata::models::ModelResolutionState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(WatcherState::default())
+        .manage(ModelResolutionState::default())
         .invoke_handler(tauri::generate_handler![
             db::save_images_batch,
             db::refresh_boards_native,
@@ -30,6 +32,7 @@ pub fn run() {
             metadata::models::import_a1111_cache,
             metadata::models::resolve_hashes_online,
             metadata::models::clear_model_cache,
+            metadata::models::cancel_model_resolution,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

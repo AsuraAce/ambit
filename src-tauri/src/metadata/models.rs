@@ -2,9 +2,23 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use reqwest::Client;
 use crate::db::resolve_db_path;
 use serde_json;
+
+pub struct ModelResolutionState {
+    pub is_cancelled: Arc<AtomicBool>,
+}
+
+impl Default for ModelResolutionState {
+    fn default() -> Self {
+        Self {
+            is_cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelCacheEntry {
@@ -38,7 +52,7 @@ pub struct ImportResult {
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<ImportResult, String> {
-    let content = fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
     
     let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
     let mut entries = Vec::new();
@@ -174,18 +188,24 @@ struct ProgressPayload {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn resolve_hashes_online(app: tauri::AppHandle, skip_harvest: bool) -> Result<ResolutionResult, String> {
+pub async fn resolve_hashes_online(
+    app: tauri::AppHandle, 
+    skip_harvest: bool,
+    state: tauri::State<'_, ModelResolutionState>
+) -> Result<ResolutionResult, String> {
     use tauri::Emitter;
+
+    // Reset cancellation state
+    state.is_cancelled.store(false, Ordering::SeqCst);
 
     let db_path = resolve_db_path(&app)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-
+ 
     let mut harvest_count = 0;
-    let mut hashes_to_resolve = Vec::new();
 
     // 1. Collect hashes and do initial harvest
-    {
-        let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let hashes_to_resolve = {
+        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
         if !skip_harvest {
             // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
@@ -219,11 +239,12 @@ pub async fn resolve_hashes_online(app: tauri::AppHandle, skip_harvest: bool) ->
              AND hash NOT IN (SELECT hash FROM models)"
         ).map_err(|e| e.to_string())?;
 
-        hashes_to_resolve = stmt.query_map([], |row| row.get(0))
+        let res = stmt.query_map([], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?;
-    }
+        res
+    };
 
     let total = hashes_to_resolve.len();
     if total == 0 {
@@ -235,6 +256,11 @@ pub async fn resolve_hashes_online(app: tauri::AppHandle, skip_harvest: bool) ->
     let mut failed = 0;
 
     for (i, hash) in hashes_to_resolve.into_iter().enumerate() {
+        // Check for cancellation
+        if state.is_cancelled.load(Ordering::SeqCst) {
+            return Err("Resolution cancelled by user".to_string());
+        }
+
         // Rate limit kindness
         if i > 0 && i % 5 == 0 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -290,4 +316,9 @@ pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM models", []).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn cancel_model_resolution(state: tauri::State<'_, ModelResolutionState>) {
+    state.is_cancelled.store(true, Ordering::SeqCst);
 }

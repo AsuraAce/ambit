@@ -55,12 +55,15 @@ export const AppHeader = React.memo(({
         recentSearches, setRecentSearches,
         isLiveWatching, setIsLiveWatching,
         isImporting, importProgress,
-        isLiveSyncing, syncState
+        isLiveSyncing, syncState,
+        isResolvingModels, modelResolutionProgress
     } = useLibraryContext() as any;
 
     const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
-    const active = isImporting || isSyncing;
-    const progress = (isImporting && importProgress) ? importProgress : (isSyncing ? syncState?.progress : null);
+    const active = isImporting || isSyncing || isResolvingModels;
+    const progress = (isImporting && importProgress)
+        ? importProgress
+        : (isSyncing ? syncState?.progress : (isResolvingModels ? modelResolutionProgress : null));
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
