@@ -176,9 +176,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 onResetCollectionThumbnail={onResetCollectionThumbnail}
                                 isDirty={isDirty}
                             />
-
-                            <div className="h-px bg-gray-200 dark:bg-white/5" />
-                            <DateRangeSection filters={filters} setFilters={setFilters} />
                         </div>
                     )}
 
@@ -234,6 +231,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     )}
 
                 </div>
+            </div>
+
+            {/* Global Date Range */}
+            <div className="p-4 pt-2 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10 min-w-[18rem]">
+                <DateRangeSection filters={filters} setFilters={setFilters} />
             </div>
 
             {/* Footer / Status */}
