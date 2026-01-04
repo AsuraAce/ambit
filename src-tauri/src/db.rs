@@ -371,9 +371,19 @@ pub async fn refresh_boards_native(
     }).await.map_err(|e| e.to_string())?
 }
 
+#[derive(Clone, serde::Serialize)]
+struct ProgressPayload {
+    current: usize,
+    total: usize,
+    message: String,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
+    use tauri::Emitter;
+
     tauri::async_runtime::spawn_blocking(move || {
+        let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
 
@@ -381,83 +391,339 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
         let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
         let _ = conn.execute("PRAGMA busy_timeout=60000", []);
 
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        println!("[FacetCache] Starting rebuild...");
+        let _ = app.emit("facet_cache_progress", ProgressPayload { current: 0, total: 6, message: "Starting facet cache build...".into() });
 
-        // Clear existing cache
-        tx.execute("DELETE FROM facet_cache", []).map_err(|e| e.to_string())?;
+        // --- PHASE 1: HARVEST ---
+        {
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            println!("[FacetCache] Harvesting models from images...");
+            let start_harvest = std::time::Instant::now();
+            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 1, total: 6, message: "Harvesting models from library...".into() });
+            
+            harvest_models(&tx)?;
 
-        // Populate checkpoints from models table
-        tx.execute(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-             SELECT 'checkpoint', m.name, MIN(m.hash), 
-                    COUNT(DISTINCT i.id), MAX(m.thumbnail_path), MAX(m.preview_url)
-             FROM models m
-             LEFT JOIN images i ON json_extract(i.metadata_json, '$.modelHash') = m.hash 
-                                  AND i.is_deleted = 0
-             WHERE m.resource_type = 'checkpoint'
-             GROUP BY m.name",
-            []
-        ).map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            println!("[FacetCache] Harvest completed in {:?}.", start_harvest.elapsed());
+        }
 
-        // Populate LoRAs (Grouped by name to handle duplicate LoRAs)
-        tx.execute(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-             SELECT 'loras', m.name, MIN(m.hash), 
-                    (SELECT COUNT(DISTINCT i.id) FROM images i, json_each(i.metadata_json, '$.loras') j 
-                     WHERE i.is_deleted = 0 AND (
-                       j.value = m.name OR 
-                       j.value LIKE m.name || ' (%' OR
-                       j.value LIKE m.name || ':%'
-                     )),
-                    MAX(m.thumbnail_path), MAX(m.preview_url)
-             FROM models m
-             WHERE m.resource_type = 'loras'
-             GROUP BY m.name",
-            []
-        ).map_err(|e| e.to_string())?;
+        // --- PHASE 2: BUILD CACHE ---
+        let count_result = {
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-        // Populate embeddings
-        tx.execute(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-             SELECT 'embeddings', m.name, MIN(m.hash),
-                    (SELECT COUNT(DISTINCT i.id) FROM images i, json_each(i.metadata_json, '$.embeddings') j 
-                     WHERE i.is_deleted = 0 AND j.value = m.name),
-                    MAX(m.thumbnail_path), MAX(m.preview_url)
-             FROM models m
-             WHERE m.resource_type = 'embeddings'
-             GROUP BY m.name",
-            []
-        ).map_err(|e| e.to_string())?;
+            // Clear existing cache
+            tx.execute("DELETE FROM facet_cache", []).map_err(|e| e.to_string())?;
 
-        // Populate hypernetworks
-        tx.execute(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-             SELECT 'hypernetworks', m.name, MIN(m.hash),
-                    (SELECT COUNT(DISTINCT i.id) FROM images i, json_each(i.metadata_json, '$.hypernetworks') j 
-                     WHERE i.is_deleted = 0 AND j.value = m.name),
-                    MAX(m.thumbnail_path), MAX(m.preview_url)
-             FROM models m
-             WHERE m.resource_type = 'hypernetworks'
-             GROUP BY m.name",
-            []
-        ).map_err(|e| e.to_string())?;
+            // 1. Checkpoints
+            println!("[FacetCache] Building checkpoints...");
+            let start_cp = std::time::Instant::now();
+            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 2, total: 6, message: "Building checkpoints cache...".into() });
+            build_checkpoint_facets(&tx)?;
+            println!("[FacetCache] Checkpoints built in {:?}.", start_cp.elapsed());
 
-        // Populate tools
-        tx.execute(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
-             SELECT 'tools', COALESCE(json_extract(metadata_json, '$.tool'), 'Unknown'), NULL, COUNT(*)
-             FROM images
-             WHERE is_deleted = 0
-             GROUP BY 2",
-            []
-        ).map_err(|e| e.to_string())?;
+            // 2. LoRAs
+            println!("[FacetCache] Building LoRAs...");
+            let start_lora = std::time::Instant::now();
+            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 3, total: 6, message: "Building LoRAs cache...".into() });
+            build_lora_facets(&tx)?;
+            println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
 
-        tx.commit().map_err(|e| e.to_string())?;
+            // 3. Embeddings
+            println!("[FacetCache] Building Embeddings...");
+            let start_emb = std::time::Instant::now();
+            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 4, total: 6, message: "Building Embeddings cache...".into() });
+            build_embedding_facets(&tx)?;
+            println!("[FacetCache] Embeddings built in {:?}.", start_emb.elapsed());
 
-        // Return total cache entries
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
-            .map_err(|e| e.to_string())?;
+            // 4. Hypernetworks
+            println!("[FacetCache] Building Hypernetworks...");
+            let start_hyper = std::time::Instant::now();
+            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 5, total: 6, message: "Building Hypernetworks cache...".into() });
+            build_hypernetwork_facets(&tx)?;
+            println!("[FacetCache] Hypernetworks built in {:?}.", start_hyper.elapsed());
 
-        Ok(count as usize)
+            // 5. Tools
+            build_tool_facets(&tx)?;
+
+            tx.commit().map_err(|e| e.to_string())?;
+
+            // Return total cache entries
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
+            count
+        };
+
+        println!("[FacetCache] Rebuild complete in {:?}. Total entries: {}", start_total.elapsed(), count_result);
+        let _ = app.emit("facet_cache_progress", ProgressPayload { current: 6, total: 6, message: "Cache rebuild complete.".into() });
+
+        Ok(count_result as usize)
     }).await.map_err(|e| e.to_string())?
+}
+
+/// Populates the `models` table from metadata found in the `images` table.
+/// This ensures that even if we haven't scanned model files on disk, we know about the models referenced by images.
+fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+    // Harvest Checkpoints
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+            SELECT DISTINCT 
+            json_extract(metadata_json, '$.modelHash'), 
+            json_extract(metadata_json, '$.model'), 
+            'harvest_checkpoint', 
+            ?1,
+            'checkpoint'
+            FROM images
+            WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+            AND json_extract(metadata_json, '$.model') IS NOT NULL",
+            params![now]
+    ).map_err(|e| format!("Harvest Checkpoints failed: {}", e))?;
+
+    // Harvest LoRAs
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+            SELECT DISTINCT 
+            'lora_' || clean_name, 
+            clean_name, 
+            'harvest_lora', 
+            ?1,
+            'loras'
+            FROM (
+                SELECT 
+                    CASE 
+                        WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                        WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                        ELSE j.value 
+                    END as clean_name
+                FROM images, json_each(metadata_json, '$.loras') j
+            ) 
+            WHERE clean_name IS NOT NULL AND clean_name != ''",
+            params![now]
+    ).map_err(|e| format!("Harvest LoRAs failed: {}", e))?;
+
+    // Harvest Embeddings
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+            SELECT DISTINCT 
+            'emb_' || j.value, 
+            j.value, 
+            'harvest_embedding', 
+            ?1,
+            'embeddings'
+            FROM images, json_each(metadata_json, '$.embeddings') j
+            WHERE j.value IS NOT NULL AND j.value != ''",
+            params![now]
+    ).map_err(|e| format!("Harvest Embeddings failed: {}", e))?;
+
+    // Harvest Hypernetworks
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+            SELECT DISTINCT 
+            'hyper_' || j.value, 
+            j.value, 
+            'harvest_hypernet', 
+            ?1,
+            'hypernetworks'
+            FROM images, json_each(metadata_json, '$.hypernetworks') j
+            WHERE j.value IS NOT NULL AND j.value != ''",
+            params![now]
+    ).map_err(|e| format!("Harvest Hypernetworks failed: {}", e))?;
+
+    Ok(())
+}
+
+/// Optimization Note:
+/// We use a Pre-Aggregation pattern (Temp Table) instead of correlated subqueries.
+/// 
+/// OLD (Slow): O(N*M)
+/// SELECT ..., (SELECT COUNT(*) FROM images WHERE json_extract(...) = m.hash) FROM models m
+/// This ran a full table scan + JSON parse on `images` for every single model row.
+/// 
+/// NEW (Fast): O(N + M)
+/// 1. Create a TEMP table `counts` by scanning `images` ONCE.
+/// 2. Simple JOIN `models` with `counts`.
+/// This scales linearly with library size and is practically instant.
+
+fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Step 1: Pre-aggregate checkboxes
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
+            SELECT json_extract(metadata_json, '$.modelHash') as mh, COUNT(DISTINCT id) as cnt
+            FROM images 
+            WHERE is_deleted = 0 AND mh IS NOT NULL
+            GROUP BY mh",
+        []
+    ).map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
+
+    // Step 2: Join
+    conn.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+            SELECT 'checkpoint', m.name, MIN(m.hash), 
+                COALESCE(SUM(cc.cnt), 0), 
+                MAX(m.thumbnail_path), MAX(m.preview_url)
+            FROM models m
+            LEFT JOIN cp_counts cc ON cc.mh = m.hash
+            WHERE m.resource_type = 'checkpoint'
+            GROUP BY m.name",
+        []
+    ).map_err(|e| format!("Failed to insert checkpoints: {}", e))?;
+
+    conn.execute("DROP TABLE IF EXISTS cp_counts", []).ok();
+    Ok(())
+}
+
+fn build_lora_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Step 1: Pre-aggregate all lora references from images (O(N) scan once)
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS lora_counts AS
+            SELECT j.value AS lora_ref, COUNT(DISTINCT i.id) AS cnt
+            FROM images i, json_each(i.metadata_json, '$.loras') j
+            WHERE i.is_deleted = 0
+            GROUP BY j.value",
+        []
+    ).map_err(|e| format!("Failed to create lora_counts temp table: {}", e))?;
+
+    // Step 2: Join models to pre-aggregated counts (O(M) join)
+    conn.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+            SELECT 'loras', m.name, MIN(m.hash),
+                COALESCE(SUM(lc.cnt), 0),
+                MAX(m.thumbnail_path), MAX(m.preview_url)
+            FROM models m
+            LEFT JOIN lora_counts lc ON (
+                lc.lora_ref = m.name OR 
+                lc.lora_ref LIKE m.name || ' (%' OR
+                lc.lora_ref LIKE m.name || ':%'
+            )
+            WHERE m.resource_type = 'loras'
+            GROUP BY m.name",
+        []
+    ).map_err(|e| format!("Failed to insert loras into facet_cache: {}", e))?;
+
+    conn.execute("DROP TABLE IF EXISTS lora_counts", []).ok();
+    Ok(())
+}
+
+fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS embedding_counts AS
+            SELECT j.value AS embed_name, COUNT(DISTINCT i.id) AS cnt
+            FROM images i, json_each(i.metadata_json, '$.embeddings') j
+            WHERE i.is_deleted = 0
+            GROUP BY j.value",
+        []
+    ).map_err(|e| format!("Failed to create embedding_counts temp table: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+            SELECT 'embeddings', m.name, MIN(m.hash),
+                COALESCE(ec.cnt, 0),
+                MAX(m.thumbnail_path), MAX(m.preview_url)
+            FROM models m
+            LEFT JOIN embedding_counts ec ON ec.embed_name = m.name
+            WHERE m.resource_type = 'embeddings'
+            GROUP BY m.name",
+        []
+    ).map_err(|e| format!("Failed to insert embeddings into facet_cache: {}", e))?;
+
+    conn.execute("DROP TABLE IF EXISTS embedding_counts", []).ok();
+    Ok(())
+}
+
+fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS hypernet_counts AS
+            SELECT j.value AS hypernet_name, COUNT(DISTINCT i.id) AS cnt
+            FROM images i, json_each(i.metadata_json, '$.hypernetworks') j
+            WHERE i.is_deleted = 0
+            GROUP BY j.value",
+        []
+    ).map_err(|e| format!("Failed to create hypernet_counts temp table: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+            SELECT 'hypernetworks', m.name, MIN(m.hash),
+                COALESCE(hc.cnt, 0),
+                MAX(m.thumbnail_path), MAX(m.preview_url)
+            FROM models m
+            LEFT JOIN hypernet_counts hc ON hc.hypernet_name = m.name
+            WHERE m.resource_type = 'hypernetworks'
+            GROUP BY m.name",
+        []
+    ).map_err(|e| format!("Failed to insert hypernetworks into facet_cache: {}", e))?;
+
+    conn.execute("DROP TABLE IF EXISTS hypernet_counts", []).ok();
+    Ok(())
+}
+
+fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'tools', COALESCE(json_extract(metadata_json, '$.tool'), 'Unknown'), NULL, COUNT(*)
+            FROM images
+            WHERE is_deleted = 0
+            GROUP BY 2",
+        []
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rebuild_facet_cache() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+
+        // 1. Setup Schema using execute_batch which supports multiple statements
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        // 2. Insert Test Data
+        let metadata = r#"{
+            "model": "SDXL Base",
+            "modelHash": "12345",
+            "loras": ["DetailedEyes:1.0", "PixelArt"],
+            "embeddings": ["EasyNegative"],
+            "tool": "Automatic1111"
+        }"#;
+
+        conn.execute(
+            "INSERT INTO images (id, path, metadata_json) VALUES (?1, ?2, ?3)",
+            params!["img1", "test.png", metadata],
+        ).unwrap();
+
+        // 3. Harvest Models (Should populate models table)
+        harvest_models(&conn).unwrap();
+        
+        let model_count: i64 = conn.query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0)).unwrap();
+        assert!(model_count > 0, "Models should be populated from harvest");
+
+        // 4. Build Facets
+        build_checkpoint_facets(&conn).unwrap();
+        build_lora_facets(&conn).unwrap();
+        build_embedding_facets(&conn).unwrap();
+        build_tool_facets(&conn).unwrap();
+
+        // 5. Verify facet_cache
+        let cp_count: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
+            [], |r| r.get(0)).unwrap_or(0);
+        assert_eq!(cp_count, 1, "Should count 1 image for SDXL Base");
+
+        let lora_count: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='loras' AND resource_name='DetailedEyes'", 
+            [], |r| r.get(0)).unwrap_or(0);
+        assert_eq!(lora_count, 1, "Should count 1 image for DetailedEyes lora");
+        
+        // Verify 'PixelArt' matches
+        let lora_count2: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='loras' AND resource_name='PixelArt'", 
+            [], |r| r.get(0)).unwrap_or(0);
+        assert_eq!(lora_count2, 1, "Should count 1 image for PixelArt lora");
+    }
 }
