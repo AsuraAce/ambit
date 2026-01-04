@@ -100,8 +100,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [globalTotal, setGlobalTotal] = useState(0);
     const [hasMoreImages, setHasMoreImages] = useState(true);
     const [isFiltering, setIsFiltering] = useState(true);
-    const [activeSqlWhere, setActiveSqlWhere] = useState('');
-    const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+    const [sqlQuery, setSqlQuery] = useState<{ where: string; params: any[] }>({ where: '', params: [] });
     const [isImporting, setIsImporting] = useState(false);
     const [importProgress, setImportProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
     const [isRegeneratingThumbnails, setIsRegeneratingThumbnails] = useState(false);
@@ -120,19 +119,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
     const prevCollectionIdRef = useRef<string | null>(null);
+    const isInitialLoadRef = useRef(true);
+    const sqlQueryRef = useRef(sqlQuery);
+
     useEffect(() => { imagesRef.current = images; }, [images]);
+    useEffect(() => { sqlQueryRef.current = sqlQuery; }, [sqlQuery]);
+
+    const fetchDataRef = useRef<(isLoadMore: boolean) => Promise<void>>(() => Promise.resolve());
 
     const PAGE_SIZE = 1000;
 
     const refreshMetadata = useCallback(async () => {
         try {
-            // Immediate UI feedback: clear (or skip clearing) to keep look stable
-            // setStats(prev => ({ ...prev, keywordStats: [] }));
-
+            const { where, params } = sqlQueryRef.current;
             const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
             const [newFacets, newStats] = await Promise.all([
-                getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams),
-                getLibraryStats(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams)
+                getFacets(where || 'WHERE is_deleted = 0', params),
+                getLibraryStats(where || 'WHERE is_deleted = 0', params)
             ]);
             setFacets(newFacets);
             setStats(newStats);
@@ -141,7 +144,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 refreshHiddenAvailability()
             ]);
         } catch (e) { console.error("Failed to refresh metadata", e); }
-    }, [activeSqlWhere, activeSqlParams, refreshCollections, refreshHiddenAvailability]);
+    }, [refreshCollections, refreshHiddenAvailability]);
 
     // Internal debounced metadata refresh to avoid thread locks during search
     const metadataTimerRef = useRef<any>(null);
@@ -153,12 +156,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [refreshMetadata]);
 
     const fetchData = useCallback(async (isLoadMore: boolean) => {
-        if (isFetchingRef.current && isLoadMore) return;
+        if (isFetchingRef.current && (isLoadMore || isInitialLoadRef.current)) return;
         isFetchingRef.current = true;
         if (!isLoadMore) setIsFiltering(true);
 
-        const currentWhere = activeSqlWhere;
-        const currentParams = activeSqlParams;
+        const { where, params } = sqlQueryRef.current;
 
         try {
             const { searchImages, countImages } = await import('../services/db/searchRepo');
@@ -175,15 +177,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
             }
 
-            // Only prioritize pinned images if we are in a specific collection (not "All Photos")
-            // AND the sort option is "Date Descending" (default view) - optional refinement, but sticking to plan:
-            // "True when viewing a specific Collection"
             const prioritizePinned = filters.collectionId !== null;
 
             if (!isLoadMore) {
                 const [count, newBatch, globalCount] = await Promise.all([
-                    countImages(currentWhere, currentParams),
-                    searchImages(currentWhere, currentParams, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
+                    countImages(where, params),
+                    searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
                     countImages('WHERE is_deleted = 0', [])
                 ]);
 
@@ -194,7 +193,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 debouncedRefreshMetadata();
             } else {
                 const offset = imagesRef.current.length;
-                const newBatch = await searchImages(currentWhere, currentParams, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
+                const newBatch = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
                 setImages(prev => [...prev, ...newBatch]);
                 setHasMoreImages(newBatch.length >= PAGE_SIZE);
             }
@@ -204,7 +203,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isFetchingRef.current = false;
             setIsFiltering(false);
         }
-    }, [activeSqlWhere, activeSqlParams, sortOption, refreshMetadata]);
+    }, [sortOption, debouncedRefreshMetadata, filters.collectionId]);
+
+    // Keep ref in sync
+    useEffect(() => { fetchDataRef.current = fetchData; }, [fetchData]);
 
     // 1. Unified Filter & Sort Sync Effect
     useEffect(() => {
@@ -225,29 +227,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // B. Build SQL
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCols);
 
-        const paramsChanged = JSON.stringify(params) !== JSON.stringify(activeSqlParams);
-        const whereChanged = where !== activeSqlWhere;
+        const paramsChanged = JSON.stringify(params) !== JSON.stringify(sqlQuery.params);
+        const whereChanged = where !== sqlQuery.where;
 
         if (whereChanged || paramsChanged) {
-            setActiveSqlWhere(where);
-            setActiveSqlParams(params);
-
-            // Reset results immediately to avoid "bleed"
-            setImages([]);
+            setSqlQuery({ where, params });
             setHasMoreImages(true);
-            setTotalImages(0);
             setIsFiltering(true);
         }
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections, activeSqlWhere, activeSqlParams, sortOption]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
 
     // 2. Main Data Fetching Effect
     useEffect(() => {
-        // Debounce fetch slightly or ensure we have stable where/params
+        if (isInitialLoadRef.current) return;
+
         const timeout = setTimeout(() => {
             fetchData(false);
         }, 10);
         return () => clearTimeout(timeout);
-    }, [activeSqlWhere, activeSqlParams, sortOption, fetchData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sqlQuery, sortOption]);
 
     // 3. Auto-persist sort option for smart collections
     useEffect(() => {
@@ -278,16 +277,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 countImages('WHERE is_deleted = 0', []),
                 checkHiddenContentAvailability()
             ]);
+
             if (state.recentSearches) setRecentSearches(state.recentSearches);
             setGlobalTotal(globalCount);
             setAvailableHiddenContent(availability);
 
             // Important: Sync persisted grid toggle to filter state
-            if (state.settings.libraryShowGrids !== undefined) {
-                setFilters(prev => ({ ...prev, showGrids: state.settings.libraryShowGrids }));
+            if (state.settings.libraryShowGrids !== undefined || state.settings.libraryShowIntermediates !== undefined) {
+                setFilters(prev => ({
+                    ...prev,
+                    showGrids: state.settings.libraryShowGrids !== undefined ? state.settings.libraryShowGrids : prev.showGrids,
+                    showIntermediates: state.settings.libraryShowIntermediates !== undefined ? state.settings.libraryShowIntermediates : prev.showIntermediates
+                }));
             }
+
+            // Signal that initial loading and filter restoration is complete
+            isInitialLoadRef.current = false;
+            fetchDataRef.current(false); // Trigger the first REAL fetch
         };
         loadInitial();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // 2. Persist Grid Toggle Change to Settings
@@ -296,6 +305,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setSettings(prev => ({ ...prev, libraryShowGrids: filters.showGrids }));
         }
     }, [filters.showGrids]);
+
+    // 3. Persist Intermediate Toggle Change to Settings
+    useEffect(() => {
+        if (settings.libraryShowIntermediates !== filters.showIntermediates) {
+            setSettings(prev => ({ ...prev, libraryShowIntermediates: filters.showIntermediates }));
+        }
+    }, [filters.showIntermediates]);
 
     // Persistence save
     useEffect(() => {
@@ -311,8 +327,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const loadMoreImages = useCallback(async () => {
         if (!hasMoreImages) return;
-        await fetchData(true);
-    }, [hasMoreImages, fetchData]);
+        await fetchDataRef.current(true);
+    }, [hasMoreImages]);
 
     const clearAllFilters = useCallback(() => {
         setFilters(prev => ({
@@ -374,8 +390,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             loadMoreImages,
             clearAllFilters,
             isFiltering,
-            activeSqlWhere,
-            activeSqlParams,
+            activeSqlWhere: sqlQuery.where,
+            activeSqlParams: sqlQuery.params,
             refreshMetadata,
             fetchData,
             recentSearches,

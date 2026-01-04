@@ -176,6 +176,7 @@ export interface AppSettings {
   importOrphans?: boolean; // New: Option to scan for files not in DB
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryShowGrids?: boolean; // Persisted view preference
+  libraryShowIntermediates?: boolean; // Persisted view preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
 }
 
