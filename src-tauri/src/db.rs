@@ -231,100 +231,6 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Val
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Diagnostic command to analyze LoRA distribution by tool.
-/// Helps debug the facet cache LoRA count discrepancy.
-#[tauri::command(rename_all = "camelCase")]
-pub async fn diagnose_lora_counts(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let db_path = resolve_db_path(&app)?;
-        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-        // 1. Count images with LoRAs by tool
-        let mut stmt = conn.prepare(
-            "SELECT json_extract(metadata_json, '$.tool') as tool, 
-                    COUNT(*) as total,
-                    SUM(CASE WHEN json_array_length(metadata_json, '$.loras') > 0 THEN 1 ELSE 0 END) as with_loras
-             FROM images 
-             WHERE is_deleted = 0 
-             GROUP BY tool"
-        ).map_err(|e| e.to_string())?;
-
-        let tool_stats: Vec<serde_json::Value> = stmt.query_map([], |row| {
-            let tool: Option<String> = row.get(0)?;
-            let total: i64 = row.get(1)?;
-            let with_loras: i64 = row.get(2)?;
-            Ok(serde_json::json!({
-                "tool": tool.unwrap_or_else(|| "NULL".to_string()),
-                "total": total,
-                "withLoras": with_loras
-            }))
-        }).map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-
-        // 2. Get facet cache summary for loras
-        let facet_lora_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'loras'",
-            [], |r| r.get(0)
-        ).unwrap_or(0);
-
-        let facet_lora_total: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(count), 0) FROM facet_cache WHERE facet_type = 'loras'",
-            [], |r| r.get(0)
-        ).unwrap_or(0);
-
-        // 3. Get unique lora references from images (sample top 10)
-        let mut lora_stmt = conn.prepare(
-            "SELECT j.value, COUNT(DISTINCT i.id) as cnt
-             FROM images i, json_each(i.metadata_json, '$.loras') j
-             WHERE i.is_deleted = 0
-             GROUP BY j.value
-             ORDER BY cnt DESC
-             LIMIT 10"
-        ).map_err(|e| e.to_string())?;
-
-        let top_loras: Vec<serde_json::Value> = lora_stmt.query_map([], |row| {
-            let name: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            Ok(serde_json::json!({ "name": name, "imageCount": count }))
-        }).map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-
-        // 4. Get models table lora count
-        let models_lora_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM models WHERE resource_type = 'loras'",
-            [], |r| r.get(0)
-        ).unwrap_or(0);
-
-        // 5. Check for LoRAs in images but not in models (potential harvest failure)
-        let orphan_count: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT j.value) 
-             FROM images i, json_each(i.metadata_json, '$.loras') j
-             WHERE i.is_deleted = 0 
-             AND NOT EXISTS (
-                 SELECT 1 FROM models m 
-                 WHERE m.resource_type = 'loras' 
-                 AND (j.value = m.name OR j.value LIKE m.name || ' (%' OR j.value LIKE m.name || ':%')
-             )",
-            [], |r| r.get(0)
-        ).unwrap_or(-1);
-
-        Ok(serde_json::json!({
-            "toolStats": tool_stats,
-            "facetCache": {
-                "loraTypes": facet_lora_count,
-                "loraImageTotal": facet_lora_total
-            },
-            "modelsTable": {
-                "loraCount": models_lora_count
-            },
-            "topLoras": top_loras,
-            "orphanLoraRefCount": orphan_count
-        }))
-    }).await.map_err(|e| e.to_string())?
-}
-
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -656,28 +562,54 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
 /// This scales linearly with library size and is practically instant.
 
 fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
-    // Step 1: Pre-aggregate checkboxes
+    // Step 1: Pre-aggregate checkboxes with both Hash AND Name
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
-            SELECT json_extract(metadata_json, '$.modelHash') as mh, COUNT(DISTINCT id) as cnt
+            SELECT 
+                json_extract(metadata_json, '$.modelHash') as mh, 
+                json_extract(metadata_json, '$.model') as mn,
+                COUNT(DISTINCT id) as cnt
             FROM images 
-            WHERE is_deleted = 0 AND mh IS NOT NULL
-            GROUP BY mh",
+            WHERE is_deleted = 0
+            GROUP BY mh, mn",
         []
     ).map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
 
-    // Step 2: Join
+    // Step 2: Join with logic for priority scaling (Hash match OR Name match)
+    // NOTE: We deduplicate models by name using a subquery to prevent "double counting"
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-            SELECT 'checkpoint', m.name, MIN(m.hash), 
+            SELECT 'checkpoint', m.name, m.hash, 
                 COALESCE(SUM(cc.cnt), 0), 
-                MAX(m.thumbnail_path), MAX(m.preview_url)
-            FROM models m
-            LEFT JOIN cp_counts cc ON cc.mh = m.hash
-            WHERE m.resource_type = 'checkpoint'
+                m.thumbnail_path, m.preview_url
+            FROM (
+                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                FROM models 
+                WHERE resource_type = 'checkpoint'
+                GROUP BY name
+            ) m
+            LEFT JOIN cp_counts cc ON (
+                cc.mh = m.hash OR
+                cc.mn = m.name
+            )
             GROUP BY m.name",
         []
-    ).map_err(|e| format!("Failed to insert checkpoints: {}", e))?;
+    ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
+
+    // Step 3: Insert "orphan" checkpoints
+    conn.execute(
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt)
+            FROM cp_counts cc
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facet_cache fc 
+                WHERE fc.facet_type = 'checkpoint' 
+                AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn)
+            )
+            AND cc.mn IS NOT NULL AND cc.mn != ''
+            GROUP BY cc.mn",
+        []
+    ).map_err(|e| format!("Failed to insert orphan checkpoints: {}", e))?;
 
     conn.execute("DROP TABLE IF EXISTS cp_counts", []).ok();
     Ok(())
