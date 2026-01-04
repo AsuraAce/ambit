@@ -16,6 +16,7 @@ pub fn run() {
         .manage(ModelResolutionState::default())
         .invoke_handler(tauri::generate_handler![
             db::save_images_batch,
+            db::get_db_diagnostics,
             db::refresh_boards_native,
             db::rebuild_facet_cache,
             scanner::scan_image,
