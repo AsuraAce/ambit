@@ -9,16 +9,16 @@ use metadata::models::ModelResolutionState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::init_db()).build())
+        .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::migrations::init_db()).build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(WatcherState::default())
         .manage(ModelResolutionState::default())
         .invoke_handler(tauri::generate_handler![
-            db::save_images_batch,
-            db::get_db_diagnostics,
-            db::refresh_boards_native,
-            db::rebuild_facet_cache,
+            db::commands::save_images_batch,
+            db::commands::get_db_diagnostics,
+            db::commands::refresh_boards_native,
+            db::facets::rebuild_facet_cache,
             scanner::scan_image,
             scanner::scan_images_bulk,
             scanner::scan_image_workflow,
