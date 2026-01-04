@@ -506,13 +506,21 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
             SELECT DISTINCT 
-            'emb_' || j.value, 
-            j.value, 
+            'emb_' || clean_name, 
+            clean_name, 
             'harvest_embedding', 
             ?1,
             'embeddings'
-            FROM images, json_each(metadata_json, '$.embeddings') j
-            WHERE j.value IS NOT NULL AND j.value != ''",
+            FROM (
+                SELECT 
+                    CASE 
+                        WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                        WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                        ELSE j.value 
+                    END as clean_name
+                FROM images, json_each(metadata_json, '$.embeddings') j
+            )
+            WHERE clean_name IS NOT NULL AND clean_name != ''",
             params![now]
     ).map_err(|e| format!("Harvest Embeddings failed: {}", e))?;
 
@@ -520,13 +528,21 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
             SELECT DISTINCT 
-            'hyper_' || j.value, 
-            j.value, 
+            'hyper_' || clean_name, 
+            clean_name, 
             'harvest_hypernet', 
             ?1,
             'hypernetworks'
-            FROM images, json_each(metadata_json, '$.hypernetworks') j
-            WHERE j.value IS NOT NULL AND j.value != ''",
+            FROM (
+                SELECT 
+                    CASE 
+                        WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                        WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                        ELSE j.value 
+                    END as clean_name
+                FROM images, json_each(metadata_json, '$.hypernetworks') j
+            )
+            WHERE clean_name IS NOT NULL AND clean_name != ''",
             params![now]
     ).map_err(|e| format!("Harvest Hypernetworks failed: {}", e))?;
 
@@ -618,10 +634,14 @@ fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
             SELECT 'embeddings', m.name, MIN(m.hash),
-                COALESCE(ec.cnt, 0),
+                COALESCE(SUM(ec.cnt), 0),
                 MAX(m.thumbnail_path), MAX(m.preview_url)
             FROM models m
-            LEFT JOIN embedding_counts ec ON ec.embed_name = m.name
+            LEFT JOIN embedding_counts ec ON (
+                ec.embed_name = m.name OR
+                ec.embed_name LIKE m.name || ' (%' OR
+                ec.embed_name LIKE m.name || ':%'
+            )
             WHERE m.resource_type = 'embeddings'
             GROUP BY m.name",
         []
@@ -644,10 +664,14 @@ fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> 
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
             SELECT 'hypernetworks', m.name, MIN(m.hash),
-                COALESCE(hc.cnt, 0),
+                COALESCE(SUM(hc.cnt), 0),
                 MAX(m.thumbnail_path), MAX(m.preview_url)
             FROM models m
-            LEFT JOIN hypernet_counts hc ON hc.hypernet_name = m.name
+            LEFT JOIN hypernet_counts hc ON (
+                hc.hypernet_name = m.name OR
+                hc.hypernet_name LIKE m.name || ' (%' OR
+                hc.hypernet_name LIKE m.name || ':%'
+            )
             WHERE m.resource_type = 'hypernetworks'
             GROUP BY m.name",
         []
@@ -697,6 +721,21 @@ mod tests {
             params!["img1", "test.png", metadata],
         ).unwrap();
 
+        // Image 2: Variants
+        let metadata2 = r#"{
+            "model": "SDXL Base",
+            "modelHash": "123456", 
+            "loras": [],
+            "embeddings": ["EasyNegative:v2"],
+            "hypernetworks": ["MyHyper:1.0"],
+            "tool": "Automatic1111"
+        }"#;
+
+         conn.execute(
+            "INSERT INTO images (id, path, metadata_json) VALUES (?1, ?2, ?3)",
+            params!["img2", "test2.png", metadata2],
+        ).unwrap();
+
         // 3. Harvest Models (Should populate models table)
         harvest_models(&conn).unwrap();
         
@@ -707,23 +746,36 @@ mod tests {
         build_checkpoint_facets(&conn).unwrap();
         build_lora_facets(&conn).unwrap();
         build_embedding_facets(&conn).unwrap();
+        build_hypernetwork_facets(&conn).unwrap(); // Added hypernet check
         build_tool_facets(&conn).unwrap();
 
         // 5. Verify facet_cache
+        // Checkpoint: SDXL Base (count should be 2 if modelHash is different but name same? Or 1+1. Wait, metadata2 has diff hash? No, I put 123456)
+        // Checkpoint aggregation groups by NAME.
+        // img1: SDXL Base (hash 12345). img2: SDXL Base (hash 123456).
+        // Models table will have TWO rows (one for each hash).
+        // Facet Cache groups by name. Count should be 2.
         let cp_count: i64 = conn.query_row(
             "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
             [], |r| r.get(0)).unwrap_or(0);
-        assert_eq!(cp_count, 1, "Should count 1 image for SDXL Base");
+        assert_eq!(cp_count, 2, "Should count 2 images for SDXL Base");
 
         let lora_count: i64 = conn.query_row(
             "SELECT count FROM facet_cache WHERE facet_type='loras' AND resource_name='DetailedEyes'", 
             [], |r| r.get(0)).unwrap_or(0);
         assert_eq!(lora_count, 1, "Should count 1 image for DetailedEyes lora");
         
-        // Verify 'PixelArt' matches
-        let lora_count2: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='loras' AND resource_name='PixelArt'", 
+        // Verify Embedding Grouping (Exact + Versioned)
+        // EasyNegative (img1) + EasyNegative:v2 (img2) -> Count 2
+        let emb_count: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='embeddings' AND resource_name='EasyNegative'", 
             [], |r| r.get(0)).unwrap_or(0);
-        assert_eq!(lora_count2, 1, "Should count 1 image for PixelArt lora");
+        assert_eq!(emb_count, 2, "Should count 2 images for EasyNegative (Base + v2)");
+
+        // Verify Hypernetwork
+        let hyper_count: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='hypernetworks' AND resource_name='MyHyper'", 
+            [], |r| r.get(0)).unwrap_or(0);
+        assert_eq!(hyper_count, 1, "Should count 1 image for MyHyper");
     }
 }

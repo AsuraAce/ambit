@@ -143,7 +143,9 @@ export const buildSqlWhereClause = (
     if (filters.embeddings.length > 0) {
         const embConditions = filters.embeddings.map(e => {
             params.push(e);
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.embeddings') WHERE value = ?)`;
+            params.push(e + ' (%');
+            params.push(e + ':%');
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.embeddings') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
         });
         conditions.push(`(${embConditions.join(' OR ')})`);
     }
@@ -151,7 +153,9 @@ export const buildSqlWhereClause = (
     if (filters.hypernetworks.length > 0) {
         const hnConditions = filters.hypernetworks.map(h => {
             params.push(h);
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.hypernetworks') WHERE value = ?)`;
+            params.push(h + ' (%');
+            params.push(h + ':%');
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.hypernetworks') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
         });
         conditions.push(`(${hnConditions.join(' OR ')})`);
     }

@@ -52,6 +52,18 @@ describe('sqlHelpers', () => {
             expect(params).toEqual(['MyLora', 'MyLora (%', 'MyLora:%']);
         });
 
+        it('should handle fuzzy Embedding filters', () => {
+            const { where, params } = buildSqlWhereClause({ ...defaultFilters, embeddings: ['EasyNegative'] }, false, 'blur', []);
+            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
+            expect(params).toEqual(['EasyNegative', 'EasyNegative (%', 'EasyNegative:%']);
+        });
+
+        it('should handle fuzzy Hypernetwork filters', () => {
+            const { where, params } = buildSqlWhereClause({ ...defaultFilters, hypernetworks: ['HyperNet'] }, false, 'blur', []);
+            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
+            expect(params).toEqual(['HyperNet', 'HyperNet (%', 'HyperNet:%']);
+        });
+
         it('should handle privacy mode "hide"', () => {
             const { where, params } = buildSqlWhereClause(defaultFilters, true, 'hide', ['nude', 'nsfw']);
             expect(where).toContain('metadata_json NOT LIKE ? AND metadata_json NOT LIKE ?');
