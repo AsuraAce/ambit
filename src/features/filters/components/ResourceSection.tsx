@@ -47,7 +47,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const filteredItems = (data || []).filter(l =>
-        l.name.toLowerCase().includes(searchQuery.toLowerCase())
+        l.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        (l.count > 0 || (filters[type] || []).includes(l.name))
     );
 
     const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'models' ? 'Checkpoint' : 'Hypernetwork';
