@@ -8,6 +8,8 @@ describe('sqlHelpers', () => {
         models: [],
         tools: [],
         loras: [],
+        embeddings: [],
+        hypernetworks: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null,
@@ -33,8 +35,8 @@ describe('sqlHelpers', () => {
 
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
-            expect(where).toContain('metadata_json LIKE ? OR metadata_json LIKE ?');
-            expect(params).toEqual(['%SDXL%', '%Flux%']);
+            expect(where).toContain("(m.name = ? OR json_extract(images.metadata_json, '$.model') = ? OR json_extract(images.metadata_json, '$.modelHash') = ?)");
+            expect(params).toEqual(['SDXL', 'SDXL', 'SDXL', 'Flux', 'Flux', 'Flux']);
         });
 
         it('should handle tools filter', () => {
@@ -42,6 +44,12 @@ describe('sqlHelpers', () => {
             expect(where).toContain("json_extract(metadata_json, '$.tool') = ?");
             expect(where).toContain("json_extract(metadata_json, '$.tool') IS NULL");
             expect(params).toEqual([GeneratorTool.COMFYUI]);
+        });
+
+        it('should handle fuzzy LoRA filters', () => {
+            const { where, params } = buildSqlWhereClause({ ...defaultFilters, loras: ['MyLora'] }, false, 'blur', []);
+            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
+            expect(params).toEqual(['MyLora', 'MyLora (%', 'MyLora:%']);
         });
 
         it('should handle privacy mode "hide"', () => {

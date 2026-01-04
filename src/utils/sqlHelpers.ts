@@ -133,7 +133,9 @@ export const buildSqlWhereClause = (
     if (filters.loras.length > 0) {
         const loraConditions = filters.loras.map(l => {
             params.push(l);
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.loras') WHERE value = ?)`;
+            params.push(l + ' (%');
+            params.push(l + ':%');
+            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.loras') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
         });
         conditions.push(`(${loraConditions.join(' OR ')})`);
     }
