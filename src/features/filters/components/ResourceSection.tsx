@@ -15,7 +15,11 @@ interface ResourceItem {
 
 interface ResourceSectionProps {
     title: string;
-    type: 'loras' | 'embeddings' | 'hypernetworks' | 'models';
+    /**
+     * Resource type for filtering. Note: 'checkpoints' maps to FilterState.models
+     * for historical reasons, but aligns with Facets.checkpoints for consistency.
+     */
+    type: 'loras' | 'embeddings' | 'hypernetworks' | 'checkpoints';
     filters: FilterState;
     setFilters: (update: (prev: FilterState) => FilterState) => void;
     data: ResourceItem[];
@@ -38,25 +42,28 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
+    // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
+    const filterKey = type === 'checkpoints' ? 'models' : type;
+
     const toggleItem = (name: string) => {
         setFilters(prev => {
-            const currentList = (prev[type] as string[]) || [];
+            const currentList = (prev[filterKey] as string[]) || [];
             const newList = currentList.includes(name)
                 ? currentList.filter(l => l !== name)
                 : [...currentList, name];
-            return { ...prev, [type]: newList };
+            return { ...prev, [filterKey]: newList };
         });
     };
 
     const filteredItems = (data || []).filter(l =>
         l.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        (l.count > 0 || (filters[type] || []).includes(l.name))
+        (l.count > 0 || (filters[filterKey] || []).includes(l.name))
     );
 
-    const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'models' ? 'Checkpoint' : 'Hypernetwork';
+    const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
 
     const renderGridItem = (item: ResourceItem) => {
-        const isSelected = (filters[type] || []).includes(item.name);
+        const isSelected = (filters[filterKey] || []).includes(item.name);
         const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
 
         return (
@@ -107,7 +114,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const renderListItem = (item: ResourceItem) => {
-        const isSelected = (filters[type] || []).includes(item.name);
+        const isSelected = (filters[filterKey] || []).includes(item.name);
         const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
 
         return (

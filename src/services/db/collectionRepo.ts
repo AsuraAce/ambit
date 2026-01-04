@@ -136,6 +136,8 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
                     models: [],
                     tools: [],
                     loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
                     searchQuery: ''
                 };
                 const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
@@ -172,6 +174,8 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
                     models: [],
                     tools: [],
                     loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
                     searchQuery: ''
                 };
                 const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);

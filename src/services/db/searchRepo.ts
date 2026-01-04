@@ -189,6 +189,13 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
 
 export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'tools';
 
+/**
+ * Fetches facets from the pre-built cache.
+ * 
+ * TODO: _whereClause and _params are placeholders for future support of
+ * "filtered facet counts" (e.g., "how many LoRAs in images from this week?").
+ * The current implementation reads from `facet_cache` which represents global counts.
+ */
 export const getFacets = async (
     _whereClause: string = '',
     _params: any[] = [],
@@ -199,14 +206,16 @@ export const getFacets = async (
     const result: Facets = { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
 
     try {
-        // Read all requested facets from cache in a single query
-        const typeList = types.map(t => t === 'checkpoints' ? 'checkpoint' : t).map(t => `'${t}'`).join(',');
+        // Map frontend type names to cache type names and create parameterized query
+        const cacheTypes = types.map(t => t === 'checkpoints' ? 'checkpoint' : t);
+        const placeholders = cacheTypes.map(() => '?').join(',');
+
         const cacheRows = await db.select<any[]>(`
             SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url
             FROM facet_cache
-            WHERE facet_type IN (${typeList})
+            WHERE facet_type IN (${placeholders})
             ORDER BY count DESC, resource_name ASC
-        `, []);
+        `, cacheTypes);
 
         // Map cache rows to facet result
         for (const row of cacheRows) {

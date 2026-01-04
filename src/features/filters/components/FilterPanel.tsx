@@ -206,7 +206,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
                             <ResourceSection
                                 title="Checkpoints"
-                                type="models"
+                                type="checkpoints"
                                 filters={filters} setFilters={setFilters}
                                 data={facets.checkpoints}
                                 isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}

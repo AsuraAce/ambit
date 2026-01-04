@@ -40,6 +40,8 @@ describe('useSearch', () => {
         models: [],
         tools: [],
         loras: [],
+        embeddings: [],
+        hypernetworks: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null

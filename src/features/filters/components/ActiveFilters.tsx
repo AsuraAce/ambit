@@ -33,12 +33,15 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
     // Deduplicate logic: Filter out manual chips that are already in the smart collection
     const smartModels = activeSmartCol?.filters?.models || [];
     const smartTools = activeSmartCol?.filters?.tools || [];
+    const smartLoras = activeSmartCol?.filters?.loras || [];
+    const smartEmbeddings = activeSmartCol?.filters?.embeddings || [];
+    const smartHypernetworks = activeSmartCol?.filters?.hypernetworks || [];
 
     const visibleModels = Array.from(new Set(filters.models)).filter(m => !smartModels.includes(m));
     const visibleTools = Array.from(new Set(filters.tools)).filter(t => !smartTools.includes(t));
-    const visibleLoras = Array.from(new Set(filters.loras));
-    const visibleEmbeddings = Array.from(new Set(filters.embeddings));
-    const visibleHypernetworks = Array.from(new Set(filters.hypernetworks));
+    const visibleLoras = Array.from(new Set(filters.loras)).filter(l => !smartLoras.includes(l));
+    const visibleEmbeddings = Array.from(new Set(filters.embeddings)).filter(e => !smartEmbeddings.includes(e));
+    const visibleHypernetworks = Array.from(new Set(filters.hypernetworks)).filter(h => !smartHypernetworks.includes(h));
 
     if (!hasActiveFilters) return null;
 
@@ -73,6 +76,24 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = ({
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}
+                    {activeSmartCol.filters.loras?.map(l => (
+                        <div key={`smart-lora-${l}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{l}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {activeSmartCol.filters.embeddings?.map(e => (
+                        <div key={`smart-emb-${e}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{e}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {activeSmartCol.filters.hypernetworks?.map(h => (
+                        <div key={`smart-hyper-${h}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{h}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
                 </>
             )}
 
