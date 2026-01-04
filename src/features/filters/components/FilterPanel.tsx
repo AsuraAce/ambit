@@ -51,7 +51,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     isVisible = true,
     className
 }) => {
-    const { collections, smartCollections, facets, clearAllFilters } = useLibraryContext();
+    const { collections, smartCollections, facets, clearAllFilters, isFacetsLoading, loadFacet } = useLibraryContext();
     const [activeTab, setActiveTab] = React.useState<FilterTab>('organize');
 
     // Section expansion states (internal to tabs now)
@@ -68,7 +68,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     });
 
     const toggleSection = (section: string) => {
+        const wasExpanded = expanded[section];
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+
+        // Lazy load embeddings or hypernetworks when expanding for the first time
+        if (!wasExpanded && (section === 'embeddings' || section === 'hypernetworks')) {
+            loadFacet(section);
+        }
     };
 
     // Global Dirty Check
@@ -204,6 +210,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 filters={filters} setFilters={setFilters}
                                 data={facets.checkpoints}
                                 isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
+                                isLoading={isFacetsLoading}
                             />
 
                             <ResourceSection
@@ -212,6 +219,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 filters={filters} setFilters={setFilters}
                                 data={facets.loras}
                                 isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
+                                isLoading={isFacetsLoading}
                             />
 
                             <ResourceSection
@@ -220,6 +228,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 filters={filters} setFilters={setFilters}
                                 data={facets.embeddings}
                                 isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                                isLoading={isFacetsLoading}
                             />
 
                             <ResourceSection
@@ -228,6 +237,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 filters={filters} setFilters={setFilters}
                                 data={facets.hypernetworks}
                                 isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
+                                isLoading={isFacetsLoading}
                             />
                         </div>
                     )}

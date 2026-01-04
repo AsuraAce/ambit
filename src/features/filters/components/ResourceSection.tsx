@@ -21,6 +21,7 @@ interface ResourceSectionProps {
     data: ResourceItem[];
     isOpen: boolean;
     onToggle: () => void;
+    isLoading?: boolean;
 }
 
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
@@ -30,7 +31,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     setFilters,
     data,
     isOpen,
-    onToggle
+    onToggle,
+    isLoading
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -193,9 +195,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
                         {filteredItems.map(item => viewMode === 'grid' ? renderGridItem(item) : renderListItem(item))}
 
-                        {filteredItems.length === 0 && (
+                        {filteredItems.length === 0 && !isLoading && (
                             <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
                                 {data.length === 0 ? `No ${singularType}s found` : `No matching ${singularType}s`}
+                            </div>
+                        )}
+
+                        {filteredItems.length === 0 && isLoading && (
+                            <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} flex flex-col items-center justify-center py-8 space-y-3 border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
+                                <div className="w-4 h-4 border-2 border-sage-500/30 border-t-sage-500 rounded-full animate-spin" />
+                                <span className="text-[10px] text-gray-400 font-medium animate-pulse">Loading {singularType}s...</span>
                             </div>
                         )}
                     </div>

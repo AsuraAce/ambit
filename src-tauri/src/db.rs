@@ -157,7 +157,24 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9]
+    let migration10 = Migration {
+        version: 10,
+        description: "create_facet_cache_table",
+        sql: "CREATE TABLE IF NOT EXISTS facet_cache (
+            facet_type TEXT NOT NULL,
+            resource_name TEXT NOT NULL,
+            resource_hash TEXT,
+            count INTEGER DEFAULT 0,
+            thumbnail_path TEXT,
+            preview_url TEXT,
+            PRIMARY KEY (facet_type, resource_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_facet_cache_type ON facet_cache(facet_type);
+        CREATE INDEX IF NOT EXISTS idx_images_is_deleted ON images(is_deleted);",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10]
 }
 
 // Helper to resolve the correct DB path used by tauri-plugin-sql
@@ -294,4 +311,90 @@ pub fn refresh_boards_native(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(updated_count)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
+    let db_path = resolve_db_path(&app)?;
+    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+
+    let _ = conn.execute("PRAGMA journal_mode=WAL", []);
+    let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
+    let _ = conn.execute("PRAGMA busy_timeout=30000", []);
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Clear existing cache
+    tx.execute("DELETE FROM facet_cache", []).map_err(|e| e.to_string())?;
+
+    // Populate checkpoints from models table
+    tx.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+         SELECT 'checkpoint', m.name, MIN(m.hash), 
+                COUNT(DISTINCT i.id), MAX(m.thumbnail_path), MAX(m.preview_url)
+         FROM models m
+         LEFT JOIN images i ON json_extract(i.metadata_json, '$.modelHash') = m.hash 
+                              AND i.is_deleted = 0
+         WHERE m.resource_type = 'checkpoint'
+         GROUP BY m.name",
+        []
+    ).map_err(|e| e.to_string())?;
+
+    // Populate LoRAs
+    tx.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+         SELECT 'loras', m.name, m.hash, 
+                (SELECT COUNT(*) FROM images i, json_each(i.metadata_json, '$.loras') j 
+                 WHERE i.is_deleted = 0 AND (
+                   j.value LIKE m.name || '%' OR 
+                   j.value LIKE m.name || ' (%' OR
+                   j.value LIKE m.name || ':%'
+                 )),
+                m.thumbnail_path, m.preview_url
+         FROM models m
+         WHERE m.resource_type = 'loras'",
+        []
+    ).map_err(|e| e.to_string())?;
+
+    // Populate embeddings
+    tx.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+         SELECT 'embeddings', m.name, m.hash,
+                (SELECT COUNT(*) FROM images i, json_each(i.metadata_json, '$.embeddings') j 
+                 WHERE i.is_deleted = 0 AND j.value = m.name),
+                m.thumbnail_path, m.preview_url
+         FROM models m
+         WHERE m.resource_type = 'embeddings'",
+        []
+    ).map_err(|e| e.to_string())?;
+
+    // Populate hypernetworks
+    tx.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+         SELECT 'hypernetworks', m.name, m.hash,
+                (SELECT COUNT(*) FROM images i, json_each(i.metadata_json, '$.hypernetworks') j 
+                 WHERE i.is_deleted = 0 AND j.value = m.name),
+                m.thumbnail_path, m.preview_url
+         FROM models m
+         WHERE m.resource_type = 'hypernetworks'",
+        []
+    ).map_err(|e| e.to_string())?;
+
+    // Populate tools
+    tx.execute(
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+         SELECT 'tools', IFNULL(json_extract(metadata_json, '$.tool'), 'Unknown'), NULL, COUNT(*)
+         FROM images
+         WHERE is_deleted = 0
+         GROUP BY json_extract(metadata_json, '$.tool')",
+        []
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    // Return total cache entries
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+
+    Ok(count as usize)
 }

@@ -63,6 +63,8 @@ export interface LibraryContextType {
   setIsActivityDockDismissed: (val: boolean) => void;
   privacyEnabled: boolean;
   setPrivacyEnabled: (val: boolean) => void;
+  isFacetsLoading: boolean;
+  loadFacet: (type: 'embeddings' | 'hypernetworks') => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);

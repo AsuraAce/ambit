@@ -78,6 +78,24 @@ export const insertImagesBatch = async (images: AIImage[]) => {
 
     const db = await getDb();
     await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
+
+    // Rebuild facet cache in background (fire-and-forget, don't block import)
+    rebuildFacetCache().catch(e => console.error('[DB] Background cache rebuild failed', e));
+};
+
+/**
+ * Rebuilds the facet_cache table with pre-computed counts for all resources.
+ * This runs the expensive queries once per import, so getFacets becomes instant.
+ */
+export const rebuildFacetCache = async (): Promise<number> => {
+    try {
+        const count = await invoke<number>('rebuild_facet_cache');
+        console.log(`[DB] Rebuilt facet cache with ${count} entries`);
+        return count;
+    } catch (e) {
+        console.error('[DB] Failed to rebuild facet cache', e);
+        return 0;
+    }
 };
 
 /**

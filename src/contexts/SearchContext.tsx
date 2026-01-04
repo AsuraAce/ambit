@@ -60,6 +60,8 @@ interface SearchContextType {
     setModelResolutionProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; message?: string } | null>>;
     lastModelResolutionResult: { success: boolean; message: string } | null;
     setLastModelResolutionResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
+    isFacetsLoading: boolean;
+    loadFacet: (type: 'embeddings' | 'hypernetworks') => Promise<void>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -87,6 +89,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
     const [facets, setFacets] = useState<Facets>({ checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] });
+    const [isFacetsLoading, setIsFacetsLoading] = useState(false);
     const [stats, setStats] = useState<LibraryStats>({
         totalImages: 0,
         totalGenerations: 0,
@@ -119,11 +122,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const isFetchingRef = useRef(false);
     const imagesRef = useRef<AIImage[]>(images);
     const prevCollectionIdRef = useRef<string | null>(null);
+    const prevSearchQueryRef = useRef<string>('');
+    const prevWhereRef = useRef<string>('');
     const isInitialLoadRef = useRef(true);
     const sqlQueryRef = useRef(sqlQuery);
 
     useEffect(() => { imagesRef.current = images; }, [images]);
-    useEffect(() => { sqlQueryRef.current = sqlQuery; }, [sqlQuery]);
+    useEffect(() => {
+        sqlQueryRef.current = sqlQuery;
+    }, [sqlQuery]);
 
     const fetchDataRef = useRef<(isLoadMore: boolean) => Promise<void>>(() => Promise.resolve());
 
@@ -131,28 +138,50 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const refreshMetadata = useCallback(async () => {
         try {
+            setIsFacetsLoading(true);
             const { where, params } = sqlQueryRef.current;
             const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
+            // Only load primary facets initially (checkpoints, loras, tools)
             const [newFacets, newStats] = await Promise.all([
-                getFacets(where || 'WHERE is_deleted = 0', params),
+                getFacets(where || 'WHERE is_deleted = 0', params, ['checkpoints', 'loras', 'tools']),
                 getLibraryStats(where || 'WHERE is_deleted = 0', params)
             ]);
-            setFacets(newFacets);
+            setFacets(prev => ({ ...prev, ...newFacets }));
             setStats(newStats);
             await Promise.all([
                 refreshCollections(),
                 refreshHiddenAvailability()
             ]);
-        } catch (e) { console.error("Failed to refresh metadata", e); }
+        } catch (e) {
+            console.error("Failed to refresh metadata", e);
+        } finally {
+            setIsFacetsLoading(false);
+        }
     }, [refreshCollections, refreshHiddenAvailability]);
+
+    // Load a specific facet type on demand (for lazy loading collapsed sections)
+    const loadFacet = useCallback(async (type: 'embeddings' | 'hypernetworks') => {
+        try {
+            const { where, params } = sqlQueryRef.current;
+            const { getFacets } = await import('../services/db/searchRepo');
+            const partialFacets = await getFacets(where || 'WHERE is_deleted = 0', params, [type]);
+            setFacets(prev => ({ ...prev, [type]: partialFacets[type] }));
+        } catch (e) {
+            console.error(`Failed to load ${type} facet`, e);
+        }
+    }, []);
 
     // Internal debounced metadata refresh to avoid thread locks during search
     const metadataTimerRef = useRef<any>(null);
-    const debouncedRefreshMetadata = useCallback(() => {
+    const debouncedRefreshMetadata = useCallback((immediate = false) => {
         if (metadataTimerRef.current) clearTimeout(metadataTimerRef.current);
-        metadataTimerRef.current = setTimeout(() => {
+        if (immediate) {
             refreshMetadata();
-        }, 800); // 800ms debounce for "heavy" stats
+        } else {
+            metadataTimerRef.current = setTimeout(() => {
+                refreshMetadata();
+            }, 800); // 800ms debounce for "heavy" stats
+        }
     }, [refreshMetadata]);
 
     const fetchData = useCallback(async (isLoadMore: boolean) => {
@@ -190,7 +219,16 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 setImages(newBatch);
                 setGlobalTotal(globalCount);
                 setHasMoreImages(newBatch.length >= PAGE_SIZE);
-                debouncedRefreshMetadata();
+
+                // If this is the initial load OR if filters other than searchQuery were changed, refresh facets immediately
+                const whereChanged = where !== prevWhereRef.current;
+                const searchQueryChanged = filters.searchQuery !== prevSearchQueryRef.current;
+                const isOnlySearchQueryChange = !whereChanged && searchQueryChanged;
+
+                debouncedRefreshMetadata(!isOnlySearchQueryChange || isInitialLoadRef.current);
+
+                prevWhereRef.current = where;
+                prevSearchQueryRef.current = filters.searchQuery;
             } else {
                 const offset = imagesRef.current.length;
                 const newBatch = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
@@ -415,7 +453,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             modelResolutionProgress,
             setModelResolutionProgress,
             lastModelResolutionResult,
-            setLastModelResolutionResult
+            setLastModelResolutionResult,
+            isFacetsLoading,
+            loadFacet
         }}>
             {children}
         </SearchContext.Provider>
