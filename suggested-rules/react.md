@@ -1,8 +1,4 @@
 ---
-trigger: always_on
----
-
----
 trigger:
   - "**/*.tsx"
   - "**/*.ts"
