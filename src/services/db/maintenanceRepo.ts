@@ -155,7 +155,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
     const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND json_extract(metadata_json, '$.isIntermediate') IS NOT 1";
 
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT.replace('metadata_json', 'i.metadata_json')}
+        SELECT ${IMAGE_FIELDS_LIGHT.replace('images.metadata_json', 'i.metadata_json')}
         FROM images i
         JOIN (
             SELECT file_size, width, height 

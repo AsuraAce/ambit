@@ -79,8 +79,8 @@ export const insertImagesBatch = async (images: AIImage[]) => {
     const db = await getDb();
     await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
 
-    // Rebuild facet cache in background (fire-and-forget, don't block import)
-    rebuildFacetCache().catch(e => console.error('[DB] Background cache rebuild failed', e));
+    // rebuildFacetCache() is no longer called automatically per batch to avoid O(N^2) behavior during syncs.
+    // It should be called once at the end of the sync/import process.
 };
 
 /**
@@ -322,6 +322,9 @@ export const purgeLibrary = async () => {
         await db.execute('DELETE FROM images');
         await db.execute('DELETE FROM images_fts');
         await db.execute('DELETE FROM collections');
+
+        console.log('[DB] Rebuilding facet cache (clearing)...');
+        await rebuildFacetCache();
 
         console.log('[DB] Library purged. Triggers will be recreated on next load.');
     });

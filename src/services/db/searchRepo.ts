@@ -65,7 +65,7 @@ export const searchImages = async (
         : `ORDER BY ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`;
 
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT.replace(/id,/, 'images.id,').replace(/metadata_json,/, 'images.metadata_json,').replace(/thumbnail_path,/, 'images.thumbnail_path,').replace(/timestamp,/, 'images.timestamp,').replace(/file_size,/, 'images.file_size,')}, m.name as resolved_model_name
+        SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name
         FROM images 
         LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
         ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 

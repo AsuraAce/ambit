@@ -198,6 +198,14 @@ export const processNativePaths = async (
         }
     }
 
+    // Rebuild facet cache once after all batches are processed
+    try {
+        const { rebuildFacetCache } = await import('./db/imageRepo');
+        await rebuildFacetCache();
+    } catch (e) {
+        console.error('[Import] Failed to rebuild facet cache after import', e);
+    }
+
     return {
         images: newImages,
         stats: {

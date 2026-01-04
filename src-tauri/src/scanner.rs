@@ -40,21 +40,22 @@ pub async fn scan_images_bulk(
     extract_workflow: bool,
     default_tool: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let results: Vec<serde_json::Value> = paths
-        .par_iter()
-        .map(|path| {
-            match scan_image_internal(path.clone(), thumbnail_dir.clone(), skip_thumbnail, extract_workflow, default_tool.clone()) {
-                Ok(json) => json,
-                Err(e) => serde_json::json!({
-                    "id": path,
-                    "error": e,
-                    "failed": true
-                }),
-            }
-        })
-        .collect();
-
-    Ok(results)
+    tauri::async_runtime::spawn_blocking(move || {
+        let results: Vec<serde_json::Value> = paths
+            .par_iter()
+            .map(|path| {
+                scan_image_internal(
+                    path.clone(),
+                    thumbnail_dir.clone(),
+                    skip_thumbnail,
+                    extract_workflow,
+                    default_tool.clone(),
+                )
+                .unwrap_or(serde_json::json!({ "error": "Failed to scan" }))
+            })
+            .collect();
+        Ok(results)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -137,15 +138,14 @@ pub async fn read_image_metadata(path: String, default_tool: Option<String>) -> 
 
 #[tauri::command]
 pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
-    let sizes: Vec<u64> = paths
-        .par_iter()
-        .map(|path| {
-            std::fs::metadata(path)
-                .map(|m| m.len())
-                .unwrap_or(0)
-        })
-        .collect();
-    Ok(sizes)
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut sizes = Vec::with_capacity(paths.len());
+        for path in paths {
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            sizes.push(size);
+        }
+        Ok(sizes)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -160,18 +160,16 @@ pub async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, Strin
 
 #[tauri::command]
 pub async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
-    let path_buf = PathBuf::from(&path);
-    let images_path = path_buf.join("outputs").join("images");
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut stats = FolderStats::default();
+        let images_path = Path::new(&path).join("outputs").join("images");
+        stats.directory_checked = images_path.to_string_lossy().to_string();
 
-    let mut stats = FolderStats::default();
-    stats.directory_checked = images_path.to_string_lossy().to_string();
-
-    if images_path.exists() && images_path.is_dir() {
-        scan_dir_recursive(&images_path, &images_path, &mut stats);
-    }
-
-    Ok(serde_json::to_value(stats)
-        .unwrap_or(serde_json::json!({"error": "Failed to serialize stats"})))
+        if images_path.exists() && images_path.is_dir() {
+            scan_dir_recursive(&path.as_ref(), &images_path, &mut stats);
+        }
+        Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({ "error": "Failed to serialize stats" })))
+    }).await.map_err(|e| e.to_string())?
 }
 
 fn scan_dir_recursive(root: &std::path::Path, current: &std::path::Path, stats: &mut FolderStats) {
@@ -229,15 +227,14 @@ fn scan_dir_recursive(root: &std::path::Path, current: &std::path::Path, stats: 
 
 #[tauri::command]
 pub async fn list_invokeai_images(path: String) -> Result<Vec<String>, String> {
-    let path_buf = PathBuf::from(&path);
-    let images_path = path_buf.join("outputs").join("images");
-    let mut files = Vec::new();
-
-    if images_path.exists() && images_path.is_dir() {
-        collect_images_recursive(&images_path, &images_path, &mut files);
-    }
-
-    Ok(files)
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut files = Vec::new();
+        let images_path = Path::new(&path).join("outputs").join("images");
+        if images_path.exists() {
+            collect_images_recursive(&path.as_ref(), &images_path, &mut files);
+        }
+        Ok(files)
+    }).await.map_err(|e| e.to_string())?
 }
 
 fn collect_images_recursive(
@@ -318,14 +315,14 @@ fn collect_images_recursive_absolute(
 
 #[tauri::command]
 pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, String> {
-    let root_path = PathBuf::from(&path);
-    let mut files = Vec::new();
-
-    if root_path.exists() && root_path.is_dir() {
-        collect_images_recursive_absolute(&root_path, &root_path, &mut files);
-    }
-
-    Ok(files)
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut files = Vec::new();
+        let root = Path::new(&path);
+        if root.exists() {
+            collect_images_recursive_absolute(&root, &root, &mut files);
+        }
+        Ok(files)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

@@ -4,9 +4,9 @@ import { AIImage } from '../../types';
 
 // Lightweight column set for grid/listing views to avoid heavy JSON payloads
 export const IMAGE_FIELDS_LIGHT = `
-    id, path, width, height, file_size, timestamp, thumbnail_path, 
-    is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes,
-    json_remove(metadata_json, '$.workflowJson', '$.rawParameters') as metadata_json
+    images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, 
+    images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
+    json_remove(images.metadata_json, '$.workflowJson', '$.rawParameters') as metadata_json
 `;
 
 // Helper to keep mapping consistent

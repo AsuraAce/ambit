@@ -11,6 +11,7 @@ interface LibraryHealthProps {
 const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
     const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
+    const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
     const [progress, setProgress] = useState(0);
 
@@ -45,6 +46,19 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         } catch (e) {
             console.error(e);
             setPruningStatus('idle');
+        }
+    };
+
+    const handleRebuildCache = async () => {
+        setRebuildStatus('running');
+        try {
+            const { rebuildFacetCache } = await import('../../../services/db/imageRepo');
+            await rebuildFacetCache();
+            setRebuildStatus('done');
+            setTimeout(() => setRebuildStatus('idle'), 3000);
+        } catch (e) {
+            console.error(e);
+            setRebuildStatus('idle');
         }
     };
 
@@ -121,13 +135,29 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                     ) : (
                         <button
                             onClick={handleVerify}
-                            disabled={pruningStatus === 'running'}
+                            disabled={pruningStatus === 'running' || rebuildStatus === 'running'}
                             className="flex items-center gap-3 px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black shadow-xl shadow-sage-500/20 transition-all active:scale-95 disabled:opacity-50"
                         >
                             {status === 'done' ? <RefreshCw className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                             {status === 'done' ? 'Re-Scan Library' : 'Start Full Audit'}
                         </button>
                     )}
+
+                    <button
+                        onClick={handleRebuildCache}
+                        disabled={rebuildStatus === 'running' || status === 'running'}
+                        className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-white/5 hover:bg-sage-500 hover:text-white dark:hover:bg-sage-600 text-gray-500 dark:text-gray-400 rounded-xl text-xs font-bold border border-gray-100 dark:border-white/10 transition-all active:scale-95 disabled:opacity-50"
+                        title="Rebuild Pre-computed Facet Cache"
+                    >
+                        {rebuildStatus === 'running' ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : rebuildStatus === 'done' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                            <RefreshCw className="w-4 h-4" />
+                        )}
+                        {rebuildStatus === 'running' ? 'Rebuilding...' : rebuildStatus === 'done' ? 'Cache Rebuilt' : 'Rebuild Facet Cache'}
+                    </button>
                 </div>
             </div>
 
