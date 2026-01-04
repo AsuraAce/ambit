@@ -17,6 +17,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             db::save_images_batch,
             db::get_db_diagnostics,
+            db::diagnose_lora_counts,
             db::refresh_boards_native,
             db::rebuild_facet_cache,
             scanner::scan_image,

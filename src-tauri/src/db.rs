@@ -231,6 +231,100 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Val
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Diagnostic command to analyze LoRA distribution by tool.
+/// Helps debug the facet cache LoRA count discrepancy.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn diagnose_lora_counts(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+
+        // 1. Count images with LoRAs by tool
+        let mut stmt = conn.prepare(
+            "SELECT json_extract(metadata_json, '$.tool') as tool, 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN json_array_length(metadata_json, '$.loras') > 0 THEN 1 ELSE 0 END) as with_loras
+             FROM images 
+             WHERE is_deleted = 0 
+             GROUP BY tool"
+        ).map_err(|e| e.to_string())?;
+
+        let tool_stats: Vec<serde_json::Value> = stmt.query_map([], |row| {
+            let tool: Option<String> = row.get(0)?;
+            let total: i64 = row.get(1)?;
+            let with_loras: i64 = row.get(2)?;
+            Ok(serde_json::json!({
+                "tool": tool.unwrap_or_else(|| "NULL".to_string()),
+                "total": total,
+                "withLoras": with_loras
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        // 2. Get facet cache summary for loras
+        let facet_lora_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'loras'",
+            [], |r| r.get(0)
+        ).unwrap_or(0);
+
+        let facet_lora_total: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(count), 0) FROM facet_cache WHERE facet_type = 'loras'",
+            [], |r| r.get(0)
+        ).unwrap_or(0);
+
+        // 3. Get unique lora references from images (sample top 10)
+        let mut lora_stmt = conn.prepare(
+            "SELECT j.value, COUNT(DISTINCT i.id) as cnt
+             FROM images i, json_each(i.metadata_json, '$.loras') j
+             WHERE i.is_deleted = 0
+             GROUP BY j.value
+             ORDER BY cnt DESC
+             LIMIT 10"
+        ).map_err(|e| e.to_string())?;
+
+        let top_loras: Vec<serde_json::Value> = lora_stmt.query_map([], |row| {
+            let name: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok(serde_json::json!({ "name": name, "imageCount": count }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        // 4. Get models table lora count
+        let models_lora_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM models WHERE resource_type = 'loras'",
+            [], |r| r.get(0)
+        ).unwrap_or(0);
+
+        // 5. Check for LoRAs in images but not in models (potential harvest failure)
+        let orphan_count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT j.value) 
+             FROM images i, json_each(i.metadata_json, '$.loras') j
+             WHERE i.is_deleted = 0 
+             AND NOT EXISTS (
+                 SELECT 1 FROM models m 
+                 WHERE m.resource_type = 'loras' 
+                 AND (j.value = m.name OR j.value LIKE m.name || ' (%' OR j.value LIKE m.name || ':%')
+             )",
+            [], |r| r.get(0)
+        ).unwrap_or(-1);
+
+        Ok(serde_json::json!({
+            "toolStats": tool_stats,
+            "facetCache": {
+                "loraTypes": facet_lora_count,
+                "loraImageTotal": facet_lora_total
+            },
+            "modelsTable": {
+                "loraCount": models_lora_count
+            },
+            "topLoras": top_loras,
+            "orphanLoraRefCount": orphan_count
+        }))
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -591,16 +685,25 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 
 fn build_lora_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // Step 1: Pre-aggregate all lora references from images (O(N) scan once)
+    // Also extract the "clean" name for better matching.
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS lora_counts AS
-            SELECT j.value AS lora_ref, COUNT(DISTINCT i.id) AS cnt
+            SELECT 
+                j.value AS lora_ref,
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END AS clean_ref,
+                COUNT(DISTINCT i.id) AS cnt
             FROM images i, json_each(i.metadata_json, '$.loras') j
             WHERE i.is_deleted = 0
             GROUP BY j.value",
         []
     ).map_err(|e| format!("Failed to create lora_counts temp table: {}", e))?;
 
-    // Step 2: Join models to pre-aggregated counts (O(M) join)
+    // Step 2: Insert facets for LoRAs that exist in models table with fuzzy matching
+    // This handles LoRAs that we've scanned from disk or resolved from CivitAI
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
             SELECT 'loras', m.name, MIN(m.hash),
@@ -609,22 +712,48 @@ fn build_lora_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM models m
             LEFT JOIN lora_counts lc ON (
                 lc.lora_ref = m.name OR 
+                lc.clean_ref = m.name OR
                 lc.lora_ref LIKE m.name || ' (%' OR
-                lc.lora_ref LIKE m.name || ':%'
+                lc.lora_ref LIKE m.name || ':%' OR
+                m.name LIKE lc.clean_ref || '%'
             )
             WHERE m.resource_type = 'loras'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert loras into facet_cache: {}", e))?;
 
+    // Step 3: Insert "orphan" LoRAs that are referenced in images but not in models table.
+    // This ensures we don't miss any LoRAs just because they weren't scanned from disk.
+    conn.execute(
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'loras', lc.clean_ref, 'orphan_' || lc.clean_ref, SUM(lc.cnt)
+            FROM lora_counts lc
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facet_cache fc 
+                WHERE fc.facet_type = 'loras' 
+                AND (fc.resource_name = lc.clean_ref OR fc.resource_name = lc.lora_ref)
+            )
+            AND lc.clean_ref IS NOT NULL AND lc.clean_ref != ''
+            GROUP BY lc.clean_ref",
+        []
+    ).map_err(|e| format!("Failed to insert orphan loras into facet_cache: {}", e))?;
+
     conn.execute("DROP TABLE IF EXISTS lora_counts", []).ok();
     Ok(())
 }
 
+
 fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS embedding_counts AS
-            SELECT j.value AS embed_name, COUNT(DISTINCT i.id) AS cnt
+            SELECT 
+                j.value AS embed_name,
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END AS clean_ref,
+                COUNT(DISTINCT i.id) AS cnt
             FROM images i, json_each(i.metadata_json, '$.embeddings') j
             WHERE i.is_deleted = 0
             GROUP BY j.value",
@@ -639,13 +768,30 @@ fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM models m
             LEFT JOIN embedding_counts ec ON (
                 ec.embed_name = m.name OR
+                ec.clean_ref = m.name OR
                 ec.embed_name LIKE m.name || ' (%' OR
-                ec.embed_name LIKE m.name || ':%'
+                ec.embed_name LIKE m.name || ':%' OR
+                m.name LIKE ec.clean_ref || '%'
             )
             WHERE m.resource_type = 'embeddings'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert embeddings into facet_cache: {}", e))?;
+
+    // Insert orphan embeddings not matched to models
+    conn.execute(
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'embeddings', ec.clean_ref, 'orphan_' || ec.clean_ref, SUM(ec.cnt)
+            FROM embedding_counts ec
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facet_cache fc 
+                WHERE fc.facet_type = 'embeddings' 
+                AND (fc.resource_name = ec.clean_ref OR fc.resource_name = ec.embed_name)
+            )
+            AND ec.clean_ref IS NOT NULL AND ec.clean_ref != ''
+            GROUP BY ec.clean_ref",
+        []
+    ).map_err(|e| format!("Failed to insert orphan embeddings: {}", e))?;
 
     conn.execute("DROP TABLE IF EXISTS embedding_counts", []).ok();
     Ok(())
@@ -654,7 +800,14 @@ fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS hypernet_counts AS
-            SELECT j.value AS hypernet_name, COUNT(DISTINCT i.id) AS cnt
+            SELECT 
+                j.value AS hypernet_name,
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END AS clean_ref,
+                COUNT(DISTINCT i.id) AS cnt
             FROM images i, json_each(i.metadata_json, '$.hypernetworks') j
             WHERE i.is_deleted = 0
             GROUP BY j.value",
@@ -669,17 +822,35 @@ fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> 
             FROM models m
             LEFT JOIN hypernet_counts hc ON (
                 hc.hypernet_name = m.name OR
+                hc.clean_ref = m.name OR
                 hc.hypernet_name LIKE m.name || ' (%' OR
-                hc.hypernet_name LIKE m.name || ':%'
+                hc.hypernet_name LIKE m.name || ':%' OR
+                m.name LIKE hc.clean_ref || '%'
             )
             WHERE m.resource_type = 'hypernetworks'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert hypernetworks into facet_cache: {}", e))?;
 
+    // Insert orphan hypernetworks not matched to models
+    conn.execute(
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'hypernetworks', hc.clean_ref, 'orphan_' || hc.clean_ref, SUM(hc.cnt)
+            FROM hypernet_counts hc
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facet_cache fc 
+                WHERE fc.facet_type = 'hypernetworks' 
+                AND (fc.resource_name = hc.clean_ref OR fc.resource_name = hc.hypernet_name)
+            )
+            AND hc.clean_ref IS NOT NULL AND hc.clean_ref != ''
+            GROUP BY hc.clean_ref",
+        []
+    ).map_err(|e| format!("Failed to insert orphan hypernetworks: {}", e))?;
+
     conn.execute("DROP TABLE IF EXISTS hypernet_counts", []).ok();
     Ok(())
 }
+
 
 fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
