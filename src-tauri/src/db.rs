@@ -704,12 +704,19 @@ fn build_lora_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 
     // Step 2: Insert facets for LoRAs that exist in models table with fuzzy matching
     // This handles LoRAs that we've scanned from disk or resolved from CivitAI
+    // NOTE: We deduplicate models by name using a subquery to prevent "double counting"
+    // if multiple model entries (different hashes) share the same name.
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-            SELECT 'loras', m.name, MIN(m.hash),
+            SELECT 'loras', m.name, m.hash,
                 COALESCE(SUM(lc.cnt), 0),
-                MAX(m.thumbnail_path), MAX(m.preview_url)
-            FROM models m
+                m.thumbnail_path, m.preview_url
+            FROM (
+                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                FROM models 
+                WHERE resource_type = 'loras'
+                GROUP BY name
+            ) m
             LEFT JOIN lora_counts lc ON (
                 lc.lora_ref = m.name OR 
                 lc.clean_ref = m.name OR
@@ -717,7 +724,6 @@ fn build_lora_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 lc.lora_ref LIKE m.name || ':%' OR
                 m.name LIKE lc.clean_ref || '%'
             )
-            WHERE m.resource_type = 'loras'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert loras into facet_cache: {}", e))?;
@@ -762,10 +768,15 @@ fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-            SELECT 'embeddings', m.name, MIN(m.hash),
+            SELECT 'embeddings', m.name, m.hash,
                 COALESCE(SUM(ec.cnt), 0),
-                MAX(m.thumbnail_path), MAX(m.preview_url)
-            FROM models m
+                m.thumbnail_path, m.preview_url
+            FROM (
+                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                FROM models 
+                WHERE resource_type = 'embeddings'
+                GROUP BY name
+            ) m
             LEFT JOIN embedding_counts ec ON (
                 ec.embed_name = m.name OR
                 ec.clean_ref = m.name OR
@@ -773,7 +784,6 @@ fn build_embedding_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 ec.embed_name LIKE m.name || ':%' OR
                 m.name LIKE ec.clean_ref || '%'
             )
-            WHERE m.resource_type = 'embeddings'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert embeddings into facet_cache: {}", e))?;
@@ -816,10 +826,15 @@ fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> 
 
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
-            SELECT 'hypernetworks', m.name, MIN(m.hash),
+            SELECT 'hypernetworks', m.name, m.hash,
                 COALESCE(SUM(hc.cnt), 0),
-                MAX(m.thumbnail_path), MAX(m.preview_url)
-            FROM models m
+                m.thumbnail_path, m.preview_url
+            FROM (
+                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                FROM models 
+                WHERE resource_type = 'hypernetworks'
+                GROUP BY name
+            ) m
             LEFT JOIN hypernet_counts hc ON (
                 hc.hypernet_name = m.name OR
                 hc.clean_ref = m.name OR
@@ -827,7 +842,6 @@ fn build_hypernetwork_facets(conn: &rusqlite::Connection) -> Result<(), String> 
                 hc.hypernet_name LIKE m.name || ':%' OR
                 m.name LIKE hc.clean_ref || '%'
             )
-            WHERE m.resource_type = 'hypernetworks'
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert hypernetworks into facet_cache: {}", e))?;
