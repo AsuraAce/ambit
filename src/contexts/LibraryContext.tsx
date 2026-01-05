@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { createContext, useContext, ReactNode, useMemo, useCallback, useEffect } from 'react';
+import { useLibraryStore } from '../stores/libraryStore';
 import { SettingsProvider, useSettings } from './SettingsContext';
 import { SyncProvider, useSync } from './SyncContext';
 import { CollectionProvider, useCollections } from './CollectionContext';
@@ -34,20 +35,26 @@ export interface LibraryContextType {
   cancelSync: () => void;
   cleanLibrary: () => Promise<void>;
   syncStatus: string;
-  syncProgress: { current: number; total: number; message?: string };
+  // syncProgress removed
   syncState: {
     status: 'idle' | 'syncing' | 'complete' | 'error';
-    progress: { current: number; total: number; message?: string };
+    // progress removed
   };
   isFiltering: boolean;
   isLoaded: boolean;
-  isImporting: boolean;
-  importProgress: { current: number; total: number; message?: string } | null;
-  setIsImporting: (val: boolean) => void;
-  setImportProgress: (val: { current: number; total: number; message?: string } | null) => void;
+
+  // Transient state moved to useLibraryStore
+  // isImporting, isLiveWatching, etc. (Wait, isLiveWatching was already in Store but exposed here?)
+
   isLiveSyncing: boolean;
-  isLiveWatching: boolean;
+  // isLiveWatching should be removed too? It was migrated earlier.
+  // Actually isLiveWatching was used in AppHeader from LibraryContext earlier.
+  // Now AppHeader gets it from Store. 
+  // WatcherContext ALSO uses store.
+
+  isLiveWatching: boolean; // Keeping for now if used elsewhere, but ideally remove.
   setIsLiveWatching: any;
+
   toggleFavorite: (id: string) => Promise<void>;
   togglePin: (id: string, isPinned?: boolean) => Promise<void>;
   clearAllFilters: () => void;
@@ -131,13 +138,19 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
   const syncCtx = useSync();
   const watcherCtx = useWatchers();
 
-  const isAnyTaskActive = searchCtx.isImporting || searchCtx.isRegeneratingThumbnails || syncCtx.syncStatus === 'syncing' || searchCtx.isResolvingModels;
+  // Use Store for Activity Check
+  const {
+    isImporting, isRegeneratingThumbnails, isResolvingModels,
+    syncStatus, setIsActivityDockDismissed
+  } = useLibraryStore();
+
+  const isAnyTaskActive = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing' || isResolvingModels;
 
   useEffect(() => {
     if (isAnyTaskActive) {
-      searchCtx.setIsActivityDockDismissed(false);
+      setIsActivityDockDismissed(false);
     }
-  }, [isAnyTaskActive]);
+  }, [isAnyTaskActive, setIsActivityDockDismissed]);
 
   const value = useMemo(() => ({
     ...settingsCtx,
@@ -146,8 +159,7 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     ...syncCtx,
     ...watcherCtx,
     syncState: {
-      status: syncCtx.syncStatus,
-      progress: syncCtx.syncProgress
+      status: syncCtx.syncStatus
     },
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
   }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx]);

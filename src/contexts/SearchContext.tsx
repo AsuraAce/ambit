@@ -40,26 +40,12 @@ interface SearchContextType {
     setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
     toggleFavorite: (id: string) => Promise<void>;
     togglePin: (id: string, isPinned?: boolean) => Promise<void>;
-    isImporting: boolean;
-    setIsImporting: React.Dispatch<React.SetStateAction<boolean>>;
-    importProgress: { current: number; total: number; message?: string } | null;
-    setImportProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; message?: string } | null>>;
-    // Thumbnail Regeneration Progress
-    isRegeneratingThumbnails: boolean;
-    setIsRegeneratingThumbnails: React.Dispatch<React.SetStateAction<boolean>>;
-    thumbnailProgress: { current: number; total: number } | null;
-    setThumbnailProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number } | null>>;
-    isActivityDockDismissed: boolean;
-    setIsActivityDockDismissed: (val: boolean) => void;
+
+    // Transient state moved to useLibraryStore
+
     availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean };
     refreshHiddenAvailability: () => Promise<void>;
-    // Model Resolution
-    isResolvingModels: boolean;
-    setIsResolvingModels: React.Dispatch<React.SetStateAction<boolean>>;
-    modelResolutionProgress: { current: number; total: number; message?: string } | null;
-    setModelResolutionProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; message?: string } | null>>;
-    lastModelResolutionResult: { success: boolean; message: string } | null;
-    setLastModelResolutionResult: React.Dispatch<React.SetStateAction<{ success: boolean; message: string } | null>>;
+
     isFacetsLoading: boolean;
     loadFacet: (type: 'embeddings' | 'hypernetworks') => Promise<void>;
 }
@@ -104,14 +90,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [hasMoreImages, setHasMoreImages] = useState(true);
     const [isFiltering, setIsFiltering] = useState(true);
     const [sqlQuery, setSqlQuery] = useState<{ where: string; params: any[] }>({ where: '', params: [] });
-    const [isImporting, setIsImporting] = useState(false);
-    const [importProgress, setImportProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
-    const [isRegeneratingThumbnails, setIsRegeneratingThumbnails] = useState(false);
-    const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number } | null>(null);
-    const [isActivityDockDismissed, setIsActivityDockDismissed] = useState(false);
-    const [isResolvingModels, setIsResolvingModels] = useState(false);
-    const [modelResolutionProgress, setModelResolutionProgress] = useState<{ current: number; total: number; message?: string } | null>(null);
-    const [lastModelResolutionResult, setLastModelResolutionResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    // Transient state moved to useLibraryStore
+    // isImporting, importProgress, etc. removed from here.
 
     const refreshHiddenAvailability = useCallback(async () => {
         const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
@@ -436,24 +417,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setRecentSearches,
             toggleFavorite,
             togglePin,
-            isImporting,
-            setIsImporting,
-            importProgress,
-            setImportProgress,
-            isRegeneratingThumbnails,
-            setIsRegeneratingThumbnails,
-            thumbnailProgress,
-            setThumbnailProgress,
-            isActivityDockDismissed,
-            setIsActivityDockDismissed,
             availableHiddenContent,
             refreshHiddenAvailability,
-            isResolvingModels,
-            setIsResolvingModels,
-            modelResolutionProgress,
-            setModelResolutionProgress,
-            lastModelResolutionResult,
-            setLastModelResolutionResult,
             isFacetsLoading,
             loadFacet
         }}>

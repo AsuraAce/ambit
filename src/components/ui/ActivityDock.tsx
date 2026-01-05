@@ -1,18 +1,18 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info } from 'lucide-react';
-import { useLibraryContext } from '../../hooks/useLibraryContext';
+import { useLibraryStore } from '../../stores/libraryStore';
 
 export const ActivityDock: React.FC = () => {
     const {
         isImporting, importProgress,
-        syncState, isLiveSyncing,
+        syncStatus, syncProgress, isLiveSyncing,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed
-    } = useLibraryContext() as any;
+    } = useLibraryStore();
 
-    const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
+    const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
     const active = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels;
 
     // Determine current task details
@@ -23,7 +23,7 @@ export const ActivityDock: React.FC = () => {
         progress = importProgress;
         label = "Importing";
     } else if (isSyncing) {
-        progress = syncState?.progress;
+        progress = syncProgress;
         label = "Syncing";
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;

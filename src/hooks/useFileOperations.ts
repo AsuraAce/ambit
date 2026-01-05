@@ -10,6 +10,7 @@ import { remove } from '@tauri-apps/plugin-fs';
 import { processWebFiles, processNativePaths, ImportResult } from '../services/importService';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { normalizePath } from '../utils/pathUtils';
+import { useLibraryStore } from '../stores/libraryStore';
 import { useSearch } from '../contexts/SearchContext';
 
 interface UseFileOperationsProps {
@@ -29,9 +30,9 @@ export const useFileOperations = ({
     const {
         isImporting, setIsImporting, importProgress, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
-        thumbnailProgress, setThumbnailProgress,
-        refreshHiddenAvailability
-    } = useSearch();
+        thumbnailProgress, setThumbnailProgress
+    } = useLibraryStore();
+    const { refreshHiddenAvailability } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
 

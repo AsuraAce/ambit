@@ -1,16 +1,21 @@
 import * as React from 'react';
-import { createContext, useState, useContext, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useRef, ReactNode } from 'react';
 import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useToast } from '../hooks/useToast';
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface SyncContextType {
-    syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
-    syncProgress: { current: number; total: number; message?: string };
     startInvokeSync: (options?: any) => Promise<void>;
     cancelSync: () => void;
-    cleanLibrary: () => Promise<void>;
+    syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
+    syncState: {
+        status: 'idle' | 'syncing' | 'complete' | 'error';
+        // progress removed - use useLibraryStore
+    };
     isLiveSyncing: boolean;
+    setIsLiveSyncing: (val: boolean) => void;
+    cleanLibrary: () => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
@@ -20,9 +25,14 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     const { setCollections } = useCollections();
     const { addToast } = useToast();
 
-    const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'complete' | 'error'>('idle');
-    const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; message?: string }>({ current: 0, total: 0, message: '' });
-    const [isLiveSyncing, setIsLiveSyncing] = useState(false);
+    // Zustand State
+    const syncStatus = useLibraryStore(s => s.syncStatus);
+    const setSyncStatus = useLibraryStore(s => s.setSyncStatus);
+    // syncProgress is used internally in startInvokeSync but not exposed in Context
+    const syncProgress = useLibraryStore(s => s.syncProgress);
+    const setSyncProgress = useLibraryStore(s => s.setSyncProgress);
+    const isLiveSyncing = useLibraryStore(s => s.isLiveSyncing);
+    const setIsLiveSyncing = useLibraryStore(s => s.setIsLiveSyncing);
 
     const abortControllerRef = useRef<AbortController | null>(null);
     const isLiveSyncingRef = useRef(false);
@@ -73,6 +83,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
                 setSyncProgress(prev => ({ ...prev, message: 'Synchronizing boards...' }));
+                // Note: setCollections is still from CollectionContext (Phase 3)
                 setCollections(prev => {
                     const next = [...prev];
                     let changed = false;
@@ -146,7 +157,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                 setIsLiveSyncing(false);
             }
         }
-    }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections]);
+    }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing]);
 
     const cancelSync = useCallback(() => {
         abortControllerRef.current?.abort();
@@ -187,12 +198,13 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
     return (
         <SyncContext.Provider value={{
-            syncStatus,
-            syncProgress,
             startInvokeSync,
             cancelSync,
-            cleanLibrary,
-            isLiveSyncing
+            syncStatus,
+            syncState: { status: syncStatus },
+            isLiveSyncing,
+            setIsLiveSyncing,
+            cleanLibrary
         }}>
             {children}
         </SyncContext.Provider>

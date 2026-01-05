@@ -1,11 +1,12 @@
 import * as React from 'react';
-import { createContext, useState, useContext, useEffect, useRef, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { useSettings } from './SettingsContext';
 import { useSync } from './SyncContext';
 import { useToast } from '../hooks/useToast';
 import { watcherService } from '../services/WatcherService';
 import { startLiveLink } from '../services/invoke/liveLink';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -21,17 +22,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const { startInvokeSync } = useSync();
     const { addToast } = useToast();
 
-    const [isLiveWatching, setIsLiveWatching] = useState(false);
-    const [maintenanceCounts, setMaintenanceCounts] = useState({
-        untagged: 0,
-        orphans: 0,
-        intermediates: 0,
-        missing: 0,
-        trash: 0,
-        duplicates: 0
-    });
-
-    const liveLinkCleanupRef = useRef<(() => void) | null>(null);
+    // Zustand State
+    const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
+    const setIsLiveWatching = useLibraryStore(s => s.setIsLiveWatching);
+    const maintenanceCounts = useLibraryStore(s => s.maintenanceCounts);
+    const setMaintenanceCounts = useLibraryStore(s => s.setMaintenanceCounts);
 
     const refreshMaintenanceCounts = useCallback(async () => {
         if (!isLoaded) return;
@@ -41,7 +36,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         } catch (e) {
             console.error("Failed to refresh maintenance counts", e);
         }
-    }, [isLoaded]);
+    }, [isLoaded, setMaintenanceCounts]);
 
     // Initial maintenance count
     useEffect(() => {
@@ -49,39 +44,36 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     }, [isLoaded, refreshMaintenanceCounts]);
 
     // Unified Watcher Logic (Live Sync)
-    // This controls BOTH the generic "Monitored Folders" AND the "InvokeAI" folder.
     const monitoredFoldersConfig = JSON.stringify(settings.monitoredFolders);
     const invokePathConfig = settings.invokeAiPath;
+
+    // Stable ref for callbacks to avoid restarting watcher on every render
+    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings });
+    useEffect(() => {
+        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings };
+    });
 
     useEffect(() => {
         if (!isLoaded) return;
 
         const initWatcher = async () => {
-            // If Live Watch is OFF, stop everything.
             if (!isLiveWatching) {
                 await watcherService.stopWatching();
                 return;
             }
 
-            // Collect all paths to watch
+            const currentSettings = callbacksRef.current.settings;
             const pathsToWatch: string[] = [];
 
-            // 1. Monitored Folders (Generic)
-            if (settings.monitoredFolders) {
-                settings.monitoredFolders.forEach(f => {
+            if (currentSettings.monitoredFolders) {
+                currentSettings.monitoredFolders.forEach(f => {
                     if (f.isActive) pathsToWatch.push(f.path);
                 });
             }
 
-            // 2. InvokeAI Output Folder (Specialized)
-            // Typically: {root}/outputs/images
-            if (settings.invokeAiPath) {
-                // Ensure correct path joining
-                // Using simple concat with '/' is usually safe enough for JS/Rust bridge
-                // invokeAiPath usually doesn't end with slash if normalized, but let's be safe
-                const cleanRoot = settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
-                const invokeImagesPath = `${cleanRoot}/outputs/images`;
-                pathsToWatch.push(invokeImagesPath);
+            if (currentSettings.invokeAiPath) {
+                const cleanRoot = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
+                pathsToWatch.push(`${cleanRoot}/outputs/images`);
             }
 
             if (pathsToWatch.length === 0) {
@@ -89,19 +81,16 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 return;
             }
 
-            // Start the native watcher
             await watcherService.startWatching(pathsToWatch, async () => {
-                console.log('[WatcherContext] Global change detected. Refreshing.');
+                console.log('[WatcherContext] Global change detected.');
+                const cb = callbacksRef.current;
 
-                // 1. Generic Refresh
-                if (onNewImageDetected) onNewImageDetected();
-                await refreshMaintenanceCounts();
+                if (cb.onNewImageDetected) cb.onNewImageDetected();
+                await cb.refreshMaintenanceCounts();
 
-                // 2. InvokeAI Specialized Sync
-                // If we have an Invoke Path configured, we should also trigger the DB sync
-                // because the file change might have been an Invoke generation.
-                if (settings.invokeAiPath) {
-                    await startInvokeSync({ mode: 'live' });
+                if (cb.settings.invokeAiPath) {
+                    // Use 'live' mode to avoid blocking UI
+                    await cb.startInvokeSync({ mode: 'live' });
                 }
             });
 
@@ -110,15 +99,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             }
         };
 
-        initWatcher();
+        // Debounce initialization
+        const timer = setTimeout(initWatcher, 500);
+        return () => clearTimeout(timer);
 
-        return () => {
-            // Cleanup provided by next run or component unmount
-            // However, we generally want the watcher to PERSIST unless strictly stopped?
-            // React strict mode might double-mount.
-            // WatcherService handles restart logic safely.
-        };
-    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, addToast]);
+    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, addToast]); // Deps ensure restart on config change
 
     // Maintenance interval
     useEffect(() => {
@@ -141,6 +126,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
 export const useWatchers = () => {
     const context = useContext(WatcherContext);
-    if (!context) throw new Error('useWatchers must be used within WatcherProvider');
+    if (!context) {
+        throw new Error('useWatchers must be used within a WatcherProvider');
+    }
     return context;
 };

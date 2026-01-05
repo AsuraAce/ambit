@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Import } from 'lucide-react';
 import { FilterState, LayoutMode, SortOption, ViewMode } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { SearchBar } from '../../features/filters/components/SearchBar';
 import { ViewControls } from '../../features/library/components/ViewControls';
 import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
@@ -53,17 +54,20 @@ export const AppHeader = React.memo(({
     const {
         settings, setSettings,
         recentSearches, setRecentSearches,
-        isLiveWatching, setIsLiveWatching,
-        isImporting, importProgress,
-        isLiveSyncing, syncState,
-        isResolvingModels, modelResolutionProgress
     } = useLibraryContext() as any;
 
-    const isSyncing = syncState?.status === 'syncing' || isLiveSyncing;
+    const {
+        isLiveWatching, setIsLiveWatching,
+        isImporting, importProgress,
+        isLiveSyncing, syncStatus, syncProgress,
+        isResolvingModels, modelResolutionProgress
+    } = useLibraryStore();
+
+    const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
     const active = isImporting || isSyncing || isResolvingModels;
     const progress = (isImporting && importProgress)
         ? importProgress
-        : (isSyncing ? syncState?.progress : (isResolvingModels ? modelResolutionProgress : null));
+        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : null));
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
