@@ -25,7 +25,7 @@ export const useCollectionOperations = ({
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
 
-  const createCollection = useCallback(async (name: string) => {
+  const createCollection = useCallback(async (name: string, filters?: FilterState) => {
     const id = `c_${Date.now()}`;
     const newCol: Collection = {
       id,
@@ -33,7 +33,8 @@ export const useCollectionOperations = ({
       createdAt: Date.now(),
       source: 'ambit',
       imageIds: [],
-      count: 0
+      count: 0,
+      filters // Hybrid Support: Initialize with filters if provided
     };
 
     // Optimistic Update
@@ -50,6 +51,37 @@ export const useCollectionOperations = ({
       addToast("Failed to create collection", "error");
     }
   }, [setAllCollections, refreshCollections, addToast]);
+
+  const updateCollectionFilters = useCallback(async (id: string, filters: FilterState | undefined) => {
+    const col = [...collections, ...smartCollections].find(c => c.id === id);
+    if (!col) return;
+
+    // Sanitize filters to prevent recursive self-reference
+    let cleanFilters = filters;
+    if (filters) {
+      cleanFilters = { ...filters };
+      // If the filter's collectionId matches the collection we are updating, remove it.
+      // This prevents the "Must be in Collection X" rule from being saved into Collection X itself,
+      // which would restrict results to only manually added items (hybrid) and ignore dynamic matches.
+      if (cleanFilters.collectionId === id) {
+        cleanFilters.collectionId = null;
+      }
+    }
+
+    // Optimistic Update
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, filters: cleanFilters } : c));
+
+    try {
+      // If we are clearing filters (filters === undefined), we pass null/undefined to upsert
+      await upsertCollection({ ...col, filters: cleanFilters });
+      addToast(cleanFilters ? "Filters updated" : "Collection converted to static", "success");
+      refreshCollections();
+    } catch (e) {
+      // Rollback
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+      addToast("Failed to update filters", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
   const deleteCollection = useCallback(async (id: string) => {
     const original = [...collections, ...smartCollections].find(c => c.id === id);
@@ -201,27 +233,10 @@ export const useCollectionOperations = ({
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
+  // Deprecated/Aliased for backward compat
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
-    // Check if we already have a collection with this name to update it instead of creating a new one
-    const existing = [...collections, ...smartCollections].find(c => c.name.toLowerCase() === name.toLowerCase());
-
-    const id = existing ? existing.id : `sc_${Date.now()}`;
-
-    // Merge existing filters if updating, to preserve sortOption if it was set previously but not cleared
-    // Actually, the passed 'filters' usually represents the current active state, so we should trust it.
-    // However, if we want to ensure sortOption is passed, we depend on the caller.
-
-    await upsertCollection({
-      ...existing, // Preserve existing properties like color, pins, etc.
-      id,
-      name,
-      filters,
-      createdAt: existing?.createdAt || Date.now(),
-      source: 'ambit'
-    });
-    await refreshCollections();
-    addToast(existing ? `Smart collection "${name}" updated` : `Smart collection "${name}" saved`, 'success');
-  }, [collections, smartCollections, refreshCollections, addToast]);
+    return createCollection(name, filters);
+  }, [createCollection]);
 
   const moveImagesBetweenCollections = useCallback(async (imageIds: string[], sourceId: string, targetId: string) => {
     const sourceCol = [...collections, ...smartCollections].find(c => c.id === sourceId);
@@ -283,6 +298,7 @@ export const useCollectionOperations = ({
 
   return {
     createCollection,
+    updateCollectionFilters,
     deleteCollection,
     renameCollection,
     setCollectionColor,

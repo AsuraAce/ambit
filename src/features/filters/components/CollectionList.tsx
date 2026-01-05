@@ -20,6 +20,7 @@ interface CollectionListProps<T extends Collection> {
     onPlayCollection?: (colId: string) => void;
     onExportCollection?: (colId: string) => void;
     onResetCollectionThumbnail?: (colId: string) => void;
+    onEditCollection?: (colId: string) => void;
     renderToolbarExtras?: () => React.ReactNode;
     renderCreationForm?: () => React.ReactNode;
     emptyMessage?: string;
@@ -40,6 +41,7 @@ export function CollectionList<T extends Collection>({
     onPlayCollection,
     onExportCollection,
     onResetCollectionThumbnail,
+    onEditCollection,
     renderToolbarExtras,
     renderCreationForm,
     emptyMessage = "No collections found."
@@ -270,6 +272,7 @@ export function CollectionList<T extends Collection>({
                     onExport={() => { onExportCollection?.(contextMenu.collectionId); setContextMenu(null); }}
                     onResetThumbnail={() => { onResetCollectionThumbnail?.(contextMenu.collectionId); setContextMenu(null); }}
                     onColorChange={(color) => { onSetCollectionColor?.(contextMenu.collectionId, color); setContextMenu(null); }}
+                    onEditCollection={() => { onEditCollection?.(contextMenu.collectionId); setContextMenu(null); }}
                 />,
                 document.body
             )}

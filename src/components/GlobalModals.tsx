@@ -10,6 +10,7 @@ import { CommandPalette } from './ui/CommandPalette';
 import { ShortcutsModal } from './ui/ShortcutsModal';
 import { CompareModal } from '../features/viewer/components/CompareModal';
 import { DonationModal } from './ui/DonationModal';
+import { CollectionEditorModal } from '../features/collections/components/CollectionEditorModal';
 import { AIImage, AppSettings } from '../types';
 
 interface GlobalModalsProps {
@@ -48,6 +49,9 @@ interface GlobalModalsProps {
     smartCollections?: any[];
     toggleFavorite: (id: string) => void;
     settings: AppSettings;
+    filters?: any;
+    collectionToEditId?: string | null;
+    onSaveCollectionFilters?: (id: string, filters: any) => void;
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
@@ -77,7 +81,10 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     collections,
     smartCollections = [],
     toggleFavorite,
-    settings
+    settings,
+    filters,
+    collectionToEditId,
+    onSaveCollectionFilters
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
@@ -174,6 +181,14 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
             <DonationModal
                 isOpen={modals.donation}
                 onClose={() => closeModal('donation')}
+            />
+
+            <CollectionEditorModal
+                isOpen={modals.collectionEditor}
+                onClose={() => closeModal('collectionEditor')}
+                collection={[...collections, ...smartCollections].find(c => c.id === collectionToEditId) || null}
+                filters={filters}
+                onSave={onSaveCollectionFilters || (() => { })}
             />
         </>
     );

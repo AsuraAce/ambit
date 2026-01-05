@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Check, Filter, Github, FolderOpen, Sliders, Puzzle } from 'lucide-react';
+import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save } from 'lucide-react';
 import { FilterState, AIImage } from '../../../types';
 // import { useLibraryContext } from '../../../hooks/useLibraryContext'; // Removed
 import { useCollections } from '../../../contexts/CollectionContext';
 import { useSearchStore } from '../../../stores/searchStore';
 import { CollectionsSection } from './CollectionsSection';
-import { SmartCollectionsSection } from './SmartCollectionsSection';
+
 import { ParameterSection } from './ParameterSection';
 import { GeneratorSection } from './GeneratorSection';
 import { ArchitectureSection } from './ArchitectureSection';
@@ -28,6 +28,8 @@ interface FilterPanelProps {
     onPlayCollection?: (colId: string) => void;
     onExportCollection?: (colId: string) => void;
     onResetCollectionThumbnail?: (colId: string) => void;
+    onEditCollection?: (colId: string) => void;
+    onUpdateCollectionFilters?: (colId: string, filters: FilterState) => void;
     isVisible?: boolean;
     className?: string;
 }
@@ -48,6 +50,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     onPlayCollection,
     onExportCollection,
     onResetCollectionThumbnail,
+    onEditCollection,
+    onUpdateCollectionFilters,
     isVisible = true,
     className
 }) => {
@@ -116,6 +120,53 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         }
     };
 
+    // Quick Update Logic
+    const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
+    const activeSmartCol = React.useMemo(() =>
+        filters.collectionId ? allCols.find(c => c.id === filters.collectionId && !!c.filters) : null,
+        [filters.collectionId, allCols]
+    );
+
+    const hasUnsavedChanges = React.useMemo(() => {
+        if (!activeSmartCol || !activeSmartCol.filters) return false;
+
+        // Normalization Helper to handle missing keys/defaults
+        const normalize = (f: Partial<FilterState>) => {
+            return {
+                searchQuery: f.searchQuery || '',
+                models: (f.models || []).sort(),
+                tools: (f.tools || []).sort(),
+                loras: (f.loras || []).sort(),
+                embeddings: (f.embeddings || []).sort(),
+                hypernetworks: (f.hypernetworks || []).sort(),
+                dateRange: f.dateRange || 'all',
+                favoritesOnly: !!f.favoritesOnly,
+                // Optional numeric fields - undefined is essentially matching if inactive,
+                // but let's be strict if they are set.
+                minSteps: f.minSteps,
+                maxSteps: f.maxSteps,
+                minCfg: f.minCfg,
+                maxCfg: f.maxCfg,
+                pinnedOnly: !!f.pinnedOnly,
+                // Exclude collectionId
+            };
+        };
+
+        const current = normalize(filters);
+        const saved = normalize(activeSmartCol.filters);
+
+        return JSON.stringify(current) !== JSON.stringify(saved);
+    }, [filters, activeSmartCol]);
+
+    const handleQuickUpdate = () => {
+        if (activeSmartCol && onUpdateCollectionFilters) {
+            onUpdateCollectionFilters(activeSmartCol.id, filters);
+        } else if (activeSmartCol) {
+            // Fallback (shouldn't happen if props are wired)
+            onSaveSmartCollection(activeSmartCol.name, filters);
+        }
+    };
+
     // Global Dirty Check
     const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.pinnedOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
 
@@ -134,14 +185,27 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <Filter className="w-4 h-4 text-sage-600 dark:text-sage-400" />
                     <h2 className="font-bold text-sm text-gray-800 dark:text-gray-200 uppercase tracking-wider">Library</h2>
                 </div>
-                {isDirty && (
-                    <button
-                        onClick={clearAllFilters}
-                        className="text-[10px] font-bold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
-                    >
-                        Reset All
-                    </button>
-                )}
+
+                <div className="flex items-center gap-2">
+                    {hasUnsavedChanges && activeSmartCol && (
+                        <button
+                            onClick={handleQuickUpdate}
+                            className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-sage-500 hover:bg-sage-600 transition-all shadow-lg shadow-sage-500/20 px-3 py-1.5 rounded-full animate-in zoom-in duration-300"
+                            title="Update collection with current filters"
+                        >
+                            <Save className="w-3 h-3" />
+                            Update {activeSmartCol.name}
+                        </button>
+                    )}
+                    {isDirty && !hasUnsavedChanges && (
+                        <button
+                            onClick={clearAllFilters}
+                            className="text-[10px] font-bold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
+                        >
+                            Reset All
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Tab Toolbar */}
@@ -191,7 +255,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {activeTab === 'organize' && (
                         <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
                             <CollectionsSection
-                                collections={collections} filters={filters} setFilters={setFilters}
+                                collections={[...collections, ...smartCollections]}
+                                filters={filters} setFilters={setFilters}
                                 isOpen={expanded.collections} onToggle={() => toggleSection('collections')}
                                 onCreateCollection={onCreateCollection}
                                 onDropOnCollection={onDropOnCollection}
@@ -203,23 +268,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 onPlayCollection={onPlayCollection}
                                 onExportCollection={onExportCollection}
                                 onResetCollectionThumbnail={onResetCollectionThumbnail}
-                            />
-
-                            <SmartCollectionsSection
-                                filters={filters} setFilters={setFilters}
-                                smartCollections={smartCollections}
-                                isOpen={expanded.smart} onToggle={() => toggleSection('smart')}
-                                onSaveSmartCollection={onSaveSmartCollection}
-                                onDeleteSmartCollection={onDeleteSmartCollection}
-                                onDropOnCollection={onDropOnCollection}
-                                onRenameCollection={onRenameCollection}
-                                onToggleArchiveCollection={onToggleArchiveCollection}
-                                onTogglePinCollection={onTogglePinCollection}
-                                onSetCollectionColor={onSetCollectionColor}
-                                onPlayCollection={onPlayCollection}
-                                onExportCollection={onExportCollection}
-                                onResetCollectionThumbnail={onResetCollectionThumbnail}
                                 isDirty={isDirty}
+                                onEditCollection={onEditCollection}
                             />
                         </div>
                     )}

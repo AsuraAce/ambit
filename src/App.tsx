@@ -315,6 +315,7 @@ export default function App() {
                     lastSelectedId={lastSelectedId}
                     handleRemoveFromCollection={handleRemoveFromCollection}
                     handleOpenCollectionModal={handleOpenCollectionModal}
+                    onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
                 />
 
                 {/* Overlays & Portals */}
@@ -383,6 +384,9 @@ export default function App() {
                     smartCollections={smartCollections}
                     toggleFavorite={toggleFavorite}
                     settings={settings}
+                    filters={filters}
+                    collectionToEditId={modals.collectionToEditId}
+                    onSaveCollectionFilters={colOps.updateCollectionFilters}
                 />
 
                 <AnimatePresence>

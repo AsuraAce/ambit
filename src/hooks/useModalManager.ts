@@ -12,7 +12,8 @@ export type ModalKey =
     | 'slideshow'
     | 'donation'
     | 'export'
-    | 'commandPalette';
+    | 'commandPalette'
+    | 'collectionEditor';
 
 export const useModalManager = () => {
     const [modals, setModals] = useState<Record<ModalKey, boolean>>({
@@ -27,7 +28,8 @@ export const useModalManager = () => {
         slideshow: false,
         donation: false,
         export: false,
-        commandPalette: false
+        commandPalette: false,
+        collectionEditor: false
     });
 
     const [pendingViewerDeleteId, setPendingViewerDeleteId] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export const useModalManager = () => {
     const [isPinnedShelfCollapsed, setIsPinnedShelfCollapsed] = useState(true);
     const [addToCollectionMode, setAddToCollectionMode] = useState<'add' | 'move'>('add');
     const [sourceCollectionId, setSourceCollectionId] = useState<string | null>(null);
+    const [collectionToEditId, setCollectionToEditId] = useState<string | null>(null);
 
     const openModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: true }));
     const closeModal = (key: ModalKey) => setModals(p => ({ ...p, [key]: false }));
@@ -53,7 +56,8 @@ export const useModalManager = () => {
         slideshow: false,
         donation: false,
         export: false,
-        commandPalette: false
+        commandPalette: false,
+        collectionEditor: false
     });
 
     const isAnyModalOpen = Object.values(modals).some(v => v);
@@ -80,6 +84,8 @@ export const useModalManager = () => {
         addToCollectionMode,
         setAddToCollectionMode,
         sourceCollectionId,
-        setSourceCollectionId
+        setSourceCollectionId,
+        collectionToEditId,
+        setCollectionToEditId
     };
 };

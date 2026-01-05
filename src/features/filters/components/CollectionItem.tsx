@@ -84,7 +84,20 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                 <div
                     onClick={() => {
                         if (filters.collectionId !== col.id) {
-                            setFilters(prev => ({ ...prev, collectionId: col.id }));
+                            if (col.filters) {
+                                // Smart Collection: Hydrate filters
+                                setFilters(prev => ({
+                                    ...prev,
+                                    ...col.filters, // Apply saved filters
+                                    collectionId: col.id
+                                }));
+                            } else {
+                                // Static Collection: Clear filters but keep ID
+                                setFilters(prev => ({
+                                    ...prev,
+                                    collectionId: col.id
+                                }));
+                            }
                         }
                     }}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id

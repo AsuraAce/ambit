@@ -68,7 +68,9 @@ interface AppLayoutProps {
     setIsSearchFocused: (f: boolean) => void;
     lastSelectedId: string | null;
     handleRemoveFromCollection: () => void;
+
     handleOpenCollectionModal: (mode: 'add' | 'move') => void;
+    onEditCollection: (colId: string) => void;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -83,7 +85,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     activeCollection, activeSmartCollection, handleRangeSelection,
     clearSelection, gridRef, handleLayoutChange,
     isSearchFocused, setIsSearchFocused, lastSelectedId,
-    handleRemoveFromCollection, handleOpenCollectionModal
+
+    handleRemoveFromCollection, handleOpenCollectionModal, onEditCollection
 }) => {
     // Stores
     const settings = useSettingsStore(s => s.settings);
@@ -191,6 +194,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     modals.openModal('export');
                 }}
                 onResetCollectionThumbnail={colOps.resetCollectionThumbnail}
+                onEditCollection={onEditCollection}
+                onUpdateCollectionFilters={colOps.updateCollectionFilters}
                 isVisible={isFilterPanelOpen}
             />
 
