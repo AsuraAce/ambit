@@ -24,6 +24,7 @@ The application uses a **Hybrid Architecture**:
 ### Backend (System Integration)
 *   **Core**: [Tauri v2](https://v2.tauri.app/) (Rust)
 *   **Database**: `@tauri-apps/plugin-sql` (SQLite)
+*   **Validation**: [Zod](https://zod.dev/) (Schema validation for external data)
 *   **Filesystem**: `@tauri-apps/plugin-fs`
 
 ## 3. Data Architecture (The Hybrid Model)
@@ -36,9 +37,14 @@ The application splits its state persistence into two distinct layers based on d
     *   `images`: usage metadata, paths, dimensions, hashes.
     *   `images_fts`: Virtual table for Full-Text Search (FTS5) functionality.
 *   **Location**: Managed by `src/services/db`.
+*   **Configuration** (PRAGMAs):
+    *   `journal_mode=WAL`: Write-Ahead Logging for concurrent reads during writes.
+    *   `cache_size=-64000`: 64MB cache for large libraries.
+    *   `mmap_size=268435456`: 256MB memory-mapped I/O.
 *   **Key Files**:
-    *   `src/services/db/connection.ts`: Database connection and concurrency mutex.
+    *   `src/services/db/connection.ts`: Database connection, PRAGMAs, and concurrency mutex.
     *   `src/services/db/searchRepo.ts`: Complex SQL query generation for filtering.
+    *   `src-tauri/src/db/mod.rs`: Rust-side connection helper with `configure_connection()`.
 
 ### B. The JSON Layer (`library.json`)
 *   **Purpose**: Lightweight, portable state.

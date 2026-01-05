@@ -1,6 +1,6 @@
 use rusqlite::params;
 use tauri::Emitter;
-use super::{resolve_db_path, ProgressPayload};
+use super::{resolve_db_path, configure_connection, ProgressPayload};
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
@@ -8,10 +8,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-        let _ = conn.execute("PRAGMA journal_mode=WAL", []);
-        let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
-        let _ = conn.execute("PRAGMA busy_timeout=60000", []);
+        configure_connection(&conn).map_err(|e| e.to_string())?;
 
         println!("[FacetCache] Starting rebuild...");
         let _ = app.emit("facet_cache_progress", ProgressPayload { current: 0, total: 6, message: "Starting facet cache build...".into() });

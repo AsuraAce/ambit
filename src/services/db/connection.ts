@@ -40,6 +40,10 @@ export const getDb = async () => {
             await db.execute('PRAGMA journal_mode=WAL');
             await db.execute('PRAGMA synchronous=NORMAL');
             await db.execute('PRAGMA busy_timeout=30000'); // Higher timeout for massive batches
+            await db.execute('PRAGMA cache_size=-64000');   // 64MB cache for large libraries
+            await db.execute('PRAGMA temp_store=MEMORY');   // Faster sorting/grouping
+            await db.execute('PRAGMA mmap_size=268435456'); // 256MB memory-mapped I/O
+            console.log('[DB] Applied performance PRAGMAs');
 
             // Initialize Keyword Index (FTS5)
             await db.execute(`

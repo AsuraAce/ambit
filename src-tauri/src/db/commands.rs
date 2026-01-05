@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use rusqlite::params;
-use super::{resolve_db_path, ImageRecord};
+use super::{resolve_db_path, configure_connection, ImageRecord};
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
         
         let image_count: i64 = conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0)).unwrap_or(0);
         let deleted_count: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE is_deleted = 1", [], |r| r.get(0)).unwrap_or(0);
@@ -37,10 +38,7 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
         for attempt in 0..max_retries {
             let result = (|| -> Result<usize, String> {
                 let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-                let _ = conn.execute("PRAGMA journal_mode=WAL", []);
-                let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
-                let _ = conn.execute("PRAGMA busy_timeout=60000", []); // Increased to 60s
+                configure_connection(&conn).map_err(|e| e.to_string())?;
 
                 let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -113,10 +111,7 @@ pub async fn refresh_boards_native(
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-        let _ = conn.execute("PRAGMA journal_mode=WAL", []);
-        let _ = conn.execute("PRAGMA synchronous=NORMAL", []);
-        let _ = conn.execute("PRAGMA busy_timeout=60000", []);
+        configure_connection(&conn).map_err(|e| e.to_string())?;
 
         let images_to_check: Vec<(String, String)> = {
             let mut stmt = conn

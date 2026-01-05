@@ -2,21 +2,28 @@
 
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { FilterState, RecoveryStyle, ImageMetadata, GeneratorTool } from "../types";
+import {
+    GeminiFilterResponseSchema,
+    GeminiMetadataResponseSchema,
+    PromptVariationsSchema,
+    safeParse,
+    isValidGeneratorTool
+} from "../utils/validation";
 
 const getAIClient = (apiKey: string) => {
-  const key = apiKey || process.env.API_KEY;
-  if (!key) throw new Error("API Key is missing. Please add it in Settings > Experiments.");
-  return new GoogleGenAI({ apiKey: key });
+    const key = apiKey || process.env.API_KEY;
+    if (!key) throw new Error("API Key is missing. Please add it in Settings > Experiments.");
+    return new GoogleGenAI({ apiKey: key });
 };
 
 /**
  * Analyzes a prompt and suggests improvements using Gemini 2.5 Flash.
  */
 export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: string): Promise<string> => {
-  try {
-    const ai = getAIClient(apiKey);
-    
-    const prompt = `
+    try {
+        const ai = getAIClient(apiKey);
+
+        const prompt = `
       You are an expert AI Image Generation Prompt Engineer.
       Analyze the following prompt used for an image generation:
       
@@ -27,19 +34,19 @@ export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: str
       Keep it concise.
     `;
 
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 } 
-      }
-    });
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                thinkingConfig: { thinkingBudget: 0 }
+            }
+        });
 
-    return response.text || "No suggestions available.";
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw error;
-  }
+        return response.text || "No suggestions available.";
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        throw error;
+    }
 };
 
 /**
@@ -48,7 +55,7 @@ export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: str
 export const generatePromptVariations = async (currentPrompt: string, apiKey: string): Promise<string[]> => {
     try {
         const ai = getAIClient(apiKey);
-        
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: `Take the following image generation prompt and create 3 distinct variations of it.
@@ -70,7 +77,8 @@ export const generatePromptVariations = async (currentPrompt: string, apiKey: st
         });
 
         if (response.text) {
-            return JSON.parse(response.text) as string[];
+            const parsed = safeParse(PromptVariationsSchema, JSON.parse(response.text));
+            return parsed || [];
         }
         return [];
     } catch (error) {
@@ -83,16 +91,16 @@ export const generatePromptVariations = async (currentPrompt: string, apiKey: st
  * Generates a creative title for an image based on its prompt.
  */
 export const generateTitleFromPrompt = async (promptText: string, apiKey: string): Promise<string> => {
-  try {
-    const ai = getAIClient(apiKey);
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Generate a short, 3-5 word artistic title for an image generated with this prompt: "${promptText}". Return ONLY the title, no quotes.`,
-    });
-    return response.text?.trim() || "Untitled Creation";
-  } catch (error) {
-    return "Untitled";
-  }
+    try {
+        const ai = getAIClient(apiKey);
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Generate a short, 3-5 word artistic title for an image generated with this prompt: "${promptText}". Return ONLY the title, no quotes.`,
+        });
+        return response.text?.trim() || "Untitled Creation";
+    } catch (error) {
+        return "Untitled";
+    }
 };
 
 /**
@@ -101,7 +109,7 @@ export const generateTitleFromPrompt = async (promptText: string, apiKey: string
 export const generateFiltersFromQuery = async (query: string, apiKey: string): Promise<Partial<FilterState>> => {
     try {
         const ai = getAIClient(apiKey);
-        
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: `Translate this user search query into a JSON filter object for an image library: "${query}".
@@ -136,7 +144,10 @@ export const generateFiltersFromQuery = async (query: string, apiKey: string): P
         });
 
         if (response.text) {
-            return JSON.parse(response.text) as Partial<FilterState>;
+            const parsed = safeParse(GeminiFilterResponseSchema, JSON.parse(response.text));
+            if (parsed) {
+                return parsed as Partial<FilterState>;
+            }
         }
         return { searchQuery: query };
     } catch (error) {
@@ -149,8 +160,8 @@ export const generateFiltersFromQuery = async (query: string, apiKey: string): P
  * Reverse engineers a prompt from an image using Gemini Vision.
  */
 export const recoverImageMetadata = async (
-    base64Image: string, 
-    style: RecoveryStyle, 
+    base64Image: string,
+    style: RecoveryStyle,
     apiKey: string
 ): Promise<Partial<ImageMetadata>> => {
     const ai = getAIClient(apiKey);
@@ -213,21 +224,27 @@ export const recoverImageMetadata = async (
     });
 
     if (response.text) {
-        const data = JSON.parse(response.text);
+        const rawData = JSON.parse(response.text);
+        const validated = safeParse(GeminiMetadataResponseSchema, rawData);
+
+        if (!validated) {
+            throw new Error("Failed to validate Gemini response");
+        }
+
         // Map generic tool guess to our strict enums if possible, or default to UNKNOWN
-        // Ensure we don't accidentally set Midjourney if the AI Hallucinated it
-        const tool = data.tool && Object.values(GeneratorTool).includes(data.tool) ? data.tool : GeneratorTool.UNKNOWN;
-        
+        const tool = isValidGeneratorTool(validated.tool) ? validated.tool : GeneratorTool.UNKNOWN;
+
         return {
-            ...data,
+            positivePrompt: validated.positivePrompt,
+            negativePrompt: validated.negativePrompt,
             tool,
-            model: data.model === 'Unknown' ? 'Unknown' : (data.model || 'Unknown'),
+            model: validated.model === 'Unknown' ? 'Unknown' : (validated.model || 'Unknown'),
             // Enforce strict zeros if Gemini hallucinated them despite instructions
             steps: 0,
             cfg: 0,
             seed: 0
         };
     }
-    
+
     throw new Error("Failed to generate metadata");
 };

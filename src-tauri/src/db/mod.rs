@@ -1,9 +1,33 @@
 use std::path::PathBuf;
 use tauri::Manager;
+use rusqlite::Connection;
 
 pub mod migrations;
 pub mod commands;
 pub mod facets;
+
+/// Apply performance-optimized PRAGMAs to a SQLite connection.
+/// Should be called immediately after opening any rusqlite connection.
+/// 
+/// Configuration:
+/// - WAL mode: Allows concurrent reads during writes
+/// - synchronous=NORMAL: Good balance of safety vs speed
+/// - busy_timeout=60000: Wait up to 60s for locks
+/// - cache_size=-64000: 64MB cache for large libraries
+/// - temp_store=MEMORY: Faster sorting and GROUP BY operations
+/// - mmap_size=268435456: 256MB memory-mapped I/O
+pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch("
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA busy_timeout = 60000;
+        PRAGMA cache_size = -64000;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA mmap_size = 268435456;
+    ")?;
+    log::info!("[DB] Applied performance PRAGMAs to rusqlite connection");
+    Ok(())
+}
 
 #[derive(serde::Deserialize, Clone)]
 pub struct ImageRecord {
