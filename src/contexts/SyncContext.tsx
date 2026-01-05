@@ -11,7 +11,7 @@ interface SyncContextType {
     syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
     syncState: {
         status: 'idle' | 'syncing' | 'complete' | 'error';
-        // progress removed - use useLibraryStore
+        progress: { current: number; total: number; message?: string };
     };
     isLiveSyncing: boolean;
     setIsLiveSyncing: (val: boolean) => void;
@@ -82,7 +82,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
-                setSyncProgress(prev => ({ ...prev, message: 'Synchronizing boards...' }));
+                setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' });
                 // Note: setCollections is still from CollectionContext (Phase 3)
                 setCollections(prev => {
                     const next = [...prev];
@@ -131,7 +131,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                 try {
                     const { rebuildFacetCache } = await import('../services/db/imageRepo');
                     await rebuildFacetCache();
-                    setSyncProgress(prev => ({ ...prev, message: undefined }));
+                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
                 } catch (e) {
                     console.error('[Sync] Failed to rebuild facet cache after sync', e);
                 }
@@ -201,7 +201,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             startInvokeSync,
             cancelSync,
             syncStatus,
-            syncState: { status: syncStatus },
+            syncState: { status: syncStatus, progress: syncProgress },
             isLiveSyncing,
             setIsLiveSyncing,
             cleanLibrary

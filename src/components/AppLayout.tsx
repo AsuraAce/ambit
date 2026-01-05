@@ -14,6 +14,8 @@ import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
 import { Import, Search } from 'lucide-react';
+import { useSearchStore } from '../stores/searchStore';
+import { useCollections } from '../contexts/CollectionContext';
 
 interface AppLayoutProps {
     // Sidebar Props
@@ -76,16 +78,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     collections, smartCollections, filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
     onRefreshCollections, colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
-    sortOption, setSortOption, totalImages, scopeTotal, scopeName,
-    isFiltering, fileOps, clearAllFilters, scrollContainerRef,
-    images, handlers, setViewingImageId, settings, privacyEnabled,
-    toggleFavorite, actions, availableTags, selectedIds,
+    sortOption, setSortOption, scopeTotal, scopeName,
+    fileOps, scrollContainerRef,
+    handlers, setViewingImageId, settings, privacyEnabled,
+    actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
     activeCollection, activeSmartCollection, handleRangeSelection,
-    clearSelection, gridRef, loadMoreImages, handleLayoutChange,
+    clearSelection, gridRef, handleLayoutChange,
     isSearchFocused, setIsSearchFocused, lastSelectedId,
     handleRemoveFromCollection, handleOpenCollectionModal
 }) => {
+    // Store Access
+    const {
+        images,
+        totalImages,
+        isFiltering,
+        clearAllFilters,
+        toggleFavorite: storeToggleFavorite,
+        // loadMoreImages not available in store, defined locally below
+        // store.fetchData(true) is equivalent to loadMoreImages
+    } = useSearchStore();
+
+    // Derived loadMore
+    const loadMoreImages = React.useCallback(() => {
+        useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]);
+    }, [collections, smartCollections]);
+
+    // Override props with store values
+    const toggleFavorite = storeToggleFavorite;
+
     return (
         <div className="flex flex-1 overflow-hidden p-3 gap-3">
             <AppSidebar

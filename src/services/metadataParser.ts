@@ -71,7 +71,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
     // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
     if (info.metadata) {
         return {
-            metadata: info.metadata,
+            metadata: info.metadata as any,
             extra: {},
             isIntermediate: info.metadata.isIntermediate,
             width: info.width,

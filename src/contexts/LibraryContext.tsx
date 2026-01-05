@@ -38,7 +38,7 @@ export interface LibraryContextType {
   // syncProgress removed
   syncState: {
     status: 'idle' | 'syncing' | 'complete' | 'error';
-    // progress removed
+    progress: { current: number; total: number; message?: string };
   };
   isFiltering: boolean;
   isLoaded: boolean;
@@ -46,6 +46,9 @@ export interface LibraryContextType {
   // Transient state moved to useLibraryStore
   // isImporting, isLiveWatching, etc. (Wait, isLiveWatching was already in Store but exposed here?)
 
+  isImporting: boolean;
+  isRegeneratingThumbnails: boolean;
+  isResolvingModels: boolean;
   isLiveSyncing: boolean;
   // isLiveWatching should be removed too? It was migrated earlier.
   // Actually isLiveWatching was used in AppHeader from LibraryContext earlier.
@@ -157,10 +160,12 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     ...collectionCtx,
     ...searchCtx,
     ...syncCtx,
+    ...syncCtx,
     ...watcherCtx,
-    syncState: {
-      status: syncCtx.syncStatus
-    },
+    isImporting,
+    isRegeneratingThumbnails,
+    isResolvingModels,
+    syncState: syncCtx.syncState,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
   }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx]);
 

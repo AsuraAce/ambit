@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { Layers, Zap, RefreshCw, Check, Image } from 'lucide-react';
-import { useSearch } from '../../../contexts/SearchContext';
+import { useLibrary } from '../../../contexts/LibraryContext';
 import { AIImage } from '../../../types';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
@@ -52,7 +52,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         );
     }, [selectedIds, onItemClick, privacyEnabled, maskedKeywords]);
 
-    const { isRegeneratingThumbnails } = useSearch();
+    const { isRegeneratingThumbnails } = useLibrary();
 
     const actions = (
         <div className="flex flex-wrap items-center gap-3">
