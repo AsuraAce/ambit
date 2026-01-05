@@ -8,6 +8,7 @@ interface GeneratorSectionProps {
     tools: string[];
     isOpen: boolean;
     onToggle: () => void;
+    isLoading?: boolean;
 }
 
 export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
@@ -15,7 +16,8 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
     setFilters,
     tools,
     isOpen,
-    onToggle
+    onToggle,
+    isLoading
 }) => {
     const toggleTool = (tool: GeneratorTool) => {
         setFilters(prev => {
@@ -38,8 +40,13 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
                             isSelected={filters.tools.includes(tool as GeneratorTool)}
                             onClick={() => toggleTool(tool as GeneratorTool)}
                         />
-                    )) : (
-                        <div className="text-xs text-gray-400 text-center py-2 italic">No specific tools found</div>
+                    )) : isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-4 space-y-3 border border-dashed border-gray-200 dark:border-white/10 rounded-xl">
+                            <div className="w-4 h-4 border-2 border-sage-500/30 border-t-sage-500 rounded-full animate-spin" />
+                            <span className="text-[10px] text-gray-400 font-medium animate-pulse">Loading Tools...</span>
+                        </div>
+                    ) : (
+                        <div className="text-xs text-gray-400 text-center py-2 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl">No specific tools found</div>
                     )}
                 </div>
             )}

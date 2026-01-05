@@ -197,6 +197,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 filters={filters} setFilters={setFilters}
                                 tools={facets.tools}
                                 isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
+                                isLoading={isFacetsLoading}
                             />
                         </div>
                     )}
