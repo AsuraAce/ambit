@@ -18,7 +18,6 @@ The application uses a **Hybrid Architecture**:
 *   **Styling**: 
     *   [Tailwind CSS](https://tailwindcss.com/) (Utility-first styling)
     *   `clsx` + `tailwind-merge` (Class composition)
-    *   [Radix UI](https://www.radix-ui.com/) (Headless accessible primitives)
 *   **Routing**: React Router v7
 
 ### Backend (System Integration)
