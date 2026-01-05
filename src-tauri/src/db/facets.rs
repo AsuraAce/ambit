@@ -144,7 +144,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             SELECT 
                 json_extract(metadata_json, '$.modelHash') as mh, 
                 json_extract(metadata_json, '$.model') as mn,
-                COUNT(DISTINCT id) as cnt
+                COUNT(DISTINCT id) as cnt,
+                MAX(timestamp) as last_used,
+                MIN(timestamp) as first_used
             FROM images 
             WHERE is_deleted = 0
             GROUP BY mh, mn",
@@ -152,10 +154,12 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     ).map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
 
     conn.execute(
-        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at)
             SELECT 'checkpoint', m.name, m.hash, 
                 COALESCE(SUM(cc.cnt), 0), 
-                m.thumbnail_path, m.preview_url
+                m.thumbnail_path, m.preview_url,
+                MAX(cc.last_used),
+                MIN(cc.first_used)
             FROM (
                 SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
                 FROM models 
@@ -171,8 +175,8 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
-            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt)
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
+            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(cc.last_used), MIN(cc.first_used)
             FROM cp_counts cc
             WHERE NOT EXISTS (
                 SELECT 1 FROM facet_cache fc 
@@ -202,7 +206,9 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                         WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
                         ELSE j.value 
                     END AS clean_ref,
-                    COUNT(DISTINCT i.id) AS cnt
+                    COUNT(DISTINCT i.id) AS cnt,
+                    MAX(i.timestamp) as last_used,
+                    MIN(i.timestamp) as first_used
                 FROM images i, json_each(i.metadata_json, '$.{}') j
                 WHERE i.is_deleted = 0
                 GROUP BY j.value",
@@ -214,10 +220,12 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
     // Step 2: Insert matched facets
     conn.execute(
         &format!(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url)
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at)
                 SELECT '{}', m.name, m.hash,
                     COALESCE(SUM(rc.cnt), 0),
-                    m.thumbnail_path, m.preview_url
+                    m.thumbnail_path, m.preview_url,
+                    MAX(rc.last_used),
+                    MIN(rc.first_used)
                 FROM (
                     SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
                     FROM models 
@@ -240,8 +248,8 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
     // Step 3: Insert orphans
     conn.execute(
         &format!(
-            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
-                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, SUM(rc.cnt)
+            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
+                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, SUM(rc.cnt), MAX(rc.last_used), MIN(rc.first_used)
                 FROM {} rc
                 WHERE NOT EXISTS (
                     SELECT 1 FROM facet_cache fc 

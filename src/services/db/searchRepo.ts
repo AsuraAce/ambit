@@ -13,10 +13,10 @@ export interface LibraryStats {
 }
 
 export interface Facets {
-    checkpoints: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    loras: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    embeddings: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    hypernetworks: { name: string; count: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    checkpoints: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    loras: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    embeddings: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    hypernetworks: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
     tools: string[];
 }
 
@@ -211,7 +211,7 @@ export const getFacets = async (
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
-            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url
+            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at
             FROM facet_cache
             WHERE facet_type IN (${placeholders})
             ORDER BY count DESC, resource_name ASC
@@ -223,6 +223,8 @@ export const getFacets = async (
                 name: row.resource_name || 'Unknown',
                 hash: row.resource_hash,
                 count: row.count || 0,
+                lastUsedAt: row.last_used_at,
+                createdAt: row.created_at,
                 thumbnailPath: row.thumbnail_path,
                 previewUrl: row.preview_url
             };

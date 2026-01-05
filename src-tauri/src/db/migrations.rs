@@ -144,5 +144,13 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11]
+    let migration12 = Migration {
+        version: 12,
+        description: "add_sorting_fields_to_facet_cache",
+        sql: "ALTER TABLE facet_cache ADD COLUMN last_used_at INTEGER;
+              ALTER TABLE facet_cache ADD COLUMN created_at INTEGER;",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12]
 }

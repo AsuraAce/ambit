@@ -146,6 +146,12 @@ export interface SmartCollection extends Collection {
 
 export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';
 
+export type FacetSortOption =
+  | 'count_desc' | 'count_asc'
+  | 'name_asc' | 'name_desc'
+  | 'recent_desc' | 'recent_asc'
+  | 'added_desc' | 'added_asc';
+
 export interface MonitoredFolder {
   id: string;
   path: string;
@@ -179,6 +185,7 @@ export interface AppSettings {
   libraryShowIntermediates?: boolean; // Persisted view preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
+  resourceSortOptions?: Record<string, FacetSortOption>; // Persisted sort option per resource section
 }
 
 export interface ToastMessage {
