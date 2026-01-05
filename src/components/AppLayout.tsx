@@ -15,17 +15,15 @@ import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
 import { Import, Search } from 'lucide-react';
 import { useSearchStore } from '../stores/searchStore';
-import { useCollections } from '../contexts/CollectionContext';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useCollectionStore } from '../stores/collectionStore';
 
 interface AppLayoutProps {
     // Sidebar Props
-    collections: any[];
-    smartCollections: any[];
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
     isFilterPanelOpen: boolean;
     setIsFilterPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    onRefreshCollections: () => void;
     colOps: any;
     setExportIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     modals: any;
@@ -47,12 +45,11 @@ interface AppLayoutProps {
     clearAllFilters: () => void;
 
     // Grid/View Props
+    // Grid/View Props
     scrollContainerRef: React.RefObject<HTMLDivElement | null>;
     images: AIImage[];
     handlers: any;
     setViewingImageId: (id: string | null) => void;
-    settings: AppSettings;
-    privacyEnabled: boolean;
     toggleFavorite: (id: string) => void;
     actions: any;
     availableTags: string[];
@@ -75,12 +72,12 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
-    collections, smartCollections, filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
-    onRefreshCollections, colOps, setExportIds, modals, addToast,
+    filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
+    colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, scopeTotal, scopeName,
     fileOps, scrollContainerRef,
-    handlers, setViewingImageId, settings, privacyEnabled,
+    handlers, setViewingImageId,
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
     activeCollection, activeSmartCollection, handleRangeSelection,
@@ -88,6 +85,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     isSearchFocused, setIsSearchFocused, lastSelectedId,
     handleRemoveFromCollection, handleOpenCollectionModal
 }) => {
+    // Stores
+    const { settings, privacyEnabled } = useSettingsStore();
+    const { collections: allCollections, refreshCollections: onRefreshCollections } = useCollectionStore();
+
+    // Derived
+    const collections = allCollections.filter(c => !c.filters);
+    const smartCollections = allCollections.filter(c => !!c.filters);
     // Store Access
     const {
         images,

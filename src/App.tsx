@@ -248,13 +248,11 @@ export default function App() {
                 <TitleBar />
 
                 <AppLayout
-                    collections={collections}
-                    smartCollections={smartCollections}
+
                     filters={filters}
                     setFilters={setFilters}
                     isFilterPanelOpen={isFilterPanelOpen}
                     setIsFilterPanelOpen={setIsFilterPanelOpen}
-                    onRefreshCollections={refreshCollections}
                     colOps={colOps}
                     setExportIds={setExportIds}
                     modals={modals}
@@ -276,8 +274,7 @@ export default function App() {
                     images={images}
                     handlers={{ ...handlers, setImages, setContextMenu }}
                     setViewingImageId={setViewingImageId}
-                    settings={settings}
-                    privacyEnabled={privacyEnabled}
+
                     toggleFavorite={toggleFavorite}
                     actions={actions}
                     availableTags={availableTags}

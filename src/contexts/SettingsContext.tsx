@@ -1,70 +1,38 @@
 import * as React from 'react';
-import { createContext, useState, useContext, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
 import { AppSettings } from '../types';
-import { appRepository } from '../services/repository';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface SettingsContextType {
     settings: AppSettings;
-    setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+    setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
     settingsRef: React.MutableRefObject<AppSettings>;
     privacyEnabled: boolean;
-    setPrivacyEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+    setPrivacyEnabled: (enabled: boolean) => void;
     isLoaded: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [privacyEnabled, setPrivacyEnabled] = useState(true);
-    const [settings, setSettings] = useState<AppSettings>({
-        theme: 'dark',
-        thumbnailSize: 200,
-        confirmDelete: true,
-        defaultTheaterMode: false,
-        monitoredFolders: [],
-        maskedKeywords: [],
-        maskingMode: 'blur',
-        enableAI: false,
-        hasCompletedOnboarding: false,
-        syncBoardsToCollections: false,
-        importOrphans: true,
-        starredAs: 'favorite',
-        resourceViewModes: {}
-    });
+    // Connect to Store
+    const settings = useSettingsStore(s => s.settings);
+    const isLoaded = useSettingsStore(s => s.isLoaded);
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const setSettings = useSettingsStore(s => s.setSettings);
+    const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
+    const initialize = useSettingsStore(s => s.initialize);
 
+    // Initialize Store
+    useEffect(() => {
+        initialize();
+    }, [initialize]);
+
+    // Maintain ref for backward compat
     const settingsRef = useRef<AppSettings>(settings);
     useEffect(() => { settingsRef.current = settings; }, [settings]);
 
-    // Initial load
-    useEffect(() => {
-        const loadSettings = async () => {
-            const state = await appRepository.load();
-            if (state.settings) {
-                // Ensure API key from env takes precedence if present
-                const envKey = (process.env as any).API_KEY;
-                const mergedSettings = { ...state.settings };
-                if (envKey) mergedSettings.googleGeminiApiKey = envKey;
-                setSettings(mergedSettings);
-            }
-            setIsLoaded(true);
-        };
-        loadSettings();
-    }, []);
-
-    // Save settings when they change (with debounce logic integrated into repository or here)
-    // Actually, let's keep the debounce here to match original logic
-    useEffect(() => {
-        if (!isLoaded) return;
-        const timeout = setTimeout(async () => {
-            const state = await appRepository.load();
-            await appRepository.save({
-                ...state,
-                settings
-            });
-        }, 1000);
-        return () => clearTimeout(timeout);
-    }, [settings, isLoaded]);
+    // Note: Auto-save logic is now inside the Store.
 
     return (
         <SettingsContext.Provider value={{
