@@ -5,6 +5,9 @@ use rusqlite::Connection;
 pub mod migrations;
 pub mod commands;
 pub mod facets;
+pub mod error;
+
+pub use error::{DbError, DbResult};
 
 /// Apply performance-optimized PRAGMAs to a SQLite connection.
 /// Should be called immediately after opening any rusqlite connection.

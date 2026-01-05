@@ -115,6 +115,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-sql",
  "tauri-plugin-window-state",
+ "thiserror 1.0.69",
  "tokio",
 ]
 

@@ -24,6 +24,7 @@ The application uses a **Hybrid Architecture**:
 *   **Core**: [Tauri v2](https://v2.tauri.app/) (Rust)
 *   **Database**: `@tauri-apps/plugin-sql` (SQLite)
 *   **Validation**: [Zod](https://zod.dev/) (Schema validation for external data)
+*   **Error Handling**: `thiserror` (Rust error enums in `src-tauri/src/db/error.rs`)
 *   **Filesystem**: `@tauri-apps/plugin-fs`
 
 ## 3. Data Architecture (The Hybrid Model)
