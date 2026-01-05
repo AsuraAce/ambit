@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../bindings';
+import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
@@ -27,7 +28,7 @@ export const insertImage = async (image: AIImage) => {
             originalMetadataJson: image.originalMetadata ? JSON.stringify(image.originalMetadata) : null
         };
 
-        await invoke('save_images_batch', { images: [record] });
+        await commands.saveImagesBatch([record]);
 
         // Junction Table Sync
         if (image.boardId) {
@@ -68,7 +69,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         for (let i = 0; i < records.length; i += CHUNK_SIZE) {
             const chunk = records.slice(i, i + CHUNK_SIZE);
             try {
-                await invoke('save_images_batch', { images: chunk });
+                await unwrap(commands.saveImagesBatch(chunk));
             } catch (e) {
                 console.error('[DB] Rust batch insert failed', e);
                 throw e;
@@ -89,7 +90,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
  */
 export const rebuildFacetCache = async (): Promise<number> => {
     try {
-        const count = await invoke<number>('rebuild_facet_cache');
+        const count = await unwrap(commands.rebuildFacetCache());
         console.log(`[DB] Rebuilt facet cache with ${count} entries`);
         return count;
     } catch (e) {

@@ -2,9 +2,20 @@ use std::collections::HashMap;
 use rusqlite::params;
 use super::{resolve_db_path, configure_connection, ImageRecord};
 
-// Note: get_db_diagnostics returns serde_json::Value which isn't supported by Specta
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DbDiagnostics {
+    pub db_path: String,
+    pub image_count: i64,
+    pub deleted_count: i64,
+    pub model_count: i64,
+    pub cache_count: i64,
+    pub tool_null_count: i64,
+}
+
 #[tauri::command(rename_all = "camelCase")]
-pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+#[specta::specta]
+pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<DbDiagnostics, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -16,14 +27,14 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Val
         let cache_count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |r| r.get(0)).unwrap_or(0);
         let tool_null_count: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL", [], |r| r.get(0)).unwrap_or(0);
 
-        Ok(serde_json::json!({
-            "dbPath": db_path.to_string_lossy(),
-            "imageCount": image_count,
-            "deletedCount": deleted_count,
-            "modelCount": model_count,
-            "cacheCount": cache_count,
-            "toolNullCount": tool_null_count,
-        }))
+        Ok(DbDiagnostics {
+            db_path: db_path.to_string_lossy().to_string(),
+            image_count,
+            deleted_count,
+            model_count,
+            cache_count,
+            tool_null_count,
+        })
     }).await.map_err(|e| e.to_string())?
 }
 

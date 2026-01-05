@@ -1,5 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { commands, ScanResult } from '../../bindings';
+import { unwrap } from '../../utils/spectaUtils';
 
 export const scanForOrphans = async (
     rootPath: string,
@@ -37,7 +39,7 @@ export const scanForOrphans = async (
 
     let allFiles: string[] = [];
     try {
-        allFiles = await invoke('list_invokeai_images', { path: imagesRoot });
+        allFiles = await unwrap(commands.listInvokeaiImages(imagesRoot));
     } catch (e) {
         return 0;
     }
@@ -64,12 +66,7 @@ export const scanForOrphans = async (
         });
 
         try {
-            const scanResults: any[] = await invoke('scan_images_bulk', {
-                paths: chunkAbsPaths,
-                thumbnailDir: null,
-                skipThumbnail: true,
-                extractWorkflow: false
-            });
+            const scanResults = await unwrap(commands.scanImagesBulk(chunkAbsPaths, null, true, false, null));
 
             const batchToInsert: any[] = [];
             for (let j = 0; j < chunk.length; j++) {
@@ -77,8 +74,9 @@ export const scanForOrphans = async (
                 const absPath = chunkAbsPaths[j];
                 const relName = chunk[j];
 
-                if (!meta || meta.failed || meta.error) continue;
-                if (!options.importIntermediates && meta.isIntermediate) continue;
+                // In new pipeline, errors return a zeroed ScanResult with no metadata
+                if (!meta || (meta.width === 0 && !meta.metadata)) continue;
+                if (!options.importIntermediates && meta.metadata?.isIntermediate) continue;
                 if (ambitExistingIds.has(absPath)) continue;
 
                 const finalMeta: any = {
@@ -96,7 +94,7 @@ export const scanForOrphans = async (
                     controlNets: meta.metadata?.controlNets || [],
                     workflowJson: meta.metadata?.workflowJson,
                     rawParameters: meta.metadata?.rawParameters,
-                    isIntermediate: !!meta.isIntermediate || !meta.metadata
+                    isIntermediate: !!meta.metadata?.isIntermediate || !meta.metadata
                 };
 
                 const newImg: any = {

@@ -6,14 +6,14 @@ use tauri::Emitter;
 
 pub struct WatcherState {
     pub watcher: Mutex<Option<RecommendedWatcher>>,
-    pub last_event: Mutex<Instant>,
+    pub _last_event: Mutex<Instant>,
 }
 
 impl Default for WatcherState {
     fn default() -> Self {
         Self {
             watcher: Mutex::new(None),
-            last_event: Mutex::new(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()),
+            _last_event: Mutex::new(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()),
         }
     }
 }

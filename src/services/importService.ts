@@ -1,7 +1,9 @@
 import { AIImage, GeneratorTool } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { insertImage } from './db/imageRepo';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { commands } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
 
 export interface ImportStats {
@@ -98,7 +100,7 @@ export const processNativePaths = async (
         const p = paths[i];
         if (onProgress) onProgress(i, paths.length, `Scanning: ${p.split(/[\\/]/).pop() || p}`);
         try {
-            const files = await invoke('scan_directory_recursive', { path: p }) as string[];
+            const files = await unwrap(commands.scanDirectoryRecursive(p));
             if (files && files.length > 0) {
                 allPaths.push(...files);
             } else {
@@ -219,7 +221,7 @@ export const processNativePaths = async (
 
 export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: number; updated: number }> => {
     try {
-        const result = await invoke<{ found: number; updated: number }>('scan_model_thumbnails', { paths });
+        const result = await unwrap(commands.scanModelThumbnails(paths));
         return result;
     } catch (e) {
         console.error('Failed to scan resource thumbnails', e);

@@ -21,29 +21,40 @@ pub struct FolderStats {
     pub subfolders: std::collections::HashMap<String, usize>,
 }
 
-// Note: scan_image returns serde_json::Value which isn't supported by Specta
+#[derive(serde::Serialize, specta::Type)]
+pub struct ScanResult {
+    pub width: u32,
+    pub height: u32,
+    pub size: u64,
+    pub modified: u64,
+    pub thumbnail: String,
+    pub chunks: std::collections::HashMap<String, String>,
+    pub metadata: Option<metadata::ImageMetadata>,
+}
+
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn scan_image(
     path: String,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
     extract_workflow: bool,
     default_tool: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<ScanResult, String> {
     scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow, default_tool)
 }
 
-// Note: scan_images_bulk returns serde_json::Value which isn't supported by Specta
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn scan_images_bulk(
     paths: Vec<String>,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
     extract_workflow: bool,
     default_tool: Option<String>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<ScanResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let results: Vec<serde_json::Value> = paths
+        let results: Vec<ScanResult> = paths
             .par_iter()
             .map(|path| {
                 scan_image_internal(
@@ -53,7 +64,16 @@ pub async fn scan_images_bulk(
                     extract_workflow,
                     default_tool.clone(),
                 )
-                .unwrap_or(serde_json::json!({ "error": "Failed to scan" }))
+                // Use a default error result if scan fails
+                .unwrap_or_else(|_| ScanResult {
+                    width: 0,
+                    height: 0,
+                    size: 0,
+                    modified: 0,
+                    thumbnail: String::new(),
+                    chunks: std::collections::HashMap::new(),
+                    metadata: None,
+                })
             })
             .collect();
         Ok(results)
@@ -164,9 +184,9 @@ pub async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, Strin
     Ok(missing_paths)
 }
 
-// Note: audit_invokeai_folder returns serde_json::Value which isn't supported by Specta
 #[tauri::command]
-pub async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
+#[specta::specta]
+pub async fn audit_invokeai_folder(path: String) -> Result<FolderStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut stats = FolderStats::default();
         let images_path = Path::new(&path).join("outputs").join("images");
@@ -175,7 +195,7 @@ pub async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, St
         if images_path.exists() && images_path.is_dir() {
             scan_dir_recursive(&path.as_ref(), &images_path, &mut stats);
         }
-        Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({ "error": "Failed to serialize stats" })))
+        Ok(stats)
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -414,15 +434,10 @@ pub fn scan_image_internal(
     skip_thumbnail: bool,
     extract_workflow: bool,
     default_tool: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<ScanResult, String> {
     let path_buf = PathBuf::from(&path);
     if path_buf.is_dir() {
-        return Ok(serde_json::json!({
-            "id": path,
-            "failed": true,
-            "error": "path is a directory",
-            "is_directory": true
-        }));
+        return Err("Path is a directory".to_string());
     }
 
     let metadata = std::fs::metadata(&path_buf).map_err(|e| e.to_string())?;
@@ -551,27 +566,27 @@ pub fn scan_image_internal(
         found_metadata = true;
     }
 
-    let metadata_value = if found_metadata {
-        serde_json::to_value(&parsed_metadata).unwrap_or(serde_json::Value::Null)
-    } else {
-        serde_json::Value::Null
-    };
-
     let chunks_to_return = if parsed_metadata.workflow_json.is_some() {
         std::collections::HashMap::new()
     } else {
         chunks
     };
 
-    Ok(serde_json::json!({
-        "width": dimensions.0,
-        "height": dimensions.1,
-        "size": size,
-        "modified": modified,
-        "thumbnail": if generated_thumbnail_path.is_empty() { String::new() } else { generated_thumbnail_path },
-        "chunks": chunks_to_return,
-        "metadata": metadata_value
-    }))
+    let metadata_obj = if found_metadata {
+        Some(parsed_metadata)
+    } else {
+        None
+    };
+
+    Ok(ScanResult {
+        width: dimensions.0,
+        height: dimensions.1,
+        size,
+        modified,
+        thumbnail: if generated_thumbnail_path.is_empty() { String::new() } else { generated_thumbnail_path },
+        chunks: chunks_to_return,
+        metadata: metadata_obj
+    })
 }
 
 #[cfg(test)]
@@ -646,9 +661,8 @@ mod tests {
         let result = scan_image_internal(test_path.to_string(), None, true, true, None).unwrap();
         let _ = std::fs::remove_file(test_path);
 
-        let metadata = result.get("metadata").expect("Metadata should exist");
-        assert!(!metadata.is_null(), "Metadata should not be null");
-        assert_eq!(metadata["steps"], 20);
-        assert_eq!(metadata["model"], "test-model");
+        let metadata = result.metadata.expect("Metadata should exist");
+        assert_eq!(metadata.steps, 20);
+        assert_eq!(metadata.model, "test-model");
     }
 }

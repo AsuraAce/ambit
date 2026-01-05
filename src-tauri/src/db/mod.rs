@@ -7,7 +7,7 @@ pub mod commands;
 pub mod facets;
 pub mod error;
 
-pub use error::{DbError, DbResult};
+pub use crate::db::error::DbError;
 
 /// Apply performance-optimized PRAGMAs to a SQLite connection.
 /// Should be called immediately after opening any rusqlite connection.

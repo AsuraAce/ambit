@@ -33,5 +33,4 @@ impl From<DbError> for String {
     }
 }
 
-/// Result type alias for database operations.
-pub type DbResult<T> = Result<T, DbError>;
+// pub type DbResult<T> = Result<T, DbError>;

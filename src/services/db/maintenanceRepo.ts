@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../../bindings';
+import { unwrap } from '../../utils/spectaUtils';
 import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
@@ -37,7 +38,7 @@ export const verifyLibraryIntegrity = async (onProgress?: (processed: number, to
         const paths = chunk.map(img => img.path);
 
         try {
-            const missingPaths = await invoke<string[]>('verify_image_paths', { paths });
+            const missingPaths = await unwrap(commands.verifyImagePaths(paths));
             const missingChunk = chunk.filter(img => missingPaths.includes(img.path));
             const missingChunkIds = missingChunk.map(img => img.id);
 

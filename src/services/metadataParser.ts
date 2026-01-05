@@ -1,5 +1,6 @@
 import { ImageMetadata, GeneratorTool, ParseResult, AIImage } from '../types';
-import { invoke } from '@tauri-apps/api/core';
+import { commands, ScanResult } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
 import { getFilename } from '../utils/pathUtils';
 
 // Initializing the worker
@@ -51,9 +52,11 @@ const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool
 
 // -- Internal Helpers --
 
-const processScanResult = async (info: any, path: string, defaultTool?: GeneratorTool): Promise<ParseResult> => {
-    if (info.failed || info.error) {
-        if (!info.is_directory) console.error(`Scan failed for ${path}:`, info.error);
+const processScanResult = async (info: ScanResult, path: string, defaultTool?: GeneratorTool): Promise<ParseResult> => {
+    // Note: Rust side now returns Result<ScanResult>, so for single scans errors are thrown.
+    // For bulk scans, errors return a zeroed ScanResult.
+    if (info.width === 0 && info.height === 0 && !info.metadata) {
+        if (!process.env.TEST) console.warn(`Scan returned empty result for ${path}`);
         return {
             metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
             extra: {},
@@ -130,7 +133,7 @@ const processScanResult = async (info: any, path: string, defaultTool?: Generato
 
 export const scanImageNative = async (path: string, thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult> => {
     try {
-        const info = await invoke('scan_image', { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) as any;
+        const info = await unwrap(commands.scanImage(path, thumbnailDir || null, skipThumbnail, extractWorkflow, defaultTool || null));
         return await processScanResult(info, path, defaultTool);
     } catch (e) {
         console.error("Native scan failed", e);
@@ -147,7 +150,7 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
 
 export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult[]> => {
     try {
-        const results = await invoke('scan_images_bulk', { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) as any[];
+        const results = await unwrap(commands.scanImagesBulk(paths, thumbnailDir || null, skipThumbnail, extractWorkflow, defaultTool || null));
 
         const tasks = results.map((info, index) => {
             const path = paths[index];
@@ -186,7 +189,7 @@ export const parseImageFile = async (file: File): Promise<ParseResult> => {
 
 export const scanImageWorkflow = async (path: string): Promise<string | null> => {
     try {
-        const result = await invoke('scan_image_workflow', { path }) as string | null;
+        const result = await unwrap(commands.scanImageWorkflow(path));
         if (!result) return null;
 
         // If it's a JSON string, it might be the raw workflow already

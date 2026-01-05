@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+import { commands } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
 
@@ -17,7 +18,7 @@ export class WatcherService {
 
         try {
             // Start the native rust watcher which handles multiple paths
-            await invoke('start_native_folder_watcher', { paths });
+            await unwrap(commands.startNativeFolderWatcher(paths));
             console.log(`[WatcherService] Native watcher started for ${paths.length} paths`);
 
             // Listen for the debounced event from Rust
@@ -41,7 +42,7 @@ export class WatcherService {
 
         try {
             // Send empty list to stop the rust watcher
-            await invoke('start_native_folder_watcher', { paths: [] });
+            await unwrap(commands.startNativeFolderWatcher([]));
             console.log('[WatcherService] Stopped native watcher');
         } catch (e) {
             console.error('Error stopping native watcher:', e);
