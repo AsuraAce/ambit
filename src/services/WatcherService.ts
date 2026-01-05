@@ -8,11 +8,19 @@ type WatcherCallback = () => void;
 export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
     private isWatching = false;
+    private lastPaths: string[] = [];
 
     async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
+        // Skip if already watching the exact same paths
+        const pathsChanged = paths.length !== this.lastPaths.length ||
+            paths.some((p, i) => p !== this.lastPaths[i]);
+
+        if (this.isWatching && !pathsChanged) return;
+
         if (this.isWatching) await this.stopWatching();
 
         this.isWatching = true;
+        this.lastPaths = [...paths];
 
         if (paths.length === 0) return;
 
@@ -33,6 +41,8 @@ export class WatcherService {
     }
 
     async stopWatching() {
+        if (!this.unlistenFn && !this.isWatching) return;
+
         this.isWatching = false;
 
         if (this.unlistenFn) {

@@ -17,34 +17,43 @@ export interface DbCollection {
 }
 
 export const upsertCollection = async (collection: Partial<Collection> & { id: string, name: string }) => {
-    const db = await getDb();
-    const now = Date.now();
+    const { dbMutex } = await import('./connection');
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const now = Date.now();
 
-    await db.execute(
-        `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            color = excluded.color,
-            is_archived = excluded.is_archived,
-            is_pinned = excluded.is_pinned,
-            created_at = excluded.created_at,
-            filter_state = excluded.filter_state,
-            manual_exclusions = excluded.manual_exclusions,
-            custom_thumbnail = excluded.custom_thumbnail`,
-        [
-            collection.id,
-            collection.name,
-            collection.color || null,
-            collection.isArchived ? 1 : 0,
-            collection.isPinned ? 1 : 0,
-            collection.createdAt || now,
-            collection.filters ? JSON.stringify(collection.filters) : null,
-            collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
-            collection.customThumbnail || null,
-            collection.source || 'ambit'
-        ]
-    );
+        try {
+            await db.execute(
+                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color = excluded.color,
+                is_archived = excluded.is_archived,
+                is_pinned = excluded.is_pinned,
+                created_at = excluded.created_at,
+                filter_state = excluded.filter_state,
+                manual_exclusions = excluded.manual_exclusions,
+                custom_thumbnail = excluded.custom_thumbnail,
+                source = excluded.source`,
+                [
+                    collection.id,
+                    collection.name,
+                    collection.color || null,
+                    collection.isArchived ? 1 : 0,
+                    collection.isPinned ? 1 : 0,
+                    collection.createdAt || now,
+                    collection.filters ? JSON.stringify(collection.filters) : null,
+                    collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
+                    collection.customThumbnail || null,
+                    collection.source || 'ambit'
+                ]
+            );
+        } catch (e) {
+            console.error(`[DB] Failed to upsert collection ${collection.id}`, e);
+            throw e;
+        }
+    });
 };
 
 export const deleteCollectionFromDb = async (id: string) => {
@@ -53,13 +62,16 @@ export const deleteCollectionFromDb = async (id: string) => {
 };
 
 export const addImagesToCollection = async (collectionId: string, imageIds: string[]) => {
-    const db = await getDb();
-    for (const imgId of imageIds) {
-        await db.execute(
-            'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-            [collectionId, normalizePath(imgId)]
-        );
-    }
+    const { dbMutex } = await import('./connection');
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        for (const imgId of imageIds) {
+            await db.execute(
+                'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
+                [collectionId, normalizePath(imgId)]
+            );
+        }
+    });
 };
 
 export const removeImagesFromCollection = async (collectionId: string, imageIds: string[]) => {

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, ReactNode } from 'react';
 import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
+import { getAllCollectionsWithStats, upsertCollection, addImagesToCollection } from '../services/db/collectionRepo';
 
 interface CollectionContextType {
     collections: Collection[];
@@ -26,38 +27,50 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
         setAllCollections(cols);
     }, []);
 
+    const isInitializingRef = React.useRef(false);
+
     // Initial load & Migration
     useEffect(() => {
-        const init = async () => {
-            const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection } = await import('../services/db/collectionRepo');
+        if (isInitializingRef.current) return;
+        isInitializingRef.current = true;
 
+        const init = async () => {
             // 1. Try to load from SQLite
             let dbCols = await getAllCollectionsWithStats();
 
-            // 2. If no 'ambit' collections exist, check for migration from library.json
-            const hasAmbitCols = dbCols.some(c => c.source === 'ambit');
-            if (!hasAmbitCols) {
-                console.log('[Collections] Starting migration from JSON...');
+            // 2. Only migrate if DB is EMPTY - if it has any collections (invoke or ambit), skip migration
+            const shouldMigrate = dbCols.length === 0;
+            console.log(`[Collections] Initial load: ${dbCols.length} total, shouldMigrate: ${shouldMigrate}`);
+
+            if (shouldMigrate) {
+                // Check if library.json has any collections to migrate
                 const state = await appRepository.load();
                 const legacyCols = state.collections || [];
                 const legacySmart = state.smartCollections || [];
+                const hasLegacyData = legacyCols.length > 0 || legacySmart.length > 0;
 
-                // Migrate regular collections
-                for (const col of legacyCols) {
-                    await upsertCollection({ ...col, source: 'ambit' });
-                    if (col.imageIds && col.imageIds.length > 0) {
-                        await addImagesToCollection(col.id, col.imageIds);
+                if (hasLegacyData) {
+                    console.log(`[Collections] Starting migration from JSON (${legacyCols.length} regular, ${legacySmart.length} smart)...`);
+
+                    // Migrate regular collections
+                    for (const col of legacyCols) {
+                        await upsertCollection({ ...col, source: 'ambit' });
+                        if (col.imageIds && col.imageIds.length > 0) {
+                            await addImagesToCollection(col.id, col.imageIds);
+                        }
                     }
-                }
 
-                // Migrate smart collections
-                for (const scol of legacySmart) {
-                    await upsertCollection({ ...scol, source: 'ambit' });
-                }
+                    // Migrate smart collections
+                    for (const scol of legacySmart) {
+                        await upsertCollection({ ...scol, source: 'ambit' });
+                    }
 
-                // Reload from DB
-                dbCols = await getAllCollectionsWithStats();
-                console.log(`[Collections] Migrated ${dbCols.length} collections.`);
+                    // Reload from DB
+                    dbCols = await getAllCollectionsWithStats();
+                    console.log(`[Collections] Migrated ${dbCols.length} collections.`);
+                } else {
+                    console.log('[Collections] No legacy data to migrate.');
+                }
             }
 
             setAllCollections(dbCols);
