@@ -178,6 +178,7 @@ export interface AppSettings {
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
+  resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
 }
 
 export interface ToastMessage {

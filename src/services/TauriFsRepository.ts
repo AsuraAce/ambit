@@ -49,6 +49,7 @@ export class TauriFsRepository implements IRepository {
                         hasCompletedOnboarding: true,
                         libraryShowGrids: false,
                         resourceFolders: [],
+                        resourceViewModes: {},
                         ...saved.settings
                     }
                 };

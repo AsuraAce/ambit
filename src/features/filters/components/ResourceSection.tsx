@@ -1,8 +1,8 @@
-import * as React from 'react';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
+import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput } from './FilterPrimitives';
 import { formatCountCompact } from '../../../utils/formatUtils';
 
@@ -39,9 +39,24 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     onToggle,
     isLoading
 }) => {
+    const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+
+    // Get view mode from settings, default to 'list'
+    const viewMode = settings.resourceViewModes?.[type] || 'list';
+
+    const toggleViewMode = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        const nextMode = viewMode === 'list' ? 'grid' : 'list';
+        setSettings(prev => ({
+            ...prev,
+            resourceViewModes: {
+                ...prev.resourceViewModes,
+                [type]: nextMode
+            }
+        }));
+    }, [type, viewMode, setSettings]);
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
     const filterKey = type === 'checkpoints' ? 'models' : type;
@@ -168,7 +183,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 action={isOpen && (
                     <div className="flex items-center gap-1">
                         <button
-                            onClick={(e) => { e.stopPropagation(); setViewMode(viewMode === 'list' ? 'grid' : 'list'); }}
+                            onClick={toggleViewMode}
                             className={`p-1 rounded transition-colors ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
                             title={viewMode === 'list' ? "Switch to Grid View" : "Switch to List View"}
                         >

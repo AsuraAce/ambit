@@ -29,7 +29,8 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
         hasCompletedOnboarding: false,
         syncBoardsToCollections: false,
         importOrphans: true,
-        starredAs: 'favorite'
+        starredAs: 'favorite',
+        resourceViewModes: {}
     });
 
     const settingsRef = useRef<AppSettings>(settings);
