@@ -26,7 +26,6 @@ interface MaintenanceViewProps {
     onViewImage: (id: string) => void;
     onRegenerateThumbnails?: (ids?: string[]) => void;
     maskedKeywords: string[];
-    privacyEnabled: boolean;
     onUpdatePrompt?: (id: string, prompt: string) => void;
     onUpdateModel?: (id: string, model: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
@@ -48,7 +47,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onDeleteForever,
     onRegenerateThumbnails,
     maskedKeywords,
-    privacyEnabled,
     onUpdatePrompt,
     onUpdateModel,
     onUpdateTool,
@@ -316,7 +314,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onRegenerate={handleRegenerate}
                                 thumbnailsScope={thumbnailsScope}
                                 onScopeChange={handleThumbnailsScopeChange}
-                                privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
@@ -337,7 +334,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 images={localDuplicateCandidates}
                                 onResolve={handleResolveDuplicate}
                                 maskedKeywords={maskedKeywords}
-                                privacyEnabled={privacyEnabled}
                                 onRefresh={(scope) => {
                                     setDuplicatesScope(scope);
                                     refreshData('duplicates', true, { scope });
@@ -365,7 +361,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onClearSelection={clearSelection}
                                 onMoveToTrash={handleDeleteSelected}
                                 onViewImage={setViewingImageId}
-                                privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
@@ -421,7 +416,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onClearSelection={clearSelection}
                                 onRestoreSelected={handleRestoreSelected}
                                 onDeleteSelected={handleDeleteSelected}
-                                privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
@@ -447,7 +441,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onDeleteSelected={handleDeleteSelected}
                                 onUnmarkSelected={handleUnmarkIntermediates}
                                 onViewImage={setViewingImageId}
-                                privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}

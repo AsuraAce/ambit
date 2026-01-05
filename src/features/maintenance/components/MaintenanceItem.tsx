@@ -3,13 +3,13 @@ import { useState } from 'react';
 import { EyeOff, Eye, CheckSquare } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface MaintenanceItemProps {
     img: AIImage;
     style: React.CSSProperties;
     isSelected?: boolean;
     onClick: (e: React.MouseEvent) => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     children?: React.ReactNode;
     showFilename?: boolean;
@@ -23,7 +23,6 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
     style,
     isSelected,
     onClick,
-    privacyEnabled,
     maskedKeywords,
     children,
     showFilename = true,
@@ -31,6 +30,7 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
     overlayActions,
     isMissing = false
 }) => {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
     const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
 

@@ -9,6 +9,7 @@ import { isImageMasked } from '../../../utils/maskingUtils';
 import { useTimelineLayout } from '../hooks/useTimelineLayout';
 import { useTimelineSelection } from '../hooks/useTimelineSelection';
 import { useTimelineScroll } from '../hooks/useTimelineScroll';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface TimelineViewProps {
     images: AIImage[];
@@ -23,7 +24,6 @@ interface TimelineViewProps {
     onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
     onBackgroundClick?: () => void;
     maskedKeywords: string[];
-    privacyEnabled: boolean;
 }
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
@@ -38,9 +38,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onContextMenu,
     onRangeSelection,
     onBackgroundClick,
-    maskedKeywords,
-    privacyEnabled
+    maskedKeywords
 }) => {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const { groups } = useTimeline(images, sortOption);
     const containerRef = useRef<HTMLDivElement>(null);
     const stickyHeaderRef = useRef<HTMLDivElement>(null);

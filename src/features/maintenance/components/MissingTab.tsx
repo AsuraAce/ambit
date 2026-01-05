@@ -53,7 +53,6 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 style={style}
                 isSelected={selectedIds.has(img.id)}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                privacyEnabled={false}
                 maskedKeywords={[]}
                 overlayActions={overlayActions}
                 isMissing={true}

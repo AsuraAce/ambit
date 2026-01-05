@@ -1,6 +1,7 @@
 import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface SelectionBarProps {
     selectedIds: Set<string>;
@@ -8,7 +9,6 @@ interface SelectionBarProps {
     lastSelectedId: string | null;
     isExporting: boolean;
     confirmDelete: boolean;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     activeCollectionId?: string | null;
 
@@ -31,7 +31,6 @@ export function SelectionBar({
     lastSelectedId,
     isExporting,
     confirmDelete,
-    privacyEnabled,
     maskedKeywords,
     onClearSelection,
     onDelete,
@@ -45,6 +44,7 @@ export function SelectionBar({
     onCompare,
     activeCollectionId
 }: SelectionBarProps) {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     if (selectedIds.size === 0) return null;
 
     // Logic for Tri-State Mask Cycling in Bulk:

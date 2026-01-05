@@ -14,7 +14,6 @@ interface UntaggedTabProps {
     onClearSelection: () => void;
     onMoveToTrash: () => void;
     onViewImage: (id: string) => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -31,7 +30,6 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     onClearSelection,
     onMoveToTrash,
     onViewImage,
-    privacyEnabled,
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
@@ -61,7 +59,6 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 style={style}
                 isSelected={isSelected}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                privacyEnabled={privacyEnabled}
                 maskedKeywords={maskedKeywords}
                 overlayActions={overlayActions}
             >
@@ -75,7 +72,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 )}
             </MaintenanceItem>
         );
-    }, [selectedIds, onItemClick, onViewImage, privacyEnabled, maskedKeywords]);
+    }, [selectedIds, onItemClick, onViewImage, maskedKeywords]);
 
     if (images.length === 0) {
         return (

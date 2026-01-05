@@ -11,10 +11,12 @@ import { LoadingScreen } from './components/ui/LoadingScreen';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
 import { useToast } from './hooks/useToast';
-import { useLibraryContext } from './hooks/useLibraryContext';
+import { useSearchStore } from './stores/searchStore';
+import { useSettingsStore } from './stores/settingsStore';
+import { useCollectionStore } from './stores/collectionStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState } from './types';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -30,49 +32,9 @@ import { useAppActions } from './hooks/useAppActions';
 
 export default function App() {
     const { addToast } = useToast();
+    const modals = useModalManager();
 
-    // --- Global Data Context ---
-    const {
-        isLoaded, images, setImages, collections, setCollections,
-        smartCollections, setSmartCollections, setAllCollections, settings, setSettings,
-        setRecentSearches, refreshCollectionThumbnails, refreshCollections,
-        filters, setFilters, sortOption, setSortOption, clearAllFilters,
-        totalImages, globalTotal, loadMoreImages,
-        privacyEnabled, setPrivacyEnabled,
-        isFiltering, toggleFavorite,
-        refreshMaintenanceCounts
-    } = useLibraryContext();
-
-    // --- Theme Hook ---
-    const { toggleTheme } = useTheme(settings.theme, setSettings);
-
-    // Generate Tags from currently loaded images (View-based tags) - DEBOUNCED to avoid lag
-    const [availableTags, setAvailableTags] = useState<string[]>([]);
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            const tags = new Set<string>();
-            // Only scan a subset to avoid lag if view is large
-            images.slice(0, 500).forEach(img => {
-                if (typeof img.metadata.positivePrompt === 'string') {
-                    img.metadata.positivePrompt.split(',').forEach(t => {
-                        const clean = t.trim().toLowerCase();
-                        if (clean.length > 2 && clean.length < 40) tags.add(clean);
-                    });
-                }
-            });
-            setAvailableTags(Array.from(tags).sort());
-        }, 1000); // Wait for results to settle before parsing tags
-
-        return () => clearTimeout(timer);
-    }, [images]);
-
-    const {
-        selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
-        handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
-    } = useSelection(images); // Selection now works on the "View" (images)
-
-
-    // --- UI State ---
+    // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('masonry');
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
@@ -80,30 +42,51 @@ export default function App() {
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
-
-    // Interaction State
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportIds, setExportIds] = useState<Set<string>>(new Set());
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
-    const changeViewMode = useCallback((newMode: ViewMode) => {
-        if (newMode === viewMode) return;
-        setViewMode(newMode);
-        clearSelection();
-    }, [viewMode, clearSelection]);
+    // --- Store Subscriptions ---
+    const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
+    const settings = useSettingsStore(s => s.settings);
+    const setSettings = useSettingsStore(s => s.setSettings);
 
-    const handleLayoutChange = useCallback((c: number, h: number) => {
-        setGridLayout(prev => {
-            if (prev.columns === c && prev.rowHeight === h) return prev;
-            return { columns: c, rowHeight: h };
-        });
-    }, []);
+    const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
+    const allCollections = useCollectionStore(s => s.collections);
+    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
+    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters) as SmartCollection[], [allCollections]);
+    const refreshCollections = useCollectionStore(s => s.refreshCollections);
 
-    // --- UI Hooks ---
-    const modals = useModalManager();
+    const images = useSearchStore(s => s.images);
+    const setImages = useSearchStore(s => s.setImages);
+    const filters = useSearchStore(s => s.filters);
+    const setFilters = useSearchStore(s => s.setFilters);
+    const sortOption = useSearchStore(s => s.sortOption);
+    const setSortOption = useSearchStore(s => s.setSortOption);
+    const totalImages = useSearchStore(s => s.totalImages);
+    const globalTotal = useSearchStore(s => s.globalTotal);
+    const isFiltering = useSearchStore(s => s.isFiltering);
+    const toggleFavorite = useSearchStore(s => s.toggleFavorite);
+    const clearAllFilters = useSearchStore(s => s.clearAllFilters);
+    const recentSearches = useSearchStore(s => s.recentSearches);
+    const setRecentSearches = useSearchStore(s => s.setRecentSearches);
+
+    const isLoaded = isSettingsLoaded && isCollectionsLoaded;
+
+    // --- UI Logic Hooks ---
+    const { toggleTheme } = useTheme(settings.theme, setSettings);
+    const {
+        selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
+        handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
+    } = useSelection(images);
+
+    const setAllCollections = useCollectionStore(s => s.setCollections);
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollections);
+    const refreshMaintenanceCounts = useCallback(() => { }, []); // Placeholder
+
     const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
 
-    // --- Specialized Logic Hooks ---
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
     const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useSearch({
         filters,
         setFilters,
@@ -112,17 +95,6 @@ export default function App() {
         availableTags: availableTags,
         onOpenSettings: useCallback(() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }, [modals])
     });
-
-    const searchProps = React.useMemo(() => ({
-        isAiSearchEnabled,
-        isSearchingAi,
-        inputRef,
-        toggleAiSearch,
-        submitSearch,
-        isFocused: isSearchFocused,
-        onFocus: () => setIsSearchFocused(true),
-        onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
-    }), [isAiSearchEnabled, isSearchingAi, inputRef, toggleAiSearch, submitSearch, isSearchFocused]);
 
     const fileOps = useFileOperations({
         images,
@@ -149,29 +121,9 @@ export default function App() {
         selectedIds,
         setSelectedIds,
         lastSelectedId,
-        modalManager: modals // Pass shared modal state
+        modalManager: modals
     });
 
-    const handleRemoveFromCollection = useCallback(async () => {
-        if (filters.collectionId && selectedIds.size > 0) {
-            await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
-            clearSelection();
-            addToast(`Removed ${selectedIds.size} images from collection`, 'info');
-        }
-    }, [filters.collectionId, selectedIds, colOps, clearSelection, addToast]);
-
-    // Calculate Scope Context for Smart Counter
-    const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
-    const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;
-
-    const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
-    const scopeTotal = Math.max(
-        activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
-            (activeSmartCollection ? totalImages : globalTotal),
-        totalImages
-    );
-
-    // --- Extracted Hooks ---
     const { isDraggingExternal } = useDragDrop({
         onImportPaths: fileOps.handleImportPaths,
         onImportFiles: (files) => fileOps.handleImportFiles(Array.from(files))
@@ -184,7 +136,89 @@ export default function App() {
         addToast
     });
 
-    // Refs
+    // --- Callbacks ---
+    const loadMoreImages = React.useCallback(() => {
+        useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]);
+    }, [collections, smartCollections]);
+
+    const changeViewMode = useCallback((newMode: ViewMode) => {
+        if (newMode === viewMode) return;
+        setViewMode(newMode);
+        clearSelection();
+    }, [viewMode, clearSelection]);
+
+    const handleLayoutChange = useCallback((c: number, h: number) => {
+        setGridLayout(prev => {
+            if (prev.columns === c && prev.rowHeight === h) return prev;
+            return { columns: c, rowHeight: h };
+        });
+    }, []);
+
+    const onMoveToCollection = useCallback(() => {
+        if (filters.collectionId) {
+            modals.setAddToCollectionMode('move');
+            modals.setSourceCollectionId(filters.collectionId);
+            modals.openModal('addToCollection');
+        }
+        setContextMenu(null);
+    }, [filters.collectionId, modals]);
+
+    const handleRemoveFromCollection = useCallback(async () => {
+        if (filters.collectionId && selectedIds.size > 0) {
+            await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            clearSelection();
+            addToast(`Removed ${selectedIds.size} images from collection`, 'info');
+        }
+    }, [filters.collectionId, selectedIds, colOps, clearSelection, addToast]);
+
+    const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
+        modals.setAddToCollectionMode(mode);
+        if (mode === 'add') modals.setSourceCollectionId(null);
+        modals.openModal('addToCollection');
+    }, [modals]);
+
+    // --- Derived Memos ---
+    const searchProps = React.useMemo(() => ({
+        isAiSearchEnabled,
+        isSearchingAi,
+        inputRef,
+        toggleAiSearch,
+        submitSearch,
+        isFocused: isSearchFocused,
+        onFocus: () => setIsSearchFocused(true),
+        onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
+    }), [isAiSearchEnabled, isSearchingAi, inputRef, toggleAiSearch, submitSearch, isSearchFocused]);
+
+    const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
+    const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;
+    const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
+    const scopeTotal = Math.max(
+        activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
+            (activeSmartCollection ? totalImages : globalTotal),
+        totalImages
+    );
+
+    const displayedViewerImage = viewingImageId
+        ? images.find(i => i.id === viewingImageId)
+        : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
+
+    // --- Effects ---
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const tags = new Set<string>();
+            images.slice(0, 500).forEach(img => {
+                if (typeof img.metadata.positivePrompt === 'string') {
+                    img.metadata.positivePrompt.split(',').forEach(t => {
+                        const clean = t.trim().toLowerCase();
+                        if (clean.length > 2 && clean.length < 40) tags.add(clean);
+                    });
+                }
+            });
+            setAvailableTags(Array.from(tags).sort());
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [images]);
+
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<VirtualGridHandle>(null);
 
@@ -193,22 +227,15 @@ export default function App() {
         return () => clearTimeout(timer);
     }, []);
 
-    // Clear selection when context changes significantly
     useEffect(() => {
         clearSelection();
     }, [filters.collectionId, clearSelection]);
-
-    const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
-        modals.setAddToCollectionMode(mode);
-        if (mode === 'add') modals.setSourceCollectionId(null);
-        modals.openModal('addToCollection');
-    }, [modals]);
 
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
         viewMode,
         selectedIds,
-        filteredImages: images, // Map to images
+        filteredImages: images,
         lastSelectedId,
         selectedImageIndex,
         gridRef,
@@ -233,14 +260,8 @@ export default function App() {
         handleRemoveFromCollection: handleRemoveFromCollection,
     });
 
-
-    // Determine which image to show in viewer
-    const displayedViewerImage = viewingImageId
-        ? images.find(i => i.id === viewingImageId)
-        : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
-
-    // --- Render ---
     if (!isLoaded) return <LoadingScreen />;
+
 
     return (
         <HashRouter>
@@ -412,19 +433,9 @@ export default function App() {
                     actions={actions}
                     fileOps={fileOps}
                     colOps={colOps}
-                    onMoveToCollection={() => {
-                        if (filters.collectionId) {
-                            modals.setAddToCollectionMode('move');
-                            modals.setSourceCollectionId(filters.collectionId);
-                            modals.openModal('addToCollection');
-                        }
-                        setContextMenu(null);
-                    }}
+                    onMoveToCollection={onMoveToCollection}
                     modals={modals}
                     filters={filters}
-                    privacyEnabled={privacyEnabled}
-                    refreshCollectionThumbnails={refreshCollectionThumbnails}
-                    setCollections={setCollections}
                 />
             </div>
         </HashRouter >

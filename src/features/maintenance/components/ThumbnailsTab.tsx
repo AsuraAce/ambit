@@ -16,7 +16,6 @@ interface ThumbnailsTabProps {
     onRegenerate: (ids?: string[]) => void;
     thumbnailsScope: 'global' | 'filtered';
     onScopeChange: (scope: 'global' | 'filtered') => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -32,7 +31,6 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     onRegenerate,
     thumbnailsScope,
     onScopeChange,
-    privacyEnabled,
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
@@ -46,11 +44,10 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 style={style}
                 isSelected={selectedIds.has(img.id)}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                privacyEnabled={privacyEnabled}
                 maskedKeywords={maskedKeywords}
             />
         );
-    }, [selectedIds, onItemClick, privacyEnabled, maskedKeywords]);
+    }, [selectedIds, onItemClick, maskedKeywords]);
 
     const { isRegeneratingThumbnails } = useLibrary();
 

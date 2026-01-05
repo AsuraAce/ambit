@@ -86,30 +86,62 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     handleRemoveFromCollection, handleOpenCollectionModal
 }) => {
     // Stores
-    const { settings, privacyEnabled } = useSettingsStore();
-    const { collections: allCollections, refreshCollections: onRefreshCollections } = useCollectionStore();
+    const settings = useSettingsStore(s => s.settings);
+
+    const allCollections = useCollectionStore(s => s.collections);
+    const onRefreshCollections = useCollectionStore(s => s.refreshCollections);
 
     // Derived
-    const collections = allCollections.filter(c => !c.filters);
-    const smartCollections = allCollections.filter(c => !!c.filters);
+    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
+    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
+
     // Store Access
-    const {
-        images,
-        totalImages,
-        isFiltering,
-        clearAllFilters,
-        toggleFavorite: storeToggleFavorite,
-        // loadMoreImages not available in store, defined locally below
-        // store.fetchData(true) is equivalent to loadMoreImages
-    } = useSearchStore();
+    const images = useSearchStore(s => s.images);
+    const totalImages = useSearchStore(s => s.totalImages);
+    const isFiltering = useSearchStore(s => s.isFiltering);
+    const clearAllFilters = useSearchStore(s => s.clearAllFilters);
+    const storeToggleFavorite = useSearchStore(s => s.toggleFavorite);
+    const fetchData = useSearchStore(s => s.fetchData);
 
     // Derived loadMore
     const loadMoreImages = React.useCallback(() => {
-        useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]);
-    }, [collections, smartCollections]);
+        fetchData(true, [...collections, ...smartCollections]);
+    }, [collections, smartCollections, fetchData]);
 
     // Override props with store values
     const toggleFavorite = storeToggleFavorite;
+
+    // --- Performance Logic (Moved from JSX to resolve Rules of Hooks violation) ---
+    const showPinnedInShelf = React.useMemo(() => (
+        filters.collectionId !== null && viewMode !== 'timeline' && !filters.pinnedOnly
+    ), [filters.collectionId, viewMode, filters.pinnedOnly]);
+
+    const pinnedImages = React.useMemo(() => showPinnedInShelf ? images.filter(i => i.isPinned) : [], [showPinnedInShelf, images]);
+    const gridItems = React.useMemo(() => showPinnedInShelf ? images.filter(i => !i.isPinned) : images, [showPinnedInShelf, images]);
+    const pinnedCount = pinnedImages.length;
+
+    const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout: any) => (
+        <GridItem
+            key={img.id}
+            image={img}
+            style={style}
+            layoutPos={layout}
+            index={index + pinnedCount}
+            isSelected={selectedIds.has(img.id)}
+            selectedIds={selectedIds}
+            maskedKeywords={settings.maskedKeywords}
+            setImages={handlers.setImages}
+            onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
+            onToggleSelection={handleSelectionToggle}
+            onToggleFavorite={(e, id) => toggleFavorite(id)}
+            onTogglePin={async (e, id) => {
+                const imgFound = images.find(i => i.id === id);
+                if (imgFound) await actions.handlePinImage(id, !imgFound.isPinned);
+            }}
+            onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+            isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
+        />
+    ), [pinnedCount, selectedIds, settings.maskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, activeCollection, activeSmartCollection]);
 
     return (
         <div className="flex flex-1 overflow-hidden p-3 gap-3">
@@ -210,7 +242,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     onViewImage={(id) => setViewingImageId(id)}
                                     onRegenerateThumbnails={fileOps.regenerateThumbnails}
                                     maskedKeywords={settings.maskedKeywords}
-                                    privacyEnabled={privacyEnabled}
                                     onUpdatePrompt={handlers.handleUpdatePrompt}
                                     onUpdateModel={handlers.handleUpdateModel}
                                     onUpdateTool={handlers.handleUpdateTool}
@@ -224,16 +255,33 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                 <>
                                     {isFiltering ? (
                                         <GridSkeleton layout={layoutMode} />
+                                    ) : viewMode === 'timeline' ? (
+                                        <TimelineView
+                                            images={images}
+                                            selectedIds={selectedIds}
+                                            thumbnailSize={settings.thumbnailSize}
+                                            sortOption={sortOption}
+                                            maskedKeywords={settings.maskedKeywords}
+                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
+                                            onSelectionToggle={handleSelectionToggle}
+                                            onToggleFavorite={(e, id) => { toggleFavorite(id); }}
+                                            onTogglePin={async (e, id) => {
+                                                const img = images.find(i => i.id === id);
+                                                if (img) await actions.handlePinImage(id, !img.isPinned);
+                                            }}
+                                            onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
+                                            onRangeSelection={handleRangeSelection}
+                                            onBackgroundClick={clearSelection}
+                                        />
                                     ) : (
                                         <>
-                                            {(filters.collectionId && viewMode !== 'timeline' && !filters.pinnedOnly) && (
+                                            {showPinnedInShelf && (
                                                 <PinnedShelf
-                                                    images={images.filter(i => i.isPinned)}
+                                                    images={pinnedImages}
                                                     isCollapsed={modals.isPinnedShelfCollapsed}
                                                     onToggleCollapse={() => modals.setIsPinnedShelfCollapsed((p: boolean) => !p)}
                                                     selectedIds={selectedIds}
                                                     maskedKeywords={settings.maskedKeywords}
-                                                    privacyEnabled={privacyEnabled}
                                                     setImages={handlers.setImages}
                                                     onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
@@ -249,78 +297,28 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     onBackgroundClick={clearSelection}
                                                 />
                                             )}
-                                            {viewMode === 'timeline' ? (
-                                                <TimelineView
-                                                    images={images}
-                                                    selectedIds={selectedIds}
-                                                    thumbnailSize={settings.thumbnailSize}
-                                                    sortOption={sortOption}
-                                                    maskedKeywords={settings.maskedKeywords}
-                                                    privacyEnabled={privacyEnabled}
-                                                    onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
-                                                    onSelectionToggle={handleSelectionToggle}
-                                                    onToggleFavorite={(e, id) => { toggleFavorite(id); }}
-                                                    onTogglePin={async (e, id) => {
-                                                        const img = images.find(i => i.id === id);
-                                                        if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                    }}
-                                                    onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                    onRangeSelection={handleRangeSelection}
-                                                    onBackgroundClick={clearSelection}
-                                                />
-                                            ) : (
-                                                <VirtualGrid<AIImage>
-                                                    ref={gridRef}
-                                                    items={(filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images}
-                                                    layout={layoutMode}
-                                                    minItemWidth={settings.thumbnailSize}
-                                                    gap={16}
-                                                    padding={24}
-                                                    scrollContainerRef={scrollContainerRef}
-                                                    onEndReached={loadMoreImages}
-                                                    getItemRatio={(img) => {
-                                                        const w = img.width || 1;
-                                                        const h = img.height || 1;
-                                                        return w / h;
-                                                    }}
-                                                    onLayoutChange={handleLayoutChange}
-                                                    onRangeSelection={(indices, isAdditive) => {
-                                                        const itemsInGrid = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => !i.isPinned) : images;
-                                                        const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
-                                                        const pinnedCount = pinnedInShelf.length;
-                                                        const globalIndices = indices.map(idx => idx + pinnedCount);
-                                                        handleRangeSelection(globalIndices, isAdditive);
-                                                    }}
-                                                    onBackgroundClick={clearSelection}
-                                                    renderItem={(img, style, index, layout) => {
-                                                        const pinnedInShelf = (filters.collectionId && !filters.pinnedOnly) ? images.filter(i => i.isPinned) : [];
-                                                        const pinnedCount = pinnedInShelf.length;
-                                                        return (
-                                                            <GridItem
-                                                                key={img.id}
-                                                                image={img}
-                                                                style={style}
-                                                                layoutPos={layout}
-                                                                index={index + pinnedCount}
-                                                                isSelected={selectedIds.has(img.id)}
-                                                                selectedIds={selectedIds}
-                                                                maskedKeywords={settings.maskedKeywords}
-                                                                privacyEnabled={privacyEnabled}
-                                                                setImages={handlers.setImages}
-                                                                onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
-                                                                onToggleSelection={handleSelectionToggle}
-                                                                onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                                onTogglePin={async (e, id) => {
-                                                                    const img = images.find(i => i.id === id);
-                                                                    if (img) await actions.handlePinImage(id, !img.isPinned);
-                                                                }}
-                                                                onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-                                                                isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
-                                                            />
-                                                        );
-                                                    }}
-                                                />
-                                            )}
+                                            <VirtualGrid<AIImage>
+                                                ref={gridRef}
+                                                items={gridItems}
+                                                layout={layoutMode}
+                                                minItemWidth={settings.thumbnailSize}
+                                                gap={16}
+                                                padding={24}
+                                                scrollContainerRef={scrollContainerRef}
+                                                onEndReached={loadMoreImages}
+                                                getItemRatio={(img) => {
+                                                    const w = img.width || 1;
+                                                    const h = img.height || 1;
+                                                    return w / h;
+                                                }}
+                                                onLayoutChange={handleLayoutChange}
+                                                onRangeSelection={(indices, isAdditive) => {
+                                                    const globalIndices = indices.map(idx => idx + pinnedCount);
+                                                    handleRangeSelection(globalIndices, isAdditive);
+                                                }}
+                                                onBackgroundClick={clearSelection}
+                                                renderItem={renderGridItem}
+                                            />
                                         </>
                                     )}
                                 </>
@@ -353,7 +351,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     lastSelectedId={lastSelectedId}
                     isExporting={fileOps.isExporting}
                     confirmDelete={settings.confirmDelete}
-                    privacyEnabled={privacyEnabled}
                     maskedKeywords={settings.maskedKeywords}
                     onClearSelection={clearSelection}
                     onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}

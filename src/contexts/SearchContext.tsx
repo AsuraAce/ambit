@@ -98,6 +98,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [collections, smartCollections]);
 
     // Re-implement the filter effect but delegating to store
+    // Optimize Fetch Logic: Only fetch if SQL params actually change or if forced
+    const lastFetchRef = useRef<string>('');
+
     useEffect(() => {
         // Sync Sort Option from Smart Collection
         if (filters.collectionId) {
@@ -105,21 +108,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (activeSmart && activeSmart.filters?.sortOption) {
                 if (sortOption !== activeSmart.filters.sortOption) {
                     setSortOption(activeSmart.filters.sortOption);
+                    return; // Return early, let next render handle fetch with new sort
                 }
             }
         }
 
-        // Trigger Fetch in Store
-        // Debouncing is handled in store? No, we removed debounce.
-        // Let's rely on the store's `isFiltering` flag to prevent rapid fetches if needed, 
-        // OR just call it.
-
-        storeFetchData(false, collectionsRef.current);
-
-        // Update local where/params for context consumers
-        // (This computes it twice: once here, once in store. Fine for temp bridge)
         import('../utils/sqlHelpers').then(({ buildSqlWhereClause }) => {
             const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collectionsRef.current);
+            const fetchKey = JSON.stringify({ where, params, sortOption });
+
+            // Avoid redundant fetches if query hasn't changed
+            // We use a simplified check here. The store executes the actual query.
+            // However, we WANT to show loading skeleton only if it's a "meaningful" change.
+            // For now, let's just debounce or check equality? 
+            // Actually, the Store sets isFiltering=true immediately.
+
+            if (lastFetchRef.current !== fetchKey) {
+                lastFetchRef.current = fetchKey;
+                storeFetchData(false, collectionsRef.current);
+            }
+
             setActiveSqlWhere(where);
             setActiveSqlParams(params);
         });

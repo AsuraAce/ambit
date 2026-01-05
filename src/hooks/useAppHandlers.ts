@@ -4,7 +4,7 @@ import { insertImage } from '../services/db/imageRepo';
 
 interface UseAppHandlersProps {
     images: AIImage[];
-    setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
+    setImages: (update: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
     refreshMaintenanceCounts: () => void;
 }
 

@@ -9,7 +9,8 @@ import { ImageCanvas } from './ImageCanvas';
 import { MetadataSidebar } from './MetadataSidebar';
 import { usePalette } from '../../../hooks/usePalette';
 import { useImageAI } from '../../../hooks/useImageAI';
-import { useLibraryContext } from '../../../hooks/useLibraryContext';
+import { useSettingsStore } from '../../../stores/settingsStore';
+import { useCollectionStore } from '../../../stores/collectionStore';
 import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 
@@ -64,7 +65,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     isSidebarOpen = true,
     onToggleSidebar
 }) => {
-    const { collections, settings } = useLibraryContext();
+    const settings = useSettingsStore(s => s.settings);
+    const collections = useCollectionStore(s => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
 

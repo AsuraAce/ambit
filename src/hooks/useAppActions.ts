@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { AIImage, AppSettings, FilterState, Collection } from '../types';
 import { useToast } from './useToast';
-import { useLibraryContext } from './useLibraryContext';
+import { useSearchStore } from '../stores/searchStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { useCollectionStore } from '../stores/collectionStore';
 import { useModalManager } from './useModalManager';
 
 interface UseAppActionsProps {
@@ -26,11 +28,19 @@ export const useAppActions = ({
     modalManager: modals // Destructure with alias for minimum logic change
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
-    const {
-        images, setImages, filters, setCollections,
-        refreshCollectionThumbnails, toggleFavorite,
-        privacyEnabled, setPrivacyEnabled, settings
-    } = useLibraryContext();
+
+    // Store access
+    const images = useSearchStore(s => s.images);
+    const setImages = useSearchStore(s => s.setImages);
+    const filters = useSearchStore(s => s.filters);
+    const toggleFavorite = useSearchStore(s => s.toggleFavorite);
+
+    const settings = useSettingsStore(s => s.settings);
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
+
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollections); // Placeholder or mapping
+
     const { openModal, closeModal, pendingViewerDeleteId, setPendingViewerDeleteId } = modals;
 
     const executeDelete = () => {

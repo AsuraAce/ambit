@@ -28,10 +28,12 @@ interface SearchState {
     // Filters
     filters: FilterState;
     sortOption: SortOption;
-    searchQuery: string; // Separate or inside filters? filters.searchQuery exists.
+    searchQuery: string;
+    recentSearches: string[];
 
     // Actions
-    setImages: (images: AIImage[]) => void;
+    setImages: (images: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
+    setRecentSearches: (searches: string[] | ((prev: string[]) => string[])) => void;
     setFilters: (filters: Partial<FilterState> | ((prev: FilterState) => Partial<FilterState>)) => void;
     setSortOption: (option: SortOption) => void;
 
@@ -82,8 +84,23 @@ export const useSearchStore = create<SearchState>()(
             filters: INITIAL_FILTERS,
             sortOption: 'date_desc',
             searchQuery: '',
+            recentSearches: [],
 
-            setImages: (images) => set({ images }),
+            setImages: (update) => {
+                if (typeof update === 'function') {
+                    set((state) => ({ images: update(state.images) }));
+                } else {
+                    set({ images: update });
+                }
+            },
+
+            setRecentSearches: (update) => {
+                if (typeof update === 'function') {
+                    set((state) => ({ recentSearches: update(state.recentSearches) }));
+                } else {
+                    set({ recentSearches: update });
+                }
+            },
 
             setFilters: (update) => {
                 set((state) => {

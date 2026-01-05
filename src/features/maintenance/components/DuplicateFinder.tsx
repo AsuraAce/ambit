@@ -4,16 +4,17 @@ import { AIImage } from '../../../types';
 import { AlertTriangle, Check, Copy, EyeOff, Eye, Clock, Zap } from 'lucide-react';
 import { useDuplicateFinder, DuplicateGroup } from '../../../hooks/useDuplicateFinder';
 import { isImageMasked } from '../../../utils/maskingUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 
 // --- Sub-Component for Individual Duplicate Image in a Group ---
 const DuplicateItem: React.FC<{
     img: AIImage;
     onKeepOnly: (imgId: string) => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     isNewest?: boolean;
-}> = ({ img, onKeepOnly, privacyEnabled, maskedKeywords, isNewest }) => {
+}> = ({ img, onKeepOnly, maskedKeywords, isNewest }) => {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
     const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
 
@@ -88,10 +89,9 @@ const DuplicateGroupCard: React.FC<{
     group: DuplicateGroup;
     newestId?: string;
     onResolve: (groupId: string, keepId: string, allIds: string[]) => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     style?: React.CSSProperties;
-}> = React.memo(({ group, newestId, onResolve, privacyEnabled, maskedKeywords, style }) => {
+}> = React.memo(({ group, newestId, onResolve, maskedKeywords, style }) => {
     return (
         <div style={style} className="p-2">
             <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl overflow-hidden shadow-lg transition-all hover:shadow-xl flex flex-col h-full">
@@ -115,7 +115,6 @@ const DuplicateGroupCard: React.FC<{
                                 key={img.id}
                                 img={img}
                                 onKeepOnly={(imgId) => onResolve(group.id, imgId, group.images.map(i => i.id))}
-                                privacyEnabled={privacyEnabled}
                                 maskedKeywords={maskedKeywords}
                                 isNewest={img.id === newestId}
                             />
@@ -144,7 +143,6 @@ interface DuplicateFinderProps {
     onResolve: (keepId: string, deleteIds: string[]) => void;
     // Privacy
     maskedKeywords: string[];
-    privacyEnabled: boolean;
     onRefresh?: (scope: 'global' | 'filtered') => void | Promise<any>;
     scrollContainerRef: React.RefObject<HTMLDivElement | null>;
     onRangeSelection?: (indexes: number[], isAdditive: boolean) => void;
@@ -155,7 +153,6 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     images,
     onResolve,
     maskedKeywords,
-    privacyEnabled,
     onRefresh,
     scrollContainerRef,
     onRangeSelection,
@@ -296,7 +293,6 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                             group={group}
                             newestId={group.newestId}
                             onResolve={handleResolve}
-                            privacyEnabled={privacyEnabled}
                             maskedKeywords={maskedKeywords}
                             style={style}
                         />

@@ -17,6 +17,7 @@ interface VirtualGridProps<T> {
   onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
   onBackgroundClick?: () => void;
   onEndReached?: () => void;
+  className?: string; // Added for transitioning opacity
 }
 
 export interface VirtualGridHandle {
@@ -38,7 +39,8 @@ const VirtualGridInternal = <T extends { id: string }>(
     onLayoutChange,
     onRangeSelection,
     onBackgroundClick,
-    onEndReached
+    onEndReached,
+    className
   }: VirtualGridProps<T>,
   ref: React.Ref<VirtualGridHandle>
 ) => {
@@ -481,28 +483,30 @@ const VirtualGridInternal = <T extends { id: string }>(
         width: '100%',
         minHeight: '100%',
       }}
-      className="outline-none overflow-hidden"
+      className={`outline-none overflow-hidden ${className || ''}`}
     >
       {/* Background Selection Layer - Only catches clicks on empty space */}
-      <div
+      < div
         onMouseDown={handleMouseDown}
         className="absolute inset-0 z-0 bg-transparent"
       />
 
       {visibleItems}
 
-      {dragBox && (
-        <div
-          className="absolute bg-sage-500/30 border-2 border-sage-400 z-50 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
-          style={{
-            left: dragBox.x,
-            top: dragBox.y,
-            width: dragBox.w,
-            height: dragBox.h
-          }}
-        />
-      )}
-    </div>
+      {
+        dragBox && (
+          <div
+            className="absolute bg-sage-500/30 border-2 border-sage-400 z-50 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
+            style={{
+              left: dragBox.x,
+              top: dragBox.y,
+              width: dragBox.w,
+              height: dragBox.h
+            }}
+          />
+        )
+      }
+    </div >
   );
 };
 

@@ -1,8 +1,10 @@
 import * as React from 'react';
 import { ContextMenu } from './ContextMenu';
-import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useToast } from '../../hooks/useToast';
 import { isImageMasked } from '../../utils/maskingUtils';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useCollectionStore } from '../../stores/collectionStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { AIImage, ContextMenuState } from '../../types';
 
 interface AppContextMenuProps {
@@ -15,9 +17,6 @@ interface AppContextMenuProps {
     onMoveToCollection: () => void;
     modals: any;
     filters: any;
-    privacyEnabled: boolean;
-    refreshCollectionThumbnails: () => void;
-    setCollections: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export const AppContextMenu: React.FC<AppContextMenuProps> = ({
@@ -29,13 +28,17 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     colOps,
     onMoveToCollection,
     modals,
-    filters,
-    privacyEnabled,
-    refreshCollectionThumbnails,
-    setCollections
+    filters
 }) => {
     const { addToast } = useToast();
-    const { collections, smartCollections, settings, toggleFavorite: libraryToggleFavorite } = useLibraryContext();
+    const settings = useSettingsStore(s => s.settings);
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const allCollections = useCollectionStore(s => s.collections);
+    const libraryToggleFavorite = useSearchStore(s => s.toggleFavorite);
+
+    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
+    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
+
 
     if (!contextMenu) return null;
 

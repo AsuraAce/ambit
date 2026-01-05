@@ -11,6 +11,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: () => Promise<void>;
+    setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 
     // Legacy support needed? 
     // Usually we just expose collections and let UI derive smart/regular
@@ -29,6 +30,14 @@ export const useCollectionStore = create<CollectionState>()(
                     set({ collections: cols });
                 } catch (e) {
                     console.error('[CollectionStore] Failed to refresh collections', e);
+                }
+            },
+
+            setCollections: (cols) => {
+                if (typeof cols === 'function') {
+                    set((state) => ({ collections: cols(state.collections) }));
+                } else {
+                    set({ collections: cols });
                 }
             },
 

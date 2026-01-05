@@ -15,7 +15,6 @@ interface IntermediatesTabProps {
     onDeleteSelected: () => void;
     onUnmarkSelected: () => void;
     onViewImage: (id: string) => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -33,7 +32,6 @@ export const IntermediatesTab: React.FC<IntermediatesTabProps> = ({
     onDeleteSelected,
     onUnmarkSelected,
     onViewImage,
-    privacyEnabled,
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
@@ -63,7 +61,6 @@ export const IntermediatesTab: React.FC<IntermediatesTabProps> = ({
                 style={style}
                 isSelected={isSelected}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                privacyEnabled={privacyEnabled}
                 maskedKeywords={maskedKeywords}
                 overlayActions={overlayActions}
             >
@@ -76,7 +73,7 @@ export const IntermediatesTab: React.FC<IntermediatesTabProps> = ({
                 )}
             </MaintenanceItem>
         );
-    }, [selectedIds, onItemClick, onViewImage, privacyEnabled, maskedKeywords]);
+    }, [selectedIds, onItemClick, onViewImage, maskedKeywords]);
 
     if (images.length === 0) {
         return (

@@ -7,6 +7,7 @@ import { AIImage } from '../../../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
 import { isImageMasked } from '../../../utils/maskingUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface GridItemProps {
     image: AIImage;
@@ -15,7 +16,6 @@ interface GridItemProps {
     isSelected: boolean;
     selectedIds: Set<string>;
     maskedKeywords: string[];
-    privacyEnabled: boolean;
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     onClick: (e: React.MouseEvent, id: string, index: number) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
@@ -34,7 +34,6 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     isSelected,
     selectedIds, // Passed for multi-select logic if needed
     maskedKeywords,
-    privacyEnabled,
     setImages,
     onClick,
     onToggleSelection,
@@ -43,6 +42,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     onContextMenu,
     isThumbnail = false
 }) => {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
 
     // Unified Masking Logic
     const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
@@ -153,7 +153,6 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         prev.isThumbnail === next.isThumbnail &&
         prev.selectedIds === next.selectedIds &&
         prev.maskedKeywords === next.maskedKeywords &&
-        prev.privacyEnabled === next.privacyEnabled &&
         prev.index === next.index &&
         prev.style.width === next.style.width &&
         prev.style.height === next.style.height &&

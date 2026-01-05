@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ChevronDown, ChevronUp, Pin } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { GridItem } from './GridItem';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface PinnedShelfProps {
     images: AIImage[];
@@ -10,7 +11,6 @@ interface PinnedShelfProps {
     // Props required for GridItem
     selectedIds: Set<string>;
     maskedKeywords: string[];
-    privacyEnabled: boolean;
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     onImageClick: (e: React.MouseEvent, id: string, index: number) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
@@ -29,7 +29,6 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     onToggleCollapse,
     selectedIds,
     maskedKeywords,
-    privacyEnabled,
     setImages,
     onImageClick,
     onToggleSelection,
@@ -41,6 +40,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     onRangeSelection,
     onBackgroundClick
 }) => {
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const [dragBox, setDragBox] = React.useState<{ x: number, y: number, w: number, h: number } | null>(null);
     const dragStartRef = React.useRef<{ x: number, y: number } | null>(null);
@@ -205,7 +205,6 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                                     isSelected={selectedIds.has(img.id)}
                                     selectedIds={selectedIds}
                                     maskedKeywords={maskedKeywords}
-                                    privacyEnabled={privacyEnabled}
                                     setImages={setImages}
                                     onClick={onImageClick}
                                     onToggleSelection={onToggleSelection}

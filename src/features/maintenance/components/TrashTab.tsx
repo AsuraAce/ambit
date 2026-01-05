@@ -14,7 +14,6 @@ interface TrashTabProps {
     onClearSelection: () => void;
     onRestoreSelected: () => void;
     onDeleteSelected: () => void;
-    privacyEnabled: boolean;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -29,7 +28,6 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     onClearSelection,
     onRestoreSelected,
     onDeleteSelected,
-    privacyEnabled,
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
@@ -43,12 +41,11 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 style={style}
                 isSelected={selectedIds.has(img.id)}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                privacyEnabled={privacyEnabled}
                 maskedKeywords={maskedKeywords}
                 imageClassName={selectedIds.has(img.id) ? 'opacity-100' : 'opacity-70 grayscale'}
             />
         );
-    }, [selectedIds, onItemClick, privacyEnabled, maskedKeywords]);
+    }, [selectedIds, onItemClick, maskedKeywords]);
 
     if (images.length === 0) {
         return (
