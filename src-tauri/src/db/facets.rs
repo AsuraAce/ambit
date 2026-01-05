@@ -269,8 +269,13 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
 
 fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
-            SELECT 'tools', COALESCE(json_extract(metadata_json, '$.tool'), 'Unknown'), NULL, COUNT(*)
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
+            SELECT 'tools', 
+                COALESCE(json_extract(metadata_json, '$.tool'), 'Unknown'), 
+                NULL, 
+                COUNT(*),
+                MAX(timestamp),
+                MIN(timestamp)
             FROM images
             WHERE is_deleted = 0
             GROUP BY 2",
