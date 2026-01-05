@@ -2,6 +2,7 @@ import * as React from 'react';
 import { FolderInput, Archive, Folder, Pin, Sparkles } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
+import { formatCountCompact } from '../../../utils/formatUtils';
 
 interface CollectionItemProps {
     col: Collection;
@@ -87,10 +88,14 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         }
                     }}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id
-                        ? 'bg-gray-200 dark:bg-zinc-700 text-gray-900 dark:text-white font-medium shadow-inner'
+                        ? 'bg-gradient-to-r from-gray-200 to-transparent dark:from-zinc-700 dark:to-transparent text-gray-900 dark:text-white font-medium shadow-inner'
                         : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
                         }`}
                 >
+                    {/* Selection Indicator (Aligned with ResourceSection) */}
+                    {filters.collectionId === col.id && (
+                        <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-sage-500 rounded-full" />
+                    )}
                     <div className="flex items-center gap-3 min-w-0 flex-1 pr-8 pointer-events-none">
                         {dropTargetId === col.id ? (
                             <FolderInput className="w-8 h-8 text-sage-500 animate-pulse flex-shrink-0" />
@@ -126,9 +131,9 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-sage-500 dark:bg-sage-400 rounded-r-full" />
                     )}
 
-                    <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-full pointer-events-none transition-opacity duration-200 ${filters.collectionId === col.id ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500'
+                    <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-md pointer-events-none transition-opacity duration-200 ${filters.collectionId === col.id ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 opacity-60 group-hover:opacity-100'
                         }`}>
-                        {col.count ?? col.imageIds.length}
+                        {formatCountCompact(col.count ?? col.imageIds.length)}
                     </span>
                 </div>
             )}

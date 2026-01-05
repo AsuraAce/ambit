@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, MoreHorizontal } from 'lucide-react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { SectionHeader, SearchInput } from './FilterPrimitives';
+import { formatCountCompact } from '../../../utils/formatUtils';
 
 interface ResourceItem {
     name: string;
@@ -113,6 +114,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         );
     };
 
+
     const renderListItem = (item: ResourceItem) => {
         const isSelected = (filters[filterKey] || []).includes(item.name);
         const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
@@ -121,11 +123,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             <div
                 key={item.hash || item.name}
                 onClick={() => toggleItem(item.name)}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border group ${isSelected
-                    ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
+                className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border group relative overflow-hidden ${isSelected
+                    ? 'bg-gradient-to-r from-sage-100 to-transparent dark:from-sage-600/20 dark:to-transparent border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
                     : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
                     }`}
             >
+                {/* Left Accent Bar */}
+                {isSelected && (
+                    <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-sage-500 rounded-full" />
+                )}
+
                 <div className="flex items-center gap-3 overflow-hidden">
                     {/* Tiny Avatar Thumbnail */}
                     <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
@@ -144,20 +151,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     <span className="truncate" title={item.name}>{item.name}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 rounded-md transition-opacity group-hover:opacity-100 opacity-60">{item.count}</span>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); /* TODO: Context Menu */ }}
-                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-all"
-                    >
-                        <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                    {isSelected ? (
-                        <div className="w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center animate-in zoom-in-50 duration-200">
-                            <Check className="w-2.5 h-2.5 text-white" />
-                        </div>
-                    ) : (
-                        <div className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600 group-hover:border-sage-400 transition-colors" />
-                    )}
+                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 opacity-60">
+                        {formatCountCompact(item.count)}
+                    </span>
                 </div>
             </div>
         );
