@@ -32,7 +32,7 @@ pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-#[derive(serde::Deserialize, Clone)]
+#[derive(serde::Deserialize, Clone, specta::Type)]
 pub struct ImageRecord {
     pub id: String,
     pub path: String,

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::io::BufReader;
 use crate::metadata;
 
-#[derive(serde::Serialize, Default)]
+#[derive(serde::Serialize, Default, specta::Type)]
 pub struct FolderStats {
     #[serde(rename = "totalFiles")]
     pub total_files: usize,
@@ -21,6 +21,7 @@ pub struct FolderStats {
     pub subfolders: std::collections::HashMap<String, usize>,
 }
 
+// Note: scan_image returns serde_json::Value which isn't supported by Specta
 #[tauri::command(rename_all = "camelCase")]
 pub async fn scan_image(
     path: String,
@@ -32,6 +33,7 @@ pub async fn scan_image(
     scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow, default_tool)
 }
 
+// Note: scan_images_bulk returns serde_json::Value which isn't supported by Specta
 #[tauri::command(rename_all = "camelCase")]
 pub async fn scan_images_bulk(
     paths: Vec<String>,
@@ -59,6 +61,7 @@ pub async fn scan_images_bulk(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     let path_obj = std::path::Path::new(&path);
     if !path_obj.exists() {
@@ -95,6 +98,7 @@ pub async fn scan_image_workflow(path: String) -> Result<Option<String>, String>
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn read_image_metadata(path: String, default_tool: Option<String>) -> Result<metadata::ImageMetadata, String> {
     let path_obj = Path::new(&path);
     if !path_obj.exists() {
@@ -137,6 +141,7 @@ pub async fn read_image_metadata(path: String, default_tool: Option<String>) -> 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut sizes = Vec::with_capacity(paths.len());
@@ -149,6 +154,7 @@ pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
     let missing_paths: Vec<String> = paths
         .par_iter()
@@ -158,6 +164,7 @@ pub async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, Strin
     Ok(missing_paths)
 }
 
+// Note: audit_invokeai_folder returns serde_json::Value which isn't supported by Specta
 #[tauri::command]
 pub async fn audit_invokeai_folder(path: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -226,6 +233,7 @@ fn scan_dir_recursive(root: &std::path::Path, current: &std::path::Path, stats: 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn list_invokeai_images(path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut files = Vec::new();
@@ -314,6 +322,7 @@ fn collect_images_recursive_absolute(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut files = Vec::new();
@@ -326,6 +335,7 @@ pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, Strin
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_file(path: String) -> Result<(), String> {
     let path_obj = Path::new(&path);
     if !path_obj.exists() {
@@ -361,6 +371,7 @@ pub async fn open_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn show_in_folder(path: String) -> Result<(), String> {
     let path_obj = Path::new(&path);
     if !path_obj.exists() {

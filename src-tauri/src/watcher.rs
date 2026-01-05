@@ -19,6 +19,7 @@ impl Default for WatcherState {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn start_native_folder_watcher(
     app: tauri::AppHandle,
     paths: Vec<String>,

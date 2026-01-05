@@ -44,7 +44,7 @@ struct CivitAiModel {
     name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
     added: usize,
@@ -53,6 +53,7 @@ pub struct ImportResult {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<ImportResult, String> {
     let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
     
@@ -190,7 +191,7 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionResult {
     resolved_count: usize,
@@ -207,6 +208,7 @@ struct ProgressPayload {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn resolve_hashes_online(
     app: tauri::AppHandle, 
     skip_harvest: bool,
@@ -377,6 +379,7 @@ pub async fn resolve_hashes_online(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
@@ -385,11 +388,12 @@ pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub fn cancel_model_resolution(state: tauri::State<'_, ModelResolutionState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbnailScanResult {
     found: usize,
@@ -397,6 +401,7 @@ pub struct ThumbnailScanResult {
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) -> Result<ThumbnailScanResult, String> {
     let mut models_found = Vec::new();
     let mut images_map = std::collections::HashSet::new();

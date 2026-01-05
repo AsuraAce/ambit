@@ -3,6 +3,7 @@ use tauri::Emitter;
 use super::{resolve_db_path, configure_connection, ProgressPayload};
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let start_total = std::time::Instant::now();

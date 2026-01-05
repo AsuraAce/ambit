@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use rusqlite::params;
 use super::{resolve_db_path, configure_connection, ImageRecord};
 
+// Note: get_db_diagnostics returns serde_json::Value which isn't supported by Specta
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -27,6 +28,7 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<serde_json::Val
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
@@ -104,6 +106,7 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
 }
 
 #[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn refresh_boards_native(
     app: tauri::AppHandle,
     board_mapping: HashMap<String, String>,
