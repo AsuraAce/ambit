@@ -127,48 +127,74 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         [filters.collectionId, allCols]
     );
 
-    const hasUnsavedChanges = React.useMemo(() => {
-        if (!activeSmartCol || !activeSmartCol.filters) return false;
+    // Check for Manual Edits (ignoring the collection ID itself)
+    const hasManualEdits = !!(
+        filters.searchQuery ||
+        filters.models.length > 0 ||
+        filters.tools.length > 0 ||
+        filters.loras.length > 0 ||
+        filters.embeddings.length > 0 ||
+        filters.hypernetworks.length > 0 ||
+        filters.favoritesOnly ||
+        filters.pinnedOnly ||
+        filters.dateRange !== 'all' ||
+        filters.minSteps ||
+        filters.maxSteps ||
+        filters.minCfg ||
+        filters.maxCfg
+    );
 
-        // Normalization Helper to handle missing keys/defaults
-        const normalize = (f: Partial<FilterState>) => {
-            return {
-                searchQuery: f.searchQuery || '',
-                models: (f.models || []).sort(),
-                tools: (f.tools || []).sort(),
-                loras: (f.loras || []).sort(),
-                embeddings: (f.embeddings || []).sort(),
-                hypernetworks: (f.hypernetworks || []).sort(),
-                dateRange: f.dateRange || 'all',
-                favoritesOnly: !!f.favoritesOnly,
-                // Optional numeric fields - undefined is essentially matching if inactive,
-                // but let's be strict if they are set.
-                minSteps: f.minSteps,
-                maxSteps: f.maxSteps,
-                minCfg: f.minCfg,
-                maxCfg: f.maxCfg,
-                pinnedOnly: !!f.pinnedOnly,
-                // Exclude collectionId
-            };
-        };
-
-        const current = normalize(filters);
-        const saved = normalize(activeSmartCol.filters);
-
-        return JSON.stringify(current) !== JSON.stringify(saved);
-    }, [filters, activeSmartCol]);
+    // The Update Button should show if we are in a smart collection AND have added manual edits.
+    const showUpdateButton = activeSmartCol && hasManualEdits;
 
     const handleQuickUpdate = () => {
         if (activeSmartCol && onUpdateCollectionFilters) {
-            onUpdateCollectionFilters(activeSmartCol.id, filters);
+            // MERGE Logic: 
+            // We want to ADD manual filters to the existing smart rules.
+            // For lists (models, etc.), we UNION them.
+            // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
+
+            const saved = activeSmartCol.filters || {};
+            const manual = filters;
+
+            const mergedFilters: FilterState = {
+                ...saved, // Start with saved rules
+                // Concatenate scalars if manual is set (Additive refinement)
+                searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
+                dateRange: manual.dateRange !== 'all' ? manual.dateRange : saved.dateRange,
+                favoritesOnly: manual.favoritesOnly || !!saved.favoritesOnly,
+                pinnedOnly: manual.pinnedOnly || !!saved.pinnedOnly,
+                minSteps: manual.minSteps || saved.minSteps,
+                maxSteps: manual.maxSteps || saved.maxSteps,
+                minCfg: manual.minCfg || saved.minCfg,
+                maxCfg: manual.maxCfg || saved.maxCfg,
+
+                // Union Lists
+                models: Array.from(new Set([...(saved.models || []), ...manual.models])),
+                tools: Array.from(new Set([...(saved.tools || []), ...manual.tools])),
+                loras: Array.from(new Set([...(saved.loras || []), ...manual.loras])),
+                embeddings: Array.from(new Set([...(saved.embeddings || []), ...manual.embeddings])),
+                hypernetworks: Array.from(new Set([...(saved.hypernetworks || []), ...manual.hypernetworks])),
+
+                // Keep Collection ID? Usually filters object for a collection definition doesn't contain its own ID or 'collectionId'.
+                // But FilterState might. Let's explicitly NOT include collectionId in the saved rule "payload" if possible, 
+                // but types might require it. 
+                // However, onUpdateCollectionFilters generally treats this as the "rules blob".
+                // We'll pass it as is, strict type compliance.
+                collectionId: undefined, // Don't save circular self-ref (or keep undefined if that's how it's stored)
+                showGrids: saved.showGrids, // Preserve
+                showIntermediates: saved.showIntermediates // Preserve
+            } as FilterState;
+
+            onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);
         } else if (activeSmartCol) {
-            // Fallback (shouldn't happen if props are wired)
+            // Fallback
             onSaveSmartCollection(activeSmartCol.name, filters);
         }
     };
 
-    // Global Dirty Check
-    const isDirty = !!(filters.collectionId || filters.searchQuery || filters.models.length > 0 || filters.tools.length > 0 || filters.loras.length > 0 || filters.favoritesOnly || filters.pinnedOnly || filters.dateRange !== 'all' || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    // Global Dirty Check (includes collectionId so "Reset All" works to clear selection)
+    const isDirty = !!(filters.collectionId || hasManualEdits);
 
     // Tab-Specific Dirty Checks (for dot indicators)
     const isOrganizeDirty = !!(filters.collectionId || filters.dateRange !== 'all' || filters.favoritesOnly || filters.pinnedOnly);
@@ -187,17 +213,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {hasUnsavedChanges && activeSmartCol && (
+                    {showUpdateButton && (
                         <button
                             onClick={handleQuickUpdate}
                             className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-sage-500 hover:bg-sage-600 transition-all shadow-lg shadow-sage-500/20 px-3 py-1.5 rounded-full animate-in zoom-in duration-300"
-                            title="Update collection with current filters"
+                            title={`Update ${activeSmartCol.name} with new filters`}
                         >
                             <Save className="w-3 h-3" />
-                            Update {activeSmartCol.name}
+                            Update
                         </button>
                     )}
-                    {isDirty && !hasUnsavedChanges && (
+                    {isDirty && !showUpdateButton && (
                         <button
                             onClick={clearAllFilters}
                             className="text-[10px] font-bold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"

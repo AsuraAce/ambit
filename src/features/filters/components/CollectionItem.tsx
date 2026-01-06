@@ -85,17 +85,42 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                     onClick={() => {
                         if (filters.collectionId !== col.id) {
                             if (col.filters) {
-                                // Smart Collection: Hydrate filters
+                                // Smart Collection: Set ID but reset other manual filters
+                                // We do NOT copy filters into state, because we want ActiveFilters to show them as "locked"
+                                // and not have them editable in the SearchBar.
                                 setFilters(prev => ({
                                     ...prev,
-                                    ...col.filters, // Apply saved filters
-                                    collectionId: col.id
+                                    collectionId: col.id,
+                                    // Reset manual inputs to avoid bleeding
+                                    searchQuery: '',
+                                    models: [],
+                                    tools: [],
+                                    loras: [],
+                                    embeddings: [],
+                                    hypernetworks: [],
+                                    dateRange: 'all',
+                                    favoritesOnly: false,
+                                    // PRESERVE View Options
+                                    showGrids: prev.showGrids,
+                                    showIntermediates: prev.showIntermediates
                                 }));
                             } else {
                                 // Static Collection: Clear filters but keep ID
                                 setFilters(prev => ({
                                     ...prev,
-                                    collectionId: col.id
+                                    collectionId: col.id,
+                                    // Reset manual inputs
+                                    searchQuery: '',
+                                    models: [],
+                                    tools: [],
+                                    loras: [],
+                                    embeddings: [],
+                                    hypernetworks: [],
+                                    dateRange: 'all',
+                                    favoritesOnly: false,
+                                    // PRESERVE View Options
+                                    showGrids: prev.showGrids,
+                                    showIntermediates: prev.showIntermediates
                                 }));
                             }
                         }
