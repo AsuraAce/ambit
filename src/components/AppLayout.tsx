@@ -14,6 +14,7 @@ import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
 import { Import, Search } from 'lucide-react';
+import { useSearch } from '../contexts/SearchContext';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -99,20 +100,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
 
     // Store Access
-    const images = useSearchStore(s => s.images);
-    const totalImages = useSearchStore(s => s.totalImages);
-    const isFiltering = useSearchStore(s => s.isFiltering);
-    const clearAllFilters = useSearchStore(s => s.clearAllFilters);
-    const storeToggleFavorite = useSearchStore(s => s.toggleFavorite);
-    const fetchData = useSearchStore(s => s.fetchData);
+    const {
+        images,
+        totalImages,
+        isFiltering,
+        clearAllFilters,
+        toggleFavorite,
+        loadMoreImages
+    } = useSearch();
+    // const images = useSearchStore(s => s.images); // Images available in context
+    // const totalImages = useSearchStore(s => s.totalImages);
+    // const isFiltering = useSearchStore(s => s.isFiltering);
+    // const clearAllFilters = useSearchStore(s => s.clearAllFilters);
+    // const storeToggleFavorite = useSearchStore(s => s.toggleFavorite);
+    // const fetchData = useSearchStore(s => s.fetchData);
 
     // Derived loadMore
-    const loadMoreImages = React.useCallback(() => {
-        fetchData(true, [...collections, ...smartCollections]);
-    }, [collections, smartCollections, fetchData]);
+    // Derived loadMore
+    // const loadMoreImages = React.useCallback(() => {
+    //    fetchData(true, [...collections, ...smartCollections]);
+    // }, [collections, smartCollections, fetchData]);
 
     // Override props with store values
-    const toggleFavorite = storeToggleFavorite;
+    //     const toggleFavorite = storeToggleFavorite;
 
     // --- Performance Logic (Moved from JSX to resolve Rules of Hooks violation) ---
     const showPinnedInShelf = React.useMemo(() => (

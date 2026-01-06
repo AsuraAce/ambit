@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Search, X, Sparkles, History } from 'lucide-react';
 import { FilterState } from '../../../types';
-import { useSearchStore } from '../../../stores/searchStore';
+import { useSearch } from '../../../contexts/SearchContext';
 
 interface SearchBarProps {
     filters: FilterState;
@@ -25,8 +25,8 @@ export const SearchBar = React.memo(({
     recentSearches,
     setRecentSearches
 }: SearchBarProps) => {
-    // Store Access
-    const { filters, setFilters } = useSearchStore();
+    // Context Access
+    const { filters, setFilters } = useSearch();
 
     // 1. ISOLATED STATE: Typing here will NOT re-render the parent (App.tsx)
     // 1. ISOLATED STATE: Typing here will NOT re-render the parent (App.tsx)

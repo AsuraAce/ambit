@@ -152,6 +152,9 @@ export type FacetSortOption =
   | 'recent_desc' | 'recent_asc'
   | 'added_desc' | 'added_asc';
 
+export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'tools';
+
+
 export interface MonitoredFolder {
   id: string;
   path: string;

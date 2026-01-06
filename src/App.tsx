@@ -11,6 +11,7 @@ import { LoadingScreen } from './components/ui/LoadingScreen';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
 import { useToast } from './hooks/useToast';
+import { useSearch } from './contexts/SearchContext';
 import { useSearchStore } from './stores/searchStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
@@ -23,7 +24,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 // Hooks
 import { useSelection } from './hooks/useSelection';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
-import { useSearch } from './hooks/useSearch';
+import { useAiSearchLogic } from './hooks/useAiSearchLogic';
 import { useFileOperations } from './hooks/useFileOperations';
 import { useCollectionOperations } from './hooks/useCollectionOperations';
 import { useTheme } from './hooks/useTheme';
@@ -70,19 +71,29 @@ export default function App() {
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters) as SmartCollection[], [allCollections]);
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
 
-    const images = useSearchStore(s => s.images);
-    const setImages = useSearchStore(s => s.setImages);
-    const filters = useSearchStore(s => s.filters);
-    const setFilters = useSearchStore(s => s.setFilters);
-    const sortOption = useSearchStore(s => s.sortOption);
-    const setSortOption = useSearchStore(s => s.setSortOption);
-    const totalImages = useSearchStore(s => s.totalImages);
-    const globalTotal = useSearchStore(s => s.globalTotal);
-    const isFiltering = useSearchStore(s => s.isFiltering);
-    const toggleFavorite = useSearchStore(s => s.toggleFavorite);
-    const clearAllFilters = useSearchStore(s => s.clearAllFilters);
-    const recentSearches = useSearchStore(s => s.recentSearches);
-    const setRecentSearches = useSearchStore(s => s.setRecentSearches);
+    const {
+        images, setImages,
+        filters, setFilters,
+        sortOption, setSortOption,
+        totalImages, globalTotal,
+        isFiltering,
+        toggleFavorite,
+        clearAllFilters,
+        recentSearches, setRecentSearches
+    } = useSearch();
+    // const images = useSearchStore(s => s.images);
+    // const setImages = useSearchStore(s => s.setImages);
+    // const filters = useSearchStore(s => s.filters);
+    // const setFilters = useSearchStore(s => s.setFilters);
+    // const sortOption = useSearchStore(s => s.sortOption);
+    // const setSortOption = useSearchStore(s => s.setSortOption);
+    // const totalImages = useSearchStore(s => s.totalImages);
+    // const globalTotal = useSearchStore(s => s.globalTotal);
+    // const isFiltering = useSearchStore(s => s.isFiltering);
+    // const toggleFavorite = useSearchStore(s => s.toggleFavorite);
+    // const clearAllFilters = useSearchStore(s => s.clearAllFilters);
+    // const recentSearches = useSearchStore(s => s.recentSearches);
+    // const setRecentSearches = useSearchStore(s => s.setRecentSearches);
 
     const isLoaded = isSettingsLoaded && isCollectionsLoaded;
 
@@ -100,7 +111,7 @@ export default function App() {
     const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
 
     const [availableTags, setAvailableTags] = useState<string[]>([]);
-    const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useSearch({
+    const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useAiSearchLogic({
         filters,
         setFilters,
         settings,
@@ -151,7 +162,8 @@ export default function App() {
 
     // --- Callbacks ---
     const loadMoreImages = React.useCallback(() => {
-        useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]);
+        // useSearchStore.getState().fetchData(true, [...collections, ...smartCollections]); 
+        // Logic handled by active query refetch if needed
     }, [collections, smartCollections]);
 
     const changeViewMode = useCallback((newMode: ViewMode) => {

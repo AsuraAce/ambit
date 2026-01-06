@@ -1,4 +1,4 @@
-import { AIImage } from '../../types';
+import { AIImage, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';

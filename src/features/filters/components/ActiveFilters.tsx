@@ -2,7 +2,7 @@ import * as React from 'react';
 import { X, FilterX } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { useCollections } from '../../../contexts/CollectionContext';
-import { useSearchStore } from '../../../stores/searchStore';
+import { useSearch } from '../../../contexts/SearchContext';
 
 interface ActiveFiltersProps {
     filters: FilterState;
@@ -11,8 +11,8 @@ interface ActiveFiltersProps {
 }
 
 export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
-    // Store Access
-    const { filters, setFilters, clearAllFilters } = useSearchStore();
+    // Context Access
+    const { filters, setFilters, clearAllFilters } = useSearch();
     const { collections, smartCollections } = useCollections();
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
     const activeSmartCol = filters.collectionId ? allCols.find(sc => sc.id === filters.collectionId) : undefined;

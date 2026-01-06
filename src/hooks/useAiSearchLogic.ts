@@ -14,7 +14,7 @@ interface UseSearchProps {
   onOpenSettings: () => void;
 }
 
-export const useSearch = ({
+export const useAiSearchLogic = ({
   filters,
   setFilters,
   settings,

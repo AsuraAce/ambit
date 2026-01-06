@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye } from 'lucide-react';
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
-import { useSearchStore } from '../../../stores/searchStore';
+// import { useSearchStore } from '../../../stores/searchStore';
 
 interface ViewControlsProps {
     showLayoutSwitcher: boolean;
@@ -36,9 +36,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     isFiltering
 }) => {
     // Legacy Context (for hidden content not yet in store)
-    const { availableHiddenContent } = useSearch();
+    const { availableHiddenContent, filters, setFilters, sortOption, setSortOption } = useSearch();
     // New Store
-    const { filters, setFilters, sortOption, setSortOption } = useSearchStore();
+    // const { filters, setFilters, sortOption, setSortOption } = useSearchStore();
 
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showViewMenu, setShowViewMenu] = useState(false);

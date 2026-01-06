@@ -1,7 +1,7 @@
 
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useSearch } from '../useSearch';
+import { useAiSearchLogic } from '../useAiSearchLogic';
 import { AppSettings, FilterState } from '../../types';
 
 // --- Mocks ---
@@ -17,7 +17,7 @@ vi.mock('../../services/geminiService', () => ({
     generateFiltersFromQuery: (...args: any[]) => mockGenerateFilters(...args),
 }));
 
-describe('useSearch', () => {
+describe('useAiSearchLogic', () => {
     const mockSetFilters = vi.fn();
     const mockSetRecentSearches = vi.fn();
     const mockOnOpenSettings = vi.fn();
@@ -61,7 +61,7 @@ describe('useSearch', () => {
     });
 
     it('should toggle AI search enabled state', () => {
-        const { result } = renderHook(() => useSearch(props));
+        const { result } = renderHook(() => useAiSearchLogic(props));
 
         act(() => {
             result.current.toggleAiSearch();
@@ -72,7 +72,7 @@ describe('useSearch', () => {
 
     it('should prompt to enable AI if settings are off', () => {
         const disabledSettings = { ...mockSettings, enableAI: false };
-        const { result } = renderHook(() => useSearch({ ...props, settings: disabledSettings }));
+        const { result } = renderHook(() => useAiSearchLogic({ ...props, settings: disabledSettings }));
 
         act(() => {
             result.current.toggleAiSearch();
@@ -83,7 +83,7 @@ describe('useSearch', () => {
     });
 
     it('should submit search and update recent searches', async () => {
-        const { result } = renderHook(() => useSearch(props));
+        const { result } = renderHook(() => useAiSearchLogic(props));
 
         await act(async () => {
             await result.current.submitSearch('sunset');
@@ -94,7 +94,7 @@ describe('useSearch', () => {
     });
 
     it('should call Gemini if AI search is enabled', async () => {
-        const { result } = renderHook(() => useSearch(props));
+        const { result } = renderHook(() => useAiSearchLogic(props));
 
         // Turn it on first
         act(() => {
@@ -116,7 +116,7 @@ describe('useSearch', () => {
     });
 
     it('should handle AI search failure gracefully', async () => {
-        const { result } = renderHook(() => useSearch(props));
+        const { result } = renderHook(() => useAiSearchLogic(props));
 
         act(() => {
             result.current.toggleAiSearch();

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, FilterState, SortOption } from '../types';
+import { AIImage, FilterState, SortOption, FacetType } from '../types';
 import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
@@ -8,7 +8,9 @@ import { appRepository } from '../services/repository';
 
 import { Facets } from '../services/db/searchRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
+import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface LibraryStats {
     totalImages: number;
@@ -49,7 +51,7 @@ interface SearchContextType {
     refreshHiddenAvailability: () => Promise<void>;
 
     isFacetsLoading: boolean;
-    loadFacet: (type: 'embeddings' | 'hypernetworks') => Promise<void>;
+    loadFacet: (type: FacetType) => Promise<void>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -65,17 +67,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         images, setImages,
         filters, setFilters,
         sortOption, setSortOption,
-        facets, isFacetsLoading,
-        stats,
-        totalImages, globalTotal, hasMoreImages,
-        isFiltering,
-        fetchData: storeFetchData,
-        refreshMetadata: storeRefreshMetadata,
-
+        // Removed deleted store properties
         clearAllFilters,
         toggleFavorite: storeToggleFavorite,
         togglePin: storeTogglePin
     } = useSearchStore();
+
+    // State for Dynamic Facet Loading
+    const [facetTypes, setFacetTypes] = useState<FacetType[]>(['checkpoints', 'loras', 'tools']);
 
     // React Query
     const {
@@ -83,6 +82,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         fetchNextPage,
         hasNextPage,
         isFetching,
+        isFetchingNextPage,
         isLoading: isQueryLoading
     } = useImagesQuery({
         filters,
@@ -117,9 +117,28 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
 
+    // Stats & Facets Query
+    const {
+        data: statsData,
+        isLoading: isStatsLoading
+    } = useLibraryStatsQuery({
+        filters,
+        settings,
+        privacyEnabled,
+        allCollections: [...collections, ...smartCollections],
+        facetTypes
+    });
+
+    const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+    const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
+
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+
+    // Track loaded facet types for lazy loading
+    // 'tools', 'checkpoints', 'loras' are default
+    // Track loaded facet types for lazy loading logic handled by facetTypes state above
 
     useEffect(() => {
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, [...collections, ...smartCollections]);
@@ -130,28 +149,20 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
 
-    // --- Compatibility Bridge Logic ---
 
-    // 1. When filters/collections change, trigger Store Fetch
-    // We need to pass collections to store
-    const collectionsRef = useRef([...collections, ...smartCollections]);
-    useEffect(() => {
-        collectionsRef.current = [...collections, ...smartCollections];
-    }, [collections, smartCollections]);
 
-    // Deprecated manual fetch - now no-op as React Query handles it.
-    const fetchData = useCallback(async (isLoadMore: boolean) => {
-        if (isLoadMore) fetchNextPage();
-    }, [fetchNextPage]);
+    const queryClient = useQueryClient();
 
     const refreshMetadata = useCallback(async () => {
-        await storeRefreshMetadata(activeSqlWhere, activeSqlParams);
-        await refreshCollections();
-        // refreshHiddenAvailability handled in component consuming it or separate effect?
-        // Context exposed it.
-    }, [storeRefreshMetadata, activeSqlWhere, activeSqlParams, refreshCollections]);
+        // Invalidate queries to trigger refetch
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['images'] }),
+            queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+            refreshCollections()
+        ]);
+    }, [queryClient, refreshCollections]);
 
-    const toggleFavorite = storeToggleFavorite; // TODO: store needs implementation
+
 
     // Legacy support for togglePin (add to store or keep local wrapper calling repo directly?)
     const togglePin = useCallback(async (id: string, isPinned?: boolean) => {
@@ -182,17 +193,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, []);
 
     // loadFacet wrapper
-    const loadFacet = useCallback(async (type: 'embeddings' | 'hypernetworks') => {
-        // ... store doesn't have loadFacet yet. Can we implement it in store later?
-        // For now keep local? But it updates `facets` which is in store!
-        // So we MUST implement `loadFacet` in store or update store facets from here.
-        // Let's update store facets manually here for now.
-        try {
-            const { getFacets } = await import('../services/db/searchRepo');
-            const partialFacets = await getFacets(activeSqlWhere || 'WHERE is_deleted = 0', activeSqlParams, [type]);
-            useSearchStore.setState(prev => ({ facets: { ...prev.facets, [type]: partialFacets[type] } }));
-        } catch (e) { console.error(e); }
-    }, [activeSqlWhere, activeSqlParams]);
+    // loadFacet wrapper
+    const loadFacet = useCallback(async (type: FacetType) => {
+        setFacetTypes(prev => {
+            if (prev.includes(type)) return prev;
+            return [...prev, type];
+        });
+        // React Query will detect dependency change and fetch automatically
+    }, []);
 
     // ...
 
@@ -258,10 +266,17 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => clearTimeout(timeout);
     }, [recentSearches]);
 
-    const loadMoreImages = useCallback(async () => {
-        if (!hasMoreImages) return;
-        await fetchData(true);
-    }, [hasMoreImages, fetchData]);
+    // Adapter for legacy fetchData calls
+    const fetchData = useCallback(async (isLoadMore: boolean) => {
+        if (isLoadMore) {
+            await fetchNextPage();
+        } else {
+            // Force refetch
+            // Actually filters change triggers refetch automatically.
+            // This might be used for manual refresh.
+            await queryClient.invalidateQueries({ queryKey: ['images'] });
+        }
+    }, [fetchNextPage, queryClient]);
 
 
 
@@ -273,25 +288,29 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setFilters,
             sortOption,
             setSortOption,
-            facets,
-            stats,
+            facets: activeFacets,
+            stats: activeStats,
             totalImages: totalImagesCount,
             globalTotal: globalTotalCount,
             hasMoreImages: !!hasNextPage,
-            loadMoreImages: async () => { await fetchNextPage(); },
+            loadMoreImages: async () => {
+                if (hasNextPage && !isFetchingNextPage) {
+                    await fetchNextPage();
+                }
+            },
             clearAllFilters,
-            isFiltering: isFetching,
+            isFiltering: isFetching && !isFetchingNextPage,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,
             fetchData,
             recentSearches,
             setRecentSearches,
-            toggleFavorite,
-            togglePin,
+            toggleFavorite: storeToggleFavorite,
+            togglePin: storeTogglePin,
             availableHiddenContent,
             refreshHiddenAvailability,
-            isFacetsLoading,
+            isFacetsLoading: isStatsLoading,
             loadFacet,
 
         }}>

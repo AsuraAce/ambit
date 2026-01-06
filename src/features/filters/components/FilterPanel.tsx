@@ -1,9 +1,7 @@
 import * as React from 'react';
 import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save } from 'lucide-react';
-import { FilterState, AIImage } from '../../../types';
-// import { useLibraryContext } from '../../../hooks/useLibraryContext'; // Removed
+import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
-import { useSearchStore } from '../../../stores/searchStore';
 import { CollectionsSection } from './CollectionsSection';
 
 import { ParameterSection } from './ParameterSection';
@@ -57,16 +55,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
 
     // Zustand Search Store
+    // Search Context (New Architecture)
     const {
         filters: storeFilters,
         setFilters: setStoreFilters,
         facets,
         isFacetsLoading,
         clearAllFilters,
-        // loadFacet // Helper needs to be implemented in store or imported?
-        // store doesn't have loadFacet yet? Wait, I added it to context but not store actions?
-        // I need to check store actions.
-    } = useSearchStore();
+        loadFacet
+    } = useSearch();
 
     // Contexts
     const { collections, smartCollections } = useCollections();
@@ -75,25 +72,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const filters = storeFilters;
     const setFilters = setStoreFilters;
 
-    // TODO: move loadFacet to store
-    // For now we can implement it locally or via import
-    const loadFacet = async (type: 'embeddings' | 'hypernetworks') => {
-        try {
-            const { getFacets } = await import('../../../services/db/searchRepo');
-            // We need current WHERE clause. Store doesn't expose it easily. 
-            // Reuse logic?
-            // Actually, we can just trigger a refreshMetadata with specific type?
-            // Store's refreshMetadata updates facets.
-            // Let's implement a quick loader here or just allow the store to handle it eventually.
-            // For now:
-            const state = useSearchStore.getState();
-            const { buildSqlWhereClause } = await import('../../../utils/sqlHelpers');
-            // ... logic to fetch specific facet ...
-            // Simplified: just update store facets
-            const partialFacets = await getFacets('', [], [type]); // TODO: use actual filters
-            useSearchStore.setState(prev => ({ facets: { ...prev.facets, [type]: partialFacets[type] } }));
-        } catch (e) { console.error(e); }
-    };
+    // loadFacet is now provided by context
+    // const loadFacet = ... removed
 
     const [activeTab, setActiveTab] = React.useState<FilterTab>('organize');
 
