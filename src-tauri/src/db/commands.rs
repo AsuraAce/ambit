@@ -82,6 +82,43 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             resolved_model_name=excluded.resolved_model_name"
                     ).map_err(|e| e.to_string())?;
 
+
+                    let mut lora_stmt = tx.prepare_cached("
+                        INSERT OR IGNORE INTO image_loras (image_id, lora_name)
+                        SELECT ?1, 
+                            CASE 
+                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                ELSE value 
+                            END
+                        FROM json_each(?2, '$.loras')
+                        WHERE value IS NOT NULL AND value != ''
+                    ").map_err(|e| e.to_string())?;
+
+                    let mut emb_stmt = tx.prepare_cached("
+                        INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
+                        SELECT ?1, 
+                            CASE 
+                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                ELSE value 
+                            END
+                        FROM json_each(?2, '$.embeddings')
+                        WHERE value IS NOT NULL AND value != ''
+                    ").map_err(|e| e.to_string())?;
+
+                    let mut hn_stmt = tx.prepare_cached("
+                        INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
+                        SELECT ?1, 
+                            CASE 
+                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                ELSE value 
+                            END
+                        FROM json_each(?2, '$.hypernetworks')
+                        WHERE value IS NOT NULL AND value != ''
+                    ").map_err(|e| e.to_string())?;
+
                     for img in &images {
                         stmt.execute(params![
                             img.id,
@@ -103,6 +140,11 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             img.original_metadata_json
                         ])
                         .map_err(|e| e.to_string())?;
+
+                        // Populate junction tables
+                        lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
                     }
                 }
 
