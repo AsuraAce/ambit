@@ -68,13 +68,32 @@ const VirtualGridInternal = <T extends { id: string }>(
   // Measure container width
   useLayoutEffect(() => {
     if (!containerRef.current) return;
+
+    let rafId: number;
+
     const observer = new ResizeObserver(entries => {
       if (entries[0]) {
-        setContainerWidth(entries[0].contentRect.width);
+        const newWidth = entries[0].contentRect.width;
+
+        // Cancel any pending update to avoid stacking
+        cancelAnimationFrame(rafId);
+
+        // Decouple from synchronous render cycle
+        rafId = requestAnimationFrame(() => {
+          setContainerWidth(prev => {
+            // Fix: check for significant change to avoid loop caused by scrollbar toggling
+            if (Math.abs(prev - newWidth) < 1) return prev;
+            return newWidth;
+          });
+        });
       }
     });
+
     observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   // Track scroll position with requestAnimationFrame

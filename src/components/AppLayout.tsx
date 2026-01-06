@@ -234,7 +234,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 />
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
-                    <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-auto overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
+                    <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
                         <ErrorBoundary>
                             {viewMode === 'dashboard' ? (
                                 <StatsDashboard images={images} onFilter={(t, v) => {

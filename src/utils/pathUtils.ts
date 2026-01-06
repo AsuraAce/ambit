@@ -30,7 +30,9 @@ export const getFilename = (path: string): string => {
 export const repairAssetUrl = (url: string): string => {
     if (!url) return '';
     if (url.startsWith('http://asset.localhost/') || url.startsWith('asset:')) {
-        return url.replace(/%2F/g, '/').replace(/%3A/g, ':');
+        // We replace %2F with / because some parsers struggle with encoded slashes, 
+        // but we MUST KEEP %3A (colon) encoded for Windows drive letters to be parsed correctly by the backend.
+        return url.replace(/%2F/g, '/'); // .replace(/%3A/g, ':');
     }
     return url;
 };
