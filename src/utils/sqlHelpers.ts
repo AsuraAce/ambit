@@ -7,7 +7,7 @@ export const buildSqlWhereClause = (
     maskedKeywords: string[],
     collections?: Collection[],
     isRecursive: boolean = false
-): { where: string; params: any[] } => {
+): { where: string; params: any[]; collectionId?: string } => {
     const conditions: string[] = [];
     const params: any[] = [];
 
@@ -19,7 +19,8 @@ export const buildSqlWhereClause = (
             conditions.push("(is_intermediate_gen IS NULL OR is_intermediate_gen != 1)");
         }
         if (!filters.showGrids) {
-            conditions.push("(is_grid_gen IS NULL OR is_grid_gen != 1) AND (json_extract(metadata_json, '$.generationType') IS NULL OR json_extract(metadata_json, '$.generationType') != 'grid')");
+            // Use indexed is_grid_gen column only - no json_extract needed
+            conditions.push("(is_grid_gen IS NULL OR is_grid_gen != 1)");
         }
     }
 
@@ -34,15 +35,17 @@ export const buildSqlWhereClause = (
     }
 
     // 2. Collection ID (Hybrid Logic)
+    // NOTE: For manual collection filtering, we DON'T add a WHERE clause here.
+    // Instead, the collectionId is returned separately and searchRepo uses INNER JOIN 
+    // with collection_images for much better performance (starts from smaller table).
     if (filters.collectionId) {
         const col = collections?.find(c => c.id === filters.collectionId);
         const subConditions: string[] = [];
 
-        // A. Manual Inclusions (via Junction Table)
-        subConditions.push(`id IN (SELECT image_id FROM collection_images WHERE collection_id = ?)`);
-        params.push(filters.collectionId);
+        // ONLY add smart filter rules to WHERE - manual inclusions handled via INNER JOIN
 
         // B. Smart Filter Rules (Hybrid Mode)
+        // If the collection defines smart rules, we combine them with manual inclusions using OR.
         // If the collection defines smart rules, we combine them with manual inclusions using OR.
         if (col && col.filters) {
             /** 
@@ -275,5 +278,11 @@ export const buildSqlWhereClause = (
     }
 
     const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';
-    return { where, params };
+
+    // Return collectionId for INNER JOIN optimization in searchRepo
+    // Only for non-smart collections (manual collections) that don't have filter rules
+    const col = collections?.find(c => c.id === filters.collectionId);
+    const isManualOnly = filters.collectionId && (!col?.filters);
+
+    return { where, params, collectionId: isManualOnly ? filters.collectionId ?? undefined : undefined };
 };

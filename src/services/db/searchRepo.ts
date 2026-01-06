@@ -20,9 +20,21 @@ export interface Facets {
     tools: string[];
 }
 
-export const countImages = async (whereClause: string, params: any[]): Promise<number> => {
+export const countImages = async (whereClause: string, params: any[], collectionId?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
+
+    // For collection-filtered counts, use INNER JOIN with collection_images for O(collection_size) instead of O(all_images)
+    if (collectionId) {
+        const query = `
+            SELECT count(*) as count 
+            FROM collection_images ci
+            INNER JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+        `;
+        const result = await db.select<any[]>(query, [collectionId, ...params]);
+        return result[0]?.count || 0;
+    }
 
     // Simple count using denormalized columns - no JOIN needed
     const query = `SELECT count(*) as count FROM images ${finalWhere}`;
@@ -61,14 +73,30 @@ export const searchImages = async (
     offset: number,
     sortField: string = 'timestamp',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
-    prioritizePinned: boolean = false
+    prioritizePinned: boolean = false,
+    collectionId?: string
 ): Promise<AIImage[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     const orderBy = prioritizePinned
-        ? `ORDER BY is_pinned DESC, ${sortField} ${sortOrder}`
-        : `ORDER BY ${sortField} ${sortOrder}`;
+        ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}`
+        : `ORDER BY images.${sortField} ${sortOrder}`;
+
+    // For collection-filtered searches, use INNER JOIN with collection_images 
+    // This is O(collection_size) instead of O(all_images)
+    if (collectionId) {
+        const query = `
+            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            FROM collection_images ci
+            INNER JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${orderBy}
+            LIMIT ${limit} OFFSET ${offset}
+        `;
+        const rows = await db.select<any[]>(query, [collectionId, ...params]);
+        return rows.map(mapRowToImage);
+    }
 
     // Use denormalized resolved_model_name column instead of LEFT JOIN with models
     // This eliminates the expensive JSON->hash->JOIN operation
@@ -76,7 +104,7 @@ export const searchImages = async (
         SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
         FROM images 
         ${finalWhere} 
-        ${orderBy}
+        ${orderBy.replace(/images\./g, '')}
         LIMIT ${limit} OFFSET ${offset}
     `;
 

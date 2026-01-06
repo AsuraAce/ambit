@@ -129,10 +129,12 @@ describe('sqlHelpers', () => {
                 }
             ];
 
-            it('should handle manual collections', () => {
-                const { where, params } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col1' }, false, 'blur', [], mockCollections);
-                expect(where).toContain('id IN (SELECT image_id FROM collection_images WHERE collection_id = ?)');
-                expect(params).toContain('col1');
+            it('should handle manual collections by returning collectionId for INNER JOIN', () => {
+                const { where, params, collectionId } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col1' }, false, 'blur', [], mockCollections);
+                // Manual collections don't add WHERE clause - INNER JOIN is used in searchRepo instead
+                expect(collectionId).toBe('col1');
+                // Base conditions should still be present
+                expect(where).toContain('is_deleted = 0');
             });
 
             it('should handle smart collections (hybrid mode)', () => {

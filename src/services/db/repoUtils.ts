@@ -2,11 +2,12 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage } from '../../types';
 
-// Lightweight column set for grid/listing views to avoid heavy JSON payloads
+// Lightweight column set for grid/listing views
+// NOTE: We fetch full metadata_json and strip heavy fields in JS (faster than SQLite's json_remove)
 export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, 
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
-    json_remove(images.metadata_json, '$.workflowJson', '$.rawParameters') as metadata_json
+    images.metadata_json
 `;
 
 // Helper to keep mapping consistent
@@ -15,6 +16,11 @@ export function mapRowToImage(row: any): AIImage {
     const thumbPath = row.thumbnail_path ? normalizePath(row.thumbnail_path) : null;
 
     const metadata = JSON.parse(row.metadata_json || '{}');
+
+    // Strip heavy fields in JS (much faster than SQLite's json_remove on every row)
+    delete metadata.workflowJson;
+    delete metadata.rawParameters;
+
     if (row.resolved_model_name) {
         metadata.model = row.resolved_model_name;
     }

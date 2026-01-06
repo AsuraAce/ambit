@@ -41,7 +41,7 @@ export const useImagesQuery = ({
     return useInfiniteQuery({
         queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async ({ pageParam = 0 }) => {
-            const { where, params } = buildSqlWhereClause(
+            const { where, params, collectionId } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,
                 settings.maskingMode,
@@ -64,16 +64,17 @@ export const useImagesQuery = ({
             const prioritizePinned = filters.collectionId !== null;
 
             // Parallelize count and search for the first page
+            // collectionId enables INNER JOIN optimization for manual collections
             if (pageParam === 0) {
                 const [images, totalCount, globalCount] = await Promise.all([
-                    searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
-                    countImages(where, params),
+                    searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned, collectionId),
+                    countImages(where, params, collectionId),
                     countGlobalImages() // Fast path: no JOIN, simple indexed count
                 ]);
                 return { images, totalCount, globalCount, nextOffset: PAGE_SIZE };
             } else {
                 const offset = pageParam as number;
-                const images = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
+                const images = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned, collectionId);
                 return { images, totalCount: -1, globalCount: -1, nextOffset: offset + PAGE_SIZE };
             }
         },

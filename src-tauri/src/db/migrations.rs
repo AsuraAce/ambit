@@ -243,5 +243,19 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18]
+    // Run ANALYZE to update query planner statistics - critical for large databases
+    let migration19 = Migration {
+        version: 19,
+        description: "run_analyze_for_query_planner",
+        sql: "
+            -- Update statistics for query planner to choose optimal indexes
+            ANALYZE images;
+            ANALYZE collection_images;
+            ANALYZE models;
+            ANALYZE facet_cache;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19]
 }
