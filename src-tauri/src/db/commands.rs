@@ -57,8 +57,13 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
 
                 {
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, model_hash, model_name, tool, resolved_model_name)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                             json_extract(?7, '$.modelHash'),
+                             json_extract(?7, '$.model'),
+                             json_extract(?7, '$.tool'),
+                             COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?7, '$.modelHash')), json_extract(?7, '$.model'))
+                         )
                          ON CONFLICT(id) DO UPDATE SET 
                             path=excluded.path,
                             timestamp=excluded.timestamp, 
@@ -70,7 +75,11 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             group_id=excluded.group_id,
                             board_id=excluded.board_id,
                             notes=excluded.notes,
-                            original_metadata_json=excluded.original_metadata_json"
+                            original_metadata_json=excluded.original_metadata_json,
+                            model_hash=excluded.model_hash,
+                            model_name=excluded.model_name,
+                            tool=excluded.tool,
+                            resolved_model_name=excluded.resolved_model_name"
                     ).map_err(|e| e.to_string())?;
 
                     for img in &images {
