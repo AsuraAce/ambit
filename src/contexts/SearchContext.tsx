@@ -4,10 +4,10 @@ import { AIImage, FilterState, SortOption } from '../types';
 import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
-import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { appRepository } from '../services/repository';
 
 import { Facets } from '../services/db/searchRepo';
+import { buildSqlWhereClause } from '../utils/sqlHelpers';
 
 interface LibraryStats {
     totalImages: number;
@@ -113,24 +113,22 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
         }
 
-        import('../utils/sqlHelpers').then(({ buildSqlWhereClause }) => {
-            const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collectionsRef.current);
-            const fetchKey = JSON.stringify({ where, params, sortOption });
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collectionsRef.current);
+        const fetchKey = JSON.stringify({ where, params, sortOption });
 
-            // Avoid redundant fetches if query hasn't changed
-            // We use a simplified check here. The store executes the actual query.
-            // However, we WANT to show loading skeleton only if it's a "meaningful" change.
-            // For now, let's just debounce or check equality? 
-            // Actually, the Store sets isFiltering=true immediately.
+        // Avoid redundant fetches if query hasn't changed
+        // We use a simplified check here. The store executes the actual query.
+        // However, we WANT to show loading skeleton only if it's a "meaningful" change.
+        // For now, let's just debounce or check equality? 
+        // Actually, the Store sets isFiltering=true immediately.
 
-            if (lastFetchRef.current !== fetchKey) {
-                lastFetchRef.current = fetchKey;
-                storeFetchData(false, collectionsRef.current);
-            }
+        if (lastFetchRef.current !== fetchKey) {
+            lastFetchRef.current = fetchKey;
+            storeFetchData(false, collectionsRef.current);
+        }
 
-            setActiveSqlWhere(where);
-            setActiveSqlParams(params);
-        });
+        setActiveSqlWhere(where);
+        setActiveSqlParams(params);
 
     }, [filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
 

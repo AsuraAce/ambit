@@ -43,6 +43,10 @@ interface SearchState {
     clearAllFilters: () => void;
     toggleFavorite: (id: string) => Promise<void>;
     togglePin: (id: string) => Promise<void>;
+
+    // Internals for Race Condition Handling
+    fetchRequestId: number;
+    metadataRequestId: number;
 }
 
 const INITIAL_FILTERS: FilterState = {
@@ -86,6 +90,9 @@ export const useSearchStore = create<SearchState>()(
             searchQuery: '',
             recentSearches: [],
 
+            fetchRequestId: 0,
+            metadataRequestId: 0,
+
             setImages: (update) => {
                 if (typeof update === 'function') {
                     set((state) => ({ images: update(state.images) }));
@@ -105,7 +112,10 @@ export const useSearchStore = create<SearchState>()(
             setFilters: (update) => {
                 set((state) => {
                     const newFilters = typeof update === 'function' ? { ...state.filters, ...update(state.filters) } : { ...state.filters, ...update };
-                    return { filters: newFilters };
+                    return {
+                        filters: newFilters,
+                        fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
+                    };
                 });
                 // NOTE: We cannot auto-trigger fetchData here nicely because we lack 'collections'.
                 // Components calling setFilters usually have access to collections from Context.
@@ -115,17 +125,26 @@ export const useSearchStore = create<SearchState>()(
             },
 
             setSortOption: (sortOption) => {
-                set({ sortOption });
+                set((state) => ({
+                    sortOption,
+                    fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
+                }));
             },
 
             clearAllFilters: () => {
-                set({ filters: INITIAL_FILTERS });
+                set((state) => ({
+                    filters: INITIAL_FILTERS,
+                    fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
+                }));
             },
 
             fetchData: async (isLoadMore = false, collectionsDependency: any[] = []) => {
                 const state = get();
-                if (state.isFiltering && !isLoadMore) return;
 
+                // Capture current Request ID (already incremented by setters)
+                const requestId = state.fetchRequestId;
+
+                // Set loading state (only for fresh searches, not load-more)
                 if (!isLoadMore) set({ isFiltering: true });
 
                 try {
@@ -163,6 +182,9 @@ export const useSearchStore = create<SearchState>()(
                         case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
                     }
 
+                    // Check for cancellation before expensive operations (optional but good)
+                    if (get().fetchRequestId !== requestId) return;
+
                     const prioritizePinned = state.filters.collectionId !== null;
                     const PAGE_SIZE = 1000;
 
@@ -172,6 +194,12 @@ export const useSearchStore = create<SearchState>()(
                             searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
                             countImages('WHERE is_deleted = 0', [])
                         ]);
+
+                        // RACE CONDITION CHECK
+                        if (get().fetchRequestId !== requestId) {
+                            // Stale request, ignore
+                            return;
+                        }
 
                         set({
                             totalImages: count,
@@ -187,6 +215,10 @@ export const useSearchStore = create<SearchState>()(
                     } else {
                         const offset = state.images.length;
                         const newBatch = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
+
+                        // RACE CONDITION CHECK
+                        if (get().fetchRequestId !== requestId) return;
+
                         set((prev) => ({
                             images: [...prev.images, ...newBatch],
                             hasMoreImages: newBatch.length >= PAGE_SIZE,
@@ -195,11 +227,16 @@ export const useSearchStore = create<SearchState>()(
                     }
                 } catch (e) {
                     console.error("SearchStore error", e);
-                    set({ isFiltering: false });
+                    // Only turn off loading if we are still the active request
+                    if (get().fetchRequestId === requestId) {
+                        set({ isFiltering: false });
+                    }
                 }
             },
 
             refreshMetadata: async (where?: string, params?: any[]) => {
+                const requestId = get().metadataRequestId + 1;
+                set({ metadataRequestId: requestId });
                 set({ isFacetsLoading: true });
                 try {
                     const { getFacets, getLibraryStats } = await import('../services/db/searchRepo');
@@ -207,10 +244,13 @@ export const useSearchStore = create<SearchState>()(
                     const activeWhere = where || 'WHERE is_deleted = 0';
                     const activeParams = params || [];
 
+
                     const [newFacets, newStats] = await Promise.all([
                         getFacets(activeWhere, activeParams, ['checkpoints', 'loras', 'tools']),
                         getLibraryStats(activeWhere, activeParams)
                     ]);
+
+                    if (get().metadataRequestId !== requestId) return;
 
                     set((prev) => ({
                         facets: { ...prev.facets, ...newFacets },
@@ -219,7 +259,10 @@ export const useSearchStore = create<SearchState>()(
                     }));
                 } catch (e) {
                     console.error("Failed to refresh metadata", e);
-                    set({ isFacetsLoading: false });
+                    // Only reset loading if this is the active request
+                    if (get().metadataRequestId === requestId) {
+                        set({ isFacetsLoading: false });
+                    }
                 }
             },
 
