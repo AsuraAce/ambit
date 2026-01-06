@@ -28,7 +28,6 @@ interface SearchState {
     // Filters
     filters: FilterState;
     sortOption: SortOption;
-    searchQuery: string;
     recentSearches: string[];
 
     // Actions
@@ -87,7 +86,6 @@ export const useSearchStore = create<SearchState>()(
 
             filters: INITIAL_FILTERS,
             sortOption: 'date_desc',
-            searchQuery: '',
             recentSearches: [],
 
             fetchRequestId: 0,
@@ -110,41 +108,26 @@ export const useSearchStore = create<SearchState>()(
             },
 
             setFilters: (update) => {
-                set((state) => {
-                    const newFilters = typeof update === 'function' ? { ...state.filters, ...update(state.filters) } : { ...state.filters, ...update };
-                    return {
-                        filters: newFilters,
-                        fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
-                    };
-                });
-                // NOTE: We cannot auto-trigger fetchData here nicely because we lack 'collections'.
-                // Components calling setFilters usually have access to collections from Context.
-                // Suggestion: Components should call `fetchData` manually after setting filters, 
-                // OR we store 'lastCollections' in the store?
-                // Let's force components to call `fetchImages` themselves for now to ensure they pass deps.
+                set((state) => ({
+                    filters: typeof update === 'function' ? { ...state.filters, ...update(state.filters) } : { ...state.filters, ...update }
+                }));
             },
 
             setSortOption: (sortOption) => {
-                set((state) => ({
-                    sortOption,
-                    fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
-                }));
+                set({ sortOption });
             },
 
             clearAllFilters: () => {
-                set((state) => ({
-                    filters: INITIAL_FILTERS,
-                    fetchRequestId: state.fetchRequestId + 1 // Invalidate pending fetches
-                }));
+                set({ filters: INITIAL_FILTERS });
             },
 
             fetchData: async (isLoadMore = false, collectionsDependency: any[] = []) => {
                 const state = get();
 
-                // Capture current Request ID (already incremented by setters)
-                const requestId = state.fetchRequestId;
+                // Increment Request ID for this new fetch
+                const requestId = state.fetchRequestId + 1;
+                set({ fetchRequestId: requestId });
 
-                // Set loading state (only for fresh searches, not load-more)
                 if (!isLoadMore) set({ isFiltering: true });
 
                 try {
