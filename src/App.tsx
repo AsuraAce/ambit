@@ -17,6 +17,8 @@ import { useCollectionStore } from './stores/collectionStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
 import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection } from './types';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -29,6 +31,17 @@ import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 1000 * 60 * 5, // 5 minutes
+            gcTime: 1000 * 60 * 60, // 24 hours (formerly cacheTime)
+            refetchOnWindowFocus: false, // Don't refetch on window focus for now
+            retry: 1
+        },
+    },
+});
 
 export default function App() {
     const { addToast } = useToast();

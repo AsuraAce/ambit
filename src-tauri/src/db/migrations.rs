@@ -174,5 +174,15 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15]
+    let migration16 = Migration {
+        version: 16,
+        description: "add_generated_columns",
+        sql: "ALTER TABLE images ADD COLUMN is_intermediate_gen INTEGER GENERATED ALWAYS AS (json_extract(metadata_json, '$.isIntermediate')) VIRTUAL;
+              ALTER TABLE images ADD COLUMN is_grid_gen INTEGER GENERATED ALWAYS AS (json_extract(metadata_json, '$.isGrid')) VIRTUAL;
+              CREATE INDEX IF NOT EXISTS idx_images_is_intermediate_gen ON images(is_intermediate_gen);
+              CREATE INDEX IF NOT EXISTS idx_images_is_grid_gen ON images(is_grid_gen);",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16]
 }

@@ -7,6 +7,7 @@ import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
 
 import { Facets } from '../services/db/searchRepo';
+import { useImagesQuery } from '../hooks/useImagesQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 
 interface LibraryStats {
@@ -73,17 +74,58 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         clearAllFilters,
         toggleFavorite: storeToggleFavorite,
-        togglePin: storeTogglePin,
-        searchQuery // ??? 
+        togglePin: storeTogglePin
     } = useSearchStore();
 
-    // We need 'activeSqlWhere' for components that use it?
-    // Actually Context expose 'activeSqlWhere' but store doesn't expose it directly yet.
-    // We can compute it or ignore it if not used?
-    // Let's check usages later. For now, we can compute it using same helper if needed.
+    // React Query
+    const {
+        data: queryData,
+        fetchNextPage,
+        hasNextPage,
+        isFetching,
+        isLoading: isQueryLoading
+    } = useImagesQuery({
+        filters,
+        sortOption,
+        settings,
+        privacyEnabled,
+        allCollections: [...collections, ...smartCollections]
+    });
 
+    // Flatten pages into a single image array
+    const queryImages = React.useMemo(() => {
+        if (!queryData) return [];
+        return queryData.pages.flatMap(p => p.images);
+    }, [queryData]);
+
+    // Use query data if available, otherwise fallback to store (for transitions or overrides)
+    // Actually, we should sync query data TO store or just expose it directly?
+    // Exposing directly is better but we have setImages...
+    // Let's rely on Query Data for display.
+    // BUT we need 'setImages' to work for optimistic updates (favorites/pins).
+    // React Query cache can be updated via setQueryData, but setImages is simpler if we sync.
+    // For now, let's allow setImages to override, OR sync Query -> Store.
+
+    // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
+    useEffect(() => {
+        if (queryData) {
+            const allImgs = queryData.pages.flatMap(p => p.images);
+            setImages(allImgs);
+        }
+    }, [queryData, setImages]);
+
+    const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
+    const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
+
+    // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
     const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+
+    useEffect(() => {
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, [...collections, ...smartCollections]);
+        setActiveSqlWhere(where);
+        setActiveSqlParams(params);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
@@ -97,50 +139,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         collectionsRef.current = [...collections, ...smartCollections];
     }, [collections, smartCollections]);
 
-    // Re-implement the filter effect but delegating to store
-    // Optimize Fetch Logic: Only fetch if SQL params actually change or if forced
-    const lastFetchRef = useRef<string>('');
-
-    useEffect(() => {
-        // Sync Sort Option from Smart Collection
-        if (filters.collectionId) {
-            const activeSmart = smartCollections.find(c => c.id === filters.collectionId);
-            if (activeSmart && activeSmart.filters?.sortOption) {
-                if (sortOption !== activeSmart.filters.sortOption) {
-                    setSortOption(activeSmart.filters.sortOption);
-                    return; // Return early, let next render handle fetch with new sort
-                }
-            }
-        }
-
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collectionsRef.current);
-        const fetchKey = JSON.stringify({ where, params, sortOption });
-
-        // Avoid redundant fetches if query hasn't changed
-        // We use a simplified check here. The store executes the actual query.
-        // However, we WANT to show loading skeleton only if it's a "meaningful" change.
-        // For now, let's just debounce or check equality? 
-        // Actually, the Store sets isFiltering=true immediately.
-
-        if (lastFetchRef.current !== fetchKey) {
-            lastFetchRef.current = fetchKey;
-            storeFetchData(false, collectionsRef.current);
-        }
-
-        setActiveSqlWhere(where);
-        setActiveSqlParams(params);
-
-    }, [filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
-
-    // Initial Load
-    useEffect(() => {
-        // Store handles initial load? Or we do it here?
-        // Let's let the effect above handle it since filters are set initially.
-    }, []);
-
+    // Deprecated manual fetch - now no-op as React Query handles it.
     const fetchData = useCallback(async (isLoadMore: boolean) => {
-        await storeFetchData(isLoadMore, collectionsRef.current);
-    }, [storeFetchData]);
+        if (isLoadMore) fetchNextPage();
+    }, [fetchNextPage]);
 
     const refreshMetadata = useCallback(async () => {
         await storeRefreshMetadata(activeSqlWhere, activeSqlParams);
@@ -273,12 +275,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setSortOption,
             facets,
             stats,
-            totalImages,
-            globalTotal,
-            hasMoreImages,
-            loadMoreImages,
+            totalImages: totalImagesCount,
+            globalTotal: globalTotalCount,
+            hasMoreImages: !!hasNextPage,
+            loadMoreImages: async () => { await fetchNextPage(); },
             clearAllFilters,
-            isFiltering,
+            isFiltering: isFetching,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,

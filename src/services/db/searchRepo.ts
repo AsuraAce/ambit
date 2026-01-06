@@ -22,7 +22,7 @@ export interface Facets {
 
 export const countImages = async (whereClause: string, params: any[]): Promise<number> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     // Use "FROM images" but include the JOIN for model filtering consistency
     const query = `
@@ -37,7 +37,7 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
 
 export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
     const query = `
         SELECT images.id 
         FROM images 
@@ -58,7 +58,7 @@ export const searchImages = async (
     prioritizePinned: boolean = false
 ): Promise<AIImage[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     const orderBy = prioritizePinned
         ? `ORDER BY images.is_pinned DESC, ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`
@@ -79,7 +79,7 @@ export const searchImages = async (
 
 export const getLibraryStats = async (whereClause: string = '', params: any[] = []): Promise<LibraryStats> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (json_extract(metadata_json, '$.isIntermediate') IS NULL OR json_extract(metadata_json, '$.isIntermediate') != 1)";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     try {
         const statsQuery = `

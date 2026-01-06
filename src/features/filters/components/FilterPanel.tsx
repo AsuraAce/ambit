@@ -154,13 +154,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             // For lists (models, etc.), we UNION them.
             // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
 
-            const saved = activeSmartCol.filters || {};
+            const saved = activeSmartCol.filters || ({} as any);
             const manual = filters;
 
             const mergedFilters: FilterState = {
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
-                searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
+                searchQuery: [(saved.searchQuery || ''), (manual.searchQuery || '')].filter(Boolean).join(' ').trim(),
                 dateRange: manual.dateRange !== 'all' ? manual.dateRange : saved.dateRange,
                 favoritesOnly: manual.favoritesOnly || !!saved.favoritesOnly,
                 pinnedOnly: manual.pinnedOnly || !!saved.pinnedOnly,

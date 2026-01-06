@@ -122,99 +122,10 @@ export const useSearchStore = create<SearchState>()(
             },
 
             fetchData: async (isLoadMore = false, collectionsDependency: any[] = []) => {
-                const state = get();
-
-                // Increment Request ID for this new fetch
-                const requestId = state.fetchRequestId + 1;
-                set({ fetchRequestId: requestId });
-
-                if (!isLoadMore) set({ isFiltering: true });
-
-                try {
-                    const { searchImages, countImages } = await import('../services/db/searchRepo');
-                    const { buildSqlWhereClause } = await import('../utils/sqlHelpers');
-                    const { appRepository } = await import('../services/repository');
-                    const appState = await appRepository.load();
-
-                    const settings = appState.settings;
-
-                    // Filter Logic
-                    const { where, params } = buildSqlWhereClause(
-                        state.filters,
-                        settings.maskingMode === 'hide', // Privacy Enabled assumed if hiding? 
-                        // Wait, privacyEnabled was a separate boolean in context.
-                        // Ideally checking settings.maskingMode is enough?
-                        // Let's assume privacy is ON if maskingMode is set?
-                        // Actually LibraryContext had `privacyEnabled`.
-                        // For now let's default to false or read from a store if available?
-                        // Temporary: Assume true or read from settings if we can. 
-                        settings.maskingMode,
-                        settings.maskedKeywords,
-                        collectionsDependency
-                    );
-
-                    let sortField = 'timestamp';
-                    let sortOrder: 'ASC' | 'DESC' = 'DESC';
-
-                    switch (state.sortOption) {
-                        case 'date_asc': sortField = 'timestamp'; sortOrder = 'ASC'; break;
-                        case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break;
-                        case 'name_desc': sortField = 'path'; sortOrder = 'DESC'; break;
-                        case 'size_desc': sortField = 'file_size'; sortOrder = 'DESC'; break;
-                        case 'size_asc': sortField = 'file_size'; sortOrder = 'ASC'; break;
-                        case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
-                    }
-
-                    // Check for cancellation before expensive operations (optional but good)
-                    if (get().fetchRequestId !== requestId) return;
-
-                    const prioritizePinned = state.filters.collectionId !== null;
-                    const PAGE_SIZE = 1000;
-
-                    if (!isLoadMore) {
-                        const [count, newBatch, globalCount] = await Promise.all([
-                            countImages(where, params),
-                            searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
-                            countImages('WHERE is_deleted = 0', [])
-                        ]);
-
-                        // RACE CONDITION CHECK
-                        if (get().fetchRequestId !== requestId) {
-                            // Stale request, ignore
-                            return;
-                        }
-
-                        set({
-                            totalImages: count,
-                            images: newBatch,
-                            globalTotal: globalCount,
-                            hasMoreImages: newBatch.length >= PAGE_SIZE,
-                            isFiltering: false
-                        });
-
-                        // Trigger Metadata Refresh after new search?
-                        get().refreshMetadata(where, params);
-
-                    } else {
-                        const offset = state.images.length;
-                        const newBatch = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned);
-
-                        // RACE CONDITION CHECK
-                        if (get().fetchRequestId !== requestId) return;
-
-                        set((prev) => ({
-                            images: [...prev.images, ...newBatch],
-                            hasMoreImages: newBatch.length >= PAGE_SIZE,
-                            isFiltering: false
-                        }));
-                    }
-                } catch (e) {
-                    console.error("SearchStore error", e);
-                    // Only turn off loading if we are still the active request
-                    if (get().fetchRequestId === requestId) {
-                        set({ isFiltering: false });
-                    }
-                }
+                // DEPRECATED: Handled by React Query (useImagesQuery)
+                // This function is kept for signature compatibility but should effectively be a no-op 
+                // or just log a warning if called unexpectedly.
+                // The React Context now drives the data fetching.
             },
 
             refreshMetadata: async (where?: string, params?: any[]) => {

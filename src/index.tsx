@@ -6,6 +6,19 @@ import { ToastProvider } from './contexts/ToastContext';
 import { LibraryProvider } from './contexts/LibraryContext';
 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 60,
+      refetchOnWindowFocus: false,
+      retry: 1
+    },
+  },
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -16,11 +29,14 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ToastProvider>
-      <LibraryProvider>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      </LibraryProvider>
+      <QueryClientProvider client={queryClient}>
+        <LibraryProvider>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </LibraryProvider>
+        <ReactQueryDevtools initialIsOpen={false} />
+      </QueryClientProvider>
     </ToastProvider>
   </React.StrictMode>
 );
