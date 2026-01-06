@@ -7,7 +7,7 @@ export const buildSqlWhereClause = (
     maskedKeywords: string[],
     collections?: Collection[],
     isRecursive: boolean = false
-): { where: string; params: any[]; collectionId?: string } => {
+): { where: string; params: any[]; collectionId?: string; loraName?: string } => {
     const conditions: string[] = [];
     const params: any[] = [];
 
@@ -126,13 +126,16 @@ export const buildSqlWhereClause = (
         conditions.push(`(${toolConditions.join(' OR ')})`);
     }
 
-    // 6. LoRAs, Embeddings, Hypernetworks (Arrays)
-    if (filters.loras.length > 0) {
+    // 6. LoRAs, Embeddings, Hypernetworks - Use denormalized junction tables for fast filtering
+    // For SINGLE lora filter, we skip adding WHERE and use INNER JOIN in searchRepo instead (like collections)
+    // For multiple loras (OR condition), we still use EXISTS
+    if (filters.loras.length === 1) {
+        // Single lora - will use INNER JOIN in searchRepo, don't add WHERE condition
+        // The loraName is returned and handled by searchRepo
+    } else if (filters.loras.length > 1) {
         const loraConditions = filters.loras.map(l => {
             params.push(l);
-            params.push(l + ' (%');
-            params.push(l + ':%');
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.loras') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
+            return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ?)`;
         });
         conditions.push(`(${loraConditions.join(' OR ')})`);
     }
@@ -140,9 +143,7 @@ export const buildSqlWhereClause = (
     if (filters.embeddings.length > 0) {
         const embConditions = filters.embeddings.map(e => {
             params.push(e);
-            params.push(e + ' (%');
-            params.push(e + ':%');
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.embeddings') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
+            return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)`;
         });
         conditions.push(`(${embConditions.join(' OR ')})`);
     }
@@ -150,9 +151,7 @@ export const buildSqlWhereClause = (
     if (filters.hypernetworks.length > 0) {
         const hnConditions = filters.hypernetworks.map(h => {
             params.push(h);
-            params.push(h + ' (%');
-            params.push(h + ':%');
-            return `EXISTS (SELECT 1 FROM json_each(metadata_json, '$.hypernetworks') WHERE value = ? OR value LIKE ? OR value LIKE ?)`;
+            return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)`;
         });
         conditions.push(`(${hnConditions.join(' OR ')})`);
     }
@@ -284,5 +283,13 @@ export const buildSqlWhereClause = (
     const col = collections?.find(c => c.id === filters.collectionId);
     const isManualOnly = filters.collectionId && (!col?.filters);
 
-    return { where, params, collectionId: isManualOnly ? filters.collectionId ?? undefined : undefined };
+    // Return loraName for single-lora filter INNER JOIN optimization
+    const singleLoraName = filters.loras.length === 1 ? filters.loras[0] : undefined;
+
+    return {
+        where,
+        params,
+        collectionId: isManualOnly ? filters.collectionId ?? undefined : undefined,
+        loraName: singleLoraName
+    };
 };

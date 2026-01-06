@@ -257,5 +257,78 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19]
+    // Denormalize LoRAs, Embeddings, Hypernetworks into junction tables for fast filtering
+    let migration20 = Migration {
+        version: 20,
+        description: "denormalize_resources_junction_tables",
+        sql: "
+            -- Junction table for LoRAs (many-to-many: images <-> loras)
+            CREATE TABLE IF NOT EXISTS image_loras (
+                image_id TEXT NOT NULL,
+                lora_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, lora_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_lora_by_name ON image_loras(lora_name);
+            
+            -- Junction table for Embeddings
+            CREATE TABLE IF NOT EXISTS image_embeddings (
+                image_id TEXT NOT NULL,
+                embedding_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, embedding_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_embedding_by_name ON image_embeddings(embedding_name);
+            
+            -- Junction table for Hypernetworks
+            CREATE TABLE IF NOT EXISTS image_hypernetworks (
+                image_id TEXT NOT NULL,
+                hypernetwork_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, hypernetwork_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_hypernetwork_by_name ON image_hypernetworks(hypernetwork_name);
+            
+            -- Populate LoRAs from existing JSON (strip version suffixes for matching)
+            INSERT OR IGNORE INTO image_loras (image_id, lora_name)
+            SELECT i.id, 
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END
+            FROM images i, json_each(i.metadata_json, '$.loras') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+            
+            -- Populate Embeddings from existing JSON
+            INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
+            SELECT i.id, 
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END
+            FROM images i, json_each(i.metadata_json, '$.embeddings') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+            
+            -- Populate Hypernetworks from existing JSON
+            INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
+            SELECT i.id, 
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END
+            FROM images i, json_each(i.metadata_json, '$.hypernetworks') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+            
+            -- Update ANALYZE for new tables
+            ANALYZE image_loras;
+            ANALYZE image_embeddings;
+            ANALYZE image_hypernetworks;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20]
 }

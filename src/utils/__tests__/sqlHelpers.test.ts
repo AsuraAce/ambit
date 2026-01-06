@@ -46,22 +46,25 @@ describe('sqlHelpers', () => {
             expect(params).toEqual([GeneratorTool.COMFYUI]);
         });
 
-        it('should handle fuzzy LoRA filters', () => {
-            const { where, params } = buildSqlWhereClause({ ...defaultFilters, loras: ['MyLora'] }, false, 'blur', []);
-            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
-            expect(params).toEqual(['MyLora', 'MyLora (%', 'MyLora:%']);
+
+        it('should return loraName for single LoRA filter (INNER JOIN optimization)', () => {
+            const { where, params, loraName } = buildSqlWhereClause({ ...defaultFilters, loras: ['MyLora'] }, false, 'blur', []);
+            // Single lora doesn't add WHERE clause - INNER JOIN is used in searchRepo instead
+            expect(loraName).toBe('MyLora');
+            expect(where).not.toContain('image_loras'); // No EXISTS for single lora
+            expect(params).toEqual([]);
         });
 
-        it('should handle fuzzy Embedding filters', () => {
+        it('should use junction table for Embedding filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, embeddings: ['EasyNegative'] }, false, 'blur', []);
-            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
-            expect(params).toEqual(['EasyNegative', 'EasyNegative (%', 'EasyNegative:%']);
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)");
+            expect(params).toEqual(['EasyNegative']);
         });
 
-        it('should handle fuzzy Hypernetwork filters', () => {
+        it('should use junction table for Hypernetwork filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, hypernetworks: ['HyperNet'] }, false, 'blur', []);
-            expect(where).toContain("value = ? OR value LIKE ? OR value LIKE ?");
-            expect(params).toEqual(['HyperNet', 'HyperNet (%', 'HyperNet:%']);
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)");
+            expect(params).toEqual(['HyperNet']);
         });
 
         it('should handle privacy mode "hide"', () => {

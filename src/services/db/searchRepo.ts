@@ -20,7 +20,7 @@ export interface Facets {
     tools: string[];
 }
 
-export const countImages = async (whereClause: string, params: any[], collectionId?: string): Promise<number> => {
+export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
@@ -33,6 +33,18 @@ export const countImages = async (whereClause: string, params: any[], collection
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
         const result = await db.select<any[]>(query, [collectionId, ...params]);
+        return result[0]?.count || 0;
+    }
+
+    // For single-lora-filtered counts, use INNER JOIN with image_loras for O(lora_usage_count) instead of O(all_images)
+    if (loraName) {
+        const query = `
+            SELECT count(*) as count 
+            FROM image_loras il
+            INNER JOIN images ON images.id = il.image_id
+            ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
+        `;
+        const result = await db.select<any[]>(query, [loraName, ...params]);
         return result[0]?.count || 0;
     }
 
@@ -74,7 +86,8 @@ export const searchImages = async (
     sortField: string = 'timestamp',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
     prioritizePinned: boolean = false,
-    collectionId?: string
+    collectionId?: string,
+    loraName?: string
 ): Promise<AIImage[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
@@ -95,6 +108,21 @@ export const searchImages = async (
             LIMIT ${limit} OFFSET ${offset}
         `;
         const rows = await db.select<any[]>(query, [collectionId, ...params]);
+        return rows.map(mapRowToImage);
+    }
+
+    // For single-lora-filtered searches, use INNER JOIN with image_loras
+    // This is O(lora_usage_count) instead of O(all_images)
+    if (loraName) {
+        const query = `
+            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            FROM image_loras il
+            INNER JOIN images ON images.id = il.image_id
+            ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
+            ${orderBy}
+            LIMIT ${limit} OFFSET ${offset}
+        `;
+        const rows = await db.select<any[]>(query, [loraName, ...params]);
         return rows.map(mapRowToImage);
     }
 
