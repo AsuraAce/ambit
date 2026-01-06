@@ -184,5 +184,14 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16]
+    // Performance optimization: compound covering index for common filter pattern
+    let migration17 = Migration {
+        version: 17,
+        description: "add_compound_covering_index",
+        sql: "CREATE INDEX IF NOT EXISTS idx_images_filter_covering ON images(is_deleted, is_intermediate_gen, is_grid_gen, timestamp DESC);
+              CREATE INDEX IF NOT EXISTS idx_collection_images_lookup ON collection_images(image_id, collection_id);",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17]
 }

@@ -24,14 +24,35 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
-    // Use "FROM images" but include the JOIN for model filtering consistency
-    const query = `
-        SELECT count(*) as count 
-        FROM images 
-        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-        ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-    `;
+    // Only JOIN with models if we're filtering by model (presence of 'm.name' or modelHash in where clause)
+    const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
+
+    let query: string;
+    if (needsModelJoin) {
+        query = `
+            SELECT count(*) as count 
+            FROM images 
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+        `;
+    } else {
+        // Fast path: no JOIN needed
+        query = `SELECT count(*) as count FROM images ${finalWhere}`;
+    }
+
     const result = await db.select<any[]>(query, params);
+    return result[0]?.count || 0;
+};
+
+/**
+ * Fast global count - uses simpler query without JOINs for speed.
+ * Result can be cached at the query layer.
+ */
+export const countGlobalImages = async (): Promise<number> => {
+    const db = await getDb();
+    const result = await db.select<any[]>(
+        `SELECT count(*) as count FROM images WHERE is_deleted = 0`
+    );
     return result[0]?.count || 0;
 };
 

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { FilterState, SortOption, AppSettings, AIImage, Collection } from '../types';
-import { searchImages, countImages } from '../services/db/searchRepo';
+import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 
 interface UseImagesQueryProps {
@@ -66,7 +66,7 @@ export const useImagesQuery = ({
                 const [images, totalCount, globalCount] = await Promise.all([
                     searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned),
                     countImages(where, params),
-                    countImages('WHERE is_deleted = 0', [])
+                    countGlobalImages() // Fast path: no JOIN, simple indexed count
                 ]);
                 return { images, totalCount, globalCount, nextOffset: PAGE_SIZE };
             } else {
