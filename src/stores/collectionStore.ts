@@ -11,6 +11,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: () => Promise<void>;
+    refreshSmartCounts: () => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 
     // Legacy support needed? 
@@ -28,8 +29,34 @@ export const useCollectionStore = create<CollectionState>()(
                     const { getAllCollectionsWithStats } = await import('../services/db/collectionRepo');
                     const cols = await getAllCollectionsWithStats();
                     set({ collections: cols });
+
+                    // Lazily fetch smart counts in the background
+                    get().refreshSmartCounts();
                 } catch (e) {
                     console.error('[CollectionStore] Failed to refresh collections', e);
+                }
+            },
+
+            refreshSmartCounts: async () => {
+                try {
+                    const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
+                    const currentCols = get().collections;
+                    const smartCols = currentCols.filter(c => !!c.filters);
+
+                    if (smartCols.length === 0) return;
+
+                    const counts = await getSmartCollectionCounts(smartCols);
+
+                    // Update only the smart collection counts without replacing entire array reference
+                    set({
+                        collections: currentCols.map(c =>
+                            c.filters && counts[c.id] !== undefined
+                                ? { ...c, count: counts[c.id] }
+                                : c
+                        )
+                    });
+                } catch (e) {
+                    console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }
             },
 
@@ -90,6 +117,9 @@ export const useCollectionStore = create<CollectionState>()(
                     }
 
                     set({ collections: dbCols, isLoaded: true });
+
+                    // Lazily fetch smart collection counts after initial render
+                    get().refreshSmartCounts();
                 } catch (e) {
                     console.error('[CollectionStore] Failed to initialize', e);
                     set({ isLoaded: true });

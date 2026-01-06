@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getLibraryStats, Facets } from '../services/db/searchRepo';
@@ -35,11 +36,24 @@ export const useLibraryStatsQuery = ({
     allCollections
 }: UseLibraryStatsQueryProps) => {
 
+    // Stable reference: only track the active collection's smart filter definition
+    const activeCollectionId = filters.collectionId;
+    const activeCollection = useMemo(() =>
+        allCollections.find(c => c.id === activeCollectionId),
+        [allCollections, activeCollectionId]
+    );
+
+    // Create stable fingerprint of smart collection filters (if any)
+    const smartFilterHash = useMemo(() =>
+        activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
+        [activeCollection?.filters]
+    );
+
     // Always fetch all facet types - they're cheap from facet_cache
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'];
 
     return useQuery({
-        queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections.map(c => c.id)],
+        queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
             const { where, params } = buildSqlWhereClause(
                 filters,

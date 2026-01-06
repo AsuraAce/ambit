@@ -112,12 +112,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [queryData, setImages]);
 
     // Proactive prefetching: Load next page in background after current page loads
+    // Only prefetch if we have less than 3 pages and user might scroll soon
     useEffect(() => {
-        if (hasNextPage && !isFetchingNextPage && queryData && queryData.pages.length > 0) {
-            // Delay slightly to avoid blocking the main thread
+        const currentPageCount = queryData?.pages.length ?? 0;
+        if (hasNextPage && !isFetchingNextPage && currentPageCount > 0 && currentPageCount < 3) {
             const timer = setTimeout(() => {
                 fetchNextPage();
-            }, 100);
+            }, 500); // Increased delay to reduce load during filter changes
             return () => clearTimeout(timer);
         }
     }, [hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);

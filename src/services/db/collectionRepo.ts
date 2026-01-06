@@ -128,58 +128,19 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
         } as Collection;
     });
 
-    // 2. Process Smart Collections: Calculate Dynamic Counts & Thumbnails
+    // 2. Smart Collections: Return with count 0 initially for fast load
+    // Smart counts are calculated lazily via refreshSmartCollectionCounts()
     const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
 
-    // Separate regular and smart collections
-    const smartCols = mappedCollections.filter(c => !!c.filters);
-    const regularCols = mappedCollections.filter(c => !c.filters);
-
-    // 1. Batch Count Queries for Smart Collections
-    let smartCounts: Record<string, number> = {};
-    if (smartCols.length > 0) {
-        try {
-            const countQueries = smartCols.map(c => {
-                const statsFilters: FilterState = {
-                    collectionId: c.id,
-                    dateRange: 'all',
-                    favoritesOnly: false,
-                    pinnedOnly: false,
-                    models: [],
-                    tools: [],
-                    loras: [],
-                    embeddings: [],
-                    hypernetworks: [],
-                    searchQuery: ''
-                };
-                const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
-                return { id: c.id, where, params };
-            });
-
-            // SQLite UNION ALL approach for batched counts
-            const unionSql = countQueries.map(q =>
-                `SELECT ? as id, (SELECT COUNT(*) FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${q.where.replace(/WHERE /i, 'WHERE images.')}) as count`
-            ).join(' UNION ALL ');
-            const unionParams = countQueries.flatMap(q => [q.id, ...q.params]);
-
-            const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
-            res.forEach(row => { smartCounts[row.id] = row.count; });
-        } catch (e) {
-            console.error("[DB] Failed batched smart counts", e);
-        }
-    }
-
-    // 2. Fetch Thumbnails (Still parallel but isolated from counts)
     const finalCollections = await Promise.all(mappedCollections.map(async (c) => {
         if (!c.filters) return c;
 
-        try {
-            const count = smartCounts[c.id] || 0;
-            let smartThumb = c.thumbnail;
+        // For smart collections, set count to 0 initially (will be updated lazily)
+        // Only fetch thumbnail if needed
+        let smartThumb = c.thumbnail;
 
-            if (!c.customThumbnail) {
-                // We still fetch thumbnails individually for now as UNION with LIMIT is tricky
-                // but we skip if it's already a valid external thumb (rare for smart)
+        if (!c.customThumbnail) {
+            try {
                 const statsFilters: FilterState = {
                     collectionId: c.id,
                     dateRange: 'all',
@@ -195,19 +156,64 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
                 const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
                 const thumbUrl = await getSmartCollectionThumbnail(where, params);
                 if (thumbUrl) smartThumb = thumbUrl;
+            } catch (e) {
+                // Keep existing thumb
             }
-
-            return {
-                ...c,
-                count,
-                thumbnail: smartThumb
-            };
-        } catch (e) {
-            return c;
         }
+
+        return {
+            ...c,
+            count: 0, // Lazy count - will be populated by refreshSmartCollectionCounts
+            thumbnail: smartThumb
+        };
     }));
 
     return finalCollections;
+};
+
+/**
+ * Lazily calculate smart collection counts without blocking the main collection load.
+ * Returns a map of collectionId -> count for smart collections only.
+ */
+export const getSmartCollectionCounts = async (smartCollections: Collection[]): Promise<Record<string, number>> => {
+    if (smartCollections.length === 0) return {};
+
+    const db = await getDb();
+    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
+
+    const smartCounts: Record<string, number> = {};
+
+    try {
+        const countQueries = smartCollections.map(c => {
+            const statsFilters: FilterState = {
+                collectionId: c.id,
+                dateRange: 'all',
+                favoritesOnly: false,
+                pinnedOnly: false,
+                models: [],
+                tools: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                searchQuery: ''
+            };
+            const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
+            return { id: c.id, where, params };
+        });
+
+        // SQLite UNION ALL approach for batched counts
+        const unionSql = countQueries.map(q =>
+            `SELECT ? as id, (SELECT COUNT(*) FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${q.where.replace(/WHERE /i, 'WHERE images.')}) as count`
+        ).join(' UNION ALL ');
+        const unionParams = countQueries.flatMap(q => [q.id, ...q.params]);
+
+        const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
+        res.forEach(row => { smartCounts[row.id] = row.count; });
+    } catch (e) {
+        console.error("[DB] Failed batched smart counts", e);
+    }
+
+    return smartCounts;
 };
 
 export const getCollectionThumbnail = async (imageIds: string[]): Promise<string | undefined> => {

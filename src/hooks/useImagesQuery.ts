@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { FilterState, SortOption, AppSettings, AIImage, Collection } from '../types';
 import { searchImages, countImages } from '../services/db/searchRepo';
@@ -21,8 +22,22 @@ export const useImagesQuery = ({
 
     const PAGE_SIZE = 1000;
 
+    // Stable reference: only track the active collection's smart filter definition
+    const activeCollectionId = filters.collectionId;
+    const activeCollection = useMemo(() =>
+        allCollections.find(c => c.id === activeCollectionId),
+        [allCollections, activeCollectionId]
+    );
+
+    // Create stable fingerprint of smart collection filters (if any)
+    // This prevents cache invalidation when unrelated collection counts change
+    const smartFilterHash = useMemo(() =>
+        activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
+        [activeCollection?.filters]
+    );
+
     return useInfiniteQuery({
-        queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections.map(c => c.id)], // Dependency Array
+        queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async ({ pageParam = 0 }) => {
             const { where, params } = buildSqlWhereClause(
                 filters,

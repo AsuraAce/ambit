@@ -19,7 +19,7 @@ describe('sqlHelpers', () => {
         it('should return base conditions by default', () => {
             const { where, params } = buildSqlWhereClause(defaultFilters, false, 'blur', []);
             expect(where).toContain('is_deleted = 0');
-            expect(where).toContain('isIntermediate');
+            expect(where).toContain('is_intermediate_gen');
             expect(params).toHaveLength(0);
         });
 
