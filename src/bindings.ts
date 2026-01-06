@@ -29,6 +29,18 @@ async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>) : 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Reset migration 18 if it failed partially. This deletes the migration record
+ * and allows it to run again on next app launch.
+ */
+async resetMigration18() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_migration_18") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async rebuildFacetCache() : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };

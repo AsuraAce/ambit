@@ -24,21 +24,8 @@ export const countImages = async (whereClause: string, params: any[]): Promise<n
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
-    // Only JOIN with models if we're filtering by model (presence of 'm.name' or modelHash in where clause)
-    const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
-
-    let query: string;
-    if (needsModelJoin) {
-        query = `
-            SELECT count(*) as count 
-            FROM images 
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-        `;
-    } else {
-        // Fast path: no JOIN needed
-        query = `SELECT count(*) as count FROM images ${finalWhere}`;
-    }
+    // Simple count using denormalized columns - no JOIN needed
+    const query = `SELECT count(*) as count FROM images ${finalWhere}`;
 
     const result = await db.select<any[]>(query, params);
     return result[0]?.count || 0;
@@ -60,20 +47,8 @@ export const searchImageIds = async (whereClause: string, params: any[]): Promis
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
-    // Only JOIN with models if filtering by model
-    const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
-
-    let query: string;
-    if (needsModelJoin) {
-        query = `
-            SELECT images.id 
-            FROM images 
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-        `;
-    } else {
-        query = `SELECT id FROM images ${finalWhere}`;
-    }
+    // Simple query using denormalized columns - no JOIN needed
+    const query = `SELECT id FROM images ${finalWhere}`;
 
     const rows = await db.select<{ id: string }[]>(query, params);
     return rows.map(r => r.id);
@@ -92,14 +67,15 @@ export const searchImages = async (
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     const orderBy = prioritizePinned
-        ? `ORDER BY images.is_pinned DESC, ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`
-        : `ORDER BY ${sortField.includes('.') ? sortField : 'images.' + sortField} ${sortOrder}`;
+        ? `ORDER BY is_pinned DESC, ${sortField} ${sortOrder}`
+        : `ORDER BY ${sortField} ${sortOrder}`;
 
+    // Use denormalized resolved_model_name column instead of LEFT JOIN with models
+    // This eliminates the expensive JSON->hash->JOIN operation
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name
+        SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
         FROM images 
-        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-        ${finalWhere.replace(/WHERE /i, 'WHERE images.')} 
+        ${finalWhere} 
         ${orderBy}
         LIMIT ${limit} OFFSET ${offset}
     `;
@@ -113,45 +89,26 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     try {
-        // Only JOIN with models for basic stats if filtering by model
-        const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
-
-        let statsQuery: string;
-        if (needsModelJoin) {
-            statsQuery = `
-                SELECT 
-                    count(*) as total, 
-                    avg(cast(json_extract(images.metadata_json, '$.steps') as integer)) as avg_steps
-                FROM images 
-                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-                ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-            `;
-        } else {
-            statsQuery = `
-                SELECT 
-                    count(*) as total, 
-                    avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
-                FROM images 
-                ${finalWhere}
-            `;
-        }
+        // Use direct query without JOIN - all needed columns are now denormalized
+        const statsQuery = `
+            SELECT 
+                count(*) as total, 
+                avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
+            FROM images 
+            ${finalWhere}
+        `;
 
         const basicStats = await db.select<any[]>(statsQuery, params);
         const total = basicStats[0]?.total || 0;
         const avgSteps = Math.round(basicStats[0]?.avg_steps || 0);
 
+        // Use denormalized resolved_model_name column for model stats
         const modelQuery = `
             SELECT 
-                CASE 
-                    WHEN m.name IS NOT NULL THEN m.name
-                    WHEN json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown'
-                    THEN COALESCE(json_extract(images.metadata_json, '$.modelHash'), 'Unknown')
-                    ELSE json_extract(images.metadata_json, '$.model')
-                END as name, 
+                COALESCE(resolved_model_name, model_name, 'Unknown') as name, 
                 count(*) as count
             FROM images
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+            ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
             LIMIT 20
@@ -198,29 +155,14 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
         const safeWhere = finalWhere.replace(/(\bimages\.)?\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match, prefix, col) => prefix ? match : `images.${col}`);
 
-        // Only JOIN with models if filtering by model (presence of 'm.name' in where clause)
-        const needsModelJoin = safeWhere.includes('m.name') || safeWhere.includes('modelHash');
-
-        let promptQuery: string;
-        if (needsModelJoin) {
-            promptQuery = `
-                SELECT positive_prompt 
-                FROM images_fts
-                JOIN images ON images.id = images_fts.id
-                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-                ${safeWhere}
-                LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
-            `;
-        } else {
-            // Fast path: no model JOIN needed
-            promptQuery = `
-                SELECT positive_prompt 
-                FROM images_fts
-                JOIN images ON images.id = images_fts.id
-                ${safeWhere}
-                LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
-            `;
-        }
+        // Simple query using denormalized columns - no model JOIN needed
+        const promptQuery = `
+            SELECT positive_prompt 
+            FROM images_fts
+            JOIN images ON images.id = images_fts.id
+            ${safeWhere}
+            LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
+        `;
 
         const rows = await db.select<any[]>(promptQuery, params);
 

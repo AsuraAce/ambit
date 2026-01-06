@@ -98,33 +98,27 @@ export const buildSqlWhereClause = (
         conditions.push('is_pinned = 1');
     }
 
-    // 5. Models (Array)
+    // 5. Models (Array) - Use denormalized resolved_model_name and model_hash columns
     if (filters.models.length > 0) {
         const modelConditions = filters.models.map(m => {
             if (m === 'Unknown') {
-                return `(
-                    (json_extract(images.metadata_json, '$.model') IS NULL OR json_extract(images.metadata_json, '$.model') = '' OR json_extract(images.metadata_json, '$.model') = 'Unknown')
-                    AND 
-                    (json_extract(images.metadata_json, '$.modelHash') IS NULL OR json_extract(images.metadata_json, '$.modelHash') = '' OR json_extract(images.metadata_json, '$.modelHash') = 'Unknown')
-                    AND m.name IS NULL
-                )`;
+                return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
             }
             params.push(m);
-            params.push(m);
-            params.push(m);
-            return `(m.name = ? OR json_extract(images.metadata_json, '$.model') = ? OR json_extract(images.metadata_json, '$.modelHash') = ?)`;
+            // Use indexed resolved_model_name column for fast lookup
+            return `resolved_model_name = ?`;
         });
         conditions.push(`(${modelConditions.join(' OR ')})`);
     }
 
-    // 5. Tools (Array)
+    // 5. Tools (Array) - Use denormalized tool column
     if (filters.tools.length > 0) {
         const toolConditions = filters.tools.map(t => {
             if (t === 'Unknown') {
-                return `(json_extract(metadata_json, '$.tool') = 'Unknown' OR json_extract(metadata_json, '$.tool') IS NULL)`;
+                return `(tool = 'Unknown' OR tool IS NULL)`;
             }
             params.push(t);
-            return `json_extract(metadata_json, '$.tool') = ?`;
+            return `tool = ?`;
         });
         conditions.push(`(${toolConditions.join(' OR ')})`);
     }

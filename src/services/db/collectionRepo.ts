@@ -198,19 +198,13 @@ export const getSmartCollectionCounts = async (smartCollections: Collection[]): 
                 searchQuery: ''
             };
             const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
-            // Check if we need the model JOIN
-            const needsModelJoin = where.includes('m.name') || where.includes('modelHash');
-            return { id: c.id, where, params, needsModelJoin };
+            return { id: c.id, where, params };
         });
 
-        // SQLite UNION ALL approach for batched counts - only JOIN when needed
-        const unionSql = countQueries.map(q => {
-            if (q.needsModelJoin) {
-                return `SELECT ? as id, (SELECT COUNT(*) FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${q.where.replace(/WHERE /i, 'WHERE images.')}) as count`;
-            } else {
-                return `SELECT ? as id, (SELECT COUNT(*) FROM images ${q.where}) as count`;
-            }
-        }).join(' UNION ALL ');
+        // SQLite UNION ALL approach for batched counts - using denormalized columns, no JOIN needed
+        const unionSql = countQueries.map(q =>
+            `SELECT ? as id, (SELECT COUNT(*) FROM images ${q.where}) as count`
+        ).join(' UNION ALL ');
         const unionParams = countQueries.flatMap(q => [q.id, ...q.params]);
 
         const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);

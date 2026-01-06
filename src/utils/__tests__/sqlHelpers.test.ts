@@ -35,14 +35,14 @@ describe('sqlHelpers', () => {
 
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
-            expect(where).toContain("(m.name = ? OR json_extract(images.metadata_json, '$.model') = ? OR json_extract(images.metadata_json, '$.modelHash') = ?)");
-            expect(params).toEqual(['SDXL', 'SDXL', 'SDXL', 'Flux', 'Flux', 'Flux']);
+            expect(where).toContain("resolved_model_name = ?");
+            expect(params).toEqual(['SDXL', 'Flux']);
         });
 
         it('should handle tools filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, tools: [GeneratorTool.COMFYUI, GeneratorTool.UNKNOWN] }, false, 'blur', []);
-            expect(where).toContain("json_extract(metadata_json, '$.tool') = ?");
-            expect(where).toContain("json_extract(metadata_json, '$.tool') IS NULL");
+            expect(where).toContain("tool = ?");
+            expect(where).toContain("tool IS NULL");
             expect(params).toEqual([GeneratorTool.COMFYUI]);
         });
 

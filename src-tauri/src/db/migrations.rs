@@ -193,5 +193,55 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17]
+    // Major performance optimization: denormalize frequently-queried JSON fields
+    // Note: SQLite doesn't allow STORED generated columns via ALTER TABLE, so we use
+    // regular columns populated via UPDATE statements
+    let migration18 = Migration {
+        version: 18,
+        description: "denormalize_metadata_for_performance",
+        sql: "
+            -- Add regular columns for denormalized data (not generated columns due to SQLite limitation)
+            ALTER TABLE images ADD COLUMN model_hash TEXT;
+            ALTER TABLE images ADD COLUMN model_name TEXT;
+            ALTER TABLE images ADD COLUMN tool TEXT;
+            ALTER TABLE images ADD COLUMN resolved_model_name TEXT;
+            
+            -- Populate model_hash from JSON
+            UPDATE images SET model_hash = json_extract(metadata_json, '$.modelHash') 
+                WHERE model_hash IS NULL AND metadata_json IS NOT NULL;
+            
+            -- Populate model_name from JSON
+            UPDATE images SET model_name = json_extract(metadata_json, '$.model') 
+                WHERE model_name IS NULL AND metadata_json IS NOT NULL;
+            
+            -- Populate tool from JSON
+            UPDATE images SET tool = json_extract(metadata_json, '$.tool') 
+                WHERE tool IS NULL AND metadata_json IS NOT NULL;
+            
+            -- Populate resolved_model_name from models table first
+            UPDATE images SET resolved_model_name = (
+                SELECT m.name FROM models m 
+                WHERE m.hash = json_extract(images.metadata_json, '$.modelHash')
+            ) WHERE resolved_model_name IS NULL;
+            
+            -- Fall back to model_name if no match in models table
+            UPDATE images SET resolved_model_name = model_name 
+                WHERE resolved_model_name IS NULL AND model_name IS NOT NULL;
+            
+            -- Indexes for fast filtering on denormalized columns
+            CREATE INDEX IF NOT EXISTS idx_images_model_hash_denorm ON images(model_hash);
+            CREATE INDEX IF NOT EXISTS idx_images_tool_denorm ON images(tool);
+            CREATE INDEX IF NOT EXISTS idx_images_resolved_model ON images(resolved_model_name);
+            
+            -- Composite index for common filter patterns
+            CREATE INDEX IF NOT EXISTS idx_images_filter_model ON images(is_deleted, resolved_model_name, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_images_filter_tool ON images(is_deleted, tool, timestamp DESC);
+            
+            -- Optimized collection lookup
+            CREATE INDEX IF NOT EXISTS idx_collection_images_by_collection ON collection_images(collection_id, image_id);
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18]
 }
