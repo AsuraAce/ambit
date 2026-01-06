@@ -8,25 +8,30 @@
 The application uses a **Hybrid Architecture**:
 *   **Performance-Critical Data** (Images, Search Index): Stored in **SQLite** for speed and querying power.
 *   **Configuration & User Preferences**: Stored in **JSON** files for portability and simplicity.
+*   **Type Safety**: Full end-to-end type safety using **Specta** to bridge Rust structs and TypeScript interfaces.
 
 ## 2. Technology Stack
 
 ### Frontend (UI)
 *   **Framework**: [React 19](https://react.dev/)
+*   **State Management**: 
+    *   [Zustand](https://github.com/pmndrs/zustand) (Global client state)
+    *   [TanStack React Query v5](https://tanstack.com/query/latest) (Server/Async state & caching)
 *   **Language**: TypeScript
 *   **Build Tool**: Vite
 *   **Styling**: 
     *   [Tailwind CSS](https://tailwindcss.com/) (Utility-first styling)
     *   `clsx` + `tailwind-merge` (Class composition)
 *   **Routing**: React Router v7
+*   **Testing**: [Vitest](https://vitest.dev/) + React Testing Library
 
 ### Backend (System Integration)
 *   **Core**: [Tauri v2](https://v2.tauri.app/) (Rust)
-*   **Database**: `@tauri-apps/plugin-sql` (SQLite)
+*   **Database**: `@tauri-apps/plugin-sql` (SQLite) + `rusqlite` (Native Rust access)
 *   **Validation**: [Zod](https://zod.dev/) (Schema validation for external data)
 *   **Error Handling**: `thiserror` (Rust error enums in `src-tauri/src/db/error.rs`)
 *   **Type Safety**: `specta` + `tauri-specta` (Rust ↔ TypeScript type generation)
-*   **Filesystem**: `@tauri-apps/plugin-fs`
+*   **Filesystem**: `@tauri-apps/plugin-fs` (including native watcher)
 
 ## 3. Data Architecture (The Hybrid Model)
 
@@ -37,6 +42,7 @@ The application splits its state persistence into two distinct layers based on d
 *   **Table Structure**:
     *   `images`: usage metadata, paths, dimensions, hashes.
     *   `images_fts`: Virtual table for Full-Text Search (FTS5) functionality.
+    *   `facet_cache`: Pre-aggregated counts and metadata for fast filtering.
 *   **Location**: Managed by `src/services/db`.
 *   **Configuration** (PRAGMAs):
     *   `journal_mode=WAL`: Write-Ahead Logging for concurrent reads during writes.
@@ -45,7 +51,7 @@ The application splits its state persistence into two distinct layers based on d
 *   **Key Files**:
     *   `src/services/db/connection.ts`: Database connection, PRAGMAs, and concurrency mutex.
     *   `src/services/db/searchRepo.ts`: Complex SQL query generation for filtering.
-    *   `src-tauri/src/db/mod.rs`: Rust-side connection helper with `configure_connection()`.
+    *   `src-tauri/src/db/mod.rs`: Rust-side connection helper and repository split.
 
 ### B. The JSON Layer (`library.json`)
 *   **Purpose**: Lightweight, portable state.
@@ -59,34 +65,33 @@ The application splits its state persistence into two distinct layers based on d
 
 ```text
 src/
-├── components/          # React UI Components
-│   ├── common/          # Reusable atoms (Buttons, Inputs)
-│   └── feature/         # Domain specific blocks (ImageGrid, FilterPanel)
-├── contexts/            # State Management (React Context)
-│   ├── LibraryContext.tsx # (Legacy) Global Aggregator
-│   ├── SearchContext.tsx  # Search state, results, and filtering logic
-│   └── SettingsContext.tsx # User preferences
-├── hooks/               # Custom React Hooks
-│   ├── useFileOperations.ts # Complex file system logic
-│   └── useVirtualizer.ts    # Scroll performance logic
-├── services/            # Business Logic & Data Access
-│   ├── repository.ts    # Interfaces for data access
-│   ├── TauriFsRepository.ts # JSON persistence implementation
-│   └── db/              # SQLite repositories
-└── types.ts             # Global TypeScript Database/Entity Interfaces
+├── components/          # Generic UI Components (Atoms/Molecules)
+│   └── ui/              # Shadcn-like reusable components
+├── features/            # Feature-based domain logic
+│   ├── library/         # Image grid, loading logic
+│   ├── filters/         # Search sidebar, facet management
+│   ├── collections/     # Smart/Static collection management
+│   └── viewer/          # Fullscreen image inspection
+├── stores/               # Zustand store definitions
+├── hooks/               # Domain-agnostic custom React Hooks
+├── services/            # Business Logic & Data Access (Repos)
+│   ├── db/              # SQLite repositories
+│   └── api/             # External integration services
+├── bindings.ts          # Specta-generated Rust types
+└── types.ts             # Global TypeScript interfaces
 ```
 
 ## 5. Coding Standards
 
 ### React & State
-*   **Context usage**: Split large contexts. Use specific contexts (`useSearch`) over global ones (`useLibrary`) where possible.
-*   **Prop Drilling**: Avoid. Use Context for data needing to pass >2 layers deep.
+*   **Zustand for UI State**: Use stores for complex UI state (e.g., active filters, collection sidebar).
+*   **React Query for Data**: Favor React Query for all database/async operations. Use `useQuery` and `useMutation`.
+*   **Feature-Based**: Everything related to a feature (components, hooks, types) should live in its `src/features/` folder unless it's strictly shared.
 
 ### Data Safety
-*   **Validation**: All external data (File System or API) must be validated (Zod or strict typing).
+*   **Validation**: All external data (File System or API) must be validated with Zod.
 *   **Concurrency**: SQLite writes are wrapped in a Mutex (`src/services/db/connection.ts`) to prevent `SQLITE_BUSY` errors during massive batch imports.
 
 ### Type Safety
-*   **Strict Mode**: Enabled.
-*   **No `any`**: Use `unknown` or narrower types.
-*   **Interfaces**: Prefer `interface` for Objects, `type` for Unions.
+*   **Specta**: Never manually define types that exist in Rust. Update the Rust struct and let Specta generate `bindings.ts`.
+*   **Strict Mode**: Always enabled. No `any`.
