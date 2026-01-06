@@ -57,8 +57,8 @@ interface SearchContextType {
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
 
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { settings, setSettings, privacyEnabled } = useSettings();
-    const { collections, smartCollections, refreshCollections, isLoaded } = useCollections();
+    const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
+    const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
 
 
 
@@ -86,7 +86,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         sortOption,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections]
+        allCollections: [...collections, ...smartCollections],
+        settingsLoaded: settingsLoaded && collectionsLoaded
     });
 
     // Flatten pages into a single image array
@@ -135,7 +136,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         filters,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections]
+        allCollections: [...collections, ...smartCollections],
+        settingsLoaded: settingsLoaded && collectionsLoaded
     });
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };

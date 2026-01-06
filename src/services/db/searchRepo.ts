@@ -59,12 +59,22 @@ export const countGlobalImages = async (): Promise<number> => {
 export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
-    const query = `
-        SELECT images.id 
-        FROM images 
-        LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-        ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-    `;
+
+    // Only JOIN with models if filtering by model
+    const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
+
+    let query: string;
+    if (needsModelJoin) {
+        query = `
+            SELECT images.id 
+            FROM images 
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+        `;
+    } else {
+        query = `SELECT id FROM images ${finalWhere}`;
+    }
+
     const rows = await db.select<{ id: string }[]>(query, params);
     return rows.map(r => r.id);
 };
@@ -103,14 +113,29 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     try {
-        const statsQuery = `
-            SELECT 
-                count(*) as total, 
-                avg(cast(json_extract(images.metadata_json, '$.steps') as integer)) as avg_steps
-            FROM images 
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
-        `;
+        // Only JOIN with models for basic stats if filtering by model
+        const needsModelJoin = finalWhere.includes('m.name') || finalWhere.includes('modelHash');
+
+        let statsQuery: string;
+        if (needsModelJoin) {
+            statsQuery = `
+                SELECT 
+                    count(*) as total, 
+                    avg(cast(json_extract(images.metadata_json, '$.steps') as integer)) as avg_steps
+                FROM images 
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${finalWhere.replace(/WHERE /i, 'WHERE images.')}
+            `;
+        } else {
+            statsQuery = `
+                SELECT 
+                    count(*) as total, 
+                    avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
+                FROM images 
+                ${finalWhere}
+            `;
+        }
+
         const basicStats = await db.select<any[]>(statsQuery, params);
         const total = basicStats[0]?.total || 0;
         const avgSteps = Math.round(basicStats[0]?.avg_steps || 0);
@@ -173,14 +198,30 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
         const safeWhere = finalWhere.replace(/(\bimages\.)?\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match, prefix, col) => prefix ? match : `images.${col}`);
 
-        const promptQuery = `
-            SELECT positive_prompt 
-            FROM images_fts
-            JOIN images ON images.id = images_fts.id
-            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
-            ${safeWhere}
-            LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
-        `;
+        // Only JOIN with models if filtering by model (presence of 'm.name' in where clause)
+        const needsModelJoin = safeWhere.includes('m.name') || safeWhere.includes('modelHash');
+
+        let promptQuery: string;
+        if (needsModelJoin) {
+            promptQuery = `
+                SELECT positive_prompt 
+                FROM images_fts
+                JOIN images ON images.id = images_fts.id
+                LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+                ${safeWhere}
+                LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
+            `;
+        } else {
+            // Fast path: no model JOIN needed
+            promptQuery = `
+                SELECT positive_prompt 
+                FROM images_fts
+                JOIN images ON images.id = images_fts.id
+                ${safeWhere}
+                LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
+            `;
+        }
+
         const rows = await db.select<any[]>(promptQuery, params);
 
         const counts: Record<string, number> = {};

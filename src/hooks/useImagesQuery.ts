@@ -10,6 +10,7 @@ interface UseImagesQueryProps {
     settings: AppSettings;
     privacyEnabled: boolean;
     allCollections: Collection[];
+    settingsLoaded?: boolean;
 }
 
 export const useImagesQuery = ({
@@ -17,7 +18,8 @@ export const useImagesQuery = ({
     sortOption,
     settings,
     privacyEnabled,
-    allCollections
+    allCollections,
+    settingsLoaded = true
 }: UseImagesQueryProps) => {
 
     const PAGE_SIZE = 1000;
@@ -83,5 +85,6 @@ export const useImagesQuery = ({
         placeholderData: (previousData) => previousData, // Keep previous data while fetching new filter results? No, usually we want to clear for new filters.
         // Actually for infinite scroll we usually want to keep previous data when fetching *next page*, but when filters change React Query handles it by changing key.
         // We can use placeholderData to keep showing old results while loading new filter? Maybe standard loading is better.
+        enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
 };

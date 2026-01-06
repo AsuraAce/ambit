@@ -9,6 +9,7 @@ interface UseLibraryStatsQueryProps {
     settings: AppSettings;
     privacyEnabled: boolean;
     allCollections: Collection[];
+    settingsLoaded?: boolean;
 }
 
 
@@ -33,7 +34,8 @@ export const useLibraryStatsQuery = ({
     filters,
     settings,
     privacyEnabled,
-    allCollections
+    allCollections,
+    settingsLoaded = true
 }: UseLibraryStatsQueryProps) => {
 
     // Stable reference: only track the active collection's smart filter definition
@@ -73,5 +75,6 @@ export const useLibraryStatsQuery = ({
         },
         placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS },
         staleTime: 1000 * 60 * 5, // 5 minutes
+        enabled: settingsLoaded, // Wait for settings to load before fetching
     });
 };
