@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save } from 'lucide-react';
+import { AIImage, FilterState } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { CollectionsSection } from './CollectionsSection';
@@ -61,8 +62,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         setFilters: setStoreFilters,
         facets,
         isFacetsLoading,
-        clearAllFilters,
-        loadFacet
+        clearAllFilters
     } = useSearch();
 
     // Contexts
@@ -91,13 +91,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     });
 
     const toggleSection = (section: string) => {
-        const wasExpanded = expanded[section];
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
-
-        // Lazy load embeddings or hypernetworks when expanding for the first time
-        if (!wasExpanded && (section === 'embeddings' || section === 'hypernetworks')) {
-            loadFacet(section);
-        }
+        // All facet data is loaded upfront, no lazy loading needed
     };
 
     // Quick Update Logic

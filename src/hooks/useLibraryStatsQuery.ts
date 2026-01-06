@@ -8,7 +8,6 @@ interface UseLibraryStatsQueryProps {
     settings: AppSettings;
     privacyEnabled: boolean;
     allCollections: Collection[];
-    facetTypes: FacetType[];
 }
 
 
@@ -33,12 +32,14 @@ export const useLibraryStatsQuery = ({
     filters,
     settings,
     privacyEnabled,
-    allCollections,
-    facetTypes
+    allCollections
 }: UseLibraryStatsQueryProps) => {
 
+    // Always fetch all facet types - they're cheap from facet_cache
+    const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'];
+
     return useQuery({
-        queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections.map(c => c.id), facetTypes],
+        queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections.map(c => c.id)],
         queryFn: async () => {
             const { where, params } = buildSqlWhereClause(
                 filters,
@@ -50,13 +51,13 @@ export const useLibraryStatsQuery = ({
 
             // Fetch facets and stats in parallel
             const [facets, stats] = await Promise.all([
-                getFacets(where, params, facetTypes),
+                getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params)
             ]);
 
             return { facets, stats };
         },
-        placeholderData: { facets: INITIAL_FACETS, stats: INITIAL_STATS },
+        placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS },
         staleTime: 1000 * 60 * 5, // 5 minutes
     });
 };

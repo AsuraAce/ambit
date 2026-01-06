@@ -187,8 +187,6 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     }
 };
 
-export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'tools';
-
 /**
  * Fetches facets from the pre-built cache.
  * 

@@ -30,7 +30,7 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
 
     return (
         <div className="space-y-2">
-            <SectionHeader title="Generator" isOpen={isOpen} onToggle={onToggle} />
+            <SectionHeader title="Generator" isOpen={isOpen} onToggle={onToggle} isLoading={isLoading} />
             {isOpen && (
                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
                     {tools.length > 0 ? tools.map(tool => (

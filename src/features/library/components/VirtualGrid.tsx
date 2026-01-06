@@ -109,7 +109,7 @@ const VirtualGridInternal = <T extends { id: string }>(
 
         // Infinite Scroll Trigger
         const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
-        if (scrollHeight - (scrollTop + clientHeight) < 3000) {
+        if (scrollHeight - (scrollTop + clientHeight) < 6000) {
           const now = Date.now();
           if (now - lastCallTime > 200) {
             lastCallTime = now;

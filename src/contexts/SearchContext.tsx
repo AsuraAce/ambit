@@ -51,7 +51,7 @@ interface SearchContextType {
     refreshHiddenAvailability: () => Promise<void>;
 
     isFacetsLoading: boolean;
-    loadFacet: (type: FacetType) => Promise<void>;
+    isLoadingMore: boolean;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -72,9 +72,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         toggleFavorite: storeToggleFavorite,
         togglePin: storeTogglePin
     } = useSearchStore();
-
-    // State for Dynamic Facet Loading
-    const [facetTypes, setFacetTypes] = useState<FacetType[]>(['checkpoints', 'loras', 'tools']);
 
     // React Query
     const {
@@ -114,19 +111,30 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [queryData, setImages]);
 
+    // Proactive prefetching: Load next page in background after current page loads
+    useEffect(() => {
+        if (hasNextPage && !isFetchingNextPage && queryData && queryData.pages.length > 0) {
+            // Delay slightly to avoid blocking the main thread
+            const timer = setTimeout(() => {
+                fetchNextPage();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
+
     const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
 
     // Stats & Facets Query
     const {
         data: statsData,
-        isLoading: isStatsLoading
+        isLoading: isStatsLoading,
+        isFetching: isStatsFetching
     } = useLibraryStatsQuery({
         filters,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections],
-        facetTypes
+        allCollections: [...collections, ...smartCollections]
     });
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
@@ -190,16 +198,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
         const availability = await checkHiddenContentAvailability();
         setAvailableHiddenContent(availability);
-    }, []);
-
-    // loadFacet wrapper
-    // loadFacet wrapper
-    const loadFacet = useCallback(async (type: FacetType) => {
-        setFacetTypes(prev => {
-            if (prev.includes(type)) return prev;
-            return [...prev, type];
-        });
-        // React Query will detect dependency change and fetch automatically
     }, []);
 
     // ...
@@ -310,8 +308,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             togglePin: storeTogglePin,
             availableHiddenContent,
             refreshHiddenAvailability,
-            isFacetsLoading: isStatsLoading,
-            loadFacet,
+            isFacetsLoading: isStatsFetching,
+            isLoadingMore: isFetchingNextPage,
 
         }}>
             {children}

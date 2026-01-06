@@ -9,13 +9,17 @@ interface SectionHeaderProps {
     isOpen: boolean;
     onToggle: () => void;
     action?: React.ReactNode;
+    isLoading?: boolean;
 }
 
-export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, isOpen, onToggle, action }) => (
+export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, isOpen, onToggle, action, isLoading }) => (
     <div className="flex items-center justify-between cursor-pointer group py-1 min-w-0" onClick={onToggle}>
         <h3 className="flex items-center gap-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase tracking-wider group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors min-w-0 flex-1">
             {isOpen ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
             <span className="truncate">{title}</span>
+            {isLoading && (
+                <div className="w-2.5 h-2.5 border border-sage-500/30 border-t-sage-500 rounded-full animate-spin flex-shrink-0" />
+            )}
         </h3>
         {action}
     </div>

@@ -106,7 +106,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isFiltering,
         clearAllFilters,
         toggleFavorite,
-        loadMoreImages
+        loadMoreImages,
+        isLoadingMore
     } = useSearch();
     // const images = useSearchStore(s => s.images); // Images available in context
     // const totalImages = useSearchStore(s => s.totalImages);
@@ -334,6 +335,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                 onBackgroundClick={clearSelection}
                                                 renderItem={renderGridItem}
                                             />
+                                            {isLoadingMore && (
+                                                <div className="w-full py-8 flex justify-center items-center">
+                                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </>

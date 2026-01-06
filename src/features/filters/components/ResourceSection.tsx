@@ -210,6 +210,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 title={title}
                 isOpen={isOpen}
                 onToggle={onToggle}
+                isLoading={isLoading}
                 action={isOpen && (
                     <div className="flex items-center gap-1">
                         {/* Sort Dropdown */}
