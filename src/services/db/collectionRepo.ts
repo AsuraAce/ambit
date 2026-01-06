@@ -157,7 +157,9 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             });
 
             // SQLite UNION ALL approach for batched counts
-            const unionSql = countQueries.map(q => `SELECT ? as id, (SELECT COUNT(*) FROM images ${q.where}) as count`).join(' UNION ALL ');
+            const unionSql = countQueries.map(q =>
+                `SELECT ? as id, (SELECT COUNT(*) FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${q.where.replace(/WHERE /i, 'WHERE images.')}) as count`
+            ).join(' UNION ALL ');
             const unionParams = countQueries.flatMap(q => [q.id, ...q.params]);
 
             const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
@@ -264,10 +266,11 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: a
     const db = await getDb();
     try {
         const query = `
-            SELECT thumbnail_path, timestamp, is_pinned
+            SELECT images.thumbnail_path, images.timestamp, images.is_pinned
             FROM images
-            ${whereClause}
-            ORDER BY is_pinned DESC, timestamp DESC
+            LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
+            ${whereClause.replace(/WHERE /i, 'WHERE images.')}
+            ORDER BY images.is_pinned DESC, images.timestamp DESC
             LIMIT 1
         `;
         const res = await db.select<any[]>(query, params);

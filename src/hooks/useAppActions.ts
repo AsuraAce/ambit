@@ -112,7 +112,7 @@ export const useAppActions = ({
         const { toggleImagePin } = await import('../services/db/imageRepo');
         await Promise.all(ids.map(id => toggleImagePin(id, anyUnpinned)));
 
-        refreshCollectionThumbnails();
+        await refreshCollectionThumbnails();
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
@@ -200,7 +200,7 @@ export const useAppActions = ({
         });
 
         await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
-        refreshCollectionThumbnails();
+        await refreshCollectionThumbnails();
         addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
     };
 

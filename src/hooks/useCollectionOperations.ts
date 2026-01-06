@@ -44,7 +44,7 @@ export const useCollectionOperations = ({
       await upsertCollection(newCol);
       addToast(`Collection "${name}" created`, 'success');
       // Background refresh to ensure everything is in sync (smart stats etc)
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.filter(c => c.id !== id));
@@ -75,7 +75,7 @@ export const useCollectionOperations = ({
       // If we are clearing filters (filters === undefined), we pass null/undefined to upsert
       await upsertCollection({ ...col, filters: cleanFilters });
       addToast(cleanFilters ? "Filters updated" : "Collection converted to static", "success");
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -96,7 +96,7 @@ export const useCollectionOperations = ({
     try {
       await deleteCollectionFromDb(id);
       addToast("Collection deleted", "success");
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => [...prev, original]);
@@ -114,7 +114,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, name: newName });
       addToast("Collection renamed", "success");
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -131,7 +131,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, color });
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -153,7 +153,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, isArchived: newState });
       addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -172,7 +172,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, isPinned: newState });
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -192,7 +192,7 @@ export const useCollectionOperations = ({
       await addImgsToCol(collectionId, imageIds);
       addToast(`Added images to collection`, 'success');
       // Background refresh for safety and smart collection updates
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
@@ -225,7 +225,7 @@ export const useCollectionOperations = ({
       // Always attempt removal from junction table (handles manual additions)
       await removeImgsFromCol(collectionId, imageIds);
       addToast("Removed from collection", "info");
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
@@ -268,7 +268,7 @@ export const useCollectionOperations = ({
       await addImgsToCol(targetId, imageIds);
 
       addToast(`Moved images to ${targetCol.name}`, 'success');
-      refreshCollections();
+      await refreshCollections();
     } catch (e) {
       // Rollback both
       setAllCollections(prev => prev.map(c => {

@@ -152,5 +152,27 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12]
+    let migration13 = Migration {
+        version: 13,
+        description: "add_model_name_index",
+        sql: "CREATE INDEX IF NOT EXISTS idx_images_model_name ON images(json_extract(metadata_json, '$.model'));",
+        kind: MigrationKind::Up,
+    };
+
+    let migration14 = Migration {
+        version: 14,
+        description: "add_tool_name_index",
+        sql: "CREATE INDEX IF NOT EXISTS idx_images_tool_name ON images(json_extract(metadata_json, '$.tool'));",
+        kind: MigrationKind::Up,
+    };
+
+    let migration15 = Migration {
+        version: 15,
+        description: "add_sorting_indices",
+        sql: "CREATE INDEX IF NOT EXISTS idx_images_is_pinned ON images(is_pinned);
+              CREATE INDEX IF NOT EXISTS idx_images_timestamp ON images(timestamp);",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15]
 }

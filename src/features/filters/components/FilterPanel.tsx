@@ -187,6 +187,26 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             } as FilterState;
 
             onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);
+
+            // Clear manual edits immediately so the UI reflects "Saved" state
+            // and the Update button disappears.
+            setFilters(prev => ({
+                ...prev,
+                searchQuery: '',
+                models: [],
+                tools: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                dateRange: 'all',
+                favoritesOnly: false,
+                pinnedOnly: false,
+                minSteps: undefined,
+                maxSteps: undefined,
+                minCfg: undefined,
+                maxCfg: undefined
+                // Preserve collectionId and view options
+            }));
         } else if (activeSmartCol) {
             // Fallback
             onSaveSmartCollection(activeSmartCol.name, filters);

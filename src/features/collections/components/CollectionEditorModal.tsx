@@ -123,22 +123,31 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             const values = draftFilters[key as keyof FilterState] as string[];
             if (Array.isArray(values)) {
                 values.forEach(val => {
-                    // Start of Tailwind Color Classes Dynamic Construction Workaround
-                    // We can't interpolate class names dynamically if we want Tailwind simpler, but for now we reuse specific classes or just map
-                    let bg = `bg-${color}-100 dark:bg-${color}-500/20`;
-                    let text = `text-${color}-700 dark:text-${color}-200`;
-                    let border = `border-${color}-200 dark:border-${color}-500/30`;
+                    // Explicit Tailwind Classes for JIT detection
+                    let className = "flex items-center gap-1 px-2 py-1 rounded-md text-xs border ";
 
-                    // Explicit mapping to ensure tailwind picks usage (if using JIT it might be ok, but safe to be explicit or use style objects)
-                    // For brevity I'll just use the ActiveFilters styles directly.
-                    if (color === 'blue') { bg = 'bg-blue-100 dark:bg-blue-500/20'; text = 'text-blue-700 dark:text-blue-200'; border = 'border-blue-200 dark:border-blue-500/30'; }
-                    if (color === 'amber') { bg = 'bg-amber-100 dark:bg-amber-500/20'; text = 'text-amber-700 dark:text-amber-200'; border = 'border-amber-200 dark:border-amber-500/30'; }
-                    if (color === 'purple') { bg = 'bg-purple-100 dark:bg-purple-500/20'; text = 'text-purple-700 dark:text-purple-200'; border = 'border-purple-200 dark:border-purple-500/30'; }
-                    if (color === 'emerald') { bg = 'bg-emerald-100 dark:bg-emerald-500/20'; text = 'text-emerald-700 dark:text-emerald-200'; border = 'border-emerald-200 dark:border-emerald-500/30'; }
-                    if (color === 'rose') { bg = 'bg-rose-100 dark:bg-rose-500/20'; text = 'text-rose-700 dark:text-rose-200'; border = 'border-rose-200 dark:border-rose-500/30'; }
+                    switch (color) {
+                        case 'blue':
+                            className += "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 border-blue-200 dark:border-blue-500/30";
+                            break;
+                        case 'amber':
+                            className += "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-200 border-amber-200 dark:border-amber-500/30";
+                            break;
+                        case 'purple':
+                            className += "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 border-purple-200 dark:border-purple-500/30";
+                            break;
+                        case 'emerald':
+                            className += "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200 border-emerald-200 dark:border-emerald-500/30";
+                            break;
+                        case 'rose':
+                            className += "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 border-rose-200 dark:border-rose-500/30";
+                            break;
+                        default:
+                            className += "bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10";
+                    }
 
                     chips.push(
-                        <div key={`${key}-${val}`} className={`flex items-center gap-1 px-2 py-1 rounded-md ${bg} ${text} text-xs border ${border}`}>
+                        <div key={`${key}-${val}`} className={className}>
                             <span className="truncate max-w-[120px]">{val}</span>
                             <button onClick={() => removeFilter(key as keyof FilterState, val)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                         </div>

@@ -16,7 +16,7 @@ import { useSearch } from '../contexts/SearchContext';
 interface UseFileOperationsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    refreshCollectionThumbnails: () => void;
+    refreshCollectionThumbnails: () => Promise<void>;
     settings: AppSettings;
 }
 
@@ -39,7 +39,7 @@ export const useFileOperations = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // --- Helper: Commit Images to State ---
-    const commitImportResult = useCallback((result: ImportResult, silent = false) => {
+    const commitImportResult = useCallback(async (result: ImportResult, silent = false) => {
         const { images: newImages, stats } = result;
 
         // Filter out duplicates that already exist in state
@@ -51,7 +51,7 @@ export const useFileOperations = ({
 
         if (uniqueNewImages.length > 0) {
             setImages(prev => [...uniqueNewImages, ...prev]);
-            refreshCollectionThumbnails();
+            await refreshCollectionThumbnails();
 
             let msg = `Imported ${uniqueNewImages.length} images.`;
             if (dupeCount > 0) msg += ` (Skipped ${dupeCount} duplicates)`;
@@ -78,7 +78,7 @@ export const useFileOperations = ({
         setIsImporting(true);
         try {
             const result = await processWebFiles(Array.from(e.target.files));
-            commitImportResult(result);
+            await commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
@@ -91,7 +91,7 @@ export const useFileOperations = ({
         setIsImporting(true);
         try {
             const result = await processWebFiles(files);
-            commitImportResult(result);
+            await commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
@@ -122,7 +122,7 @@ export const useFileOperations = ({
             const result = await processNativePaths(paths, thumbDir, (current, total, message) => {
                 setImportProgress({ current, total, message });
             }, defaultTool);
-            commitImportResult(result);
+            await commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
@@ -140,7 +140,7 @@ export const useFileOperations = ({
                 setImportProgress({ current, total, message });
             });
             if (result.images.length > 0) {
-                commitImportResult(result, true);
+                await commitImportResult(result, true);
             }
         } catch (e) {
             console.error(`Failed to scan directory ${dirPath}`, e);
@@ -193,6 +193,7 @@ export const useFileOperations = ({
                     ids.includes(img.id) ? { ...img, isDeleted: true } : img
                 ));
                 addToast(`Moved ${ids.length} images to Trash`, 'success');
+                await refreshCollectionThumbnails();
             }
         } catch (e) {
             console.error("Failed to delete images", e);
@@ -275,7 +276,7 @@ export const useFileOperations = ({
                     return prev.map(p => updateMap.get(p.id) || p);
                 });
                 addToast(`Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`, "success");
-                refreshCollectionThumbnails();
+                await refreshCollectionThumbnails();
             }
         } catch (e) {
             console.error("Regeneration error", e);
