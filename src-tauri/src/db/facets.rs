@@ -142,11 +142,12 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
 }
 
 fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Optimization: Use DENORMALIZED columns (model_hash, resolved_model_name) instead of JSON extract
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
             SELECT 
-                json_extract(metadata_json, '$.modelHash') as mh, 
-                json_extract(metadata_json, '$.model') as mn,
+                model_hash as mh, 
+                resolved_model_name as mn,
                 COUNT(DISTINCT id) as cnt,
                 MAX(timestamp) as last_used,
                 MIN(timestamp) as first_used
@@ -196,31 +197,50 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 }
 
 fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key: &str) -> Result<(), String> {
+    // Optimization: Use JUNCTION TABLES instead of JSON extraction
+    
+    // Determine the junction table and ID column based on the facet type/json_key
+    let (junction_table, name_col, image_id_col) = match json_key {
+        "loras" => ("image_loras", "lora_name", "image_id"),
+        "embeddings" => ("image_embeddings", "embedding_name", "image_id"),
+        "hypernetworks" => ("image_hypernetworks", "hypernetwork_name", "image_id"),
+        _ => return Err(format!("Unsupported resource type for optimization: {}", json_key)),
+    };
+    
     let temp_table = format!("{}_counts", facet_type);
     
-    // Step 1: Pre-aggregate
+    // Step 1: Pre-aggregate from Junction Table (No JSON Parsing!)
     conn.execute(
         &format!(
             "CREATE TEMP TABLE IF NOT EXISTS {} AS
                 SELECT 
-                    j.value AS ref_name,
+                    jt.{} AS ref_name,
+                    -- Clean the name (remove version/suffix) effectively
                     CASE 
-                        WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
-                        WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
-                        ELSE j.value 
+                        WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
+                        WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
+                        ELSE jt.{} 
                     END AS clean_ref,
                     COUNT(DISTINCT i.id) AS cnt,
                     MAX(i.timestamp) as last_used,
                     MIN(i.timestamp) as first_used
-                FROM images i, json_each(i.metadata_json, '$.{}') j
+                FROM {} jt
+                JOIN images i ON i.id = jt.{}
                 WHERE i.is_deleted = 0
-                GROUP BY j.value",
-            temp_table, json_key
+                GROUP BY jt.{}",
+            temp_table, 
+            name_col, 
+            name_col, name_col, name_col, // substr args
+            name_col, name_col, name_col, // substr args 2
+            name_col, // ELSE
+            junction_table,
+            image_id_col,
+            name_col
         ),
         []
-    ).map_err(|e| format!("Failed to create {} table: {}", temp_table, e))?;
+    ).map_err(|e| format!("Failed to create optimized {} table: {}", temp_table, e))?;
 
-    // Step 2: Insert matched facets
+    // Step 2: Insert matched facets (Join against generic `models` table)
     conn.execute(
         &format!(
             "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at)
@@ -271,10 +291,11 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
 }
 
 fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Optimization: Use DENORMALIZED tool column
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
             SELECT 'tools', 
-                COALESCE(json_extract(metadata_json, '$.tool'), 'Unknown'), 
+                COALESCE(tool, 'Unknown'), 
                 NULL, 
                 COUNT(*),
                 MAX(timestamp),
