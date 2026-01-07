@@ -297,17 +297,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {/* GENERATE TAB */}
                     {activeTab === 'generate' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
-                            <ParameterSection
-                                filters={filters} setFilters={setFilters}
-                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
-                            />
-
                             <GeneratorSection
                                 filters={filters} setFilters={setFilters}
                                 tools={facets.tools}
                                 isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
                                 isLoading={isFacetsLoading}
                                 validNames={validFacetNames?.tools}
+                            />
+
+                            <ParameterSection
+                                filters={filters} setFilters={setFilters}
+                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
                             />
                         </div>
                     )}

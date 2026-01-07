@@ -19,7 +19,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
         <div className="space-y-2">
             <SectionHeader title="Parameters" isOpen={isOpen} onToggle={onToggle} />
             {isOpen && (
-                <div className="space-y-6 animate-in slide-in-from-top-2 duration-300 ease-spring px-1 pt-2">
+                <div className="space-y-6 animate-in slide-in-from-top-2 duration-300 ease-spring px-4 pt-2">
                     <FilterSlider
                         label="Steps"
                         min={0}
