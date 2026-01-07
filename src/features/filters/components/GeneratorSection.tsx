@@ -9,6 +9,12 @@ interface GeneratorSectionProps {
     isOpen: boolean;
     onToggle: () => void;
     isLoading?: boolean;
+    /**
+     * Valid tool names for drill-down filtering.
+     * - null/undefined: Show all tools (no drill-down filtering active)
+     * - string[]: Only show tools in this list (+ always show selected tools)
+     */
+    validNames?: string[] | null;
 }
 
 export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
@@ -17,7 +23,8 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
     tools,
     isOpen,
     onToggle,
-    isLoading
+    isLoading,
+    validNames
 }) => {
     const toggleTool = (tool: GeneratorTool) => {
         setFilters(prev => {
@@ -28,12 +35,24 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
         });
     };
 
+    // Apply drill-down filtering to tools list
+    const filteredTools = React.useMemo(() => {
+        return tools.filter(tool => {
+            // Always show selected tools
+            if (filters.tools.includes(tool as GeneratorTool)) return true;
+            // If no drill-down filtering, show all
+            if (validNames === null || validNames === undefined) return true;
+            // Otherwise, only show if in validNames
+            return validNames.includes(tool);
+        });
+    }, [tools, filters.tools, validNames]);
+
     return (
         <div className="space-y-2">
             <SectionHeader title="Generator" isOpen={isOpen} onToggle={onToggle} isLoading={isLoading} />
             {isOpen && (
                 <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
-                    {tools.length > 0 ? tools.map(tool => (
+                    {filteredTools.length > 0 ? filteredTools.map(tool => (
                         <SelectableRow
                             key={tool}
                             label={tool}
@@ -46,7 +65,9 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
                             <span className="text-[10px] text-gray-400 font-medium animate-pulse">Loading Tools...</span>
                         </div>
                     ) : (
-                        <div className="text-xs text-gray-400 text-center py-2 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl">No specific tools found</div>
+                        <div className="text-xs text-gray-400 text-center py-2 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl">
+                            {validNames !== null && validNames !== undefined ? 'No matching tools in current filter' : 'No specific tools found'}
+                        </div>
                     )}
                 </div>
             )}

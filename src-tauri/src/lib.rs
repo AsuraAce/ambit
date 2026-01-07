@@ -18,6 +18,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::reset_migration_18,
             db::commands::optimize_database,
             db::facets::rebuild_facet_cache,
+            db::facets::get_valid_facet_names,
             // scanner commands
             scanner::scan_image,
             scanner::scan_images_bulk,

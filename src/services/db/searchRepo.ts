@@ -20,6 +20,14 @@ export interface Facets {
     tools: string[];
 }
 
+export interface ValidFacetNames {
+    checkpoints: string[];
+    loras: string[];
+    embeddings: string[];
+    hypernetworks: string[];
+    tools: string[];
+}
+
 export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
@@ -139,6 +147,22 @@ export const searchImages = async (
     };
 
     const cursorWhere = buildCursorWhere();
+
+    // For combined Collection + LoRA searches
+    if (collectionId && loraName) {
+        const query = `
+            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            FROM collection_images ci
+            JOIN image_loras il ON il.image_id = ci.image_id
+            JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
+            ${cursorWhere}
+            ${orderBy}
+            LIMIT ${limit}
+        `;
+        const rows = await db.select<any[]>(query, [collectionId, loraName, ...params]);
+        return rows.map(mapRowToImage);
+    }
 
     // For collection-filtered searches
     if (collectionId) {
@@ -293,7 +317,14 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         let joinClause = "JOIN images_fts ON images_fts.id = images.id";
 
         // Prioritize Collection/LoRA filtering with INNER JOIN if present
-        if (collectionId) {
+        // Prioritize Collection/LoRA filtering with INNER JOIN if present
+        if (collectionId && loraName) {
+            joinClause = `
+                JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
+                JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
+                JOIN images_fts ON images_fts.id = images.id
+            `;
+        } else if (collectionId) {
             joinClause = `
                 JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
                 JOIN images_fts ON images_fts.id = images.id
@@ -405,6 +436,40 @@ export const getFacets = async (
 
     } catch (e) {
         console.error('[DB] Failed to get facets from cache', e);
+        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+    }
+};
+
+/**
+ * Get valid facet names for drill-down filtering.
+ * Returns distinct facet names that exist in the current filtered result set.
+ * Used to hide facet options that have no matching images in the current filter context.
+ */
+export const getValidFacetNames = async (
+    whereClause: string,
+    params: unknown[],
+    collectionId?: string,
+    loraName?: string
+): Promise<ValidFacetNames> => {
+    try {
+        // Import the command dynamically to avoid circular dependencies
+        const { commands } = await import('../../bindings');
+        // Serialize params as JSON string for Specta compatibility
+        const result = await commands.getValidFacetNames(
+            whereClause,
+            JSON.stringify(params),
+            collectionId ?? null,
+            loraName ?? null
+        );
+
+        if (result.status === 'ok') {
+            return result.data;
+        } else {
+            console.error('[DB] Failed to get valid facet names:', result.error);
+            return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+        }
+    } catch (e) {
+        console.error('[DB] Failed to get valid facet names', e);
         return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
     }
 };

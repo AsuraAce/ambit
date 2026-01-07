@@ -6,7 +6,7 @@ import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
 
-import { Facets } from '../services/db/searchRepo';
+import { Facets, ValidFacetNames } from '../services/db/searchRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -52,6 +52,9 @@ interface SearchContextType {
 
     isFacetsLoading: boolean;
     isLoadingMore: boolean;
+
+    /** Valid facet names for drill-down filtering. null = show all (no active filters) */
+    validFacetNames: ValidFacetNames | null;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -142,6 +145,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
     const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
+    const activeValidNames = statsData?.validNames || null;
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -313,6 +317,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             refreshHiddenAvailability,
             isFacetsLoading: isStatsFetching,
             isLoadingMore: isFetchingNextPage,
+            validFacetNames: activeValidNames,
 
         }}>
             {children}

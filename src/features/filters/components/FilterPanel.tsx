@@ -55,14 +55,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     className
 }) => {
 
-    // Zustand Search Store
-    // Search Context (New Architecture)
     const {
         filters: storeFilters,
         setFilters: setStoreFilters,
         facets,
         isFacetsLoading,
-        clearAllFilters
+        clearAllFilters,
+        validFacetNames
     } = useSearch();
 
     // Contexts
@@ -308,6 +307,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 tools={facets.tools}
                                 isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
                                 isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.tools}
                             />
                         </div>
                     )}
@@ -322,8 +322,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 data={facets.checkpoints}
                                 isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
                                 isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.checkpoints}
                             />
-
                             <ResourceSection
                                 title="Resources (LoRA)"
                                 type="loras"
@@ -331,8 +331,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 data={facets.loras}
                                 isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
                                 isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.loras}
                             />
-
                             <ResourceSection
                                 title="Resources (Embedding)"
                                 type="embeddings"
@@ -340,8 +340,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 data={facets.embeddings}
                                 isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
                                 isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.embeddings}
                             />
-
                             <ResourceSection
                                 title="Resources (Hypernet)"
                                 type="hypernetworks"
@@ -349,6 +349,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 data={facets.hypernetworks}
                                 isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
                                 isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.hypernetworks}
                             />
                         </div>
                     )}

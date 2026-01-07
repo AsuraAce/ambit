@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FilterState, AppSettings, Collection, FacetType } from '../types';
-import { getFacets, getLibraryStats, Facets } from '../services/db/searchRepo';
+import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 
 interface UseLibraryStatsQueryProps {
@@ -54,6 +54,22 @@ export const useLibraryStatsQuery = ({
     // Always fetch all facet types - they're cheap from facet_cache
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'];
 
+    // Determine if we have any active filters that would benefit from drill-down
+    const hasActiveFilters = useMemo(() => {
+        return (
+            filters.models.length > 0 ||
+            filters.loras.length > 0 ||
+            filters.embeddings.length > 0 ||
+            filters.hypernetworks.length > 0 ||
+            filters.tools.length > 0 ||
+            !!filters.collectionId ||
+            filters.dateRange !== 'all' ||
+            filters.favoritesOnly ||
+            filters.pinnedOnly ||
+            !!filters.searchQuery
+        );
+    }, [filters]);
+
     return useQuery({
         queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
@@ -66,14 +82,16 @@ export const useLibraryStatsQuery = ({
             );
 
             // Fetch facets and stats in parallel
-            const [facets, stats] = await Promise.all([
+            // Also fetch valid facet names if we have active filters (for drill-down)
+            const [facets, stats, validNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
-                getLibraryStats(where, params, collectionId, loraName)
+                getLibraryStats(where, params, collectionId, loraName),
+                hasActiveFilters ? getValidFacetNames(where, params, collectionId, loraName) : Promise.resolve(null)
             ]);
 
-            return { facets, stats };
+            return { facets, stats, validNames };
         },
-        placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS },
+        placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
         staleTime: 1000 * 60 * 5, // 5 minutes
         enabled: settingsLoaded, // Wait for settings to load before fetching
     });

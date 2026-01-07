@@ -57,6 +57,19 @@ async rebuildFacetCache() : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Get distinct facet names that exist in the current filtered result set.
+ * This is used for drill-down filtering - hiding facets that have no images
+ * in the current filter context.
+ */
+async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null) : Promise<Result<ValidFacetNames, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { whereClause, paramsJson, collectionId, loraName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_image", { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
@@ -208,6 +221,10 @@ export type ImportResult = { added: number; totalFound: number; message: string 
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
 export type ThumbnailScanResult = { found: number; updated: number }
+/**
+ * Valid facet names result - used for drill-down filtering
+ */
+export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[] }
 
 /** tauri-specta globals **/
 

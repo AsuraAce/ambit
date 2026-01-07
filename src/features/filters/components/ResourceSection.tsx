@@ -29,6 +29,12 @@ interface ResourceSectionProps {
     isOpen: boolean;
     onToggle: () => void;
     isLoading?: boolean;
+    /**
+     * Valid facet names for drill-down filtering.
+     * - null: Show all items (no drill-down filtering active)
+     * - string[]: Only show items in this list (+ always show selected items)
+     */
+    validNames?: string[] | null;
 }
 
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
@@ -39,7 +45,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     data,
     isOpen,
     onToggle,
-    isLoading
+    isLoading,
+    validNames
 }) => {
     const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
@@ -87,11 +94,30 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         });
     };
 
+    // DEBUG: Log filtering data
+    console.log(`[DrillDown ${type}] data items: ${data?.length || 0}, validNames: ${validNames?.length ?? 'null'}`);
+    if (validNames && data && data.length > 0) {
+        console.log(`[DrillDown ${type}] validNames sample:`, validNames.slice(0, 3));
+        console.log(`[DrillDown ${type}] data sample:`, data.slice(0, 3).map(d => d.name));
+    }
+
     const filteredItems = (data || [])
-        .filter(l =>
-            l.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-            (l.count > 0 || (filters[filterKey] || []).includes(l.name))
-        )
+        .filter(l => {
+            // 1. Must match search query
+            if (!l.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+
+            // 2. Must have count > 0 OR be currently selected
+            const isSelected = ((filters[filterKey] || []) as string[]).includes(l.name);
+            if (l.count === 0 && !isSelected) return false;
+
+            // 3. Drill-down filtering: hide items not in current filter context
+            // Always show selected items regardless of validNames
+            if (validNames !== null && validNames !== undefined) {
+                if (!validNames.includes(l.name) && !isSelected) return false;
+            }
+
+            return true;
+        })
         .sort((a, b) => {
             switch (sortOption) {
                 case 'count_desc': return b.count - a.count;
@@ -105,6 +131,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 default: return b.count - a.count;
             }
         });
+
+    console.log(`[DrillDown ${type}] filteredItems: ${filteredItems.length}`);
 
     const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
 
