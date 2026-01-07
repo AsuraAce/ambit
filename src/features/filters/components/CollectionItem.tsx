@@ -89,7 +89,9 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
             ) : viewMode === 'grid' ? (
                 <div
                     onClick={() => {
-                        if (!isSelected) {
+                        if (isSelected) {
+                            setFilters(prev => ({ ...prev, collectionId: null }));
+                        } else {
                             setFilters(prev => ({
                                 ...prev,
                                 collectionId: col.id,
@@ -173,7 +175,9 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
             ) : (
                 <div
                     onClick={() => {
-                        if (!isSelected) {
+                        if (isSelected) {
+                            setFilters(prev => ({ ...prev, collectionId: null }));
+                        } else {
                             setFilters(prev => ({
                                 ...prev,
                                 collectionId: col.id,

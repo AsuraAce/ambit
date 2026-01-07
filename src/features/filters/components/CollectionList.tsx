@@ -50,11 +50,21 @@ export function CollectionList<T extends Collection>({
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
-    const [sort, setSort] = useState<CollectionSort>('date_desc');
+    const { settings, setSettings } = useSettings();
+    const sort = (settings.resourceSortOptions?.['collections'] as CollectionSort) || 'date_desc';
+
+    const setSort = (newSort: CollectionSort) => {
+        setSettings(prev => ({
+            ...prev,
+            resourceSortOptions: {
+                ...(prev.resourceSortOptions || {}),
+                collections: newSort as any
+            }
+        }));
+    };
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
-    const { settings, setSettings } = useSettings();
     const viewMode = settings.resourceViewModes?.['collections'] || 'list';
 
     const toggleViewMode = (e: React.MouseEvent) => {
