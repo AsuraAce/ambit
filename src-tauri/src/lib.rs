@@ -41,6 +41,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         ])
 }
 
+// Force Rebuild
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = create_builder();

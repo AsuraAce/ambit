@@ -146,12 +146,14 @@ export const getAllImages = async (
     const db = await getDb();
     const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
 
+    // Optimize: Use STORED generated columns instead of LIKE scan
     let filterClauses = 'WHERE is_deleted = 0';
     if (!showIntermediates) {
-        filterClauses += ' AND metadata_json NOT LIKE \'%"isIntermediate":true%\'';
+        // checks for 1 (true). NULL or 0 are considered false.
+        filterClauses += ' AND (is_intermediate_gen IS NULL OR is_intermediate_gen = 0)';
     }
     if (!showGrids) {
-        filterClauses += ' AND metadata_json NOT LIKE \'%"isGrid":true%\' AND metadata_json NOT LIKE \'%"generationType":"grid"%\'';
+        filterClauses += ' AND (is_grid_gen IS NULL OR is_grid_gen = 0)';
     }
 
     const query = limit
@@ -333,9 +335,10 @@ export const purgeLibrary = async () => {
 
 export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
     const db = await getDb();
+    // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%isIntermediate":true%\' OR metadata_json LIKE \'%is_intermediate":true%\' LIMIT 1'),
-        db.select<any[]>('SELECT 1 FROM images WHERE metadata_json LIKE \'%isGrid":true%\' OR metadata_json LIKE \'%is_grid":true%\' OR metadata_json LIKE \'%generationType":"grid"%\' OR metadata_json LIKE \'%generation_type":"grid"%\' LIMIT 1')
+        db.select<any[]>('SELECT 1 FROM images WHERE is_intermediate_gen = 1 LIMIT 1'),
+        db.select<any[]>('SELECT 1 FROM images WHERE is_grid_gen = 1 LIMIT 1')
     ]);
 
     return {

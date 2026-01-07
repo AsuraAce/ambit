@@ -378,5 +378,455 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21]
+
+    let migration22 = Migration {
+        version: 22,
+        description: "optimize_strict_and_stored",
+        sql: "
+            PRAGMA foreign_keys = OFF;
+
+            -- 1. IMAGES (Strict + Stored Columns)
+            CREATE TABLE images_new (
+                id TEXT PRIMARY KEY,
+                path TEXT UNIQUE NOT NULL,
+                width INTEGER,
+                height INTEGER,
+                file_size INTEGER,
+                timestamp INTEGER,
+                metadata_json TEXT,
+                thumbnail_path TEXT,
+                is_favorite INTEGER DEFAULT 0 NOT NULL,
+                is_pinned INTEGER DEFAULT 0 NOT NULL,
+                is_deleted INTEGER DEFAULT 0 NOT NULL,
+                is_missing INTEGER DEFAULT 0 NOT NULL,
+                user_masked INTEGER DEFAULT 0 NOT NULL,
+                group_id TEXT,
+                notes TEXT,
+                original_metadata_json TEXT,
+                board_id TEXT,
+                model_hash TEXT,
+                model_name TEXT,
+                tool TEXT,
+                resolved_model_name TEXT,
+                
+                -- Generated Columns (Now STORED for performance)
+                is_intermediate_gen INTEGER GENERATED ALWAYS AS (cast(json_extract(metadata_json, '$.isIntermediate') as INTEGER)) STORED,
+                is_grid_gen INTEGER GENERATED ALWAYS AS (cast(json_extract(metadata_json, '$.isGrid') as INTEGER)) STORED
+            ) STRICT;
+
+            INSERT INTO images_new (
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            )
+            SELECT 
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                COALESCE(is_favorite, 0), COALESCE(is_pinned, 0), COALESCE(is_deleted, 0), COALESCE(is_missing, 0), COALESCE(user_masked, 0), group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            FROM images;
+
+            DROP TABLE images;
+            ALTER TABLE images_new RENAME TO images;
+
+            -- 2. COLLECTIONS (Strict)
+            CREATE TABLE collections_new (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT,
+                is_archived INTEGER DEFAULT 0 NOT NULL,
+                is_pinned INTEGER DEFAULT 0 NOT NULL,
+                created_at INTEGER,
+                filter_state TEXT,
+                manual_exclusions TEXT,
+                custom_thumbnail TEXT,
+                source TEXT DEFAULT 'ambit'
+            ) STRICT;
+
+            INSERT INTO collections_new SELECT 
+                id, name, color, COALESCE(is_archived, 0), COALESCE(is_pinned, 0), created_at, filter_state, manual_exclusions, custom_thumbnail, source 
+            FROM collections;
+
+            DROP TABLE collections;
+            ALTER TABLE collections_new RENAME TO collections;
+
+            -- 3. MODELS (Strict)
+            CREATE TABLE models_new (
+                hash TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                filename TEXT,
+                lookup_source TEXT,
+                civitai_version_id INTEGER,
+                scanned_at INTEGER,
+                thumbnail_path TEXT,
+                preview_url TEXT,
+                resource_type TEXT
+            ) STRICT;
+
+            INSERT INTO models_new SELECT * FROM models;
+
+            DROP TABLE models;
+            ALTER TABLE models_new RENAME TO models;
+
+            -- 4. JUNCTION TABLES (Strict)
+            CREATE TABLE collection_images_new (
+                collection_id TEXT NOT NULL,
+                image_id TEXT NOT NULL,
+                PRIMARY KEY (collection_id, image_id),
+                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT INTO collection_images_new SELECT collection_id, image_id FROM collection_images;
+            DROP TABLE collection_images;
+            ALTER TABLE collection_images_new RENAME TO collection_images;
+
+            CREATE TABLE image_loras_new (
+                image_id TEXT NOT NULL,
+                lora_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, lora_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT INTO image_loras_new SELECT image_id, lora_name FROM image_loras;
+            DROP TABLE image_loras;
+            ALTER TABLE image_loras_new RENAME TO image_loras;
+
+            CREATE TABLE image_embeddings_new (
+                image_id TEXT NOT NULL,
+                embedding_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, embedding_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT INTO image_embeddings_new SELECT image_id, embedding_name FROM image_embeddings;
+            DROP TABLE image_embeddings;
+            ALTER TABLE image_embeddings_new RENAME TO image_embeddings;
+
+            CREATE TABLE image_hypernetworks_new (
+                image_id TEXT NOT NULL,
+                hypernetwork_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, hypernetwork_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT INTO image_hypernetworks_new SELECT image_id, hypernetwork_name FROM image_hypernetworks;
+            DROP TABLE image_hypernetworks;
+            ALTER TABLE image_hypernetworks_new RENAME TO image_hypernetworks;
+
+            -- 5. FACET CACHE (Strict)
+            CREATE TABLE facet_cache_new (
+                facet_type TEXT NOT NULL,
+                resource_name TEXT NOT NULL,
+                resource_hash TEXT,
+                count INTEGER DEFAULT 0,
+                thumbnail_path TEXT,
+                preview_url TEXT,
+                last_used_at INTEGER,
+                created_at INTEGER,
+                PRIMARY KEY (facet_type, resource_name)
+            ) STRICT;
+            INSERT INTO facet_cache_new SELECT * FROM facet_cache;
+            DROP TABLE facet_cache;
+            ALTER TABLE facet_cache_new RENAME TO facet_cache;
+
+            -- 6. INDEXES (Recreate)
+            CREATE INDEX idx_images_path ON images(path);
+            CREATE INDEX idx_images_is_deleted ON images(is_deleted);
+            CREATE INDEX idx_images_is_pinned ON images(is_pinned);
+            CREATE INDEX idx_images_timestamp ON images(timestamp);
+            CREATE INDEX idx_images_is_intermediate_gen ON images(is_intermediate_gen);
+            CREATE INDEX idx_images_is_grid_gen ON images(is_grid_gen);
+            
+            CREATE INDEX idx_images_model_hash_denorm ON images(model_hash);
+            CREATE INDEX idx_images_tool_denorm ON images(tool);
+            CREATE INDEX idx_images_resolved_model ON images(resolved_model_name);
+            
+            -- Composite indexes
+            CREATE INDEX idx_images_filter_covering ON images(is_deleted, is_intermediate_gen, is_grid_gen, timestamp DESC);
+            CREATE INDEX idx_images_filter_model ON images(is_deleted, resolved_model_name, timestamp DESC);
+            CREATE INDEX idx_images_filter_tool ON images(is_deleted, tool, timestamp DESC);
+
+            CREATE INDEX idx_models_name ON models(name);
+            CREATE INDEX idx_models_filename ON models(filename);
+            CREATE INDEX idx_models_resource_type ON models(resource_type);
+
+            CREATE INDEX idx_collection_images_lookup ON collection_images(image_id, collection_id);
+            CREATE INDEX idx_collection_images_by_collection ON collection_images(collection_id, image_id);
+
+            CREATE INDEX idx_lora_by_name ON image_loras(lora_name);
+            CREATE INDEX idx_embedding_by_name ON image_embeddings(embedding_name);
+            CREATE INDEX idx_hypernetwork_by_name ON image_hypernetworks(hypernetwork_name);
+            
+            CREATE INDEX idx_facet_cache_type ON facet_cache(facet_type);
+            
+            -- NOTE: images_fts matches by rowid (which is synced via id). 
+            -- We don't need to rebuild images_fts table itself, BUT we MUST recreate the triggers 
+            -- because they were dropped when we dropped the 'images' table!
+
+            DROP TRIGGER IF EXISTS trg_images_ai;
+            DROP TRIGGER IF EXISTS trg_images_ad;
+            DROP TRIGGER IF EXISTS trg_images_au;
+
+            CREATE TRIGGER trg_images_ai AFTER INSERT ON images BEGIN
+                INSERT INTO images_fts(id, positive_prompt, negative_prompt)
+                VALUES (new.id, json_extract(new.metadata_json, '$.positivePrompt'), json_extract(new.metadata_json, '$.negativePrompt'));
+            END;
+
+            CREATE TRIGGER trg_images_ad AFTER DELETE ON images BEGIN
+                DELETE FROM images_fts WHERE id = old.id;
+            END;
+
+            CREATE TRIGGER trg_images_au AFTER UPDATE ON images BEGIN
+                UPDATE images_fts SET 
+                    positive_prompt = json_extract(new.metadata_json, '$.positivePrompt'),
+                    negative_prompt = json_extract(new.metadata_json, '$.negativePrompt')
+                WHERE id = old.id;
+            END;
+            
+            -- Verify FKs
+            PRAGMA foreign_key_check;
+            PRAGMA foreign_keys = ON;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    let migration23 = Migration {
+        version: 23,
+        description: "restore_missing_collections",
+        sql: "
+            -- Re-populate collection_images from images.board_id (Source of Truth for InvokeAI boards)
+            -- This fixes any data loss from the strict mode migration for board-based collections
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT board_id, id
+            FROM images
+            WHERE board_id IS NOT NULL
+              AND board_id IN (SELECT id FROM collections); -- Safety check: ensure collection exists
+        ",
+        kind: MigrationKind::Up,
+    };
+
+
+    let migration24 = Migration {
+        version: 24,
+        description: "fix_boolean_generation",
+        sql: "
+            PRAGMA foreign_keys = OFF;
+
+            CREATE TABLE images_v24 (
+                id TEXT PRIMARY KEY,
+                path TEXT UNIQUE NOT NULL,
+                width INTEGER,
+                height INTEGER,
+                file_size INTEGER,
+                timestamp INTEGER,
+                metadata_json TEXT,
+                thumbnail_path TEXT,
+                is_favorite INTEGER DEFAULT 0 NOT NULL,
+                is_pinned INTEGER DEFAULT 0 NOT NULL,
+                is_deleted INTEGER DEFAULT 0 NOT NULL,
+                is_missing INTEGER DEFAULT 0 NOT NULL,
+                user_masked INTEGER DEFAULT 0,
+                group_id TEXT,
+                notes TEXT,
+                original_metadata_json TEXT,
+                board_id TEXT,
+                model_hash TEXT,
+                model_name TEXT,
+                tool TEXT,
+                resolved_model_name TEXT,
+                
+                -- Improved Boolean Generation (Handles 'true' string vs 1/true boolean)
+                is_intermediate_gen INTEGER GENERATED ALWAYS AS (
+                    CASE 
+                        WHEN json_extract(metadata_json, '$.isIntermediate') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.isIntermediate') = 'true' THEN 1 
+                        ELSE 0 
+                    END
+                ) STORED,
+                is_grid_gen INTEGER GENERATED ALWAYS AS (
+                    CASE 
+                        WHEN json_extract(metadata_json, '$.isGrid') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.isGrid') = 'true' THEN 1 
+                        WHEN json_extract(metadata_json, '$.generationType') = 'grid' THEN 1 
+                        ELSE 0 
+                    END
+                ) STORED
+            ) STRICT;
+
+            INSERT INTO images_v24 (
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            )
+            SELECT 
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            FROM images;
+
+            DROP TABLE images;
+            ALTER TABLE images_v24 RENAME TO images;
+            
+            -- Recreate Indexes
+            CREATE INDEX idx_images_path ON images(path);
+            CREATE INDEX idx_images_is_deleted ON images(is_deleted);
+            CREATE INDEX idx_images_is_pinned ON images(is_pinned);
+            CREATE INDEX idx_images_timestamp ON images(timestamp);
+            CREATE INDEX idx_images_is_intermediate_gen ON images(is_intermediate_gen);
+            CREATE INDEX idx_images_is_grid_gen ON images(is_grid_gen);
+            
+            CREATE INDEX idx_images_model_hash_denorm ON images(model_hash);
+            CREATE INDEX idx_images_tool_denorm ON images(tool);
+            CREATE INDEX idx_images_resolved_model ON images(resolved_model_name);
+            
+            CREATE INDEX idx_images_filter_covering ON images(is_deleted, is_intermediate_gen, is_grid_gen, timestamp DESC);
+            CREATE INDEX idx_images_filter_model ON images(is_deleted, resolved_model_name, timestamp DESC);
+            CREATE INDEX idx_images_filter_tool ON images(is_deleted, tool, timestamp DESC);
+            
+            -- Recreate Triggers
+            DROP TRIGGER IF EXISTS trg_images_ai;
+            DROP TRIGGER IF EXISTS trg_images_ad;
+            DROP TRIGGER IF EXISTS trg_images_au;
+
+            CREATE TRIGGER trg_images_ai AFTER INSERT ON images BEGIN
+                INSERT INTO images_fts(id, positive_prompt, negative_prompt)
+                VALUES (new.id, json_extract(new.metadata_json, '$.positivePrompt'), json_extract(new.metadata_json, '$.negativePrompt'));
+            END;
+
+            CREATE TRIGGER trg_images_ad AFTER DELETE ON images BEGIN
+                DELETE FROM images_fts WHERE id = old.id;
+            END;
+
+            CREATE TRIGGER trg_images_au AFTER UPDATE ON images BEGIN
+                UPDATE images_fts SET 
+                    positive_prompt = json_extract(new.metadata_json, '$.positivePrompt'),
+                    negative_prompt = json_extract(new.metadata_json, '$.negativePrompt')
+                WHERE id = old.id;
+            END;
+            
+            -- Healing: Ensure Collection Links are preserved/restored if lost during swap
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT board_id, id
+            FROM images
+            WHERE board_id IS NOT NULL;
+            
+            PRAGMA foreign_key_check;
+            PRAGMA foreign_keys = ON;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+
+    let migration25 = Migration {
+        version: 25,
+        description: "fix_schema_robust_v2",
+        sql: "
+            PRAGMA foreign_keys = OFF;
+
+            CREATE TABLE images_v25 (
+                id TEXT PRIMARY KEY,
+                path TEXT UNIQUE NOT NULL,
+                width INTEGER,
+                height INTEGER,
+                file_size INTEGER,
+                timestamp INTEGER,
+                metadata_json TEXT,
+                thumbnail_path TEXT,
+                is_favorite INTEGER DEFAULT 0 NOT NULL,
+                is_pinned INTEGER DEFAULT 0 NOT NULL,
+                is_deleted INTEGER DEFAULT 0 NOT NULL,
+                is_missing INTEGER DEFAULT 0 NOT NULL,
+                user_masked INTEGER DEFAULT 0, -- Fixed: Nullable for tri-state
+                group_id TEXT,
+                notes TEXT,
+                original_metadata_json TEXT,
+                board_id TEXT,
+                model_hash TEXT,
+                model_name TEXT,
+                tool TEXT,
+                resolved_model_name TEXT,
+                
+                -- Global Search Columns (Robust Checks)
+                is_intermediate_gen INTEGER GENERATED ALWAYS AS (
+                    CASE 
+                        WHEN json_extract(metadata_json, '$.isIntermediate') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.isIntermediate') = 'true' THEN 1 
+                        WHEN json_extract(metadata_json, '$.is_intermediate') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.is_intermediate') = 'true' THEN 1 
+                        ELSE 0 
+                    END
+                ) STORED,
+                is_grid_gen INTEGER GENERATED ALWAYS AS (
+                    CASE 
+                        WHEN json_extract(metadata_json, '$.isGrid') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.isGrid') = 'true' THEN 1 
+                        WHEN json_extract(metadata_json, '$.is_grid') = 1 THEN 1 
+                        WHEN json_extract(metadata_json, '$.is_grid') = 'true' THEN 1 
+                        WHEN json_extract(metadata_json, '$.generationType') = 'grid' THEN 1 
+                        WHEN json_extract(metadata_json, '$.generation_type') = 'grid' THEN 1 
+                        ELSE 0 
+                    END
+                ) STORED
+            ) STRICT;
+
+            INSERT INTO images_v25 (
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            )
+            SELECT 
+                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, notes,
+                original_metadata_json, board_id, model_hash, model_name, tool, resolved_model_name
+            FROM images;
+
+            DROP TABLE images;
+            ALTER TABLE images_v25 RENAME TO images;
+            
+            -- Recreate Indexes
+            CREATE INDEX idx_images_path ON images(path);
+            CREATE INDEX idx_images_is_deleted ON images(is_deleted);
+            CREATE INDEX idx_images_is_pinned ON images(is_pinned);
+            CREATE INDEX idx_images_timestamp ON images(timestamp);
+            CREATE INDEX idx_images_is_intermediate_gen ON images(is_intermediate_gen);
+            CREATE INDEX idx_images_is_grid_gen ON images(is_grid_gen);
+            
+            CREATE INDEX idx_images_model_hash_denorm ON images(model_hash);
+            CREATE INDEX idx_images_tool_denorm ON images(tool);
+            CREATE INDEX idx_images_resolved_model ON images(resolved_model_name);
+            
+            CREATE INDEX idx_images_filter_covering ON images(is_deleted, is_intermediate_gen, is_grid_gen, timestamp DESC);
+            CREATE INDEX idx_images_filter_model ON images(is_deleted, resolved_model_name, timestamp DESC);
+            CREATE INDEX idx_images_filter_tool ON images(is_deleted, tool, timestamp DESC);
+            
+            -- Recreate Triggers (Crucial for FTS)
+            DROP TRIGGER IF EXISTS trg_images_ai;
+            DROP TRIGGER IF EXISTS trg_images_ad;
+            DROP TRIGGER IF EXISTS trg_images_au;
+
+            CREATE TRIGGER trg_images_ai AFTER INSERT ON images BEGIN
+                INSERT INTO images_fts(id, positive_prompt, negative_prompt)
+                VALUES (new.id, json_extract(new.metadata_json, '$.positivePrompt'), json_extract(new.metadata_json, '$.negativePrompt'));
+            END;
+
+            CREATE TRIGGER trg_images_ad AFTER DELETE ON images BEGIN
+                DELETE FROM images_fts WHERE id = old.id;
+            END;
+
+            CREATE TRIGGER trg_images_au AFTER UPDATE ON images BEGIN
+                UPDATE images_fts SET 
+                    positive_prompt = json_extract(new.metadata_json, '$.positivePrompt'),
+                    negative_prompt = json_extract(new.metadata_json, '$.negativePrompt')
+                WHERE id = old.id;
+            END;
+            
+            -- Healing: Ensure Collection Links are preserved/restored if lost during swap
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT board_id, id
+            FROM images
+            WHERE board_id IS NOT NULL;
+            
+            PRAGMA foreign_key_check;
+            PRAGMA foreign_keys = ON;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25]
 }
