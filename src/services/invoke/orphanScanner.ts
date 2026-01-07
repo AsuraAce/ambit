@@ -37,19 +37,15 @@ export const scanForOrphans = async (
         }
     }
 
-    console.log('[OrphanScan] Starting scan for orphans...');
     let allFiles: string[] = [];
     try {
-        console.log(`[OrphanScan] Listing files in ${imagesRoot}...`);
         allFiles = await unwrap(commands.listInvokeaiImages(imagesRoot));
-        console.log(`[OrphanScan] Found ${allFiles.length} files on disk.`);
     } catch (e) {
         console.error('[OrphanScan] Failed to list images on disk:', e);
         return 0;
     }
 
     if (!allFiles || allFiles.length === 0) {
-        console.warn('[OrphanScan] No files returned from disk scan.');
         return 0;
     }
 
@@ -62,8 +58,6 @@ export const scanForOrphans = async (
         const absPath = `${imagesRoot}/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         return !ambitExistingIds.has(absPath);
     });
-
-    console.log(`[OrphanScan] Identified ${orphans.length} orphans from ${allFiles.length} files.`);
 
     if (orphans.length === 0) return 0;
 
