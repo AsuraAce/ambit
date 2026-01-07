@@ -82,31 +82,74 @@ export const searchImages = async (
     whereClause: string,
     params: any[],
     limit: number,
-    offset: number,
+    // offset removed
     sortField: string = 'timestamp',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
     prioritizePinned: boolean = false,
     collectionId?: string,
-    loraName?: string
+    loraName?: string,
+    cursor?: { val: number | string; id: string; isPinned?: number }
 ): Promise<AIImage[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     const orderBy = prioritizePinned
-        ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}`
-        : `ORDER BY images.${sortField} ${sortOrder}`;
+        ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}` // Strict tie-breaker
+        : `ORDER BY images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}`;
 
-    // For collection-filtered searches, use CROSS JOIN to force scanning collection_images first
-    // This prevents SQLite from scanning the 'images' table by timestamp (fast start but slow to find matches)
-    // when the collection items are sparse or old.
+    // Helper to build cursor condition
+    const buildCursorWhere = () => {
+        if (!cursor) return '';
+
+        const op = sortOrder === 'DESC' ? '<' : '>';
+        const sortValParam = typeof cursor.val === 'string' ? `'${cursor.val}'` : cursor.val;
+
+        if (prioritizePinned) {
+            // Complex case: Pinned (1) -> Unpinned (0). 
+            // Sort: is_pinned DESC, sortField [dir], id [dir]
+
+            // If we are currently paging through pinned items (isPinned=1)
+            // AND the next item could be pinned OR unpinned.
+
+            // Tuple comparison only works if all directions match. 
+            // Here is_pinned is DESC. If sortOrder is ASC, we can't use simple tuple.
+            // We'll use a verbose logical expansion for safety.
+
+            // Cursor Logic:
+            // (is_pinned < cursor.pin) -- IMPOSSIBLE since max is 1, but conceptually valid for DESC
+            // OR (is_pinned = cursor.pin AND sortField [op] cursor.val)
+            // OR (is_pinned = cursor.pin AND sortField = cursor.val AND id [op] cursor.id)
+
+            const pinOp = '<='; // Pinned (1) comes before Unpinned (0) so DESC means 1 > 0. Next page is <= current.
+            // Actually, for DESC sort: "Row A comes after Cursor B" means Row A < Cursor B.
+            // So is_pinned can confirm to < cursor.isPinned
+
+            const pinnedVal = cursor.isPinned ?? 0;
+
+            return `AND (
+                images.is_pinned < ${pinnedVal}
+                OR (images.is_pinned = ${pinnedVal} AND images.${sortField} ${op} ${sortValParam})
+                OR (images.is_pinned = ${pinnedVal} AND images.${sortField} = ${sortValParam} AND images.id ${op} '${cursor.id}')
+            )`;
+        }
+
+        // Simple case: (sortField, id) < (val, id)
+        // Ensure we handle string vs number types correctly for sql injection safety if raw string
+        return `AND (images.${sortField}, images.id) ${op} (${sortValParam}, '${cursor.id}')`;
+    };
+
+    const cursorWhere = buildCursorWhere();
+
+    // For collection-filtered searches
     if (collectionId) {
         const query = `
             SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
             FROM collection_images ci
             CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${cursorWhere}
             ${orderBy}
-            LIMIT ${limit} OFFSET ${offset}
+            LIMIT ${limit}
         `;
         const rows = await db.select<any[]>(query, [collectionId, ...params]);
         return rows.map(mapRowToImage);
@@ -120,21 +163,29 @@ export const searchImages = async (
             FROM image_loras il
             CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
+            ${cursorWhere}
             ${orderBy}
-            LIMIT ${limit} OFFSET ${offset}
+            LIMIT ${limit}
         `;
         const rows = await db.select<any[]>(query, [loraName, ...params]);
         return rows.map(mapRowToImage);
     }
 
-    // Use denormalized resolved_model_name column instead of LEFT JOIN with models
-    // This eliminates the expensive JSON->hash->JOIN operation
+    // Use denormalized resolved_model_name column
+    // The replace of images. prefix in orderBy is tricky if we added images.id. 
+    // If not joining, we don't need prefixes, but consistent use is better.
+    // If table alias is implied, we might need to strip prefixes if query fails.
+    // But 'images' table name is valid in simple select.
+
+    // Safer to leave prefixes if FROM images is used.
+
     const query = `
         SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
         FROM images 
         ${finalWhere} 
-        ${orderBy.replace(/images\./g, '')}
-        LIMIT ${limit} OFFSET ${offset}
+        ${cursorWhere}
+        ${orderBy} 
+        LIMIT ${limit}
     `;
 
     const rows = await db.select<any[]>(query, params);

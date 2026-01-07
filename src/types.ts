@@ -155,6 +155,12 @@ export type FacetSortOption =
 export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'tools';
 
 
+export interface PaginationCursor {
+  val: number | string;
+  id: string;
+  isPinned?: number;
+}
+
 export interface MonitoredFolder {
   id: string;
   path: string;

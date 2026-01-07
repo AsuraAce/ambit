@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { FilterState, SortOption, AppSettings, AIImage, Collection } from '../types';
+import { FilterState, SortOption, AppSettings, AIImage, Collection, PaginationCursor } from '../types';
 import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 
@@ -40,7 +40,7 @@ export const useImagesQuery = ({
 
     return useInfiniteQuery({
         queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
-        queryFn: async ({ pageParam = 0 }) => {
+        queryFn: async ({ pageParam }) => {
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,
@@ -65,27 +65,41 @@ export const useImagesQuery = ({
 
             // Parallelize count and search for the first page
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
-            if (pageParam === 0) {
+            if (pageParam === undefined) {
                 const [images, totalCount, globalCount] = await Promise.all([
-                    searchImages(where, params, PAGE_SIZE, 0, sortField, sortOrder, prioritizePinned, collectionId, loraName),
+                    searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
                     countImages(where, params, collectionId, loraName),
                     countGlobalImages() // Fast path: no JOIN, simple indexed count
                 ]);
-                return { images, totalCount, globalCount, nextOffset: PAGE_SIZE };
+                return { images, totalCount, globalCount };
             } else {
-                const offset = pageParam as number;
-                const images = await searchImages(where, params, PAGE_SIZE, offset, sortField, sortOrder, prioritizePinned, collectionId, loraName);
-                return { images, totalCount: -1, globalCount: -1, nextOffset: offset + PAGE_SIZE };
+                const cursor = pageParam as PaginationCursor;
+                // Note: offset removed from searchImages signature
+                const images = await searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, cursor);
+                return { images, totalCount: -1, globalCount: -1 };
             }
         },
-        initialPageParam: 0,
-        getNextPageParam: (lastPage, allPages) => {
+        initialPageParam: undefined as PaginationCursor | undefined,
+        getNextPageParam: (lastPage) => {
             if (lastPage.images.length < PAGE_SIZE) return undefined;
-            return lastPage.nextOffset;
+            const lastImage = lastPage.images[lastPage.images.length - 1];
+
+            // Determine sort value based on current sort
+            // This needs access to 'sortOption' which is in closure scope
+            let val: string | number = lastImage.timestamp;
+
+            // Map sort options to field values
+            if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.path;
+            else if (sortOption === 'size_asc' || sortOption === 'size_desc') val = lastImage.file_size;
+            else val = lastImage.timestamp;
+
+            return {
+                val,
+                id: lastImage.id,
+                isPinned: lastImage.isPinned ? 1 : 0
+            };
         },
-        placeholderData: (previousData) => previousData, // Keep previous data while fetching new filter results? No, usually we want to clear for new filters.
-        // Actually for infinite scroll we usually want to keep previous data when fetching *next page*, but when filters change React Query handles it by changing key.
-        // We can use placeholderData to keep showing old results while loading new filter? Maybe standard loading is better.
+        placeholderData: (previousData) => previousData, // Keep previous data while fetching new filter results
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
 };
