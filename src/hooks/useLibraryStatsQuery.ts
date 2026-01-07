@@ -57,7 +57,7 @@ export const useLibraryStatsQuery = ({
     return useQuery({
         queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
-            const { where, params } = buildSqlWhereClause(
+            const { where, params, collectionId, loraName } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,
                 settings.maskingMode,
@@ -68,7 +68,7 @@ export const useLibraryStatsQuery = ({
             // Fetch facets and stats in parallel
             const [facets, stats] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
-                getLibraryStats(where, params)
+                getLibraryStats(where, params, collectionId, loraName)
             ]);
 
             return { facets, stats };

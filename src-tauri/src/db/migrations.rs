@@ -330,5 +330,53 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20]
+    let migration21 = Migration {
+        version: 21,
+        description: "create_fts_and_cleanup",
+        sql: "
+            -- 1. Safety Fix: Clean up orphans before enabling Foreign Keys
+            DELETE FROM collection_images WHERE image_id NOT IN (SELECT id FROM images);
+            DELETE FROM collection_images WHERE collection_id NOT IN (SELECT id FROM collections);
+            DELETE FROM image_loras WHERE image_id NOT IN (SELECT id FROM images);
+            DELETE FROM image_embeddings WHERE image_id NOT IN (SELECT id FROM images);
+            DELETE FROM image_hypernetworks WHERE image_id NOT IN (SELECT id FROM images);
+
+            -- 1.5. Clean State: Drop existing FTS table if it exists (fixes schema mismatch)
+            DROP TABLE IF EXISTS images_fts;
+
+            -- 2. Create FTS5 Table for Text Search
+            CREATE VIRTUAL TABLE IF NOT EXISTS images_fts USING fts5(
+                id,
+                positive_prompt, 
+                negative_prompt
+            );
+
+            -- 3. Backfill FTS Data
+            INSERT INTO images_fts(id, positive_prompt, negative_prompt)
+            SELECT id, 
+                   json_extract(metadata_json, '$.positivePrompt'),
+                   json_extract(metadata_json, '$.negativePrompt')
+            FROM images;
+
+            -- 4. Triggers to Keep FTS Sync using standard triggers
+            CREATE TRIGGER IF NOT EXISTS trg_images_ai AFTER INSERT ON images BEGIN
+                INSERT INTO images_fts(id, positive_prompt, negative_prompt)
+                VALUES (new.id, json_extract(new.metadata_json, '$.positivePrompt'), json_extract(new.metadata_json, '$.negativePrompt'));
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_images_ad AFTER DELETE ON images BEGIN
+                DELETE FROM images_fts WHERE id = old.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_images_au AFTER UPDATE ON images BEGIN
+                UPDATE images_fts SET 
+                    positive_prompt = json_extract(new.metadata_json, '$.positivePrompt'),
+                    negative_prompt = json_extract(new.metadata_json, '$.negativePrompt')
+                WHERE id = old.id;
+            END;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21]
 }

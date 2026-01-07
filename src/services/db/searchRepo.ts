@@ -141,17 +141,18 @@ export const searchImages = async (
     return rows.map(mapRowToImage);
 };
 
-export const getLibraryStats = async (whereClause: string = '', params: any[] = []): Promise<LibraryStats> => {
+export const getLibraryStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
     try {
-        // Use direct query without JOIN - all needed columns are now denormalized
         const statsQuery = `
             SELECT 
                 count(*) as total, 
                 avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
             FROM images 
+            ${collectionId ? `JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'` : ''}
+            ${loraName ? `JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'` : ''}
             ${finalWhere}
         `;
 
@@ -161,15 +162,15 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
 
         // Use denormalized resolved_model_name column for model stats
         const modelQuery = `
-            SELECT 
-                COALESCE(resolved_model_name, model_name, 'Unknown') as name, 
-                count(*) as count
+        SELECT
+        COALESCE(resolved_model_name, model_name, 'Unknown') as name,
+            count(*) as count
             FROM images
             ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
             LIMIT 20
-        `;
+            `;
         const modelRows = await db.select<any[]>(modelQuery, params);
 
         const modelStats = modelRows.map(r => ({
@@ -179,7 +180,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         }));
 
         // Get Keyword Stats
-        const keywordStats = await getKeywordStats(finalWhere, params);
+        const keywordStats = await getKeywordStats(finalWhere, params, collectionId, loraName);
 
         return {
             totalImages: total,
@@ -202,21 +203,61 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     }
 };
 
-export const getKeywordStats = async (whereClause: string = '', params: any[] = []): Promise<{ text: string; value: number }[]> => {
+export const getKeywordStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<{ text: string; value: number }[]> => {
     const db = await getDb();
 
     try {
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
 
-        // Fix ambiguity for JOIN: replace and ensure 'id' becomes 'images.id' unless already prefixed
-        const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
-        const safeWhere = finalWhere.replace(/(\bimages\.)?\b(id|is_deleted|metadata_json|path|width|height|file_size|timestamp|thumbnail_path|is_favorite|is_pinned|is_missing|user_masked|group_id|board_id|notes|original_metadata_json)\b/g, (match, prefix, col) => prefix ? match : `images.${col}`);
+        // Debug: Log the incoming filter to debug "static" issues
+        console.log('[DB] getKeywordStats filter:', whereClause);
 
-        // Simple query using denormalized columns - no model JOIN needed
+        // Fix ambiguity for JOIN: replace and ensure columns are prefixed with 'images.'
+        const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
+
+        // Comprehensive list of columns in the 'images' table to prefix
+        const columnsToPrefix = [
+            'id', 'is_deleted', 'metadata_json', 'path', 'width', 'height', 'file_size',
+            'timestamp', 'thumbnail_path', 'is_favorite', 'is_pinned', 'is_missing',
+            'user_masked', 'group_id', 'board_id', 'notes', 'original_metadata_json',
+            // New denormalized columns
+            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen'
+        ];
+
+        const columnRegex = new RegExp(`(\\bimages\\.) ?\\b(${columnsToPrefix.join('|')}) \\b`, 'g');
+
+        const safeWhere = finalWhere.replace(columnRegex, (match, prefix, col) => {
+            return prefix ? match : `images.${col} `;
+        });
+
+        // 1. Flip JOIN order: Filter 'images' first, then lookup FTS text
+        // 2. Add RANDOM() sort to LIMIT to get a representative sample of the filtered set
+        //    (instead of just the first N oldest images)
+        /*
+         * Note on Performance: 
+         * ORDER BY RANDOM() on the full set is slow. 
+         * But since we have a LIMIT, SQLite can sometimes optimize.
+         * For a word cloud, we need a diverse sample.
+         */
+        let joinClause = "JOIN images_fts ON images_fts.id = images.id";
+
+        // Prioritize Collection/LoRA filtering with INNER JOIN if present
+        if (collectionId) {
+            joinClause = `
+                JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
+                JOIN images_fts ON images_fts.id = images.id
+            `;
+        } else if (loraName) {
+            joinClause = `
+                JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
+                JOIN images_fts ON images_fts.id = images.id
+            `;
+        }
+
         const promptQuery = `
             SELECT positive_prompt 
-            FROM images_fts
-            JOIN images ON images.id = images_fts.id
+            FROM images
+            ${joinClause}
             ${safeWhere}
             LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
         `;
@@ -248,6 +289,8 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     }
 };
 
+
+
 /**
  * Fetches facets from the pre-built cache.
  * 
@@ -272,9 +315,9 @@ export const getFacets = async (
         const cacheRows = await db.select<any[]>(`
             SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at
             FROM facet_cache
-            WHERE facet_type IN (${placeholders})
+            WHERE facet_type IN(${placeholders})
             ORDER BY count DESC, resource_name ASC
-        `, cacheTypes);
+            `, cacheTypes);
 
         // Map cache rows to facet result
         for (const row of cacheRows) {
