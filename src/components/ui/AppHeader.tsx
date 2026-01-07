@@ -112,7 +112,7 @@ export const AppHeader = React.memo(({
                             <Import className="w-4 h-4" />
                         </button>
                         <button
-                            onClick={() => setIsLiveWatching(!isLiveWatching)}
+                            onClick={() => setIsLiveWatching(!setIsLiveWatching)}
                             className={`p-2 rounded-xl transition-all border relative group ${isLiveWatching ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/20 animate-pulse' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500'}`}
                             title={isLiveWatching ? "Live Sync Active (Click to pause)" : "Enable Live Sync"}
                         >
