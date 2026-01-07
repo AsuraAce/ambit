@@ -111,7 +111,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             // Orphan scanning
             let orphansImported = 0;
-            if (options.mode === 'manual' && settingsRef.current.importOrphans !== false) {
+            const shouldImportOrphans = options.importOrphans !== undefined ? options.importOrphans : settingsRef.current.importOrphans;
+
+            if (options.mode === 'manual' && shouldImportOrphans !== false) {
                 orphansImported = await scanForOrphans(
                     settingsRef.current.invokeAiPath!,
                     syncedIds,

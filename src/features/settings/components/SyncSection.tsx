@@ -26,7 +26,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
             syncBoards,
             importIntermediates: settings.importIntermediates,
             afterTimestamp: settings.lastSyncedAt,
-            starredAs: settings.starredAs
+            starredAs: settings.starredAs,
+            importOrphans: settings.importOrphans
         });
     };
 

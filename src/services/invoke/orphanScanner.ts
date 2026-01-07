@@ -37,20 +37,33 @@ export const scanForOrphans = async (
         }
     }
 
+    console.log('[OrphanScan] Starting scan for orphans...');
     let allFiles: string[] = [];
     try {
+        console.log(`[OrphanScan] Listing files in ${imagesRoot}...`);
         allFiles = await unwrap(commands.listInvokeaiImages(imagesRoot));
+        console.log(`[OrphanScan] Found ${allFiles.length} files on disk.`);
     } catch (e) {
+        console.error('[OrphanScan] Failed to list images on disk:', e);
         return 0;
     }
 
-    if (!allFiles || allFiles.length === 0) return 0;
+    if (!allFiles || allFiles.length === 0) {
+        console.warn('[OrphanScan] No files returned from disk scan.');
+        return 0;
+    }
 
     const orphans = allFiles.filter(f => {
-        if (!options.importIntermediates && knownIntermediates.has(f)) return false;
-        const absPath = `${imagesRoot}/outputs/images/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+        const filename = f.split('/').pop();
+        if (!options.importIntermediates && filename && knownIntermediates.has(filename)) return false;
+
+        // f is relative to root (e.g. "outputs/images/uuid.png")
+        // So we just join it with root.
+        const absPath = `${imagesRoot}/${f}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         return !ambitExistingIds.has(absPath);
     });
+
+    console.log(`[OrphanScan] Identified ${orphans.length} orphans from ${allFiles.length} files.`);
 
     if (orphans.length === 0) return 0;
 
@@ -62,7 +75,7 @@ export const scanForOrphans = async (
     for (let i = 0; i < total; i += CHUNK_SIZE) {
         const chunk = orphans.slice(i, i + CHUNK_SIZE);
         const chunkAbsPaths = chunk.map(rel => {
-            return `${imagesRoot}/outputs/images/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
+            return `${imagesRoot}/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
 
         try {
