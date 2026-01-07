@@ -305,28 +305,40 @@ const VirtualGridInternal = <T extends { id: string }>(
   }));
 
 
-  // --- Selection Interaction ---
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
 
-    if (!containerRef.current) return;
+    // Bypass if clicking on interactive elements (checkboxes, buttons, etc)
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('[role="button"]')) {
+      return;
+    }
 
-    e.preventDefault();
+    // Check if we're clicking on a draggable item
+    const isOverItem = !!target.closest('[data-draggable="true"]');
 
+    if (!containerRef.current || !scrollContainerRef.current) return;
+
+    // Use currentTarget to get the container's rect for consistent coordinates
     const rect = containerRef.current.getBoundingClientRect();
     const startX = e.clientX - rect.left;
-    const startY = e.clientY - rect.top + containerRef.current.scrollTop; // Adjust for scroll
+    const startY = e.clientY - rect.top;
 
     dragStartRef.current = { x: startX, y: startY };
     isDraggingRef.current = false;
+
+    // Prevent default for background clicks to enable box selection
+    if (!isOverItem) {
+      e.preventDefault();
+    }
 
     const handleWindowMove = (we: MouseEvent) => {
       if (!dragStartRef.current || !containerRef.current) return;
 
       const currentRect = containerRef.current.getBoundingClientRect();
-      // Mouse position relative to container, PLUS scroll offset
+      // Mouse position relative to container
       const currentX = we.clientX - currentRect.left;
-      const currentY = we.clientY - currentRect.top + containerRef.current.scrollTop;
+      const currentY = we.clientY - currentRect.top;
 
       if (!isDraggingRef.current) {
         const dx = Math.abs(currentX - dragStartRef.current.x);
@@ -354,42 +366,46 @@ const VirtualGridInternal = <T extends { id: string }>(
         const currentRect = containerRef.current!.getBoundingClientRect();
         // Note: We use the final mouse position logic same as move
         const currentX = we.clientX - currentRect.left;
-        const currentY = we.clientY - currentRect.top + containerRef.current!.scrollTop;
+        const currentY = we.clientY - currentRect.top;
 
         const bx = Math.min(dragStartRef.current.x, currentX);
         const by = Math.min(dragStartRef.current.y, currentY);
         const bw = Math.abs(currentX - dragStartRef.current.x);
         const bh = Math.abs(currentY - dragStartRef.current.y);
 
+        // Convert viewport-relative coordinates to grid-absolute coordinates
+        // scrollContainerRef.scrollTop = how far the parent container has scrolled
+        // containerRef.offsetTop = where the grid starts within the scroll container
+        const scrollOffset = scrollContainerRef.current?.scrollTop || 0;
+        const gridTop = containerRef.current!.offsetTop;
+
+        // Grid-absolute box position for overlap checking
+        const gx = bx;
+        const gy = by + scrollOffset - gridTop;
+        const gw = bw;
+        const gh = bh;
+
         const selectedIndexes: number[] = [];
         const currentPositions = layoutResultRef.current.positions;
 
-        // Optimization: Only check items that could possibly overlap vertically
+        // Check overlap using grid-absolute coordinates
         currentPositions.forEach((pos, index) => {
           // Vertical bounds check first
-          if (pos.top > by + bh || pos.top + pos.height < by) return;
+          if (pos.top > gy + gh || pos.top + pos.height < gy) return;
 
           const overlap = (
-            pos.left < bx + bw &&
-            pos.left + pos.width > bx &&
-            pos.top < by + bh &&
-            pos.top + pos.height > by
+            pos.left < gx + gw &&
+            pos.left + pos.width > gx &&
+            pos.top < gy + gh &&
+            pos.top + pos.height > gy
           );
 
           if (overlap) selectedIndexes.push(index);
         });
 
         onRangeSelectionRef.current(selectedIndexes, we.shiftKey);
-      } else if (!isDraggingRef.current && onBackgroundClickRef.current) {
-        // Check if we clicked background
-        // Simple check: did we click strictly in background?
-        // Since we handle click on items in GridItem, if we reached here it's likely background
-        // BUT we check if we are Over an item just in case bubbling happened weirdly
-        // Actually, usually easier to let GridItem handle its own clicks.
-        // We'll trust that if target wasn't an item interactive, it's background.
-        // However, let's verify if 'target' is the container itself or the 'virtual-track'
-
-        // If the click didn't move much, treat as click
+      } else if (!isDraggingRef.current && !isOverItem && onBackgroundClickRef.current) {
+        // Background click - clear selection
         onBackgroundClickRef.current();
       }
 
@@ -503,19 +519,14 @@ const VirtualGridInternal = <T extends { id: string }>(
         minHeight: '100%',
       }}
       className={`outline-none overflow-hidden ${className || ''}`}
+      onMouseDown={handleMouseDown}
     >
-      {/* Background Selection Layer - Only catches clicks on empty space */}
-      < div
-        onMouseDown={handleMouseDown}
-        className="absolute inset-0 z-0 bg-transparent"
-      />
-
       {visibleItems}
 
       {
         dragBox && (
           <div
-            className="absolute bg-sage-500/30 border-2 border-sage-400 z-50 pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
+            className="absolute bg-sage-500/30 border-2 border-sage-400 z-[60] pointer-events-none rounded-sm shadow-[0_0_15px_rgba(115,140,85,0.4)]"
             style={{
               left: dragBox.x,
               top: dragBox.y,
@@ -525,7 +536,7 @@ const VirtualGridInternal = <T extends { id: string }>(
           />
         )
       }
-    </div >
+    </div>
   );
 };
 

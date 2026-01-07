@@ -169,7 +169,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 initialTab={shortcutsModalTab as any}
             />
 
-            {filteredImages.length >= 2 && Array.from(selectedIds).length >= 2 && (
+            {modals.compare && filteredImages.length >= 2 && Array.from(selectedIds).length >= 2 && (
                 <CompareModal
                     imageA={filteredImages.find(i => i.id === Array.from(selectedIds)[0]) || filteredImages[0]}
                     imageB={filteredImages.find(i => i.id === Array.from(selectedIds)[1]) || filteredImages[1]}
