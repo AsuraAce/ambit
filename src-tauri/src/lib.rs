@@ -39,6 +39,8 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             metadata::models::clear_model_cache,
             metadata::models::cancel_model_resolution,
             metadata::models::scan_model_thumbnails,
+            metadata::models::set_model_thumbnail,
+            metadata::models::populate_missing_thumbnails,
         ])
 }
 

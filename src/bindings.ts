@@ -200,6 +200,22 @@ async scanModelThumbnails(paths: string[]) : Promise<Result<ThumbnailScanResult,
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async setModelThumbnail(modelHash: string, imagePath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, imagePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async populateMissingThumbnails() : Promise<Result<PopulateResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("populate_missing_thumbnails") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -218,6 +234,7 @@ export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFil
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string }
 export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null }
 export type ImportResult = { added: number; totalFound: number; message: string }
+export type PopulateResult = { updated: number }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
 export type ThumbnailScanResult = { found: number; updated: number }

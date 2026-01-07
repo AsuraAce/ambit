@@ -228,3 +228,13 @@ export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: 
         return { found: 0, updated: 0 };
     }
 };
+
+export const populateMissingThumbnails = async (): Promise<{ updated: number }> => {
+    try {
+        const result = await unwrap(commands.populateMissingThumbnails());
+        return result;
+    } catch (e) {
+        console.error('Failed to populate missing thumbnails', e);
+        return { updated: 0 };
+    }
+};

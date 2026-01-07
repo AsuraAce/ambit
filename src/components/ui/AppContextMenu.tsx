@@ -173,15 +173,72 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 await invoke('open_file', { path: id });
                 onClose();
             }}
-            onSetThumbnail={() => {
-                if (filters.collectionId && contextMenu.imageId) {
-                    colOps.setCollectionThumbnail(filters.collectionId, contextMenu.imageId);
-                }
-                onClose();
-            }}
             onUnsetThumbnail={() => {
                 if (filters.collectionId) {
                     colOps.resetCollectionThumbnail(filters.collectionId);
+                }
+                onClose();
+            }}
+            modelsForThumbnail={(() => {
+                if (!activeImage?.metadata) return [];
+                const res = [];
+                const m = activeImage.metadata;
+
+                // Checkpoint
+                if (m.modelHash) {
+                    const name = typeof m.model === 'string' ? m.model : (m.model as any)?.name || 'Checkpoint';
+                    res.push({ name, hash: m.modelHash, type: 'checkpoint' });
+                }
+
+                // LoRAs
+                if (m.loras && Array.isArray(m.loras)) {
+                    m.loras.forEach(l => {
+                        // l is "lora_name (hash)" or "lora:name:1" depending on parser
+                        // Simple extraction
+                        const clean = l.split('(')[0].trim().replace('lora:', '').split(':')[0];
+                        // We use a pseudo-hash for LoRAs if real hash isn't available, but usually harvest uses consistent naming
+                        // For manual set, we rely on the name matching logic in backend or just hash if available
+                        // Actually, backend `set_model_thumbnail` takes a hash.
+                        // Implication: We need the HASH. 
+                        // Most parsers don't give lora HASH unless it's in the string.
+                        // Let's rely on backend logic: `set_model_thumbnail` takes `model_hash`.
+                        // If we don't have a hash, we can't reliably set it unless we use the name as hash (like harvest does).
+                        // Harvest uses: 'lora_' || clean_name
+                        res.push({ name: clean, hash: `lora_${clean}`, type: 'lora' });
+                    });
+                }
+
+                return res;
+            })()}
+            onSetModelThumbnail={async (model) => {
+                if (contextMenu.imageId && activeImage?.id) {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    // We pass the IMAGE PATH (activeImage.id) not the thumbnail path,
+                    // because the backend function `set_model_thumbnail` logic isn't fully robust on path vs id?
+                    // Wait, `set_model_thumbnail` (rust) takes `image_path` and `model_hash`.
+                    // And it UPDATEs `thumbnail_path` to `image_path`.
+                    // BUT we want to set the thumbnail to the *thumbnail of this image*, not the original big image (usually).
+                    // However, passing the big image path allows the backend/frontend to decide.
+                    // A1111 uses .preview.png separate file.
+                    // Our `ResourceSection` uses `item.thumbnailPath`.
+                    // If we set `thumbnail_path` in DB to `D:/HighRes/image.png`, `convertFileSrc` will load the big image.
+                    // Performance hit? Yes.
+                    // Ideally we should use the *generated thumbnail* of this image.
+                    // `activeImage.thumbnailUrl` is usually `http://asset.../thumb.webp`.
+                    // The DB needs a local path or a relative path.
+                    // `activeImage.thumbnailUrl` from `useImagesQuery` is converted.
+                    // We need the raw path to the thumbnail file.
+                    // `regenerateThumbnailsForImages` puts them in `checkpoints/.thumbnails/...`
+                    // But we don't have that path easy access here.
+                    // Plan B: Pass the original image path, and let the backend/frontend handle resizing or loading.
+                    // OR, logic update: `set_model_thumbnail` should generate a thumbnail copy if the source is huge?
+                    // For now, let's pass the Original Image Path. The UI handles large images okay-ish, or we optimize later.
+
+                    await invoke('set_model_thumbnail', {
+                        modelHash: model.hash,
+                        imagePath: activeImage.id
+                    });
+                    addToast(`Thumbnail set for ${model.name}`, 'success');
                 }
                 onClose();
             }}

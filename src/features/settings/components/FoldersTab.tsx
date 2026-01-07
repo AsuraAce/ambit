@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useRef, useState } from 'react';
-import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw } from 'lucide-react';
+import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw, Wand2 } from 'lucide-react';
 import { AppSettings, MonitoredFolder } from '../../../types';
 import { scanResourceThumbnails } from '../../../services/importService';
 
@@ -63,6 +63,17 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         try {
             const res = await scanResourceThumbnails(settings.resourceFolders);
             console.log("Scan complete", res);
+        } finally {
+            setIsScanningResources(false);
+        }
+    };
+
+    const handleSmartPopulate = async () => {
+        setIsScanningResources(true);
+        try {
+            const { populateMissingThumbnails } = await import('../../../services/importService');
+            const res = await populateMissingThumbnails();
+            console.log("Smart populate complete", res);
         } finally {
             setIsScanningResources(false);
         }
@@ -225,17 +236,29 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                             Add your Model/LoRA folders here. Ambit will scan them for thumbnails (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
                         </div>
                     </div>
-                    {settings.resourceFolders && settings.resourceFolders.length > 0 && (
+                    <div className="flex gap-2">
                         <button
                             type="button"
-                            onClick={handleScanNow}
+                            onClick={handleSmartPopulate}
                             disabled={isScanningResources}
-                            className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningResources ? 'opacity-70 cursor-wait' : ''}`}
+                            className={`flex items-center gap-2 px-3 py-1.5 bg-amethyst-100 dark:bg-amethyst-900/30 text-amethyst-700 dark:text-amethyst-300 rounded-lg text-xs font-medium hover:bg-amethyst-200 dark:hover:bg-amethyst-900/50 transition-colors ${isScanningResources ? 'opacity-70 cursor-wait' : ''}`}
+                            title="Auto-fill thumbnails from generated images"
                         >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-spin' : ''}`} />
-                            {isScanningResources ? 'Scanning...' : 'Scan Now'}
+                            <Wand2 className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-pulse' : ''}`} />
+                            Smart Fill
                         </button>
-                    )}
+                        {settings.resourceFolders && settings.resourceFolders.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={handleScanNow}
+                                disabled={isScanningResources}
+                                className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningResources ? 'opacity-70 cursor-wait' : ''}`}
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-spin' : ''}`} />
+                                {isScanningResources ? 'Scanning...' : 'Scan Now'}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-sm">

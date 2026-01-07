@@ -35,6 +35,8 @@ interface ContextMenuProps {
   userMasked?: boolean;
   isIntermediate?: boolean;
   onToggleIntermediate?: () => void;
+  modelsForThumbnail?: { name: string; hash: string; type: string }[];
+  onSetModelThumbnail?: (model: { name: string; hash: string; type: string }) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -66,6 +68,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   userMasked,
   isIntermediate,
   onToggleIntermediate,
+  modelsForThumbnail,
+  onSetModelThumbnail,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -155,11 +159,28 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           />
         )}
         <div className="h-px bg-white/5 my-1" />
+        {/* Collection Thumbnail */}
         {onSetThumbnail && (
-          <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Thumbnail" onClick={onSetThumbnail} />
+          <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Collection Thumb" onClick={onSetThumbnail} />
         )}
         {onUnsetThumbnail && (
-          <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Thumbnail" onClick={onUnsetThumbnail} />
+          <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Collection Thumb" onClick={onUnsetThumbnail} />
+        )}
+
+        {/* Model Thumbnails */}
+        {modelsForThumbnail && modelsForThumbnail.length > 0 && onSetModelThumbnail && (
+          <>
+            <div className="h-px bg-white/5 my-1" />
+            <div className="px-2 py-1 text-[10px] uppercase font-bold text-gray-500">Set Model Thumbnail</div>
+            {modelsForThumbnail.map((m, i) => (
+              <MenuItem
+                key={i}
+                icon={<ImageIcon className="w-3 h-3 text-blue-400" />}
+                label={m.name}
+                onClick={() => onSetModelThumbnail(m)}
+              />
+            ))}
+          </>
         )}
       </SubMenu>
 

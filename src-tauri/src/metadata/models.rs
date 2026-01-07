@@ -1,5 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -614,4 +614,109 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
     ).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, image_path: String) -> Result<(), String> {
+    let db_path = resolve_db_path(&app)?;
+    
+    // Perform blocking DB operations on a thread
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+
+        // We allow setting thumbnail even if the model isn't "fully" scanned,
+        // as long as it exists in the models table.
+        // If it doesn't exist, we auto-create a minimal entry.
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, thumbnail_path, resource_type) 
+             VALUES (?1, 'Unknown Model', 'manual_thumbnail', ?2, ?3, 'checkpoint')
+             ON CONFLICT(hash) DO UPDATE SET thumbnail_path = ?3",
+            params![
+                model_hash, 
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 
+                image_path
+            ]
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+
+#[derive(Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PopulateResult {
+    updated: usize,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn populate_missing_thumbnails(app: tauri::AppHandle) -> Result<PopulateResult, String> {
+    let db_path = resolve_db_path(&app)?;
+
+    // Perform massive blocking scan on a thread
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        // 1. Harvest any missing models from image metadata so we have something to attach thumbnails to
+        harvest_resource_names(&mut conn, now)?;
+
+        // 2. Find models with missing thumbnails
+        let missing_models: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT hash, name FROM models WHERE thumbnail_path IS NULL OR thumbnail_path = ''"
+            ).map_err(|e| e.to_string())?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            }).map_err(|e| e.to_string())?;
+
+            let mut res = Vec::new();
+            for row in rows {
+                res.push(row.map_err(|e| e.to_string())?);
+            }
+            res
+        };
+
+        if missing_models.is_empty() {
+            return Ok(PopulateResult { updated: 0 });
+        }
+
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let mut updated = 0;
+
+        {
+            let mut update_stmt = tx.prepare(
+                "UPDATE models SET thumbnail_path = ?1 WHERE hash = ?2"
+            ).map_err(|e| e.to_string())?;
+
+            // 3. For each missing model, find the best image match
+            // Heuristic: Most recently generated image that used this model
+            for (hash, name) in missing_models {
+                let thumb: Option<String> = tx.query_row(
+                    "SELECT thumbnail_path FROM images 
+                     WHERE (json_extract(metadata_json, '$.modelHash') = ?1 
+                        OR json_extract(metadata_json, '$.model') = ?2)
+                     AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                     ORDER BY timestamp DESC LIMIT 1",
+                    params![hash, name],
+                    |row| row.get(0)
+                ).optional().unwrap_or(None);
+
+                if let Some(path) = thumb {
+                    if let Ok(rows) = update_stmt.execute(params![path, hash]) {
+                         if rows > 0 {
+                             updated += 1;
+                         }
+                    }
+                }
+            }
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+
+        Ok(PopulateResult { updated })
+    }).await.map_err(|e| e.to_string())?
 }
