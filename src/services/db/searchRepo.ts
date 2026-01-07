@@ -24,24 +24,24 @@ export const countImages = async (whereClause: string, params: any[], collection
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
-    // For collection-filtered counts, use INNER JOIN with collection_images for O(collection_size) instead of O(all_images)
+    // For collection-filtered counts, use CROSS JOIN with collection_images to force scan order
     if (collectionId) {
         const query = `
             SELECT count(*) as count 
             FROM collection_images ci
-            INNER JOIN images ON images.id = ci.image_id
+            CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
         const result = await db.select<any[]>(query, [collectionId, ...params]);
         return result[0]?.count || 0;
     }
 
-    // For single-lora-filtered counts, use INNER JOIN with image_loras for O(lora_usage_count) instead of O(all_images)
+    // For single-lora-filtered counts, use CROSS JOIN to force scan order
     if (loraName) {
         const query = `
             SELECT count(*) as count 
             FROM image_loras il
-            INNER JOIN images ON images.id = il.image_id
+            CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
         `;
         const result = await db.select<any[]>(query, [loraName, ...params]);
@@ -96,13 +96,14 @@ export const searchImages = async (
         ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}`
         : `ORDER BY images.${sortField} ${sortOrder}`;
 
-    // For collection-filtered searches, use INNER JOIN with collection_images 
-    // This is O(collection_size) instead of O(all_images)
+    // For collection-filtered searches, use CROSS JOIN to force scanning collection_images first
+    // This prevents SQLite from scanning the 'images' table by timestamp (fast start but slow to find matches)
+    // when the collection items are sparse or old.
     if (collectionId) {
         const query = `
             SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
             FROM collection_images ci
-            INNER JOIN images ON images.id = ci.image_id
+            CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
             ${orderBy}
             LIMIT ${limit} OFFSET ${offset}
@@ -111,13 +112,13 @@ export const searchImages = async (
         return rows.map(mapRowToImage);
     }
 
-    // For single-lora-filtered searches, use INNER JOIN with image_loras
-    // This is O(lora_usage_count) instead of O(all_images)
+    // For single-lora-filtered searches, use CROSS JOIN with image_loras
+    // Same logic: force scanning the junction table first.
     if (loraName) {
         const query = `
             SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
             FROM image_loras il
-            INNER JOIN images ON images.id = il.image_id
+            CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
             ${orderBy}
             LIMIT ${limit} OFFSET ${offset}

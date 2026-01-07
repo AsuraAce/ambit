@@ -70,6 +70,11 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             // Return total cache entries
             let count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
                 .map_err(|e| e.to_string())?;
+                
+            // Update stats after rebuild
+            let _ = conn.execute("ANALYZE facet_cache", []);
+            let _ = conn.execute("ANALYZE models", []);
+            
             count
         };
 

@@ -223,6 +223,32 @@ pub async fn refresh_boards_native(
         tx.commit().map_err(|e| e.to_string())?;
         Ok(updated_count)
     }).await.map_err(|e| e.to_string())?
+
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn optimize_database(app: tauri::AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        let start = std::time::Instant::now();
+        
+        // ANALYZE gathers statistics about indices and stores them in sqlite_stat1
+        // This helps the query planner make better decisions
+        conn.execute("ANALYZE", []).map_err(|e| e.to_string())?;
+        
+        // PRAGMA optimize is also good practice - it runs ANALYZE only if needed
+        // but explicit ANALYZE is better for user-triggered optimization
+        conn.execute("PRAGMA optimize", []).map_err(|e| e.to_string())?;
+
+        // VACUUM is too heavy/locking to run generally, so we skip it here
+        
+        let duration = start.elapsed();
+        Ok(format!("Database optimized in {:.2}s", duration.as_secs_f64()))
+    }).await.map_err(|e| e.to_string())?
 }
 
 /// Reset migration 18 if it failed partially. This deletes the migration record

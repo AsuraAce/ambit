@@ -41,6 +41,14 @@ async resetMigration18() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async optimizeDatabase() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async rebuildFacetCache() : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };

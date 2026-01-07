@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, ExternalLink, Database } from 'lucide-react';
+import { commands } from '../../../bindings';
 
 interface LibraryHealthProps {
     mode?: 'compact' | 'detailed';
@@ -12,6 +13,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
     const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'done'>('idle');
+    const [optimizeStatus, setOptimizeStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
     const [progress, setProgress] = useState(0);
 
@@ -59,6 +61,18 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         } catch (e) {
             console.error(e);
             setRebuildStatus('idle');
+        }
+    };
+
+    const handleOptimizeDatabase = async () => {
+        setOptimizeStatus('running');
+        try {
+            await commands.optimizeDatabase();
+            setOptimizeStatus('done');
+            setTimeout(() => setOptimizeStatus('idle'), 3000);
+        } catch (e) {
+            console.error(e);
+            setOptimizeStatus('idle');
         }
     };
 
@@ -157,6 +171,22 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                             <RefreshCw className="w-4 h-4" />
                         )}
                         {rebuildStatus === 'running' ? 'Rebuilding...' : rebuildStatus === 'done' ? 'Cache Rebuilt' : 'Rebuild Facet Cache'}
+                    </button>
+
+                    <button
+                        onClick={handleOptimizeDatabase}
+                        disabled={optimizeStatus === 'running' || status === 'running'}
+                        className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-white/5 hover:bg-sage-500 hover:text-white dark:hover:bg-sage-600 text-gray-500 dark:text-gray-400 rounded-xl text-xs font-bold border border-gray-100 dark:border-white/10 transition-all active:scale-95 disabled:opacity-50"
+                        title="Run ANALYZE to optimize query planner"
+                    >
+                        {optimizeStatus === 'running' ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : optimizeStatus === 'done' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        ) : (
+                            <Database className="w-4 h-4" />
+                        )}
+                        {optimizeStatus === 'running' ? 'Optimizing...' : optimizeStatus === 'done' ? 'Optimized' : 'Optimize DB'}
                     </button>
                 </div>
             </div>
