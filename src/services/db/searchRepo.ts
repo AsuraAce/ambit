@@ -32,6 +32,19 @@ export const countImages = async (whereClause: string, params: any[], collection
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND (is_intermediate_gen IS NULL OR is_intermediate_gen != 1)";
 
+    // For combined Collection + LoRA counts
+    if (collectionId && loraName) {
+        const query = `
+            SELECT count(*) as count 
+            FROM collection_images ci
+            JOIN image_loras il ON il.image_id = ci.image_id
+            JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
+        `;
+        const result = await db.select<any[]>(query, [collectionId, loraName, ...params]);
+        return result[0]?.count || 0;
+    }
+
     // For collection-filtered counts, use CROSS JOIN with collection_images to force scan order
     if (collectionId) {
         const query = `

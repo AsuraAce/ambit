@@ -94,13 +94,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         });
     };
 
-    // DEBUG: Log filtering data
-    console.log(`[DrillDown ${type}] data items: ${data?.length || 0}, validNames: ${validNames?.length ?? 'null'}`);
-    if (validNames && data && data.length > 0) {
-        console.log(`[DrillDown ${type}] validNames sample:`, validNames.slice(0, 3));
-        console.log(`[DrillDown ${type}] data sample:`, data.slice(0, 3).map(d => d.name));
-    }
-
     const filteredItems = (data || [])
         .filter(l => {
             // 1. Must match search query
@@ -131,8 +124,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 default: return b.count - a.count;
             }
         });
-
-    console.log(`[DrillDown ${type}] filteredItems: ${filteredItems.length}`);
 
     const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
 
