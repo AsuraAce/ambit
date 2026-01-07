@@ -122,7 +122,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 </button>
                 {showSortMenu && (
                     <div
-                        className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                        className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
                         onClick={() => setShowSortMenu(false)}
                     >
                         {[
@@ -159,7 +159,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                     </button>
                     {showViewMenu && (
                         <div
-                            className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                            className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
                         >
                             <div className="p-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2">Display</span>

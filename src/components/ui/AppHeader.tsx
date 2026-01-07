@@ -75,7 +75,7 @@ export const AppHeader = React.memo(({
 
     return (
         <header className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
-            <div className="h-16 flex items-center justify-between px-6 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative">
+            <div className="h-16 flex items-center justify-between px-6 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative z-20">
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (

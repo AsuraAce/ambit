@@ -45,7 +45,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     if (!hasActiveFilters) return null;
 
     return (
-        <div className="mt-2 flex items-center gap-2 overflow-x-auto custom-scrollbar px-6 py-2 min-h-[44px] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-500 mx-2">
+        <div className="mt-2 flex items-center gap-2 overflow-x-auto custom-scrollbar px-6 py-2 min-h-[44px] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-500 mx-2 relative z-10">
             {/* Floating style with margin and rounding */}
 
             {/* Smart Collection Implicit Filters (Locked) */}
