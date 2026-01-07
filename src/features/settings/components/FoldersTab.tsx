@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw, Wand2 } from 'lucide-react';
 import { AppSettings, MonitoredFolder } from '../../../types';
 import { scanResourceThumbnails } from '../../../services/importService';
+import { useLibraryStore } from '../../../stores/libraryStore';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface TabProps {
     settings: AppSettings;
@@ -68,14 +70,22 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         }
     };
 
+
+
+    const queryClient = useQueryClient();
+    const { isPopulatingThumbnails, setIsPopulatingThumbnails } = useLibraryStore();
+
     const handleSmartPopulate = async () => {
-        setIsScanningResources(true);
+        setIsPopulatingThumbnails(true);
         try {
             const { populateMissingThumbnails } = await import('../../../services/importService');
             const res = await populateMissingThumbnails();
             console.log("Smart populate complete", res);
+
+            // Refresh facets to show new thumbnails
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         } finally {
-            setIsScanningResources(false);
+            setIsPopulatingThumbnails(false);
         }
     };
 
@@ -131,16 +141,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         }
     };
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (files && files.length > 0) {
-            const relativePath = files[0].webkitRelativePath;
-            const folderName = relativePath.split('/')[0] || 'Selected_Folder';
-            setNewFolderPath(`D:/AI_Workflows/${folderName} (Simulated)`);
-        }
-        if (e.target) e.target.value = '';
-    };
-
     const handleResourceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (files && files.length > 0) {
@@ -148,6 +148,16 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             const folderName = relativePath.split('/')[0] || 'Selected_Folder';
             // Use simulated path only if we can't get real path (native specific)
             setNewResourcePath(`D:/AI_Models/${folderName}`);
+        }
+        if (e.target) e.target.value = '';
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            const relativePath = files[0].webkitRelativePath;
+            const folderName = relativePath.split('/')[0] || 'Selected_Folder';
+            setNewFolderPath(`D:/AI_Workflows/${folderName} (Simulated)`);
         }
         if (e.target) e.target.value = '';
     };
@@ -240,19 +250,19 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         <button
                             type="button"
                             onClick={handleSmartPopulate}
-                            disabled={isScanningResources}
-                            className={`flex items-center gap-2 px-3 py-1.5 bg-amethyst-100 dark:bg-amethyst-900/30 text-amethyst-700 dark:text-amethyst-300 rounded-lg text-xs font-medium hover:bg-amethyst-200 dark:hover:bg-amethyst-900/50 transition-colors ${isScanningResources ? 'opacity-70 cursor-wait' : ''}`}
+                            disabled={isScanningResources || isPopulatingThumbnails}
+                            className={`flex items-center gap-2 px-3 py-1.5 bg-amethyst-100 dark:bg-amethyst-900/30 text-amethyst-700 dark:text-amethyst-300 rounded-lg text-xs font-medium hover:bg-amethyst-200 dark:hover:bg-amethyst-900/50 transition-colors ${isScanningResources || isPopulatingThumbnails ? 'opacity-70 cursor-wait' : ''}`}
                             title="Auto-fill thumbnails from generated images"
                         >
-                            <Wand2 className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-pulse' : ''}`} />
+                            <Wand2 className={`w-3.5 h-3.5 ${(isScanningResources || isPopulatingThumbnails) ? 'animate-pulse' : ''}`} />
                             Smart Fill
                         </button>
                         {settings.resourceFolders && settings.resourceFolders.length > 0 && (
                             <button
                                 type="button"
                                 onClick={handleScanNow}
-                                disabled={isScanningResources}
-                                className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningResources ? 'opacity-70 cursor-wait' : ''}`}
+                                disabled={isScanningResources || isPopulatingThumbnails}
+                                className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningResources || isPopulatingThumbnails ? 'opacity-70 cursor-wait' : ''}`}
                             >
                                 <RefreshCw className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-spin' : ''}`} />
                                 {isScanningResources ? 'Scanning...' : 'Scan Now'}

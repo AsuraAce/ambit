@@ -9,11 +9,12 @@ export const ActivityDock: React.FC = () => {
         syncStatus, syncProgress, isLiveSyncing,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
-        isActivityDockDismissed, setIsActivityDockDismissed
+        isActivityDockDismissed, setIsActivityDockDismissed,
+        isPopulatingThumbnails
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
-    const active = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels;
+    const active = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails;
 
     // Determine current task details
     let progress = null;
@@ -31,6 +32,9 @@ export const ActivityDock: React.FC = () => {
     } else if (isResolvingModels) {
         progress = modelResolutionProgress;
         label = "Resolving Models";
+    } else if (isPopulatingThumbnails) {
+        progress = { current: 0, total: 0, message: "Matching images to models..." };
+        label = "Smart Fill";
     }
 
     const current = progress?.current || 0;

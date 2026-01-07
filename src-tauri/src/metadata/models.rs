@@ -647,6 +647,8 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, imag
 #[serde(rename_all = "camelCase")]
 pub struct PopulateResult {
     updated: usize,
+    models_checked: usize,
+    images_matched: usize,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -680,12 +682,39 @@ pub async fn populate_missing_thumbnails(app: tauri::AppHandle) -> Result<Popula
             res
         };
 
+        let models_checked = missing_models.len();
+        println!("[SmartFill] Found {} models missing thumbnails", models_checked);
+
+        // Log first 5 models for debugging
+        for (i, (hash, name)) in missing_models.iter().take(5).enumerate() {
+            println!("[SmartFill] Model {}: hash='{}', name='{}'", i + 1, hash, name);
+        }
+
+        // Check sample image metadata
+        let sample: Option<String> = conn.query_row(
+            "SELECT json_extract(metadata_json, '$.modelHash') || ' / ' || json_extract(metadata_json, '$.model') 
+             FROM images WHERE metadata_json IS NOT NULL LIMIT 1",
+            [],
+            |row| row.get(0)
+        ).optional().unwrap_or(None);
+        println!("[SmartFill] Sample image metadata (hash / name): {:?}", sample);
+
+        // Check sample loras array structure
+        let sample_loras: Option<String> = conn.query_row(
+            "SELECT json_extract(metadata_json, '$.loras') 
+             FROM images WHERE json_extract(metadata_json, '$.loras') IS NOT NULL LIMIT 1",
+            [],
+            |row| row.get(0)
+        ).optional().unwrap_or(None);
+        println!("[SmartFill] Sample loras array: {:?}", sample_loras);
+
         if missing_models.is_empty() {
-            return Ok(PopulateResult { updated: 0 });
+            return Ok(PopulateResult { updated: 0, models_checked: 0, images_matched: 0 });
         }
 
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let mut updated = 0;
+        let mut images_matched = 0;
 
         {
             let mut update_stmt = tx.prepare(
@@ -694,18 +723,54 @@ pub async fn populate_missing_thumbnails(app: tauri::AppHandle) -> Result<Popula
 
             // 3. For each missing model, find the best image match
             // Heuristic: Most recently generated image that used this model
-            for (hash, name) in missing_models {
-                let thumb: Option<String> = tx.query_row(
-                    "SELECT thumbnail_path FROM images 
-                     WHERE (json_extract(metadata_json, '$.modelHash') = ?1 
-                        OR json_extract(metadata_json, '$.model') = ?2)
-                     AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
-                     ORDER BY timestamp DESC LIMIT 1",
-                    params![hash, name],
-                    |row| row.get(0)
-                ).optional().unwrap_or(None);
+            for (hash, name) in &missing_models {
+                let thumb: Option<String>;
+
+                // Check if this is a LoRA (synthetic hash starts with "lora_")
+                if hash.starts_with("lora_") {
+                    // For LoRAs, search in the loras array (plain string array)
+                    thumb = tx.query_row(
+                        "SELECT thumbnail_path FROM images 
+                         WHERE EXISTS (
+                             SELECT 1 FROM json_each(json_extract(metadata_json, '$.loras'))
+                             WHERE value = ?1
+                         )
+                         AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                         ORDER BY timestamp DESC LIMIT 1",
+                        params![name],
+                        |row| row.get(0)
+                    ).optional().unwrap_or(None);
+                } else if hash.starts_with("embedding_") {
+                    // For embeddings, search in ti_hashes or embeddings array
+                    thumb = tx.query_row(
+                        "SELECT thumbnail_path FROM images 
+                         WHERE (
+                             json_extract(metadata_json, '$.ti_hashes') LIKE '%' || ?1 || '%'
+                             OR EXISTS (
+                                 SELECT 1 FROM json_each(json_extract(metadata_json, '$.embeddings'))
+                                 WHERE json_extract(value, '$.name') = ?1
+                             )
+                         )
+                         AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                         ORDER BY timestamp DESC LIMIT 1",
+                        params![name],
+                        |row| row.get(0)
+                    ).optional().unwrap_or(None);
+                } else {
+                    // For checkpoints, use modelHash or model name
+                    thumb = tx.query_row(
+                        "SELECT thumbnail_path FROM images 
+                         WHERE (json_extract(metadata_json, '$.modelHash') = ?1 
+                            OR json_extract(metadata_json, '$.model') = ?2)
+                         AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                         ORDER BY timestamp DESC LIMIT 1",
+                        params![hash, name],
+                        |row| row.get(0)
+                    ).optional().unwrap_or(None);
+                }
 
                 if let Some(path) = thumb {
+                    images_matched += 1;
                     if let Ok(rows) = update_stmt.execute(params![path, hash]) {
                          if rows > 0 {
                              updated += 1;
@@ -715,8 +780,9 @@ pub async fn populate_missing_thumbnails(app: tauri::AppHandle) -> Result<Popula
             }
         }
 
+        println!("[SmartFill] Matched {} images, updated {} models", images_matched, updated);
         tx.commit().map_err(|e| e.to_string())?;
 
-        Ok(PopulateResult { updated })
+        Ok(PopulateResult { updated, models_checked, images_matched })
     }).await.map_err(|e| e.to_string())?
 }

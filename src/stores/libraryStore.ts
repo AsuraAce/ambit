@@ -35,6 +35,7 @@ interface LibraryState {
     isResolvingModels: boolean;
     modelResolutionProgress: SyncProgress | null;
     isActivityDockDismissed: boolean;
+    isPopulatingThumbnails: boolean;
 
     // Actions
     setSyncStatus: (status: SyncStatus) => void;
@@ -51,6 +52,7 @@ interface LibraryState {
     setIsResolvingModels: (val: boolean) => void;
     setModelResolutionProgress: (progress: SyncProgress | null) => void;
     setIsActivityDockDismissed: (val: boolean) => void;
+    setIsPopulatingThumbnails: (val: boolean) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -76,6 +78,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isResolvingModels: false,
     modelResolutionProgress: null,
     isActivityDockDismissed: false,
+    isPopulatingThumbnails: false,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -92,4 +95,5 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsResolvingModels: (val) => set({ isResolvingModels: val, isActivityDockDismissed: val ? false : undefined }),
     setModelResolutionProgress: (progress) => set({ modelResolutionProgress: progress }),
     setIsActivityDockDismissed: (val) => set({ isActivityDockDismissed: val }),
+    setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
 }));
