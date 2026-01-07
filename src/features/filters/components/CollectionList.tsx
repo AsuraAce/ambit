@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
-import { SearchInput } from './FilterPrimitives';
+import { SearchInput, SortDropdown } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';
 import { CollectionItem } from './CollectionItem';
 import { useSettings } from '../../../contexts/SettingsContext';
@@ -152,40 +152,21 @@ export function CollectionList<T extends Collection>({
                 >
                     <Archive className="w-3.5 h-3.5" />
                 </button>
-                <div className="relative">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu); }}
-                        className={`transition-colors p-1.5 rounded-lg border ${showSortMenu ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
-                        title="Sort Collections"
-                    >
-                        <ArrowUpDown className="w-3.5 h-3.5" />
-                    </button>
-                    {showSortMenu && (
-                        <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                            {[
-                                { id: 'date_desc', label: 'Newest Created' },
-                                { id: 'date_asc', label: 'Oldest Created' },
-                                { id: 'name_asc', label: 'Name (A-Z)' },
-                                { id: 'name_desc', label: 'Name (Z-A)' },
-                                { id: 'count_desc', label: 'Most Images' },
-                                { id: 'count_asc', label: 'Fewest Images' },
-                            ].map(opt => (
-                                <button
-                                    key={opt.id}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSort(opt.id as any);
-                                        setShowSortMenu(false);
-                                    }}
-                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-gray-100 dark:hover:bg-white/5 transition-colors ${sort === opt.id ? 'text-sage-600 dark:text-sage-400 font-medium' : 'text-gray-600 dark:text-gray-400'}`}
-                                >
-                                    {opt.label}
-                                    {sort === opt.id && <Check className="w-3 h-3" />}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <SortDropdown
+                    title="Sort Collections"
+                    options={[
+                        { id: 'date_desc', label: 'Newest Created', icon: Calendar },
+                        { id: 'date_asc', label: 'Oldest Created', icon: Clock },
+                        { id: 'name_asc', label: 'Name (A-Z)', icon: ArrowUpWideNarrow },
+                        { id: 'name_desc', label: 'Name (Z-A)', icon: ArrowDownWideNarrow },
+                        { id: 'count_desc', label: 'Most Images', icon: SortDesc },
+                        { id: 'count_asc', label: 'Fewest Images', icon: SortAsc },
+                    ]}
+                    currentValue={sort}
+                    onSelect={(id) => setSort(id as any)}
+                    align="left"
+                    triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                />
                 <button
                     onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
                     className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}

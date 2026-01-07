@@ -3,7 +3,7 @@ import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc,
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
-import { SectionHeader, SearchInput } from './FilterPrimitives';
+import { SectionHeader, SearchInput, SortDropdown, SortOptionItem } from './FilterPrimitives';
 import { formatCountCompact } from '../../../utils/formatUtils';
 
 interface ResourceItem {
@@ -51,7 +51,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const [isSortOpen, setIsSortOpen] = useState(false);
 
     // Get view mode from settings, default to 'list'
     const viewMode = settings.resourceViewModes?.[type] || 'list';
@@ -78,7 +77,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 [type]: option
             }
         }));
-        setIsSortOpen(false);
     }, [type, setSettings]);
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
@@ -232,53 +230,19 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 isLoading={isLoading}
                 action={isOpen && (
                     <div className="flex items-center gap-1">
-                        {/* Sort Dropdown */}
-                        <div className="relative">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setIsSortOpen(!isSortOpen); }}
-                                className={`p-1 rounded transition-colors ${isSortOpen ? 'text-sage-500 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600'}`}
-                                title="Sort Options"
-                            >
-                                <ArrowDownWideNarrow className="w-3.5 h-3.5" />
-                            </button>
-
-                            {isSortOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-50 p-1 animate-in zoom-in-95 duration-200">
-                                    <div className="text-[9px] font-bold text-gray-400 dark:text-zinc-500 px-3 py-1.5 uppercase tracking-wider">Sort {singularType}s</div>
-
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('count_desc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'count_desc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><SortDesc className="w-3 h-3" /> Usage (High)</div>
-                                        {sortOption === 'count_desc' && <Check className="w-3 h-3" />}
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('count_asc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'count_asc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><SortAsc className="w-3 h-3" /> Usage (Low)</div>
-                                        {sortOption === 'count_asc' && <Check className="w-3 h-3" />}
-                                    </button>
-
-                                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-1" />
-
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('name_asc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'name_asc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><ArrowUpWideNarrow className="w-3 h-3" /> Name (A-Z)</div>
-                                        {sortOption === 'name_asc' && <Check className="w-3 h-3" />}
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('name_desc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'name_desc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><ArrowDownWideNarrow className="w-3 h-3" /> Name (Z-A)</div>
-                                        {sortOption === 'name_desc' && <Check className="w-3 h-3" />}
-                                    </button>
-
-                                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-1" />
-
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('recent_desc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'recent_desc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><Clock className="w-3 h-3" /> Recently Used</div>
-                                        {sortOption === 'recent_desc' && <Check className="w-3 h-3" />}
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setSortOption('added_desc'); }} className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg ${sortOption === 'added_desc' ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300' : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-2 font-medium"><Calendar className="w-3 h-3" /> Newest Added</div>
-                                        {sortOption === 'added_desc' && <Check className="w-3 h-3" />}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        <SortDropdown
+                            title={`Sort ${singularType}s`}
+                            options={[
+                                { id: 'count_desc', label: 'Usage (High)', icon: SortDesc },
+                                { id: 'count_asc', label: 'Usage (Low)', icon: SortAsc },
+                                { id: 'name_asc', label: 'Name (A-Z)', icon: ArrowUpWideNarrow },
+                                { id: 'name_desc', label: 'Name (Z-A)', icon: ArrowDownWideNarrow },
+                                { id: 'recent_desc', label: 'Recently Used', icon: Clock },
+                                { id: 'added_desc', label: 'Newest Added', icon: Calendar },
+                            ]}
+                            currentValue={sortOption}
+                            onSelect={(id) => setSortOption(id as any)}
+                        />
 
                         <button
                             onClick={(e) => {

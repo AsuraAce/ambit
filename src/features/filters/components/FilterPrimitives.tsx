@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Check, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, Search, X, LucideIcon, ArrowDownWideNarrow } from 'lucide-react';
 
 // --- Section Header ---
 interface SectionHeaderProps {
@@ -187,3 +187,90 @@ export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, place
         </div>
     </div>
 );
+
+// --- Sort Dropdown ---
+export interface SortOptionItem {
+    id: string;
+    label: string;
+    icon?: LucideIcon;
+}
+
+interface SortDropdownProps {
+    options: SortOptionItem[];
+    currentValue: string;
+    onSelect: (id: string) => void;
+    title?: string;
+    className?: string;
+    triggerClassName?: string | ((isOpen: boolean) => string);
+    align?: 'left' | 'right';
+}
+
+export const SortDropdown: React.FC<SortDropdownProps> = ({
+    options,
+    currentValue,
+    onSelect,
+    title,
+    className,
+    triggerClassName,
+    align = 'right'
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const resolvedTriggerClass = typeof triggerClassName === 'function'
+        ? triggerClassName(isOpen)
+        : triggerClassName || `p-1 rounded transition-colors ${isOpen ? 'text-sage-500 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`;
+
+    return (
+        <div className={`relative ${className}`} ref={dropdownRef}>
+            <button
+                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                className={resolvedTriggerClass}
+                title="Sort Options"
+            >
+                <ArrowDownWideNarrow className="w-3.5 h-3.5" />
+            </button>
+
+            {isOpen && (
+                <div className={`absolute mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-[100] p-1 animate-in zoom-in-95 duration-200 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+                    {title && (
+                        <div className="text-[9px] font-bold text-gray-400 dark:text-zinc-500 px-3 py-1.5 uppercase tracking-wider">
+                            {title}
+                        </div>
+                    )}
+
+                    {options.map((opt) => (
+                        <button
+                            key={opt.id}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onSelect(opt.id);
+                                setIsOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors ${currentValue === opt.id
+                                ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300'
+                                : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                                }`}
+                        >
+                            <div className="flex items-center gap-2 font-medium">
+                                {opt.icon && <opt.icon className="w-3 h-3" />}
+                                {opt.label}
+                            </div>
+                            {currentValue === opt.id && <Check className="w-3 h-3" />}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
