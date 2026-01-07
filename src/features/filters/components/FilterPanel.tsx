@@ -333,24 +333,28 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 isLoading={isFacetsLoading}
                                 validNames={validFacetNames?.loras}
                             />
-                            <ResourceSection
-                                title="Resources (Embedding)"
-                                type="embeddings"
-                                filters={filters} setFilters={setFilters}
-                                data={facets.embeddings}
-                                isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.embeddings}
-                            />
-                            <ResourceSection
-                                title="Resources (Hypernet)"
-                                type="hypernetworks"
-                                filters={filters} setFilters={setFilters}
-                                data={facets.hypernetworks}
-                                isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.hypernetworks}
-                            />
+                            {facets.embeddings && facets.embeddings.length > 0 && (
+                                <ResourceSection
+                                    title="Resources (Embedding)"
+                                    type="embeddings"
+                                    filters={filters} setFilters={setFilters}
+                                    data={facets.embeddings}
+                                    isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                                    isLoading={isFacetsLoading}
+                                    validNames={validFacetNames?.embeddings}
+                                />
+                            )}
+                            {facets.hypernetworks && facets.hypernetworks.length > 0 && (
+                                <ResourceSection
+                                    title="Resources (Hypernet)"
+                                    type="hypernetworks"
+                                    filters={filters} setFilters={setFilters}
+                                    data={facets.hypernetworks}
+                                    isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
+                                    isLoading={isFacetsLoading}
+                                    validNames={validFacetNames?.hypernetworks}
+                                />
+                            )}
                         </div>
                     )}
 
