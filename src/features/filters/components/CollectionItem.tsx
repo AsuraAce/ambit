@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { FolderInput, Archive, Folder, Pin, Sparkles } from 'lucide-react';
+import { FolderInput, Archive, Folder, Pin, Sparkles, Check } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { formatCountCompact } from '../../../utils/formatUtils';
@@ -26,6 +26,7 @@ interface CollectionItemProps {
     onExport?: (colId: string) => void;
     onResetThumbnail?: (colId: string) => void;
     onDelete?: (colId: string) => void;
+    viewMode?: 'grid' | 'list';
 }
 
 const getColorClass = (colorName?: string) => {
@@ -55,7 +56,12 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     handleDrop,
     handleContextMenu,
     dropTargetId,
+    onResetThumbnail,
+    onDelete,
+    viewMode = 'list'
 }) => {
+    const isSelected = filters.collectionId === col.id;
+    const thumbUrl = col.customThumbnail || col.thumbnail || '';
     return (
         <div
             key={col.id}
@@ -80,67 +86,126 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         className="w-full bg-white dark:bg-zinc-900 border border-sage-500 rounded-lg px-2 py-1 text-sm outline-none text-gray-900 dark:text-white"
                     />
                 </form>
+            ) : viewMode === 'grid' ? (
+                <div
+                    onClick={() => {
+                        if (!isSelected) {
+                            setFilters(prev => ({
+                                ...prev,
+                                collectionId: col.id,
+                                searchQuery: '',
+                                models: [],
+                                tools: [],
+                                loras: [],
+                                embeddings: [],
+                                hypernetworks: [],
+                                dateRange: 'all',
+                                favoritesOnly: false,
+                            }));
+                        }
+                    }}
+                    onDragEnter={(e) => handleDragEnter(e, col.id)}
+                    onDragOver={(e) => handleDragOver(e, col.id)}
+                    onDrop={(e) => handleDrop(e, col.id)}
+                    onContextMenu={(e) => handleContextMenu(e, col.id)}
+                    className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
+                        ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
+                        : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
+                        } ${dropTargetId === col.id ? 'scale-105 ring-2 ring-sage-500' : ''}`}
+                >
+                    {/* Thumbnail Area */}
+                    <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
+                        {thumbUrl ? (
+                            <SmartImage
+                                src={thumbUrl}
+                                alt={col.name}
+                                wrapperClassName="w-full h-full"
+                                imgClassName={`w-full h-full object-cover ${col.isArchived ? 'grayscale opacity-70' : ''}`}
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center opacity-20">
+                                {col.filters ? <Sparkles className="w-8 h-8 text-sage-500" /> : <Folder className="w-8 h-8" />}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Overlay Info */}
+                    <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                        <p className={`text-[10px] font-medium text-white line-clamp-2 leading-tight drop-shadow-sm flex items-center gap-1 ${col.isArchived ? 'opacity-70 italic' : ''}`}>
+                            {col.name}
+                            {col.filters && <Sparkles className="w-2 h-2 text-sage-400" />}
+                        </p>
+                    </div>
+
+                    {/* Status Indicators */}
+                    {isSelected && (
+                        <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center shadow-sm animate-in zoom-in-50 duration-200">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                        </div>
+                    )}
+
+                    {col.isPinned && !isSelected && (
+                        <div className="absolute top-1.5 right-1.5">
+                            <Pin className="w-3 h-3 text-sage-500 fill-sage-500 drop-shadow-sm" />
+                        </div>
+                    )}
+
+                    {col.color && (
+                        <div className={`absolute top-1.5 left-1.5 w-2 h-2 rounded-full border border-white/50 shadow-sm ${getColorClass(col.color)}`} />
+                    )}
+
+                    {/* Count Badge */}
+                    <div className="absolute top-1.5 right-1.5 group-hover:opacity-0 transition-opacity">
+                        {!isSelected && !col.isPinned && (
+                            <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                                {formatCountCompact(col.count ?? col.imageIds.length)}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Hover Count Badge */}
+                    <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90">
+                            {formatCountCompact(col.count ?? col.imageIds.length)}
+                        </div>
+                    </div>
+                </div>
             ) : (
                 <div
                     onClick={() => {
-                        if (filters.collectionId !== col.id) {
-                            if (col.filters) {
-                                // Smart Collection: Set ID but reset other manual filters
-                                // We do NOT copy filters into state, because we want ActiveFilters to show them as "locked"
-                                // and not have them editable in the SearchBar.
-                                setFilters(prev => ({
-                                    ...prev,
-                                    collectionId: col.id,
-                                    // Reset manual inputs to avoid bleeding
-                                    searchQuery: '',
-                                    models: [],
-                                    tools: [],
-                                    loras: [],
-                                    embeddings: [],
-                                    hypernetworks: [],
-                                    dateRange: 'all',
-                                    favoritesOnly: false,
-                                    // PRESERVE View Options
-                                    showGrids: prev.showGrids,
-                                    showIntermediates: prev.showIntermediates
-                                }));
-                            } else {
-                                // Static Collection: Clear filters but keep ID
-                                setFilters(prev => ({
-                                    ...prev,
-                                    collectionId: col.id,
-                                    // Reset manual inputs
-                                    searchQuery: '',
-                                    models: [],
-                                    tools: [],
-                                    loras: [],
-                                    embeddings: [],
-                                    hypernetworks: [],
-                                    dateRange: 'all',
-                                    favoritesOnly: false,
-                                    // PRESERVE View Options
-                                    showGrids: prev.showGrids,
-                                    showIntermediates: prev.showIntermediates
-                                }));
-                            }
+                        if (!isSelected) {
+                            setFilters(prev => ({
+                                ...prev,
+                                collectionId: col.id,
+                                searchQuery: '',
+                                models: [],
+                                tools: [],
+                                loras: [],
+                                embeddings: [],
+                                hypernetworks: [],
+                                dateRange: 'all',
+                                favoritesOnly: false,
+                                showGrids: prev.showGrids,
+                                showIntermediates: prev.showIntermediates
+                            }));
                         }
                     }}
-                    className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${filters.collectionId === col.id
+                    className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${isSelected
                         ? 'bg-gradient-to-r from-gray-200 to-transparent dark:from-zinc-700 dark:to-transparent text-gray-900 dark:text-white font-medium shadow-inner'
                         : 'text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-zinc-200'
                         }`}
                 >
-                    {/* Selection Indicator (Aligned with ResourceSection) */}
-                    {filters.collectionId === col.id && (
+                    {/* Selection Indicator */}
+                    {isSelected && (
                         <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-sage-500 rounded-full" />
                     )}
                     <div className="flex items-center gap-3 min-w-0 flex-1 pr-8 pointer-events-none">
                         {dropTargetId === col.id ? (
                             <FolderInput className="w-8 h-8 text-sage-500 animate-pulse flex-shrink-0" />
-                        ) : (col.customThumbnail || col.thumbnail) ? (
+                        ) : thumbUrl ? (
                             <div className="relative w-8 h-8 flex-shrink-0">
                                 <SmartImage
-                                    src={col.customThumbnail || col.thumbnail || ''}
+                                    src={thumbUrl}
                                     alt=""
                                     wrapperClassName="w-full h-full"
                                     imgClassName={`w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5 ${col.isArchived ? 'grayscale opacity-70' : ''}`}
@@ -169,7 +234,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-sage-500 dark:bg-sage-400 rounded-r-full" />
                     )}
 
-                    <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-md pointer-events-none transition-opacity duration-200 ${filters.collectionId === col.id ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 opacity-60 group-hover:opacity-100'
+                    <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-md pointer-events-none transition-opacity duration-200 ${isSelected ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 opacity-60 group-hover:opacity-100'
                         }`}>
                         {formatCountCompact(col.count ?? col.imageIds.length)}
                     </span>

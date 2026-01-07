@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, ArrowUpDown, Search, Pin, Check } from 'lucide-react';
+import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SearchInput } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';
 import { CollectionItem } from './CollectionItem';
+import { useSettings } from '../../../contexts/SettingsContext';
 
 interface CollectionListProps<T extends Collection> {
     collections: T[];
@@ -52,6 +53,20 @@ export function CollectionList<T extends Collection>({
     const [sort, setSort] = useState<CollectionSort>('date_desc');
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+    const { settings, setSettings } = useSettings();
+    const viewMode = settings.resourceViewModes?.['collections'] || 'list';
+
+    const toggleViewMode = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSettings(prev => ({
+            ...prev,
+            resourceViewModes: {
+                ...(prev.resourceViewModes || {}),
+                collections: viewMode === 'list' ? 'grid' : 'list'
+            }
+        }));
+    };
 
     // Renaming state
     const [editingColId, setEditingColId] = useState<string | null>(null);
@@ -168,6 +183,13 @@ export function CollectionList<T extends Collection>({
                 >
                     <Search className="w-3.5 h-3.5" />
                 </button>
+                <button
+                    onClick={toggleViewMode}
+                    className={`transition-colors p-1.5 rounded-lg border ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                    title={viewMode === 'list' ? "Switch to Grid View" : "Switch to List View"}
+                >
+                    {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
+                </button>
                 {renderToolbarExtras?.()}
             </div>
             {isSearchOpen && (
@@ -187,7 +209,7 @@ export function CollectionList<T extends Collection>({
                         <div className="px-2 pb-1.5 text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-wider flex items-center gap-1">
                             <Pin className="w-3 h-3" /> Pinned
                         </div>
-                        <div className="space-y-1">
+                        <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
                             {pinned.map(col => (
                                 <CollectionItem
                                     key={col.id}
@@ -212,6 +234,7 @@ export function CollectionList<T extends Collection>({
                                     onExport={onExportCollection}
                                     onResetThumbnail={onResetCollectionThumbnail}
                                     onDelete={onDeleteCollection}
+                                    viewMode={viewMode}
                                 />
                             ))}
                         </div>
@@ -219,7 +242,7 @@ export function CollectionList<T extends Collection>({
                     </div>
                 )}
 
-                <div className="space-y-1">
+                <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
                     {others.map(col => (
                         <CollectionItem
                             key={col.id}
@@ -244,6 +267,7 @@ export function CollectionList<T extends Collection>({
                             onExport={onExportCollection}
                             onResetThumbnail={onResetCollectionThumbnail}
                             onDelete={onDeleteCollection}
+                            viewMode={viewMode}
                         />
                     ))}
                 </div>
