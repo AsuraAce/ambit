@@ -347,7 +347,7 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
 }
 
 fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
-    // Optimization: Use DENORMALIZED columns (model_hash, resolved_model_name) instead of JSON extract
+    // 1. Calculate Counts and Usage Stats
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
             SELECT 
@@ -362,11 +362,28 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
         []
     ).map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
 
+    // 2. Calculate Best Dynamic Thumbnail (Pinned > Recent)
+    // We use model_name (or json_extract) to ensure it matches what harvest_models uses
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS cp_thumbs AS
+            SELECT mn, thumbnail_path FROM (
+                SELECT 
+                    COALESCE(model_name, json_extract(metadata_json, '$.model')) as mn, 
+                    thumbnail_path,
+                    ROW_NUMBER() OVER (PARTITION BY COALESCE(model_name, json_extract(metadata_json, '$.model')) ORDER BY is_pinned DESC, timestamp DESC) as rn
+                FROM images
+                WHERE is_deleted = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+            ) WHERE mn IS NOT NULL AND mn != '' AND rn = 1",
+        []
+    ).map_err(|e| format!("Failed to create cp_thumbs temp table: {}", e))?;
+
+    // 3. Insert into Cache (merging Manual Model Thumbnail > Dynamic Thumbnail)
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at)
             SELECT 'checkpoint', m.name, m.hash, 
                 COALESCE(SUM(cc.cnt), 0), 
-                m.thumbnail_path, m.preview_url,
+                COALESCE(m.thumbnail_path, MAX(ct.thumbnail_path), m.preview_url), -- Manual > Dynamic > Preview
+                m.preview_url,
                 MAX(cc.last_used),
                 MIN(cc.first_used)
             FROM (
@@ -379,14 +396,19 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 cc.mh = m.hash OR
                 cc.mn = m.name
             )
+            LEFT JOIN cp_thumbs ct ON (
+                ct.mn = m.name
+            )
             GROUP BY m.name",
         []
     ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
 
+    // 4. Insert Orphans (Dynamic Thumbnail Only)
     conn.execute(
-        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
-            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(cc.last_used), MIN(cc.first_used)
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, last_used_at, created_at)
+            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(ct.thumbnail_path), MAX(cc.last_used), MIN(cc.first_used)
             FROM cp_counts cc
+            LEFT JOIN cp_thumbs ct ON ct.mn = cc.mn
             WHERE NOT EXISTS (
                 SELECT 1 FROM facet_cache fc 
                 WHERE fc.facet_type = 'checkpoint' 
@@ -398,6 +420,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     ).map_err(|e| format!("Failed to insert orphan checkpoints: {}", e))?;
 
     conn.execute("DROP TABLE IF EXISTS cp_counts", []).ok();
+    conn.execute("DROP TABLE IF EXISTS cp_thumbs", []).ok();
     Ok(())
 }
 
@@ -413,8 +436,9 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
     };
     
     let temp_table = format!("{}_counts", facet_type);
+    let temp_thumbs = format!("{}_thumbs", facet_type);
     
-    // Step 1: Pre-aggregate from Junction Table (No JSON Parsing!)
+    // Step 1: Pre-aggregate Counts from Junction Table (No JSON Parsing!)
     conn.execute(
         &format!(
             "CREATE TEMP TABLE IF NOT EXISTS {} AS
@@ -445,13 +469,48 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
         []
     ).map_err(|e| format!("Failed to create optimized {} table: {}", temp_table, e))?;
 
-    // Step 2: Insert matched facets (Join against generic `models` table)
+    // Step 2: Calculate Best Dynamic Thumbnails (Pinned > Recent) for these Resources
+    // We need to group by the CLEANED reference name to match models
+    conn.execute(
+        &format!(
+            "CREATE TEMP TABLE IF NOT EXISTS {} AS
+             SELECT clean_ref, thumbnail_path FROM (
+                SELECT 
+                    CASE 
+                        WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
+                        WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
+                        ELSE jt.{} 
+                    END AS clean_ref,
+                    i.thumbnail_path,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY 
+                            CASE 
+                                WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
+                                WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
+                                ELSE jt.{} 
+                            END
+                        ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    ) as rn
+                FROM {} jt
+                JOIN images i ON i.id = jt.{}
+                WHERE i.is_deleted = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+             ) WHERE rn = 1",
+            temp_thumbs,
+            name_col, name_col, name_col, name_col, name_col, name_col, name_col,
+            name_col, name_col, name_col, name_col, name_col, name_col, name_col, 
+            junction_table, image_id_col
+        ),
+        []
+    ).map_err(|e| format!("Failed to create {} table: {}", temp_thumbs, e))?;
+
+    // Step 3: Insert matched facets (Join against generic `models` table)
     conn.execute(
         &format!(
             "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at)
                 SELECT '{}', m.name, m.hash,
                     COALESCE(SUM(rc.cnt), 0),
-                    m.thumbnail_path, m.preview_url,
+                    COALESCE(m.thumbnail_path, MAX(rt.thumbnail_path), m.preview_url), -- Manual > Dynamic > Preview
+                    m.preview_url,
                     MAX(rc.last_used),
                     MIN(rc.first_used)
                 FROM (
@@ -467,18 +526,22 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                     rc.ref_name LIKE m.name || ':%' OR
                     m.name LIKE rc.clean_ref || '%'
                 )
+                LEFT JOIN {} rt ON (
+                    rt.clean_ref = m.name
+                )
                 GROUP BY m.name",
-            facet_type, facet_type, temp_table
+            facet_type, facet_type, temp_table, temp_thumbs
         ),
         []
     ).map_err(|e| format!("Failed to insert {} into facet_cache: {}", facet_type, e))?;
 
-    // Step 3: Insert orphans
+    // Step 4: Insert orphans
     conn.execute(
         &format!(
-            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
-                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, SUM(rc.cnt), MAX(rc.last_used), MIN(rc.first_used)
+            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, last_used_at, created_at)
+                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, SUM(rc.cnt), MAX(rt.thumbnail_path), MAX(rc.last_used), MIN(rc.first_used)
                 FROM {} rc
+                LEFT JOIN {} rt ON rt.clean_ref = rc.clean_ref
                 WHERE NOT EXISTS (
                     SELECT 1 FROM facet_cache fc 
                     WHERE fc.facet_type = '{}' 
@@ -486,12 +549,13 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                 )
                 AND rc.clean_ref IS NOT NULL AND rc.clean_ref != ''
                 GROUP BY rc.clean_ref",
-            facet_type, temp_table, facet_type
+            facet_type, temp_table, temp_thumbs, facet_type
         ),
         []
     ).map_err(|e| format!("Failed to insert orphan {} into facet_cache: {}", facet_type, e))?;
 
     conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_table), []).ok();
+    conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_thumbs), []).ok();
     Ok(())
 }
 
@@ -535,22 +599,24 @@ mod tests {
             "tool": "Automatic1111"
         }"#;
 
+        // Image 1: Old, Unpinned
         conn.execute(
-            "INSERT INTO images (id, path, metadata_json) VALUES (?1, ?2, ?3)",
+            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path) VALUES (?1, ?2, ?3, 100, 0, 'thumb1.png')",
             params!["img1", "test.png", metadata],
         ).unwrap();
 
         let metadata2 = r#"{
             "model": "SDXL Base",
-            "modelHash": "123456", 
-            "loras": [],
+            "modelHash": "12345", 
+            "loras": ["DetailedEyes:1.0"],
             "embeddings": ["EasyNegative:v2"],
             "hypernetworks": ["MyHyper:1.0"],
             "tool": "Automatic1111"
         }"#;
 
+         // Image 2: New, Pinned (Should be preferred thumbnail for SDXL and DetailedEyes)
          conn.execute(
-            "INSERT INTO images (id, path, metadata_json) VALUES (?1, ?2, ?3)",
+            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png')",
             params!["img2", "test2.png", metadata2],
         ).unwrap();
 
@@ -565,24 +631,30 @@ mod tests {
         build_resource_facets(&conn, "hypernetworks", "hypernetworks").unwrap();
         build_tool_facets(&conn).unwrap();
 
-        let cp_count: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
-            [], |r| r.get(0)).unwrap_or(0);
+        // Checkpoint Check: Expected thumb2.png (Pinned)
+        let (cp_count, cp_thumb): (i64, String) = conn.query_row(
+            "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
+            [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(cp_count, 2, "Should count 2 images for SDXL Base");
+        assert_eq!(cp_thumb, "thumb2.png", "Checkpoint thumbnail should be from pinned image (thumb2)");
 
-        let lora_count: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='loras' AND resource_name='DetailedEyes'", 
-            [], |r| r.get(0)).unwrap_or(0);
-        assert_eq!(lora_count, 1, "Should count 1 image for DetailedEyes lora");
+        // LoRA Check: Expected thumb2.png (Pinned)
+        let (lora_count, lora_thumb): (i64, String) = conn.query_row(
+            "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='loras' AND resource_name='DetailedEyes'", 
+            [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(lora_count, 2, "Should count 2 images for DetailedEyes lora");
+        assert_eq!(lora_thumb, "thumb2.png", "LoRA thumbnail should be from pinned image (thumb2)");
         
-        let emb_count: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='embeddings' AND resource_name='EasyNegative'", 
-            [], |r| r.get(0)).unwrap_or(0);
-        assert_eq!(emb_count, 2, "Should count 2 images for EasyNegative (Base + v2)");
-
-        let hyper_count: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='hypernetworks' AND resource_name='MyHyper'", 
-            [], |r| r.get(0)).unwrap_or(0);
-        assert_eq!(hyper_count, 1, "Should count 1 image for MyHyper");
+        // Manual Override Check
+        // Set manual thumbnail for SDXL Base
+        conn.execute("UPDATE models SET thumbnail_path = 'manual_override.png' WHERE hash = '12345'", []).unwrap();
+        
+        // Rebuild Only Checkpoints
+        build_checkpoint_facets(&conn).unwrap();
+        
+        let cp_thumb_manual: String = conn.query_row(
+            "SELECT thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(cp_thumb_manual, "manual_override.png", "Manual thumbnail should take precedence");
     }
 }

@@ -625,9 +625,7 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, imag
     tauri::async_runtime::spawn_blocking(move || {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
-        // We allow setting thumbnail even if the model isn't "fully" scanned,
-        // as long as it exists in the models table.
-        // If it doesn't exist, we auto-create a minimal entry.
+        // 1. Update Models Table (Source of Truth for Manual Thumbnails)
         conn.execute(
             "INSERT INTO models (hash, name, lookup_source, scanned_at, thumbnail_path, resource_type) 
              VALUES (?1, 'Unknown Model', 'manual_thumbnail', ?2, ?3, 'checkpoint')
@@ -638,6 +636,14 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, imag
                 image_path
             ]
         ).map_err(|e| e.to_string())?;
+
+        // 2. Immediate Feedback: Update Facet Cache
+        // We update ALL facet types that might match this hash
+        conn.execute(
+            "UPDATE facet_cache SET thumbnail_path = ?1 WHERE resource_hash = ?2",
+            params![image_path, model_hash]
+        ).map_err(|e| e.to_string())?;
+
         Ok(())
     }).await.map_err(|e| e.to_string())?
 }
