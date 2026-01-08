@@ -148,7 +148,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         setContextMenu({ x: e.clientX, y: e.clientY, item });
     };
 
-    const handleResetThumbnail = async (item: ResourceItem) => {
+    // "Use Sidecar / Reset" - clears user override, falls back to sidecar > dynamic
+    const handleResetToSidecar = async (item: ResourceItem) => {
         if (!item.hash && !item.name) return;
 
         try {
@@ -157,11 +158,27 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 modelHash: item.hash || 'unknown',
                 modelName: item.name
             });
-            // Invalidate to refresh UI (remove manual indicator and update thumb)
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
-            console.error("Failed to unset thumbnail", error);
+            console.error("Failed to reset thumbnail", error);
+        }
+    };
+
+    // "Use Dynamic" - clears BOTH override and sidecar, forces dynamic selection
+    const handleUseDynamic = async (item: ResourceItem) => {
+        if (!item.hash && !item.name) return;
+
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('clear_all_thumbnails', {
+                modelHash: item.hash || 'unknown',
+                modelName: item.name
+            });
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            setContextMenu(null);
+        } catch (error) {
+            console.error("Failed to clear all thumbnails", error);
         }
     };
 
@@ -345,23 +362,34 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             {contextMenu && (
                 <div
                     ref={menuRef}
-                    className="fixed z-[100] w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                    className="fixed z-[100] w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                 >
                     <div className="p-1">
                         <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
                             {contextMenu.item.name}
                         </div>
+                        {/* Use Sidecar / Reset - clears user override, reverts to sidecar or dynamic */}
                         <button
-                            onClick={() => handleResetThumbnail(contextMenu.item)}
+                            onClick={() => handleResetToSidecar(contextMenu.item)}
                             disabled={!contextMenu.item.isManual}
                             className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
-                                ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                ? 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
                                 : 'text-gray-400 cursor-not-allowed opacity-50'
                                 }`}
+                            title="Clear user override, revert to sidecar or smart thumbnail"
                         >
                             <Puzzle className="w-3.5 h-3.5" />
-                            Reset Thumbnail
+                            Use Sidecar / Reset
+                        </button>
+                        {/* Use Dynamic - clears ALL (sidecar + override), forces smart selection */}
+                        <button
+                            onClick={() => handleUseDynamic(contextMenu.item)}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                            title="Clear sidecar and override, use pinned/recent image"
+                        >
+                            <Pin className="w-3.5 h-3.5" />
+                            Use Dynamic
                         </button>
                     </div>
                 </div>

@@ -849,7 +849,28 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
+    // Separate sidecar vs user override for thumbnail management
+    let migration28 = Migration {
+        version: 28,
+        description: "add_sidecar_thumbnail_path",
+        sql: "
+            -- Add new column for sidecar thumbnails (discovered from disk)
+            ALTER TABLE models ADD COLUMN sidecar_thumbnail_path TEXT;
+            
+            -- Backfill: Move disk_scan thumbnails to sidecar slot, clear user override slot
+            -- This ensures existing sidecar data is preserved in the correct column
+            UPDATE models 
+            SET sidecar_thumbnail_path = thumbnail_path, thumbnail_path = NULL
+            WHERE thumbnail_path IS NOT NULL 
+              AND lookup_source = 'disk_scan';
+              
+            -- Also handle manual_thumbnail source (these were explicitly set by user, keep in thumbnail_path)
+            -- No action needed - they are already in thumbnail_path which is correct.
+        ",
+        kind: MigrationKind::Up,
+    };
+
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27,
+        migration26, migration27, migration28,
     ]
 }

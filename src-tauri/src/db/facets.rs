@@ -377,18 +377,18 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
         []
     ).map_err(|e| format!("Failed to create cp_thumbs temp table: {}", e))?;
 
-    // 3. Insert into Cache (merging Manual Model Thumbnail > Dynamic Thumbnail)
+    // 3. Insert into Cache (Priority: User Override > Sidecar > Dynamic > Preview URL)
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual)
             SELECT 'checkpoint', m.name, m.hash, 
                 COALESCE(SUM(cc.cnt), 0), 
-                COALESCE(m.thumbnail_path, MAX(ct.thumbnail_path), m.preview_url), -- Manual > Dynamic > Preview
+                COALESCE(m.thumbnail_path, m.sidecar_thumbnail_path, MAX(ct.thumbnail_path), m.preview_url),
                 m.preview_url,
                 MAX(cc.last_used),
                 MIN(cc.first_used),
-                CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
+                CASE WHEN m.thumbnail_path IS NOT NULL OR m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
             FROM (
-                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url
                 FROM models 
                 WHERE resource_type = 'checkpoint'
                 GROUP BY name
@@ -504,19 +504,19 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
         []
     ).map_err(|e| format!("Failed to create {} table: {}", temp_thumbs, e))?;
 
-    // Step 3: Insert matched facets (Join against generic `models` table)
+    // Step 3: Insert matched facets (Priority: User Override > Sidecar > Dynamic > Preview URL)
     conn.execute(
         &format!(
             "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual)
                 SELECT '{}', m.name, m.hash,
                     COALESCE(SUM(rc.cnt), 0),
-                    COALESCE(m.thumbnail_path, MAX(rt.thumbnail_path), m.preview_url), -- Manual > Dynamic > Preview
+                    COALESCE(m.thumbnail_path, m.sidecar_thumbnail_path, MAX(rt.thumbnail_path), m.preview_url),
                     m.preview_url,
                     MAX(rc.last_used),
                     MIN(rc.first_used),
-                    CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
+                    CASE WHEN m.thumbnail_path IS NOT NULL OR m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
                 FROM (
-                    SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(preview_url) as preview_url
+                    SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url
                     FROM models 
                     WHERE resource_type = '{}'
                     GROUP BY name

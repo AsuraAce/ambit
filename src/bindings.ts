@@ -224,6 +224,17 @@ async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * "Use Dynamic" - clears BOTH user override AND sidecar, forcing dynamic thumbnail selection
+ */
+async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 

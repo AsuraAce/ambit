@@ -468,9 +468,9 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
             ]);
         }
 
-        // 3. Match Thumbnails
+        // 3. Match Thumbnails - write to sidecar slot (disk scan is never a user override)
         let mut update_stmt = tx.prepare_cached(
-            "UPDATE models SET thumbnail_path = ?1 WHERE (filename = ?2 COLLATE NOCASE OR name = ?3 COLLATE NOCASE OR name = ?4 COLLATE NOCASE) AND (thumbnail_path IS NULL OR thumbnail_path = '')"
+            "UPDATE models SET sidecar_thumbnail_path = ?1 WHERE (filename = ?2 COLLATE NOCASE OR name = ?3 COLLATE NOCASE OR name = ?4 COLLATE NOCASE) AND (sidecar_thumbnail_path IS NULL OR sidecar_thumbnail_path = '')"
         ).map_err(|e| e.to_string())?;
 
         for model_path in &models_found {
@@ -677,28 +677,90 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, mode
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+    // "Use Sidecar / Reset" - clears user override, falls back to sidecar > dynamic > preview_url
     let db_path = resolve_db_path(&app)?;
     
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
         
-        // 1. Clear manual thumbnail in models table
+        // 1. Clear only user override (thumbnail_path), keep sidecar intact
         conn.execute(
             "UPDATE models SET thumbnail_path = NULL WHERE hash = ?1",
             params![model_hash]
         ).map_err(|e| e.to_string())?;
 
+        // 2. Resolve Name and get sidecar path
+        let (nm_opt, sidecar_path): (Option<String>, Option<String>) = conn.query_row(
+            "SELECT name, sidecar_thumbnail_path FROM models WHERE hash = ?1", 
+            params![model_hash], 
+            |r| Ok((r.get(0).ok(), r.get(1).ok()))
+        ).unwrap_or((model_name.clone(), None));
+
+        let nm = nm_opt.or(model_name);
+
+        if let Some(nm) = nm {
+            // 3. Determine best thumbnail: Sidecar > Dynamic
+            let has_sidecar = sidecar_path.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+            let best_thumb = if has_sidecar {
+                sidecar_path // Use sidecar if available (moved here)
+            } else {
+                // Fall back to dynamic (Pinned > Recent)
+                conn.query_row(
+                    "SELECT i.thumbnail_path 
+                     FROM images i
+                     LEFT JOIN image_loras il ON il.image_id = i.id
+                     WHERE (i.model_name = ?1 OR i.resolved_model_name = ?1 OR il.lora_name = ?1)
+                     AND i.is_deleted = 0
+                     ORDER BY i.is_pinned DESC, i.timestamp DESC
+                     LIMIT 1",
+                    params![nm],
+                    |r| r.get(0)
+                ).ok()
+            };
+
+            let new_path = best_thumb.unwrap_or_default();
+            
+            // 4. Update Facet Cache - is_manual = 1 if sidecar, 0 if dynamic
+            let is_manual = if has_sidecar { 1 } else { 0 };
+            
+            conn.execute(
+                "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = ?3 WHERE resource_name = ?2",
+                params![new_path.clone(), nm, is_manual]
+            ).map_err(|e| e.to_string())?;
+            
+            conn.execute(
+                "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = ?3 WHERE resource_hash = ?2",
+                params![new_path, model_hash, is_manual]
+            ).map_err(|e| e.to_string())?;
+        }
+        
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+/// "Use Dynamic" - clears BOTH user override AND sidecar, forcing dynamic thumbnail selection
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+    let db_path = resolve_db_path(&app)?;
+    
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        
+        // 1. Clear BOTH user override AND sidecar
+        conn.execute(
+            "UPDATE models SET thumbnail_path = NULL, sidecar_thumbnail_path = NULL WHERE hash = ?1",
+            params![model_hash]
+        ).map_err(|e| e.to_string())?;
+
         // 2. Resolve Name
-        let nm_opt: Option<String> = if let Some(n) = model_name.clone() {
-             Some(n)
-        } else {
-             conn.query_row("SELECT name FROM models WHERE hash = ?1", params![model_hash], |r| r.get(0)).ok()
-        };
+        let nm_opt: Option<String> = model_name.clone().or_else(|| {
+            conn.query_row("SELECT name FROM models WHERE hash = ?1", params![model_hash], |r| r.get(0)).ok()
+        });
 
         if let Some(nm) = nm_opt {
-             // 3. Find best dynamic thumbnail (Pinned > Recent)
-             // We check both Checkpoint (model_name) and LoRA (image_loras) usage to cover all bases without needing explicit type
-             let dynamic_thumb: Option<String> = conn.query_row(
+            // 3. Find best dynamic thumbnail (Pinned > Recent)
+            let dynamic_thumb: Option<String> = conn.query_row(
                 "SELECT i.thumbnail_path 
                  FROM images i
                  LEFT JOIN image_loras il ON il.image_id = i.id
@@ -708,13 +770,12 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
                  LIMIT 1",
                 params![nm],
                 |r| r.get(0)
-             ).ok();
+            ).ok();
 
-             let new_path = dynamic_thumb.unwrap_or_default(); // Empty string if none found (will use preview_url if available later or just be empty)
-             
-             // 4. Update Facet Cache
-             // We update both hash and name entries to be safe
-             conn.execute(
+            let new_path = dynamic_thumb.unwrap_or_default();
+            
+            // 4. Update Facet Cache - is_manual = 0 (dynamic)
+            conn.execute(
                 "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = 0 WHERE resource_name = ?2",
                 params![new_path.clone(), nm]
             ).map_err(|e| e.to_string())?;
