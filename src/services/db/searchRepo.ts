@@ -13,10 +13,10 @@ export interface LibraryStats {
 }
 
 export interface Facets {
-    checkpoints: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    loras: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    embeddings: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
-    hypernetworks: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string }[];
+    checkpoints: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number }[];
+    loras: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number }[];
+    embeddings: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number }[];
+    hypernetworks: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number }[];
     tools: string[];
 }
 
@@ -408,7 +408,7 @@ export const getFacets = async (
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
-            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual
+            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar
             FROM facet_cache
             WHERE facet_type IN(${placeholders})
             ORDER BY count DESC, resource_name ASC
@@ -424,7 +424,8 @@ export const getFacets = async (
                 createdAt: row.created_at,
                 thumbnailPath: row.thumbnail_path,
                 previewUrl: row.preview_url,
-                isManual: row.is_manual
+                isManual: row.is_manual,
+                hasSidecar: row.has_sidecar
             };
 
             switch (row.facet_type) {

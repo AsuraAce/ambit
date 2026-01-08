@@ -870,7 +870,28 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
+    // Add thumbnail_mode to preserve user preference without destroying sidecar data
+    let migration29 = Migration {
+        version: 29,
+        description: "add_thumbnail_mode",
+        sql: "
+            -- thumbnail_mode: NULL/'auto' = use priority chain, 'dynamic' = force dynamic, 'manual' = use thumbnail_path
+            ALTER TABLE models ADD COLUMN thumbnail_mode TEXT;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    // Add has_sidecar flag to facet_cache for improved UX in context menus
+    let migration30 = Migration {
+        version: 30,
+        description: "add_has_sidecar_to_facet_cache",
+        sql: "
+            ALTER TABLE facet_cache ADD COLUMN has_sidecar INTEGER DEFAULT 0;
+        ",
+        kind: MigrationKind::Up,
+    };
+
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28,
+        migration26, migration27, migration28, migration29, migration30,
     ]
 }

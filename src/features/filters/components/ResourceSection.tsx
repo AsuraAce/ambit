@@ -16,6 +16,7 @@ interface ResourceItem {
     previewUrl?: string;
     hash?: string;
     isManual?: number;
+    hasSidecar?: number;
 }
 
 interface ResourceSectionProps {
@@ -369,23 +370,27 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
                             {contextMenu.item.name}
                         </div>
-                        {/* Use Sidecar / Reset - clears user override, reverts to sidecar or dynamic */}
+                        {/* Use Sidecar / Reset - enabled if has manual override OR (in dynamic mode AND has sidecar) */}
                         <button
                             onClick={() => handleResetToSidecar(contextMenu.item)}
-                            disabled={!contextMenu.item.isManual}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
+                            disabled={!contextMenu.item.isManual && !contextMenu.item.hasSidecar}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${(contextMenu.item.isManual || contextMenu.item.hasSidecar)
                                 ? 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
                                 : 'text-gray-400 cursor-not-allowed opacity-50'
                                 }`}
-                            title="Clear user override, revert to sidecar or smart thumbnail"
+                            title={contextMenu.item.isManual ? "Clear user override, revert to sidecar" : "Revert to sidecar preview"}
                         >
                             <Puzzle className="w-3.5 h-3.5" />
                             Use Sidecar / Reset
                         </button>
-                        {/* Use Dynamic - clears ALL (sidecar + override), forces smart selection */}
+                        {/* Use Dynamic - disabled if already in dynamic mode (isManual = 0) */}
                         <button
                             onClick={() => handleUseDynamic(contextMenu.item)}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                            disabled={!contextMenu.item.isManual}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
+                                ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                : 'text-gray-400 cursor-not-allowed opacity-50'
+                                }`}
                             title="Clear sidecar and override, use pinned/recent image"
                         >
                             <Pin className="w-3.5 h-3.5" />

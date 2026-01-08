@@ -226,7 +226,7 @@ async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise
 }
 },
 /**
- * "Use Dynamic" - clears BOTH user override AND sidecar, forcing dynamic thumbnail selection
+ * "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
  */
 async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
     try {

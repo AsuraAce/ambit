@@ -683,9 +683,10 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
         
-        // 1. Clear only user override (thumbnail_path), keep sidecar intact
+        // 1. Clear user override (thumbnail_path) AND reset thumbnail_mode to auto
+        // This allows sidecar to be used again
         conn.execute(
-            "UPDATE models SET thumbnail_path = NULL WHERE hash = ?1",
+            "UPDATE models SET thumbnail_path = NULL, thumbnail_mode = NULL WHERE hash = ?1",
             params![model_hash]
         ).map_err(|e| e.to_string())?;
 
@@ -738,7 +739,7 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
     }).await.map_err(|e| e.to_string())?
 }
 
-/// "Use Dynamic" - clears BOTH user override AND sidecar, forcing dynamic thumbnail selection
+/// "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
@@ -747,9 +748,10 @@ pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, mod
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
         
-        // 1. Clear BOTH user override AND sidecar
+        // 1. Set thumbnail_mode to 'dynamic' - this tells the system to skip sidecar
+        // We DON'T clear sidecar_thumbnail_path so it can be recovered later
         conn.execute(
-            "UPDATE models SET thumbnail_path = NULL, sidecar_thumbnail_path = NULL WHERE hash = ?1",
+            "UPDATE models SET thumbnail_path = NULL, thumbnail_mode = 'dynamic' WHERE hash = ?1",
             params![model_hash]
         ).map_err(|e| e.to_string())?;
 
