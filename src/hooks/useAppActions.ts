@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, AppSettings, FilterState, Collection } from '../types';
 import { useToast } from './useToast';
 import { useSearchStore } from '../stores/searchStore';
@@ -28,6 +29,7 @@ export const useAppActions = ({
     modalManager: modals // Destructure with alias for minimum logic change
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
 
     // Store access
     const images = useSearchStore(s => s.images);
@@ -113,6 +115,7 @@ export const useAppActions = ({
         await Promise.all(ids.map(id => toggleImagePin(id, anyUnpinned)));
 
         await refreshCollectionThumbnails();
+        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
@@ -201,6 +204,7 @@ export const useAppActions = ({
 
         await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
         await refreshCollectionThumbnails();
+        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
     };
 

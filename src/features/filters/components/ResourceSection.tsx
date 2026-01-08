@@ -17,6 +17,7 @@ interface ResourceItem {
     hash?: string;
     isManual?: number;
     hasSidecar?: number;
+    isUserOverride?: number;
 }
 
 interface ResourceSectionProps {
@@ -372,18 +373,18 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
                             {contextMenu.item.name}
                         </div>
-                        {/* Use Sidecar / Reset - enabled if has manual override OR (in dynamic mode AND has sidecar) */}
+                        {/* Use Preview - enabled if User Override OR (In Dynamic AND Sidecar available) */}
                         <button
                             onClick={() => handleResetToSidecar(contextMenu.item)}
-                            disabled={!contextMenu.item.isManual && !contextMenu.item.hasSidecar}
-                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${(contextMenu.item.isManual || contextMenu.item.hasSidecar)
+                            disabled={!contextMenu.item.isUserOverride && !(!contextMenu.item.isManual && contextMenu.item.hasSidecar)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${(contextMenu.item.isUserOverride || (!contextMenu.item.isManual && contextMenu.item.hasSidecar))
                                 ? 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
                                 : 'text-gray-400 cursor-not-allowed opacity-50'
                                 }`}
-                            title={contextMenu.item.isManual ? "Clear user override, revert to sidecar" : "Revert to sidecar preview"}
+                            title={contextMenu.item.isUserOverride ? "Clear user override" : "Use sidecar preview"}
                         >
                             <Puzzle className="w-3.5 h-3.5" />
-                            Use Sidecar / Reset
+                            Use Preview
                         </button>
                         {/* Use Dynamic - disabled if already in dynamic mode (isManual = 0) */}
                         <button

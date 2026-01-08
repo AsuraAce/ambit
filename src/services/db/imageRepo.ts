@@ -220,6 +220,16 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+
+    // Refresh dynamic thumbnail for associated model
+    try {
+        const rows = await db.select<any[]>("SELECT json_extract(metadata_json, '$.modelHash') as hash FROM images WHERE id = ?", [normalizedId]);
+        if (rows.length > 0 && rows[0].hash) {
+            await unwrap(commands.refreshActiveThumbnail(rows[0].hash, null));
+        }
+    } catch (e) {
+        console.error('[DB] Failed to refresh model thumbnail on pin', e);
+    }
 };
 
 export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {

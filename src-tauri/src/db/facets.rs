@@ -379,8 +379,10 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
 
     // 3. Insert into Cache (Priority: User Override > Sidecar > Dynamic > Preview URL)
     // thumbnail_mode = 'dynamic' forces skip of sidecar
+    // 3. Insert into Cache (Priority: User Override > Sidecar > Dynamic > Preview URL)
+    // thumbnail_mode = 'dynamic' forces skip of sidecar
     conn.execute(
-        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar)
+        "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override)
             SELECT 'checkpoint', m.name, m.hash, 
                 COALESCE(SUM(cc.cnt), 0), 
                 CASE 
@@ -392,7 +394,8 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 MAX(cc.last_used),
                 MIN(cc.first_used),
                 CASE WHEN m.thumbnail_path IS NOT NULL OR (m.sidecar_thumbnail_path IS NOT NULL AND m.thumbnail_mode IS NULL) THEN 1 ELSE 0 END,
-                CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
+                CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
+                CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
             FROM (
                 SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode
                 FROM models 
@@ -514,7 +517,7 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
     // thumbnail_mode = 'dynamic' forces skip of sidecar
     conn.execute(
         &format!(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar)
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override)
                 SELECT '{}', m.name, m.hash,
                     COALESCE(SUM(rc.cnt), 0),
                     CASE 
@@ -526,7 +529,8 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                     MAX(rc.last_used),
                     MIN(rc.first_used),
                     CASE WHEN m.thumbnail_path IS NOT NULL OR (m.sidecar_thumbnail_path IS NOT NULL AND m.thumbnail_mode IS NULL) THEN 1 ELSE 0 END,
-                    CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
+                    CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
                 FROM (
                     SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode
                     FROM models 
