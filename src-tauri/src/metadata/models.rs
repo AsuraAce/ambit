@@ -796,6 +796,7 @@ pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, mod
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn refresh_active_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+    log::info!("[REFRESH DEBUG] Called with hash: {}, name: {:?}", model_hash, model_name);
     let db_path = resolve_db_path(&app)?;
     
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
@@ -808,18 +809,22 @@ pub async fn refresh_active_thumbnail(app: tauri::AppHandle, model_hash: String,
             |r| Ok((r.get(0).ok(), r.get(1).ok(), r.get(2).ok(), r.get(3).ok()))
         ).unwrap_or((model_name.clone(), None, None, None));
 
+        log::info!("[REFRESH DEBUG] Model lookup: name={:?}, sidecar={:?}, thumb={:?}, mode={:?}", nm_opt, sidecar_path, thumb_path, thumb_mode);
+
         let nm = nm_opt.or(model_name);
 
-        if let Some(nm) = nm {
+        if let Some(ref nm) = nm {
+            log::info!("[REFRESH DEBUG] Using model name: {}", nm);
             // 2. Determine best thumbnail
             let mut final_path = String::new();
             let mut is_manual = 0;
             let mut is_user_override = 0;
             
             // Priority 1: User Override
-            if let Some(tp) = thumb_path {
+            if let Some(ref tp) = thumb_path {
                 if !tp.is_empty() {
-                    final_path = tp;
+                    log::info!("[REFRESH DEBUG] Using User Override: {}", tp);
+                    final_path = tp.clone();
                     is_manual = 1;
                     is_user_override = 1;
                 }
@@ -828,10 +833,12 @@ pub async fn refresh_active_thumbnail(app: tauri::AppHandle, model_hash: String,
             // Priority 2: Sidecar (if no override and not dynamic mode)
             if final_path.is_empty() {
                 let mode_dynamic = thumb_mode.as_deref() == Some("dynamic");
+                log::info!("[REFRESH DEBUG] Mode dynamic: {}", mode_dynamic);
                 if !mode_dynamic {
-                    if let Some(sp) = sidecar_path {
+                    if let Some(ref sp) = sidecar_path {
                         if !sp.is_empty() {
-                            final_path = sp;
+                            log::info!("[REFRESH DEBUG] Using Sidecar: {}", sp);
+                            final_path = sp.clone();
                             is_manual = 1; // Sidecar counts as manual/static
                             is_user_override = 0;
                         }
@@ -841,6 +848,7 @@ pub async fn refresh_active_thumbnail(app: tauri::AppHandle, model_hash: String,
             
             // Priority 3: Dynamic
             if final_path.is_empty() {
+                log::info!("[REFRESH DEBUG] Looking for dynamic thumbnail with hash={}, name={}", model_hash, nm);
                 // Try to find by model_hash first (most reliable), then fall back to name matching
                 let dynamic_thumb: Option<String> = conn.query_row(
                     "SELECT i.thumbnail_path 
@@ -854,21 +862,28 @@ pub async fn refresh_active_thumbnail(app: tauri::AppHandle, model_hash: String,
                     |r| r.get(0)
                 ).ok();
                 
+                log::info!("[REFRESH DEBUG] Dynamic thumbnail query result: {:?}", dynamic_thumb);
                 final_path = dynamic_thumb.unwrap_or_default();
                 is_manual = 0;
                 is_user_override = 0;
             }
 
+            log::info!("[REFRESH DEBUG] Final path to set: {}", final_path);
+
             // 3. Update Cache
-            conn.execute(
+            let rows1 = conn.execute(
                 "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = ?3, is_user_override = ?4 WHERE resource_name = ?2",
                 params![final_path.clone(), nm, is_manual, is_user_override]
             ).map_err(|e| e.to_string())?;
             
-            conn.execute(
+            let rows2 = conn.execute(
                 "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = ?3, is_user_override = ?4 WHERE resource_hash = ?2",
                 params![final_path, model_hash, is_manual, is_user_override]
             ).map_err(|e| e.to_string())?;
+            
+            log::info!("[REFRESH DEBUG] Updated cache: {} rows by name, {} rows by hash", rows1, rows2);
+        } else {
+            log::warn!("[REFRESH DEBUG] No model name found, skipping refresh");
         }
 
         Ok(())
