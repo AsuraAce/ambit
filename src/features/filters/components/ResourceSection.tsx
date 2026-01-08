@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow } from 'lucide-react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown, SortOptionItem } from './FilterPrimitives';
 import { formatCountCompact } from '../../../utils/formatUtils';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ResourceItem {
     name: string;
@@ -14,6 +15,7 @@ interface ResourceItem {
     thumbnailPath?: string;
     previewUrl?: string;
     hash?: string;
+    isManual?: number;
 }
 
 interface ResourceSectionProps {
@@ -125,6 +127,44 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
 
+    // Context Menu State
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ResourceItem } | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const queryClient = useQueryClient();
+
+    // Close menu on click outside
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                setContextMenu(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    const handleContextMenu = (e: React.MouseEvent, item: ResourceItem) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY, item });
+    };
+
+    const handleResetThumbnail = async (item: ResourceItem) => {
+        if (!item.hash && !item.name) return;
+
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('unset_model_thumbnail', {
+                modelHash: item.hash || 'unknown',
+                modelName: item.name
+            });
+            // Invalidate to refresh UI (remove manual indicator and update thumb)
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            setContextMenu(null);
+        } catch (error) {
+            console.error("Failed to unset thumbnail", error);
+        }
+    };
+
     const renderGridItem = (item: ResourceItem) => {
         const isSelected = (filters[filterKey] || []).includes(item.name);
         const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
@@ -133,6 +173,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             <div
                 key={`${item.name}-${item.hash || 'no-hash'}`}
                 onClick={() => toggleItem(item.name)}
+                onContextMenu={(e) => handleContextMenu(e, item)}
                 className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
                     ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
                     : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
@@ -168,10 +209,28 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     </div>
                 )}
 
-                {/* Count Badge */}
-                <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
-                    {item.count}
-                </div>
+                {/* Manual Thumbnail Indicator */}
+                {item.isManual === 1 && (
+                    <div className="absolute top-1.5 left-1.5 w-4 h-4 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center shadow-sm" title="Manually set thumbnail">
+                        <User className="w-2.5 h-2.5 text-white/90" />
+                    </div>
+                )}
+
+                {/* Count Badge (Shifted down if manual indicator present, or kept distinct?) 
+                    Actually, let's put count bottom right or keep top left but adjust?
+                    Standard is top-left. Let's stack them or put count next to it.
+                */}
+                {!item.isManual && (
+                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                        {item.count}
+                    </div>
+                )}
+                {/* If manual, show count below manual indicator or simple overlap prevention */}
+                {item.isManual === 1 && (
+                    <div className="absolute top-6 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                        {item.count}
+                    </div>
+                )}
             </div>
         );
     };
@@ -185,6 +244,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             <div
                 key={`${item.name}-${item.hash || 'no-hash'}`}
                 onClick={() => toggleItem(item.name)}
+                onContextMenu={(e) => handleContextMenu(e, item)}
                 className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border group relative overflow-hidden ${isSelected
                     ? 'bg-gradient-to-r from-sage-100 to-transparent dark:from-sage-600/20 dark:to-transparent border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
                     : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
@@ -197,7 +257,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                 <div className="flex items-center gap-3 overflow-hidden">
                     {/* Tiny Avatar Thumbnail */}
-                    <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
+                    <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border relative ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
                         {thumbUrl ? (
                             <img
                                 src={thumbUrl}
@@ -207,6 +267,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             />
                         ) : (
                             <Puzzle className="w-3 h-3 opacity-30" />
+                        )}
+                        {/* Manual Thumbnail Indicator (Tiny Dot) */}
+                        {item.isManual === 1 && (
+                            <div className="absolute bottom-0 right-0 w-2 h-2 bg-sage-500 rounded-tl-sm" title="Manually set thumbnail" />
                         )}
                     </div>
 
@@ -297,6 +361,30 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                 <span className="text-[10px] text-gray-400 font-medium animate-pulse">Loading {singularType}s...</span>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+            {contextMenu && (
+                <div
+                    ref={menuRef}
+                    className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                >
+                    <div className="p-1">
+                        <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
+                            {contextMenu.item.name}
+                        </div>
+                        <button
+                            onClick={() => handleResetThumbnail(contextMenu.item)}
+                            disabled={!contextMenu.item.isManual}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
+                                    ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                    : 'text-gray-400 cursor-not-allowed opacity-50'
+                                }`}
+                        >
+                            <Puzzle className="w-3.5 h-3.5" />
+                            Reset Thumbnail
+                        </button>
                     </div>
                 </div>
             )}

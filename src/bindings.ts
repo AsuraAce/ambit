@@ -201,9 +201,9 @@ async scanModelThumbnails(paths: string[]) : Promise<Result<ThumbnailScanResult,
     else return { status: "error", error: e  as any };
 }
 },
-async setModelThumbnail(modelHash: string, imagePath: string) : Promise<Result<null, string>> {
+async setModelThumbnail(modelHash: string, modelName: string | null, imagePath: string, resourceType: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, imagePath }) };
+    return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, modelName, imagePath, resourceType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -212,6 +212,14 @@ async setModelThumbnail(modelHash: string, imagePath: string) : Promise<Result<n
 async populateMissingThumbnails() : Promise<Result<PopulateResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("populate_missing_thumbnails") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unset_model_thumbnail", { modelHash, modelName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -618,9 +618,15 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, image_path: String) -> Result<(), String> {
+pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>, image_path: String, resource_type: Option<String>) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
     
+    // Default to checkpoint if not provided, but sanitize just in case
+    let r_type = resource_type.unwrap_or_else(|| "checkpoint".to_string());
+    
+    // Default name if missing
+    let name_val = model_name.clone().unwrap_or_else(|| "Unknown Model".to_string());
+
     // Perform blocking DB operations on a thread
     tauri::async_runtime::spawn_blocking(move || {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
@@ -628,24 +634,104 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, imag
         // 1. Update Models Table (Source of Truth for Manual Thumbnails)
         conn.execute(
             "INSERT INTO models (hash, name, lookup_source, scanned_at, thumbnail_path, resource_type) 
-             VALUES (?1, 'Unknown Model', 'manual_thumbnail', ?2, ?3, 'checkpoint')
-             ON CONFLICT(hash) DO UPDATE SET thumbnail_path = ?3",
+             VALUES (?1, ?5, 'manual_thumbnail', ?2, ?3, ?4)
+             ON CONFLICT(hash) DO UPDATE SET thumbnail_path = ?3, resource_type = ?4, name = COALESCE(EXCLUDED.name, models.name)",
             params![
                 model_hash, 
                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), 
-                image_path
+                image_path,
+                r_type,
+                name_val
             ]
         ).map_err(|e| e.to_string())?;
 
         // 2. Immediate Feedback: Update Facet Cache
-        // We update ALL facet types that might match this hash
+        // Update by hash (primary match)
         conn.execute(
-            "UPDATE facet_cache SET thumbnail_path = ?1 WHERE resource_hash = ?2",
+            "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = 1 WHERE resource_hash = ?2",
             params![image_path, model_hash]
         ).map_err(|e| e.to_string())?;
 
+        // Update by name (fallback and for merging fake-hash rows)
+        let name_to_use = if let Some(n) = model_name {
+            Some(n)
+        } else {
+            conn.query_row(
+                "SELECT name FROM models WHERE hash = ?1",
+                params![model_hash],
+                |row| row.get(0)
+            ).ok()
+        };
+
+        if let Some(name) = name_to_use {
+             conn.execute(
+                "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = 1 WHERE resource_name = ?2",
+                params![image_path, name]
+            ).map_err(|e| e.to_string())?;
+        }
+
         Ok(())
     }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+    let db_path = resolve_db_path(&app)?;
+    
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        
+        // 1. Clear manual thumbnail in models table
+        conn.execute(
+            "UPDATE models SET thumbnail_path = NULL WHERE hash = ?1",
+            params![model_hash]
+        ).map_err(|e| e.to_string())?;
+
+        // 2. Refresh facet_cache entry dynamically
+        // Use name fallback if hash lookup fails
+        let nm_opt: Option<String> = if let Some(n) = model_name.clone() {
+             Some(n)
+        } else {
+             conn.query_row("SELECT name FROM models WHERE hash = ?1", params![model_hash], |r| r.get(0)).ok()
+        };
+
+        if let Some(nm) = nm_opt {
+             // We can trigger a quick targeted update or just run the rebuild query logic for this one item
+             // Simplest approach: Delete form cache and re-insert logic is complex. 
+             // Better: Reset to is_manual=0 and let next full rebuild fix it perfectly, 
+             // BUT user wants immediate feedback.
+             // Best: Run a mini-query to find the best dynamic thumbnail.
+             
+             // Try to find best Recent/Pinned for this name
+             // We need to check if it's a LoRA/Checkpoint to know the exact query, 
+             // but we can try generic image search if we know the name
+             
+             // Actually, simplest 'refresh' is just call rebuild_facet_cache? No, too slow.
+             // Query 'cp_thumbs' style logic?
+             
+             // Quick hack: Just set is_manual = 0. The thumbnail might be stale (the manual one) until next scan?
+             // No, user wants it to revert. 
+             
+             // Let's rely on the fact that if we set is_manual = 0, frontend might not update thumbnail immediately 
+             // unless we return the new path?
+             
+             let _ = conn.execute("UPDATE facet_cache SET is_manual = 0 WHERE resource_name = ?1", params![nm]);
+             
+             // Rebuild just for this one is hard without knowing type.
+             // We'll accept that it might show the OLD manual thumbnail (but without the icon) 
+             // OR we force a full rebuild?
+        }
+        
+        Ok(())
+    }).await.map_err(|e| e.to_string())?;
+
+    // Force a full background rebuild to ensure dynamic thumbnail is found?
+    // Or maybe just let the user know?
+    // Let's trigger a rebuild for correctness.
+    let _ = crate::db::facets::rebuild_facet_cache(app); 
+    
+    Ok(())
 }
 
 

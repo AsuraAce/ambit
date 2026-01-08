@@ -828,5 +828,16 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25]
+    let migration26 = Migration {
+        version: 26,
+        description: "add_is_manual_to_facet_cache_v2",
+        sql: "
+            ALTER TABLE facet_cache ADD COLUMN is_manual INTEGER DEFAULT 0;
+        ",
+        kind: MigrationKind::Up,
+    };
+
+    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
+        migration26,
+    ]
 }

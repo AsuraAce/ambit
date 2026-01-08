@@ -408,7 +408,7 @@ export const getFacets = async (
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
-            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at
+            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual
             FROM facet_cache
             WHERE facet_type IN(${placeholders})
             ORDER BY count DESC, resource_name ASC
@@ -423,7 +423,8 @@ export const getFacets = async (
                 lastUsedAt: row.last_used_at,
                 createdAt: row.created_at,
                 thumbnailPath: row.thumbnail_path,
-                previewUrl: row.preview_url
+                previewUrl: row.preview_url,
+                isManual: row.is_manual
             };
 
             switch (row.facet_type) {

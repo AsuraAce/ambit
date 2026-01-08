@@ -89,8 +89,8 @@ export const useImagesQuery = ({
             let val: string | number = lastImage.timestamp;
 
             // Map sort options to field values
-            if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.path;
-            else if (sortOption === 'size_asc' || sortOption === 'size_desc') val = lastImage.file_size;
+            if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.filename;
+            else if (sortOption === 'size_asc' || sortOption === 'size_desc') val = lastImage.fileSize || 0;
             else val = lastImage.timestamp;
 
             return {

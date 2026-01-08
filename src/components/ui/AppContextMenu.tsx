@@ -6,6 +6,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { AIImage, ContextMenuState } from '../../types';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
@@ -35,6 +36,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const allCollections = useCollectionStore(s => s.collections);
     const libraryToggleFavorite = useSearchStore(s => s.toggleFavorite);
+    const queryClient = useQueryClient();
 
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
@@ -185,9 +187,12 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 const m = activeImage.metadata;
 
                 // Checkpoint
-                if (m.modelHash) {
-                    const name = typeof m.model === 'string' ? m.model : (m.model as any)?.name || 'Checkpoint';
-                    res.push({ name, hash: m.modelHash, type: 'checkpoint' });
+                // Modified to allow name-based fallback if hash is missing
+                const modelName = typeof m.model === 'string' ? m.model : (m.model as any)?.name;
+                if (m.modelHash || modelName) {
+                    const name = modelName || 'Checkpoint';
+                    const hash = m.modelHash || `checkpoint_${name}`; // Fallback hash for name-based lookup
+                    res.push({ name, hash, type: 'checkpoint' });
                 }
 
                 // LoRAs
@@ -213,31 +218,24 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             onSetModelThumbnail={async (model) => {
                 if (contextMenu.imageId && activeImage?.id) {
                     const { invoke } = await import('@tauri-apps/api/core');
-                    // We pass the IMAGE PATH (activeImage.id) not the thumbnail path,
-                    // because the backend function `set_model_thumbnail` logic isn't fully robust on path vs id?
-                    // Wait, `set_model_thumbnail` (rust) takes `image_path` and `model_hash`.
-                    // And it UPDATEs `thumbnail_path` to `image_path`.
-                    // BUT we want to set the thumbnail to the *thumbnail of this image*, not the original big image (usually).
-                    // However, passing the big image path allows the backend/frontend to decide.
-                    // A1111 uses .preview.png separate file.
-                    // Our `ResourceSection` uses `item.thumbnailPath`.
-                    // If we set `thumbnail_path` in DB to `D:/HighRes/image.png`, `convertFileSrc` will load the big image.
-                    // Performance hit? Yes.
-                    // Ideally we should use the *generated thumbnail* of this image.
-                    // `activeImage.thumbnailUrl` is usually `http://asset.../thumb.webp`.
-                    // The DB needs a local path or a relative path.
-                    // `activeImage.thumbnailUrl` from `useImagesQuery` is converted.
-                    // We need the raw path to the thumbnail file.
-                    // `regenerateThumbnailsForImages` puts them in `checkpoints/.thumbnails/...`
-                    // But we don't have that path easy access here.
-                    // Plan B: Pass the original image path, and let the backend/frontend handle resizing or loading.
-                    // OR, logic update: `set_model_thumbnail` should generate a thumbnail copy if the source is huge?
-                    // For now, let's pass the Original Image Path. The UI handles large images okay-ish, or we optimize later.
+
+                    // Map frontend type (singular) to backend type (plural for some)
+                    let resourceType = 'checkpoint';
+                    if (model.type === 'lora') resourceType = 'loras';
+                    if (model.type === 'embedding') resourceType = 'embeddings';
+                    if (model.type === 'hypernetwork') resourceType = 'hypernetworks';
+                    if (model.type === 'checkpoint') resourceType = 'checkpoint';
 
                     await invoke('set_model_thumbnail', {
                         modelHash: model.hash,
-                        imagePath: activeImage.id
+                        modelName: model.name,
+                        imagePath: activeImage.id,
+                        resourceType: resourceType
                     });
+
+                    // Invalidate stats query to refresh thumbnails in FilterPanel
+                    await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+
                     addToast(`Thumbnail set for ${model.name}`, 'success');
                 }
                 onClose();
