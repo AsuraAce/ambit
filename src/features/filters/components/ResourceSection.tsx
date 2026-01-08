@@ -209,28 +209,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     </div>
                 )}
 
-                {/* Manual Thumbnail Indicator */}
-                {item.isManual === 1 && (
-                    <div className="absolute top-1.5 left-1.5 w-4 h-4 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center shadow-sm" title="Manually set thumbnail">
-                        <User className="w-2.5 h-2.5 text-white/90" />
-                    </div>
-                )}
-
-                {/* Count Badge (Shifted down if manual indicator present, or kept distinct?) 
-                    Actually, let's put count bottom right or keep top left but adjust?
-                    Standard is top-left. Let's stack them or put count next to it.
-                */}
-                {!item.isManual && (
-                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
-                        {item.count}
-                    </div>
-                )}
-                {/* If manual, show count below manual indicator or simple overlap prevention */}
-                {item.isManual === 1 && (
-                    <div className="absolute top-6 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
-                        {item.count}
-                    </div>
-                )}
+                {/* Count Badge */}
+                <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                    {item.count}
+                </div>
             </div>
         );
     };
@@ -267,10 +249,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             />
                         ) : (
                             <Puzzle className="w-3 h-3 opacity-30" />
-                        )}
-                        {/* Manual Thumbnail Indicator (Tiny Dot) */}
-                        {item.isManual === 1 && (
-                            <div className="absolute bottom-0 right-0 w-2 h-2 bg-sage-500 rounded-tl-sm" title="Manually set thumbnail" />
                         )}
                     </div>
 
@@ -367,7 +345,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             {contextMenu && (
                 <div
                     ref={menuRef}
-                    className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                    className="fixed z-[100] w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                 >
                     <div className="p-1">
@@ -378,8 +356,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             onClick={() => handleResetThumbnail(contextMenu.item)}
                             disabled={!contextMenu.item.isManual}
                             className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
-                                    ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                    : 'text-gray-400 cursor-not-allowed opacity-50'
+                                ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                : 'text-gray-400 cursor-not-allowed opacity-50'
                                 }`}
                         >
                             <Puzzle className="w-3.5 h-3.5" />

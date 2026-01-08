@@ -837,7 +837,19 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
+    let migration27 = Migration {
+        version: 27,
+        description: "backfill_is_manual_flag",
+        sql: "
+            UPDATE facet_cache 
+            SET is_manual = 1 
+            WHERE resource_hash IN (SELECT hash FROM models WHERE thumbnail_path IS NOT NULL)
+               OR resource_name IN (SELECT name FROM models WHERE thumbnail_path IS NOT NULL);
+        ",
+        kind: MigrationKind::Up,
+    };
+
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26,
+        migration26, migration27,
     ]
 }

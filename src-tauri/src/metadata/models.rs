@@ -688,8 +688,7 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
             params![model_hash]
         ).map_err(|e| e.to_string())?;
 
-        // 2. Refresh facet_cache entry dynamically
-        // Use name fallback if hash lookup fails
+        // 2. Resolve Name
         let nm_opt: Option<String> = if let Some(n) = model_name.clone() {
              Some(n)
         } else {
@@ -697,41 +696,37 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
         };
 
         if let Some(nm) = nm_opt {
-             // We can trigger a quick targeted update or just run the rebuild query logic for this one item
-             // Simplest approach: Delete form cache and re-insert logic is complex. 
-             // Better: Reset to is_manual=0 and let next full rebuild fix it perfectly, 
-             // BUT user wants immediate feedback.
-             // Best: Run a mini-query to find the best dynamic thumbnail.
+             // 3. Find best dynamic thumbnail (Pinned > Recent)
+             // We check both Checkpoint (model_name) and LoRA (image_loras) usage to cover all bases without needing explicit type
+             let dynamic_thumb: Option<String> = conn.query_row(
+                "SELECT i.thumbnail_path 
+                 FROM images i
+                 LEFT JOIN image_loras il ON il.image_id = i.id
+                 WHERE (i.model_name = ?1 OR i.resolved_model_name = ?1 OR il.lora_name = ?1)
+                 AND i.is_deleted = 0
+                 ORDER BY i.is_pinned DESC, i.timestamp DESC
+                 LIMIT 1",
+                params![nm],
+                |r| r.get(0)
+             ).ok();
+
+             let new_path = dynamic_thumb.unwrap_or_default(); // Empty string if none found (will use preview_url if available later or just be empty)
              
-             // Try to find best Recent/Pinned for this name
-             // We need to check if it's a LoRA/Checkpoint to know the exact query, 
-             // but we can try generic image search if we know the name
-             
-             // Actually, simplest 'refresh' is just call rebuild_facet_cache? No, too slow.
-             // Query 'cp_thumbs' style logic?
-             
-             // Quick hack: Just set is_manual = 0. The thumbnail might be stale (the manual one) until next scan?
-             // No, user wants it to revert. 
-             
-             // Let's rely on the fact that if we set is_manual = 0, frontend might not update thumbnail immediately 
-             // unless we return the new path?
-             
-             let _ = conn.execute("UPDATE facet_cache SET is_manual = 0 WHERE resource_name = ?1", params![nm]);
-             
-             // Rebuild just for this one is hard without knowing type.
-             // We'll accept that it might show the OLD manual thumbnail (but without the icon) 
-             // OR we force a full rebuild?
+             // 4. Update Facet Cache
+             // We update both hash and name entries to be safe
+             conn.execute(
+                "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = 0 WHERE resource_name = ?2",
+                params![new_path.clone(), nm]
+            ).map_err(|e| e.to_string())?;
+            
+            conn.execute(
+                "UPDATE facet_cache SET thumbnail_path = ?1, is_manual = 0 WHERE resource_hash = ?2",
+                params![new_path, model_hash]
+            ).map_err(|e| e.to_string())?;
         }
         
         Ok(())
-    }).await.map_err(|e| e.to_string())?;
-
-    // Force a full background rebuild to ensure dynamic thumbnail is found?
-    // Or maybe just let the user know?
-    // Let's trigger a rebuild for correctness.
-    let _ = crate::db::facets::rebuild_facet_cache(app); 
-    
-    Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 
 
