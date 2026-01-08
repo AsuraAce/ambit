@@ -891,7 +891,20 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
+    // Backfill has_sidecar from models table
+    let migration31 = Migration {
+        version: 31,
+        description: "backfill_has_sidecar",
+        sql: "
+            UPDATE facet_cache 
+            SET has_sidecar = 1 
+            WHERE resource_hash IN (SELECT hash FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '')
+               OR resource_name IN (SELECT name FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '');
+        ",
+        kind: MigrationKind::Up,
+    };
+
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28, migration29, migration30,
+        migration26, migration27, migration28, migration29, migration30, migration31,
     ]
 }
