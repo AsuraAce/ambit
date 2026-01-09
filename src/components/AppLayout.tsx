@@ -103,6 +103,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const {
         images,
         totalImages,
+        globalTotal,
         isFiltering,
         clearAllFilters,
         toggleFavorite,
@@ -344,20 +345,39 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     )}
                                 </>
                             ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                                    {totalImages === 0 && !isFiltering ? (
+                                <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
+                                    {globalTotal === 0 ? (
                                         <>
-                                            <div className="p-6 bg-slate-100 dark:bg-slate-800/50 rounded-full mb-6 border border-gray-200 dark:border-white/5 animate-in zoom-in duration-500">
-                                                <Import className="w-12 h-12 text-sage-500 opacity-50" />
+                                            <div className="p-6 bg-sage-100 dark:bg-sage-500/10 rounded-full mb-6 border border-sage-200 dark:border-sage-500/20 animate-in zoom-in duration-500">
+                                                <Import className="w-12 h-12 text-sage-600 dark:text-sage-400 opacity-70" />
                                             </div>
-                                            <h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-300">Your Ambit is empty</h3>
-                                            <button onClick={() => fileOps.fileInputRef.current?.click()} className="px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl font-bold shadow-lg shadow-sage-500/20 transition-all hover:scale-105">Import Images</button>
+                                            <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">Your Library is Empty</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+                                                Import your images to start organizing, searching, and exploring your AI creations with Ambit.
+                                            </p>
+                                            <button
+                                                onClick={() => fileOps.fileInputRef.current?.click()}
+                                                className="px-8 py-3.5 bg-sage-600 hover:bg-sage-500 text-white rounded-2xl font-bold shadow-xl shadow-sage-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                            >
+                                                <Import className="w-5 h-5" />
+                                                Import Images
+                                            </button>
                                         </>
                                     ) : (
                                         <>
-                                            <Search className="w-12 h-12 mb-4 opacity-20" />
-                                            <p className="text-gray-500 dark:text-gray-400">No images match your current filters.</p>
-                                            <button onClick={clearAllFilters} className="mt-4 text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-300 text-sm underline">Clear all filters</button>
+                                            <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
+                                                <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />
+                                            </div>
+                                            <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">No Matches Found</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+                                                We couldn't find any images matching your current filters. Try adjusting your search or clearing filters.
+                                            </p>
+                                            <button
+                                                onClick={clearAllFilters}
+                                                className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                            >
+                                                Clear All Filters
+                                            </button>
                                         </>
                                     )}
                                 </div>
