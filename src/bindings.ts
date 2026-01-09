@@ -235,17 +235,6 @@ async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * Recalculates and updates the active thumbnail for a model based on current priorities (Override > Sidecar > Dynamic)
- */
-async refreshActiveThumbnail(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("refresh_active_thumbnail", { modelHash, modelName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 }
 }
 

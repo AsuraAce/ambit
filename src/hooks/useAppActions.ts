@@ -115,7 +115,7 @@ export const useAppActions = ({
         await Promise.all(ids.map(id => toggleImagePin(id, anyUnpinned)));
 
         await refreshCollectionThumbnails();
-        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
     };
 
@@ -204,7 +204,7 @@ export const useAppActions = ({
 
         await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
         await refreshCollectionThumbnails();
-        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
     };
 

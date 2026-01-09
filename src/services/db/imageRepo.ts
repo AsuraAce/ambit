@@ -219,41 +219,8 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 export const toggleImagePin = async (id: string, isPinned: boolean) => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    console.log('[PIN DEBUG] Step 1: Updating is_pinned for', normalizedId, 'to', isPinned);
     await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
-
-    // Refresh dynamic thumbnail for associated model
-    try {
-        console.log('[PIN DEBUG] Step 2: Querying model info for image');
-        const rows = await db.select<any[]>(
-            `SELECT 
-                json_extract(metadata_json, '$.modelHash') as hash, 
-                model_hash,
-                model_name,
-                resolved_model_name
-             FROM images WHERE id = ?`,
-            [normalizedId]
-        );
-        console.log('[PIN DEBUG] Step 3: Query result:', rows);
-
-        const row = rows[0];
-        const hash = row?.hash || row?.model_hash;
-        const modelName = row?.resolved_model_name || row?.model_name;
-        console.log('[PIN DEBUG] Step 4: Extracted hash:', hash, 'modelName:', modelName);
-
-        // Use hash if available, otherwise generate synthetic hash from model name
-        if (hash || modelName) {
-            const effectiveHash = hash || `checkpoint_${modelName}`;
-            console.log('[PIN DEBUG] Step 5: Calling refreshActiveThumbnail with hash:', effectiveHash, 'name:', modelName);
-            const result = await commands.refreshActiveThumbnail(effectiveHash, modelName);
-            console.log('[PIN DEBUG] Step 6: refreshActiveThumbnail result:', result);
-        } else {
-            console.log('[PIN DEBUG] Step 5: No hash or model name found, skipping refresh');
-        }
-    } catch (e) {
-        console.error('[PIN DEBUG] ERROR: Failed to refresh model thumbnail on pin', e);
-    }
-    console.log('[PIN DEBUG] Completed');
+    // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
 
 export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
