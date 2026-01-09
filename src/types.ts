@@ -122,6 +122,7 @@ export interface FilterState {
   showIntermediates?: boolean;
   showGrids?: boolean;
   sortOption?: SortOption;
+  matchModes?: Record<string, 'any' | 'all'>; // Key: filter key (e.g. 'loras'), Value: 'any' (OR) | 'all' (AND)
 }
 
 

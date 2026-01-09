@@ -103,6 +103,7 @@ export const buildSqlWhereClause = (
 
     // 5. Models (Array) - Use denormalized resolved_model_name and model_hash columns
     if (filters.models.length > 0) {
+        const matchMode = filters.matchModes?.models || 'any';
         const modelConditions = filters.models.map(m => {
             if (m === 'Unknown') {
                 return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
@@ -111,11 +112,12 @@ export const buildSqlWhereClause = (
             // Use indexed resolved_model_name column for fast lookup
             return `resolved_model_name = ?`;
         });
-        conditions.push(`(${modelConditions.join(' OR ')})`);
+        conditions.push(`(${modelConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // 5. Tools (Array) - Use denormalized tool column
     if (filters.tools.length > 0) {
+        const matchMode = filters.matchModes?.tools || 'any';
         const toolConditions = filters.tools.map(t => {
             if (t === 'Unknown') {
                 return `(tool = 'Unknown' OR tool IS NULL)`;
@@ -123,37 +125,46 @@ export const buildSqlWhereClause = (
             params.push(t);
             return `tool = ?`;
         });
-        conditions.push(`(${toolConditions.join(' OR ')})`);
+        conditions.push(`(${toolConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // 6. LoRAs, Embeddings, Hypernetworks - Use denormalized junction tables for fast filtering
     // For SINGLE lora filter, we skip adding WHERE and use INNER JOIN in searchRepo instead (like collections)
+    // UNLESS matchMode is 'all', in which case we might want to force standard behavior for consistency, 
+    // but single 'AND' is same as single 'OR', so optimization is still valid for length=1.
     // For multiple loras (OR condition), we still use EXISTS
-    if (filters.loras.length === 1) {
+
+    // LoRAs
+    const loraMode = filters.matchModes?.loras || 'any';
+    if (filters.loras.length === 1 && loraMode === 'any') {
         // Single lora - will use INNER JOIN in searchRepo, don't add WHERE condition
         // The loraName is returned and handled by searchRepo
-    } else if (filters.loras.length > 1) {
+    } else if (filters.loras.length > 0) {
         const loraConditions = filters.loras.map(l => {
             params.push(l);
             return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ?)`;
         });
-        conditions.push(`(${loraConditions.join(' OR ')})`);
+        conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
+    // Embeddings
+    const embMode = filters.matchModes?.embeddings || 'any';
     if (filters.embeddings.length > 0) {
         const embConditions = filters.embeddings.map(e => {
             params.push(e);
             return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)`;
         });
-        conditions.push(`(${embConditions.join(' OR ')})`);
+        conditions.push(`(${embConditions.join(embMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
+    // Hypernetworks
+    const hnMode = filters.matchModes?.hypernetworks || 'any';
     if (filters.hypernetworks.length > 0) {
         const hnConditions = filters.hypernetworks.map(h => {
             params.push(h);
             return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)`;
         });
-        conditions.push(`(${hnConditions.join(' OR ')})`);
+        conditions.push(`(${hnConditions.join(hnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // 7. Search Query (Advanced)
@@ -306,7 +317,11 @@ export const buildSqlWhereClause = (
     const isManualOnly = filters.collectionId && (!col?.filters);
 
     // Return loraName for single-lora filter INNER JOIN optimization
-    const singleLoraName = filters.loras.length === 1 ? filters.loras[0] : undefined;
+    // OPTIMIZATION: Only use if matchMode is 'any' (default). 
+    // If 'all', we might have logic differences (though for length=1 they are identical).
+    // Safe to use if length=1 regardless of mode, but let's be explicit.
+    const loraModeCheck = filters.matchModes?.loras || 'any';
+    const singleLoraName = (filters.loras.length === 1 && loraModeCheck === 'any') ? filters.loras[0] : undefined;
 
     return {
         where,

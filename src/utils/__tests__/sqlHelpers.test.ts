@@ -169,5 +169,36 @@ describe('sqlHelpers', () => {
                 expect(count).toBe(1);
             });
         });
+
+        describe('Match Modes', () => {
+            it('should default to OR logic for multiple loras (Match Any)', () => {
+                const { where } = buildSqlWhereClause({ ...defaultFilters, loras: ['LoraA', 'LoraB'] }, false, 'blur', []);
+                // Should use OR between EXISTS
+                expect(where).toContain(') OR EXISTS (');
+                expect(where).not.toContain(') AND EXISTS (');
+            });
+
+            it('should use AND logic when matchMode is ALL', () => {
+                const { where } = buildSqlWhereClause({
+                    ...defaultFilters,
+                    loras: ['LoraA', 'LoraB'],
+                    matchModes: { loras: 'all' }
+                }, false, 'blur', []);
+
+                // Should use AND between EXISTS
+                expect(where).toContain(') AND EXISTS (');
+                // Should NOT contain OR logic between EXISTS
+                expect(where).not.toContain(') OR EXISTS (');
+            });
+
+            it('should use OR logic when matchMode is explicitly ANY', () => {
+                const { where } = buildSqlWhereClause({
+                    ...defaultFilters,
+                    loras: ['LoraA', 'LoraB'],
+                    matchModes: { loras: 'any' }
+                }, false, 'blur', []);
+                expect(where).toContain(') OR EXISTS (');
+            });
+        });
     });
 });

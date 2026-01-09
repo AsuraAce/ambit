@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin } from 'lucide-react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin, ListChecks } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
@@ -107,9 +107,25 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             if (l.count === 0 && !isSelected) return false;
 
             // 3. Drill-down filtering: hide items not in current filter context
-            // Always show selected items regardless of validNames
+            // ONLY apply strict drill-down if we are in "Match All" (AND) mode
+            // or if validNames is provided but we haven't selected anything yet (to initial drill down from OTHER filters)
+            // But to solve the "Disappearing Checkpoint" bug, we skip this if mode is 'any' (default)
+            // actually, we should only apply strict filtering if:
+            // - validNames exists AND
+            // - (We are in ALL mode OR We have NO selection yet)
+
+            // Simpler approach per design: 
+            // - Any/OR Mode: Ignore validNames for *visibility* (allow selecting anything)
+            // - All/AND Mode: Respect validNames (show only what remains)
+
+            const currentMode = filters.matchModes?.[filterKey] || 'any';
+
             if (validNames !== null && validNames !== undefined) {
-                if (!validNames.includes(l.name) && !isSelected) return false;
+                // In 'any' mode, we ignore validNames to allow "OR" broadening
+                // In 'all' mode, we respect validNames for "AND" narrowing
+                if (currentMode === 'all') {
+                    if (!validNames.includes(l.name) && !isSelected) return false;
+                }
             }
 
             return true;
@@ -322,6 +338,41 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         >
                             {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
                         </button>
+                        {/* Match Mode Toggle */}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const currentMode = filters.matchModes?.[filterKey] || 'any';
+                                const nextMode = currentMode === 'any' ? 'all' : 'any';
+                                setFilters(prev => ({
+                                    ...prev,
+                                    matchModes: {
+                                        ...prev.matchModes,
+                                        [filterKey]: nextMode
+                                    }
+                                }));
+                            }}
+                            className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-[10px] font-medium transition-colors border ${(filters.matchModes?.[filterKey] === 'all')
+                                ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 border-sage-200 dark:border-sage-500/30'
+                                : 'bg-transparent text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-gray-300'
+                                }`}
+                            title={(filters.matchModes?.[filterKey] === 'all')
+                                ? "Match All (AND): Images must have ALL selected items"
+                                : "Match Any (OR): Images can have ANY selected item"}
+                        >
+                            {(filters.matchModes?.[filterKey] === 'all') ? (
+                                <>
+                                    <span className="text-[9px] uppercase tracking-wider">All</span>
+                                    <ListChecks className="w-3 h-3" />
+                                </>
+                            ) : (
+                                <>
+                                    <span className="text-[9px] uppercase tracking-wider">Any</span>
+                                    <ListIcon className="w-3 h-3" />
+                                </>
+                            )}
+                        </button>
+
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); }}
                             className={`p-1 rounded ${isSearchOpen ? 'text-sage-500' : 'text-gray-400 hover:text-gray-600'}`}
