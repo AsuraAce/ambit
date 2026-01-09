@@ -539,10 +539,7 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                 ) m
                 LEFT JOIN {} rc ON (
                     rc.ref_name = m.name OR 
-                    rc.clean_ref = m.name OR
-                    rc.ref_name LIKE m.name || ' (%' OR
-                    rc.ref_name LIKE m.name || ':%' OR
-                    m.name LIKE rc.clean_ref || '%'
+                    rc.clean_ref = m.name
                 )
                 LEFT JOIN {} rt ON (
                     rt.clean_ref = m.name
