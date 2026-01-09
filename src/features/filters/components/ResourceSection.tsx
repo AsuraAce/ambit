@@ -107,24 +107,30 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             if (l.count === 0 && !isSelected) return false;
 
             // 3. Drill-down filtering: hide items not in current filter context
-            // ONLY apply strict drill-down if we are in "Match All" (AND) mode
-            // or if validNames is provided but we haven't selected anything yet (to initial drill down from OTHER filters)
-            // But to solve the "Disappearing Checkpoint" bug, we skip this if mode is 'any' (default)
-            // actually, we should only apply strict filtering if:
-            // - validNames exists AND
-            // - (We are in ALL mode OR We have NO selection yet)
-
-            // Simpler approach per design: 
-            // - Any/OR Mode: Ignore validNames for *visibility* (allow selecting anything)
-            // - All/AND Mode: Respect validNames (show only what remains)
+            // 
+            // REFINED LOGIC:
+            // - Cross-filter drill-down (Collection → Assets) should ALWAYS work
+            // - Intra-category drill-down (LoRA A → hide LoRA B) depends on Match Mode:
+            //   - ALL mode: Apply strict drill-down (show only compatible items)
+            //   - ANY mode: Skip drill-down ONLY if we already have selections (to allow broadening)
+            //
+            // The key insight: If we have NO selections in this category, we should always
+            // apply validNames (this is cross-filter drill-down from Collection/Date/etc.)
 
             const currentMode = filters.matchModes?.[filterKey] || 'any';
+            const hasSelectionsInCategory = ((filters[filterKey] || []) as string[]).length > 0;
 
             if (validNames !== null && validNames !== undefined) {
-                // In 'any' mode, we ignore validNames to allow "OR" broadening
-                // In 'all' mode, we respect validNames for "AND" narrowing
-                if (currentMode === 'all') {
-                    if (!validNames.includes(l.name) && !isSelected) return false;
+                // Always show selected items
+                if (isSelected) {
+                    // pass through
+                } else if (currentMode === 'all') {
+                    // ALL mode: Always apply strict drill-down
+                    if (!validNames.includes(l.name)) return false;
+                } else {
+                    // ANY mode: Apply drill-down ONLY if we have no selections (cross-filter)
+                    // If we have selections, skip drill-down to allow broadening
+                    if (!hasSelectionsInCategory && !validNames.includes(l.name)) return false;
                 }
             }
 
