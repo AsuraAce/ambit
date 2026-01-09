@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
@@ -361,14 +362,12 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     </div>
                 </div>
             )}
-            {contextMenu && (
+            {contextMenu && createPortal(
                 <div
                     ref={menuRef}
                     className="fixed z-[100] w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                 >
-                    {/* Debug log to verify item state */}
-                    {console.log('Context Menu Item:', contextMenu.item)}
                     <div className="p-1">
                         <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
                             {contextMenu.item.name}
@@ -400,7 +399,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             Use Dynamic
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
