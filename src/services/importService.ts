@@ -229,18 +229,3 @@ export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: 
     }
 };
 
-export const populateMissingThumbnails = async (): Promise<{ updated: number }> => {
-    try {
-        const result = await unwrap(commands.populateMissingThumbnails());
-
-        console.log(`[SmartFill] Scan complete. Updated: ${result.updated}. Rebuilding facet cache...`);
-        // Always rebuild usage cache to ensuring UI is in sync with Models table
-        const { rebuildFacetCache } = await import('./db/imageRepo');
-        await rebuildFacetCache();
-
-        return result;
-    } catch (e) {
-        console.error('Failed to populate missing thumbnails', e);
-        return { updated: 0 };
-    }
-};
