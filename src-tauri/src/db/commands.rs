@@ -310,3 +310,126 @@ pub async fn reset_migration_18(app: tauri::AppHandle) -> Result<String, String>
         Ok("Migration 18 reset successfully. Please restart the app to re-run the migration.".to_string())
     }).await.map_err(|e| e.to_string())?
 }
+
+/// Numeric range for a parameter
+#[derive(serde::Serialize, specta::Type)]
+pub struct NumericRange {
+    pub min: f64,
+    pub max: f64,
+}
+
+/// Parameter ranges and distinct values for dynamic filters
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterRanges {
+    pub steps: Option<NumericRange>,
+    pub cfg: Option<NumericRange>,
+    pub denoising_strength: Option<NumericRange>,
+    pub samplers: Vec<String>,
+    pub generation_types: Vec<String>,
+}
+
+/// Get parameter ranges and distinct values for dynamic filter UI.
+/// Only returns non-null/non-default values to show what data actually exists.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn get_parameter_ranges(app: tauri::AppHandle) -> Result<ParameterRanges, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        // Steps range (exclude 0 as it means "unknown")
+        let steps: Option<NumericRange> = conn.query_row(
+            "SELECT MIN(json_extract(metadata_json, '$.steps')), MAX(json_extract(metadata_json, '$.steps')) 
+             FROM images 
+             WHERE is_deleted = 0 
+               AND json_extract(metadata_json, '$.steps') > 0",
+            [],
+            |row| {
+                let min: Option<f64> = row.get(0).ok();
+                let max: Option<f64> = row.get(1).ok();
+                Ok(match (min, max) {
+                    (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }),
+                    _ => None,
+                })
+            }
+        ).unwrap_or(None);
+        
+        // CFG range (exclude 0 as it means "unknown")
+        let cfg: Option<NumericRange> = conn.query_row(
+            "SELECT MIN(json_extract(metadata_json, '$.cfg')), MAX(json_extract(metadata_json, '$.cfg')) 
+             FROM images 
+             WHERE is_deleted = 0 
+               AND json_extract(metadata_json, '$.cfg') > 0",
+            [],
+            |row| {
+                let min: Option<f64> = row.get(0).ok();
+                let max: Option<f64> = row.get(1).ok();
+                Ok(match (min, max) {
+                    (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }),
+                    _ => None,
+                })
+            }
+        ).unwrap_or(None);
+        
+        // Denoising strength range (typically 0.0-1.0, null means not used)
+        let denoising_strength: Option<NumericRange> = conn.query_row(
+            "SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) 
+             FROM images 
+             WHERE is_deleted = 0 
+               AND json_extract(metadata_json, '$.denoisingStrength') IS NOT NULL",
+            [],
+            |row| {
+                let min: Option<f64> = row.get(0).ok();
+                let max: Option<f64> = row.get(1).ok();
+                Ok(match (min, max) {
+                    (Some(min), Some(max)) => Some(NumericRange { min, max }),
+                    _ => None,
+                })
+            }
+        ).unwrap_or(None);
+        
+        // Distinct samplers (exclude 'Unknown')
+        let samplers: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT json_extract(metadata_json, '$.sampler')
+                 FROM images 
+                 WHERE is_deleted = 0 
+                   AND json_extract(metadata_json, '$.sampler') IS NOT NULL 
+                   AND json_extract(metadata_json, '$.sampler') != '' 
+                   AND json_extract(metadata_json, '$.sampler') != 'Unknown'
+                 ORDER BY 1"
+            ).map_err(|e| e.to_string())?;
+            
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        
+        // Distinct generation types (exclude 'unknown')
+        let generation_types: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT json_extract(metadata_json, '$.generationType')
+                 FROM images 
+                 WHERE is_deleted = 0 
+                   AND json_extract(metadata_json, '$.generationType') IS NOT NULL 
+                   AND json_extract(metadata_json, '$.generationType') != '' 
+                   AND json_extract(metadata_json, '$.generationType') != 'unknown'
+                 ORDER BY 1"
+            ).map_err(|e| e.to_string())?;
+            
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        
+        Ok(ParameterRanges {
+            steps,
+            cfg,
+            denoising_strength,
+            samplers,
+            generation_types,
+        })
+    }).await.map_err(|e| e.to_string())?
+}

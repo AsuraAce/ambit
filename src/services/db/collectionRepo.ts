@@ -151,6 +151,8 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
                     loras: [],
                     embeddings: [],
                     hypernetworks: [],
+                    samplers: [],
+                    generationTypes: [],
                     searchQuery: ''
                 };
                 const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
@@ -195,6 +197,8 @@ export const getSmartCollectionCounts = async (smartCollections: Collection[]): 
                 loras: [],
                 embeddings: [],
                 hypernetworks: [],
+                samplers: [],
+                generationTypes: [],
                 searchQuery: ''
             };
             const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);

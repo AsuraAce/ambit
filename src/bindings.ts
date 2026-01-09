@@ -49,6 +49,18 @@ async optimizeDatabase() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Get parameter ranges and distinct values for dynamic filter UI.
+ * Only returns non-null/non-default values to show what data actually exists.
+ */
+async getParameterRanges() : Promise<Result<ParameterRanges, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async rebuildFacetCache() : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
@@ -245,6 +257,14 @@ export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFil
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string }
 export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null }
 export type ImportResult = { added: number; totalFound: number; message: string }
+/**
+ * Numeric range for a parameter
+ */
+export type NumericRange = { min: number; max: number }
+/**
+ * Parameter ranges and distinct values for dynamic filters
+ */
+export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[] }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
 export type ThumbnailScanResult = { found: number; updated: number }

@@ -39,12 +39,15 @@ const INITIAL_FILTERS: FilterState = {
     loras: [],
     embeddings: [],
     hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
     dateRange: 'all',
     favoritesOnly: false,
     collectionId: null,
     showIntermediates: false,
     showGrids: false
 };
+
 
 export const useSearchStore = create<SearchState>()(
     devtools(

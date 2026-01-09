@@ -258,7 +258,29 @@ export const buildSqlWhereClause = (
         params.push(filters.maxCfg);
     }
 
-    // 9. Date Range
+    // 9. Samplers (Array)
+    if (filters.samplers && filters.samplers.length > 0) {
+        const samplerConditions = filters.samplers.map(() => {
+            params.push(params.length); // placeholder position
+            return `json_extract(metadata_json, '$.sampler') = ?`;
+        });
+        // Rebuild with correct params
+        params.splice(params.length - filters.samplers.length, filters.samplers.length);
+        filters.samplers.forEach(s => params.push(s));
+        conditions.push(`(${samplerConditions.join(' OR ')})`);
+    }
+
+    // 10. Generation Types (Array)
+    if (filters.generationTypes && filters.generationTypes.length > 0) {
+        const genTypeConditions = filters.generationTypes.map(() => {
+            return `json_extract(metadata_json, '$.generationType') = ?`;
+        });
+        filters.generationTypes.forEach(gt => params.push(gt));
+        conditions.push(`(${genTypeConditions.join(' OR ')})`);
+    }
+
+    // 11. Date Range
+
     if (filters.dateRange !== 'all') {
         const midnight = new Date();
         midnight.setHours(0, 0, 0, 0);

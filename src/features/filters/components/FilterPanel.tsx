@@ -192,8 +192,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     // Tab-Specific Dirty Checks (for dot indicators)
     const isOrganizeDirty = !!(filters.collectionId || filters.dateRange !== 'all' || filters.favoritesOnly || filters.pinnedOnly);
-    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg);
+    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || (filters.samplers && filters.samplers.length > 0) || (filters.generationTypes && filters.generationTypes.length > 0));
     const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
+
 
     return (
         <div

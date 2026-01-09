@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Check, Search, X, LucideIcon, ArrowDownWideNarrow } from 'lucide-react';
 
 // --- Section Header ---
@@ -66,14 +66,36 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
     const trackRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState<'min' | 'max' | null>(null);
 
-    // Default visual values if undefined (for the UI)
-    const currentMin = minValue !== undefined ? minValue : min;
-    const currentMax = maxValue !== undefined ? maxValue : max;
+    // Default visual values from props
+    const propCurrentMin = minValue !== undefined ? minValue : min;
+    const propCurrentMax = maxValue !== undefined ? maxValue : max;
+
+    // Local state for smooth dragging without triggering constantly
+    const [localMin, setLocalMin] = useState(propCurrentMin);
+    const [localMax, setLocalMax] = useState(propCurrentMax);
+
+    // Keep track of latest local values for the event handler to read without closure staleness
+    const valuesRef = useRef({ min: localMin, max: localMax });
+
+    // Sync local state with props when NOT dragging
+    useEffect(() => {
+        if (!isDragging) {
+            setLocalMin(propCurrentMin);
+            setLocalMax(propCurrentMax);
+            valuesRef.current = { min: propCurrentMin, max: propCurrentMax };
+        }
+    }, [propCurrentMin, propCurrentMax, isDragging]);
+
+    // Update ref when local state changes
+    useEffect(() => {
+        valuesRef.current = { min: localMin, max: localMax };
+    }, [localMin, localMax]);
 
     const getPercentage = (value: number) => ((value - min) / (max - min)) * 100;
 
     const handleMouseDown = (type: 'min' | 'max') => (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation(); // prevent other drag events
         setIsDragging(type);
     };
 
@@ -88,20 +110,32 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
         const steppedValue = Math.round(rawValue / step) * step;
         const clampedValue = Math.min(Math.max(steppedValue, min), max);
 
+        // Read current latest values to enforce constraints
+        const currentVals = valuesRef.current;
+
         if (isDragging === 'min') {
             // Cannot cross max
-            const newMin = Math.min(clampedValue, currentMax - step);
-            onChange(newMin === min ? undefined : newMin, maxValue);
+            const newMin = Math.min(clampedValue, currentVals.max - step);
+            setLocalMin(newMin);
         } else {
             // Cannot cross min
-            const newMax = Math.max(clampedValue, currentMin + step);
-            onChange(minValue, newMax === max ? undefined : newMax);
+            const newMax = Math.max(clampedValue, currentVals.min + step);
+            setLocalMax(newMax);
         }
-    }, [isDragging, min, max, step, currentMin, currentMax, minValue, maxValue, onChange]);
+    }, [isDragging, min, max, step]);
 
     const handleWindowMouseUp = useCallback(() => {
         setIsDragging(null);
-    }, []);
+
+        // Commit changes
+        const { min: finalMin, max: finalMax } = valuesRef.current;
+
+        // Convert back to "undefined" if at limit (matching original logic)
+        const commitMin = finalMin === min ? undefined : finalMin;
+        const commitMax = finalMax === max ? undefined : finalMax;
+
+        onChange(commitMin, commitMax);
+    }, [min, max, onChange]);
 
     useEffect(() => {
         if (isDragging) {
@@ -122,7 +156,7 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
             <div className="flex items-center justify-between text-xs text-gray-500">
                 <span className="font-bold uppercase tracking-wider">{label}</span>
                 <span className="font-mono text-sage-600 dark:text-sage-400">
-                    {currentMin} - {currentMax}
+                    {localMin} - {localMax}
                 </span>
             </div>
 
@@ -134,22 +168,22 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
                 <div
                     className="absolute h-1 bg-sage-500 rounded-full shadow-[0_0_10px_rgba(140,163,107,0.5)]"
                     style={{
-                        left: `${getPercentage(currentMin)}%`,
-                        width: `${getPercentage(currentMax) - getPercentage(currentMin)}%`
+                        left: `${getPercentage(localMin)}%`,
+                        width: `${getPercentage(localMax) - getPercentage(localMin)}%`
                     }}
                 />
 
                 {/* Min Thumb */}
                 <div
                     className={`absolute w-3.5 h-3.5 bg-white dark:bg-slate-900 border-2 border-sage-500 rounded-full shadow cursor-ew-resize hover:scale-125 transition-transform ease-spring z-10 ${isDragging === 'min' ? 'scale-125 ring-2 ring-sage-500/50' : ''}`}
-                    style={{ left: `calc(${getPercentage(currentMin)}% - 7px)` }}
+                    style={{ left: `calc(${getPercentage(localMin)}% - 7px)` }}
                     onMouseDown={handleMouseDown('min')}
                 />
 
                 {/* Max Thumb */}
                 <div
                     className={`absolute w-3.5 h-3.5 bg-white dark:bg-slate-900 border-2 border-sage-500 rounded-full shadow cursor-ew-resize hover:scale-125 transition-transform ease-spring z-10 ${isDragging === 'max' ? 'scale-125 ring-2 ring-sage-500/50' : ''}`}
-                    style={{ left: `calc(${getPercentage(currentMax)}% - 7px)` }}
+                    style={{ left: `calc(${getPercentage(localMax)}% - 7px)` }}
                     onMouseDown={handleMouseDown('max')}
                 />
             </div>
@@ -271,6 +305,167 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
                     ))}
                 </div>
             )}
+        </div>
+    );
+};
+
+// --- Multi-Select Dropdown with Search ---
+interface MultiSelectDropdownProps {
+    label: string;
+    options?: string[];
+    groups?: { label: string; items: string[] }[];
+    selected: string[];
+    onChange: (selected: string[]) => void;
+    placeholder?: string;
+}
+
+export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
+    label,
+    options = [],
+    groups,
+    selected,
+    onChange,
+    placeholder = "Search..."
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Filter logic
+    const hasGroups = groups && groups.length > 0;
+
+    // Flatten logic for count retrieval if needed, but 'selected' is already flat strings
+
+    const filteredGroups = useMemo(() => {
+        if (!hasGroups || !groups) return [];
+        if (!searchTerm) return groups;
+
+        return groups.map(g => ({
+            label: g.label,
+            items: g.items.filter(item => item.toLowerCase().includes(searchTerm.toLowerCase()))
+        })).filter(g => g.items.length > 0);
+    }, [groups, searchTerm, hasGroups]);
+
+    const filteredOptions = useMemo(() => {
+        if (hasGroups) return []; // Ignore options if groups exist
+        return options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [options, searchTerm, hasGroups]);
+
+    const toggleOption = (opt: string) => {
+        if (selected.includes(opt)) {
+            onChange(selected.filter(s => s !== opt));
+        } else {
+            onChange([...selected, opt]);
+        }
+    };
+
+    const handleClear = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onChange([]);
+    };
+
+    // Helper to render an option item
+    const renderOption = (opt: string) => {
+        const isSelected = selected.includes(opt);
+        return (
+            <button
+                key={opt}
+                onClick={() => toggleOption(opt)}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg transition-colors text-left group ${isSelected
+                    ? 'bg-sage-50 dark:bg-sage-900/40 text-sage-800 dark:text-sage-200'
+                    : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-white/5'
+                    }`}
+            >
+                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected
+                    ? 'bg-sage-500 border-sage-500'
+                    : 'border-gray-300 dark:border-white/20 group-hover:border-gray-400 dark:group-hover:border-white/30'
+                    }`}>
+                    {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                </div>
+                <span className="truncate flex-1">{opt}</span>
+            </button>
+        );
+    };
+
+    return (
+        <div className="space-y-2" ref={dropdownRef}>
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+                <span>{label}</span>
+                {selected.length > 0 && (
+                    <button
+                        onClick={handleClear}
+                        className="text-[10px] text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-200 transition-colors"
+                    >
+                        Clear ({selected.length})
+                    </button>
+                )}
+            </div>
+
+            <div className="relative">
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className={`w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-sage-500/50 transition-all ${isOpen ? 'ring-2 ring-sage-500/10 border-sage-500/50' : ''}`}
+                >
+                    <span className="truncate">
+                        {selected.length === 0
+                            ? 'Select...'
+                            : selected.length === 1
+                                ? selected[0]
+                                : `${selected.length} selected`}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isOpen && (
+                    <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-200">
+                        {/* Only show search if enough items (arbitrary > 5 total items check difficult with groups, assume always show for groups or > 5 options) */}
+                        {(hasGroups || options.length > 5) && (
+                            <SearchInput
+                                value={searchTerm}
+                                onChange={setSearchTerm}
+                                placeholder={placeholder}
+                                className="mb-2"
+                            />
+                        )}
+
+                        <div className="max-h-60 overflow-y-auto space-y-0.5 pr-1">
+                            {!hasGroups && filteredOptions.length === 0 && (
+                                <div className="text-xs text-center py-4 text-gray-400 italic">No matches found</div>
+                            )}
+
+                            {hasGroups && filteredGroups.length === 0 && (
+                                <div className="text-xs text-center py-4 text-gray-400 italic">No matches found</div>
+                            )}
+
+                            {/* Render Flat List */}
+                            {!hasGroups && filteredOptions.map(opt => renderOption(opt))}
+
+                            {/* Render Groups */}
+                            {hasGroups && filteredGroups.map(group => (
+                                <div key={group.label} className="mb-2 last:mb-0">
+                                    <div className="px-2 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50 dark:bg-white/5 rounded mb-0.5 sticky top-0 backdrop-blur-sm z-10">
+                                        {group.label}
+                                    </div>
+                                    <div className="space-y-0.5 pl-1">
+                                        {group.items.map(opt => renderOption(opt))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

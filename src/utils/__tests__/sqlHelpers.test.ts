@@ -10,6 +10,8 @@ describe('sqlHelpers', () => {
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        samplers: [],
+        generationTypes: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null,

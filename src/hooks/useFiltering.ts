@@ -17,6 +17,8 @@ export const useFiltering = (
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        samplers: [],
+        generationTypes: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null,

@@ -109,6 +109,8 @@ export interface FilterState {
   loras: string[]; // New: Filter by LoRA usage
   embeddings: string[];
   hypernetworks: string[];
+  samplers: string[]; // Filter by sampler name
+  generationTypes: string[]; // Filter by generation type (txt2img, img2img, etc.)
   dateRange: 'all' | 'today' | 'week' | 'month';
   favoritesOnly: boolean;
   collectionId: string | null;
@@ -121,6 +123,7 @@ export interface FilterState {
   showGrids?: boolean;
   sortOption?: SortOption;
 }
+
 
 export interface Collection {
   id: string;

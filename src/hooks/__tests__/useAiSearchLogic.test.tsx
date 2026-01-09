@@ -42,6 +42,8 @@ describe('useAiSearchLogic', () => {
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        samplers: [],
+        generationTypes: [],
         dateRange: 'all',
         favoritesOnly: false,
         collectionId: null
