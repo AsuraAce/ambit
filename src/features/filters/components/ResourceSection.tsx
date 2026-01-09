@@ -229,10 +229,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     </div>
                 )}
 
-                {/* Count Badge */}
-                <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
-                    {item.count}
-                </div>
             </div>
         );
     };
@@ -275,7 +271,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     <span className="truncate" title={item.name}>{item.name}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 opacity-60">
+                    <span
+                        className={`text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${validNames !== null ? 'opacity-30' : 'opacity-60'}`}
+                        title={`${item.count.toLocaleString()} total images`}
+                    >
                         {formatCountCompact(item.count)}
                     </span>
                 </div>
