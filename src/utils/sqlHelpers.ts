@@ -274,13 +274,11 @@ export const buildSqlWhereClause = (
 
     // 9. Samplers (Array)
     if (filters.samplers && filters.samplers.length > 0) {
-        const samplerConditions = filters.samplers.map(() => {
-            params.push(params.length); // placeholder position
-            return `json_extract(metadata_json, '$.sampler') = ?`;
+        const samplerConditions = filters.samplers.map(s => {
+            params.push(s.toLowerCase().replace(/[_-]/g, ' '));
+            // Normalize the stored sampler name in SQL to match the normalized filter value
+            return `REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' ') = ?`;
         });
-        // Rebuild with correct params
-        params.splice(params.length - filters.samplers.length, filters.samplers.length);
-        filters.samplers.forEach(s => params.push(s));
         conditions.push(`(${samplerConditions.join(' OR ')})`);
     }
 

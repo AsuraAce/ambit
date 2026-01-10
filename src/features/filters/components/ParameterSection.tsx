@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { normalizeSampler } from '../../../utils/samplerUtils';
 import { FilterState } from '../../../types';
 import { SectionHeader, FilterSlider, MultiSelectDropdown } from './FilterPrimitives';
 import { useParameterRangesQuery } from '../../../hooks/useParameterRangesQuery';
@@ -71,6 +72,8 @@ const formatGenType = (type: string): string => {
     return labels[type] || type;
 };
 
+// ... (ChipSelect and formatGenType omitted as they are before)
+
 const groupSamplers = (samplers: string[]) => {
     const groups: Record<string, string[]> = {
         'Euler': [],
@@ -82,15 +85,22 @@ const groupSamplers = (samplers: string[]) => {
         'Other': []
     };
 
+    // Use a Set to keep track of unique canonical names per group
+    const canonicalSeen = new Set<string>();
+
     samplers.forEach(s => {
-        const lower = s.toLowerCase();
-        if (lower.includes('euler')) groups['Euler'].push(s);
-        else if (lower.includes('dpm')) groups['DPM'].push(s);
-        else if (lower.includes('lms')) groups['LMS'].push(s);
-        else if (lower.includes('heun')) groups['Heun'].push(s);
-        else if (lower.includes('ddim')) groups['DDIM'].push(s);
-        else if (lower.includes('unipc')) groups['UniPC'].push(s);
-        else groups['Other'].push(s);
+        const canonical = normalizeSampler(s);
+        if (canonicalSeen.has(canonical)) return;
+        canonicalSeen.add(canonical);
+
+        const lower = canonical.toLowerCase();
+        if (lower.includes('euler')) groups['Euler'].push(canonical);
+        else if (lower.includes('dpm')) groups['DPM'].push(canonical);
+        else if (lower.includes('lms')) groups['LMS'].push(canonical);
+        else if (lower.includes('heun')) groups['Heun'].push(canonical);
+        else if (lower.includes('ddim')) groups['DDIM'].push(canonical);
+        else if (lower.includes('unipc')) groups['UniPC'].push(canonical);
+        else groups['Other'].push(canonical);
     });
 
     return Object.entries(groups)
