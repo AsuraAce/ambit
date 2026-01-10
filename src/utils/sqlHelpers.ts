@@ -6,7 +6,8 @@ export const buildSqlWhereClause = (
     maskingMode: AppSettings['maskingMode'],
     maskedKeywords: string[],
     collections?: Collection[],
-    isRecursive: boolean = false
+    isRecursive: boolean = false,
+    excludeCategories: string[] = [] // New: Categories to exclude from the WHERE clause (for Disjunctive Faceting)
 ): { where: string; params: any[]; collectionId?: string; loraName?: string } => {
     const conditions: string[] = [];
     const params: any[] = [];
@@ -102,7 +103,7 @@ export const buildSqlWhereClause = (
     }
 
     // 5. Models (Array) - Use denormalized resolved_model_name and model_hash columns
-    if (filters.models.length > 0) {
+    if (filters.models.length > 0 && !excludeCategories.includes('models')) {
         const matchMode = filters.matchModes?.models || 'any';
         const modelConditions = filters.models.map(m => {
             if (m === 'Unknown') {
@@ -116,7 +117,7 @@ export const buildSqlWhereClause = (
     }
 
     // 5. Tools (Array) - Use denormalized tool column
-    if (filters.tools.length > 0) {
+    if (filters.tools.length > 0 && !excludeCategories.includes('tools')) {
         const matchMode = filters.matchModes?.tools || 'any';
         const toolConditions = filters.tools.map(t => {
             if (t === 'Unknown') {
@@ -136,20 +137,22 @@ export const buildSqlWhereClause = (
 
     // LoRAs
     const loraMode = filters.matchModes?.loras || 'any';
-    if (filters.loras.length === 1 && loraMode === 'any') {
-        // Single lora - will use INNER JOIN in searchRepo, don't add WHERE condition
-        // The loraName is returned and handled by searchRepo
-    } else if (filters.loras.length > 0) {
-        const loraConditions = filters.loras.map(l => {
-            params.push(l);
-            return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ?)`;
-        });
-        conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
+    if (!excludeCategories.includes('loras')) {
+        if (filters.loras.length === 1 && loraMode === 'any') {
+            // Single lora - will use INNER JOIN in searchRepo, don't add WHERE condition
+            // The loraName is returned and handled by searchRepo
+        } else if (filters.loras.length > 0) {
+            const loraConditions = filters.loras.map(l => {
+                params.push(l);
+                return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ?)`;
+            });
+            conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
+        }
     }
 
     // Embeddings
     const embMode = filters.matchModes?.embeddings || 'any';
-    if (filters.embeddings.length > 0) {
+    if (filters.embeddings.length > 0 && !excludeCategories.includes('embeddings')) {
         const embConditions = filters.embeddings.map(e => {
             params.push(e);
             return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)`;
@@ -159,7 +162,7 @@ export const buildSqlWhereClause = (
 
     // Hypernetworks
     const hnMode = filters.matchModes?.hypernetworks || 'any';
-    if (filters.hypernetworks.length > 0) {
+    if (filters.hypernetworks.length > 0 && !excludeCategories.includes('hypernetworks')) {
         const hnConditions = filters.hypernetworks.map(h => {
             params.push(h);
             return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)`;
@@ -319,9 +322,10 @@ export const buildSqlWhereClause = (
     // Return loraName for single-lora filter INNER JOIN optimization
     // OPTIMIZATION: Only use if matchMode is 'any' (default). 
     // If 'all', we might have logic differences (though for length=1 they are identical).
-    // Safe to use if length=1 regardless of mode, but let's be explicit.
+    // CRITICAL: Do NOT return loraName if 'loras' is excluded (Disjunctive Faceting)
     const loraModeCheck = filters.matchModes?.loras || 'any';
-    const singleLoraName = (filters.loras.length === 1 && loraModeCheck === 'any') ? filters.loras[0] : undefined;
+    const loraExcluded = excludeCategories.includes('loras');
+    const singleLoraName = (!loraExcluded && filters.loras.length === 1 && loraModeCheck === 'any') ? filters.loras[0] : undefined;
 
     return {
         where,

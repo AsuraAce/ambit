@@ -108,30 +108,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
             // 3. Drill-down filtering: hide items not in current filter context
             // 
-            // REFINED LOGIC:
-            // - Cross-filter drill-down (Collection → Assets) should ALWAYS work
-            // - Intra-category drill-down (LoRA A → hide LoRA B) depends on Match Mode:
-            //   - ALL mode: Apply strict drill-down (show only compatible items)
-            //   - ANY mode: Skip drill-down ONLY if we already have selections (to allow broadening)
-            //
-            // The key insight: If we have NO selections in this category, we should always
-            // apply validNames (this is cross-filter drill-down from Collection/Date/etc.)
-
-            const currentMode = filters.matchModes?.[filterKey] || 'any';
-            const hasSelectionsInCategory = ((filters[filterKey] || []) as string[]).length > 0;
+            // With Disjunctive Faceting implemented in useLibraryStatsQuery:
+            // - validNames is ALREADY calculated correctly for each category
+            // - For ANY mode categories: validNames respects cross-filters but ignores self-filter
+            // - For ALL mode categories: validNames respects ALL filters
+            // 
+            // Therefore, we simply apply validNames. No special handling needed.
 
             if (validNames !== null && validNames !== undefined) {
-                // Always show selected items
-                if (isSelected) {
-                    // pass through
-                } else if (currentMode === 'all') {
-                    // ALL mode: Always apply strict drill-down
-                    if (!validNames.includes(l.name)) return false;
-                } else {
-                    // ANY mode: Apply drill-down ONLY if we have no selections (cross-filter)
-                    // If we have selections, skip drill-down to allow broadening
-                    if (!hasSelectionsInCategory && !validNames.includes(l.name)) return false;
-                }
+                // Always show selected items, hide non-valid items
+                if (!isSelected && !validNames.includes(l.name)) return false;
             }
 
             return true;

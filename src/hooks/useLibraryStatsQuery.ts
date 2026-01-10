@@ -73,6 +73,10 @@ export const useLibraryStatsQuery = ({
     return useQuery({
         queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
+            const searchRepo = await import('../services/db/searchRepo');
+
+            // 1. Base Query: Standard intersection of ALL filters
+            // This gives us the correct Counts for everything (and Valid Names for ALL-mode categories)
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,
@@ -83,13 +87,63 @@ export const useLibraryStatsQuery = ({
 
             // Fetch facets and stats in parallel
             // Also fetch valid facet names if we have active filters (for drill-down)
-            const [facets, stats, validNames] = await Promise.all([
+            const [facets, stats, baseValidNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params, collectionId, loraName),
                 hasActiveFilters ? getValidFacetNames(where, params, collectionId, loraName) : Promise.resolve(null)
             ]);
 
-            return { facets, stats, validNames };
+            // 2. Disjunctive Queries: For categories in ANY mode with active selections
+            // We need to fetch their valid names WITHOUT their own filter applied
+
+            const disjunctiveCategories: FacetType[] = [];
+            if (activeCollectionId) {
+                // Collections are single select, no disjunctive logic needed usually unless we allowed multi-collection
+            }
+            if (filters.loras.length > 0 && filters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
+            if (filters.embeddings.length > 0 && filters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
+            if (filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
+            if (filters.tools.length > 0 && filters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
+            if (filters.models.length > 0 && filters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
+
+            let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
+
+            if (disjunctiveCategories.length > 0 && hasActiveFilters) {
+                if (!finalValidNames) finalValidNames = {} as ValidFacetNames;
+
+                const extraQueries = disjunctiveCategories.map(async (cat) => {
+                    let excludeKey = '';
+                    if (cat === 'loras') excludeKey = 'loras';
+                    if (cat === 'embeddings') excludeKey = 'embeddings';
+                    if (cat === 'hypernetworks') excludeKey = 'hypernetworks';
+                    if (cat === 'tools') excludeKey = 'tools';
+                    if (cat === 'checkpoints') excludeKey = 'models';
+
+                    // Build "Partial" Where Clause (Global - Self)
+                    const partial = buildSqlWhereClause(
+                        filters,
+                        privacyEnabled,
+                        settings.maskingMode,
+                        settings.maskedKeywords,
+                        allCollections,
+                        false,
+                        [excludeKey]
+                    );
+
+                    const result = await searchRepo.getValidFacetNames(partial.where, partial.params, partial.collectionId, partial.loraName);
+                    return { cat, validNames: result[cat] };
+                });
+
+                const extraResults = await Promise.all(extraQueries);
+
+                extraResults.forEach(({ cat, validNames }) => {
+                    if (validNames && finalValidNames) {
+                        finalValidNames[cat] = validNames;
+                    }
+                });
+            }
+
+            return { facets, stats, validNames: finalValidNames };
         },
         placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
         staleTime: 1000 * 60 * 5, // 5 minutes
