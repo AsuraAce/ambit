@@ -37,15 +37,12 @@ export const GeneratorSection: React.FC<GeneratorSectionProps> = ({
 
     // Apply drill-down filtering to tools list
     const filteredTools = React.useMemo(() => {
-        return tools.filter(tool => {
-            // Always show selected tools
-            if (filters.tools.includes(tool as GeneratorTool)) return true;
-            // If no drill-down filtering, show all
-            if (validNames === null || validNames === undefined) return true;
-            // Otherwise, only show if in validNames
-            return validNames.includes(tool);
-        });
-    }, [tools, filters.tools, validNames]);
+        // PERMIT "A OR B" BEHAVIOR:
+        // Unlike massive lists (LoRAs), the Generator list is small (Invoke, A1111, etc.).
+        // Hiding unselected options prevents users from selecting multiple sources.
+        // Therefore, we ignore 'validNames' strict filtering here and always show all tools.
+        return tools;
+    }, [tools]);
 
     return (
         <div className="space-y-2">

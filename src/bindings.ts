@@ -53,9 +53,9 @@ async optimizeDatabase() : Promise<Result<string, string>> {
  * Get parameter ranges and distinct values for dynamic filter UI.
  * Only returns non-null/non-default values to show what data actually exists.
  */
-async getParameterRanges() : Promise<Result<ParameterRanges, string>> {
+async getParameterRanges(whereClause: string | null, paramsJson: string | null, collectionId: string | null, loraName: string | null) : Promise<Result<ParameterRanges, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges") };
+    return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges", { whereClause, paramsJson, collectionId, loraName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

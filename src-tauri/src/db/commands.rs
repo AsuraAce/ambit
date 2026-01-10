@@ -333,13 +333,59 @@ pub struct ParameterRanges {
 /// Only returns non-null/non-default values to show what data actually exists.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn get_parameter_ranges(app: tauri::AppHandle) -> Result<ParameterRanges, String> {
+pub async fn get_parameter_ranges(
+    app: tauri::AppHandle,
+    where_clause: Option<String>,
+    params_json: Option<String>,
+    collection_id: Option<String>,
+    lora_name: Option<String>
+) -> Result<ParameterRanges, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
         
-        // Steps range (exclude 0 as it means "unknown")
+        // Parse params for reactive queries
+        let params: Vec<serde_json::Value> = if let Some(json) = params_json {
+            serde_json::from_str(&json).unwrap_or_else(|_| Vec::new())
+        } else {
+            Vec::new()
+        };
+
+        let sql_params: Vec<rusqlite::types::Value> = params.iter().map(|p| {
+            match p {
+                serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        rusqlite::types::Value::Integer(i)
+                    } else if let Some(f) = n.as_f64() {
+                        rusqlite::types::Value::Real(f)
+                    } else {
+                        rusqlite::types::Value::Null
+                    }
+                }
+                serde_json::Value::Bool(b) => rusqlite::types::Value::Integer(if *b { 1 } else { 0 }),
+                serde_json::Value::Null => rusqlite::types::Value::Null,
+                _ => rusqlite::types::Value::Text(p.to_string()),
+            }
+        }).collect();
+        
+        // Base where clause for reactive queries with conditional JOINs
+        let mut reactive_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
+        
+        // If collection_id or lora_name provided, we need to construct a specific FROM/JOIN clause
+        // Note: The main table in get_parameter_ranges is 'images'
+        let mut from_clause = "FROM images".to_string();
+        
+        if let Some(col_id) = collection_id {
+            from_clause.push_str(&format!(" JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '{}'", col_id));
+        }
+        
+        if let Some(lora) = lora_name {
+            from_clause.push_str(&format!(" JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '{}'", lora));
+        }
+
+        // Steps range (GLOBAL: ignore filters)
         let steps: Option<NumericRange> = conn.query_row(
             "SELECT MIN(json_extract(metadata_json, '$.steps')), MAX(json_extract(metadata_json, '$.steps')) 
              FROM images 
@@ -356,7 +402,7 @@ pub async fn get_parameter_ranges(app: tauri::AppHandle) -> Result<ParameterRang
             }
         ).unwrap_or(None);
         
-        // CFG range (exclude 0 as it means "unknown")
+        // CFG range (GLOBAL: ignore filters)
         let cfg: Option<NumericRange> = conn.query_row(
             "SELECT MIN(json_extract(metadata_json, '$.cfg')), MAX(json_extract(metadata_json, '$.cfg')) 
              FROM images 
@@ -373,7 +419,7 @@ pub async fn get_parameter_ranges(app: tauri::AppHandle) -> Result<ParameterRang
             }
         ).unwrap_or(None);
         
-        // Denoising strength range (typically 0.0-1.0, null means not used)
+        // Denoising strength range (GLOBAL: ignore filters)
         let denoising_strength: Option<NumericRange> = conn.query_row(
             "SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) 
              FROM images 
@@ -390,36 +436,44 @@ pub async fn get_parameter_ranges(app: tauri::AppHandle) -> Result<ParameterRang
             }
         ).unwrap_or(None);
         
-        // Distinct samplers (exclude 'Unknown')
+        // Distinct samplers (REACTIVE: respect filters)
         let samplers: Vec<String> = {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT DISTINCT json_extract(metadata_json, '$.sampler')
-                 FROM images 
-                 WHERE is_deleted = 0 
-                   AND json_extract(metadata_json, '$.sampler') IS NOT NULL 
-                   AND json_extract(metadata_json, '$.sampler') != '' 
-                   AND json_extract(metadata_json, '$.sampler') != 'Unknown'
-                 ORDER BY 1"
-            ).map_err(|e| e.to_string())?;
+                 {} 
+                 {} 
+                 AND json_extract(metadata_json, '$.sampler') IS NOT NULL 
+                 AND json_extract(metadata_json, '$.sampler') != '' 
+                 AND json_extract(metadata_json, '$.sampler') != 'Unknown'
+                 ORDER BY 1",
+                 from_clause, // Injects "FROM images JOIN ..."
+                 reactive_where // Injects "WHERE ..."
+            );
+
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+            let rows = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get::<_, String>(0))
                 .map_err(|e| e.to_string())?;
             rows.filter_map(|r| r.ok()).collect()
         };
         
-        // Distinct generation types (exclude 'unknown')
+        // Distinct generation types (REACTIVE: respect filters)
         let generation_types: Vec<String> = {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT DISTINCT json_extract(metadata_json, '$.generationType')
-                 FROM images 
-                 WHERE is_deleted = 0 
-                   AND json_extract(metadata_json, '$.generationType') IS NOT NULL 
-                   AND json_extract(metadata_json, '$.generationType') != '' 
-                   AND json_extract(metadata_json, '$.generationType') != 'unknown'
-                 ORDER BY 1"
-            ).map_err(|e| e.to_string())?;
+                 {} 
+                 {} 
+                 AND json_extract(metadata_json, '$.generationType') IS NOT NULL 
+                 AND json_extract(metadata_json, '$.generationType') != '' 
+                 AND json_extract(metadata_json, '$.generationType') != 'unknown'
+                 ORDER BY 1",
+                 from_clause, // Injects "FROM images JOIN ..."
+                 reactive_where // Injects "WHERE ..."
+            );
+
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+            let rows = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get::<_, String>(0))
                 .map_err(|e| e.to_string())?;
             rows.filter_map(|r| r.ok()).collect()
         };

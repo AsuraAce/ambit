@@ -104,7 +104,7 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
     isOpen,
     onToggle
 }) => {
-    const { data: ranges, isLoading } = useParameterRangesQuery();
+    const { data: ranges, isLoading } = useParameterRangesQuery(filters);
 
     // Check if any parameters have data to show
     const hasSteps = ranges?.steps !== null && ranges?.steps !== undefined;
