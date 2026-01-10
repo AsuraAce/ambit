@@ -27,6 +27,12 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         filters.embeddings.length > 0 ||
         filters.hypernetworks.length > 0 ||
         filters.searchQuery !== '' ||
+        (filters.samplers && filters.samplers.length > 0) ||
+        (filters.generationTypes && filters.generationTypes.length > 0) ||
+        filters.minSteps !== undefined ||
+        filters.maxSteps !== undefined ||
+        filters.minCfg !== undefined ||
+        filters.maxCfg !== undefined ||
         !!activeSmartCol;
 
     // Deduplicate logic: Filter out manual chips that are already in the smart collection
@@ -35,12 +41,16 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const smartLoras = activeSmartCol?.filters?.loras || [];
     const smartEmbeddings = activeSmartCol?.filters?.embeddings || [];
     const smartHypernetworks = activeSmartCol?.filters?.hypernetworks || [];
+    const smartSamplers = activeSmartCol?.filters?.samplers || [];
+    const smartGenTypes = activeSmartCol?.filters?.generationTypes || [];
 
     const visibleModels = Array.from(new Set(filters.models)).filter(m => !smartModels.includes(m));
     const visibleTools = Array.from(new Set(filters.tools)).filter(t => !smartTools.includes(t));
     const visibleLoras = Array.from(new Set(filters.loras)).filter(l => !smartLoras.includes(l));
     const visibleEmbeddings = Array.from(new Set(filters.embeddings)).filter(e => !smartEmbeddings.includes(e));
     const visibleHypernetworks = Array.from(new Set(filters.hypernetworks)).filter(h => !smartHypernetworks.includes(h));
+    const visibleSamplers = Array.from(new Set(filters.samplers || [])).filter(s => !smartSamplers.includes(s));
+    const visibleGenTypes = Array.from(new Set(filters.generationTypes || [])).filter(g => !smartGenTypes.includes(g));
 
     if (!hasActiveFilters) return null;
 
@@ -93,6 +103,30 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
+                    {activeSmartCol.filters.samplers?.map(s => (
+                        <div key={`smart-sampler-${s}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{s}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {activeSmartCol.filters.generationTypes?.map(g => (
+                        <div key={`smart-gentype-${g}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>{g}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {(activeSmartCol.filters.minSteps !== undefined || activeSmartCol.filters.maxSteps !== undefined) && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>Steps: {activeSmartCol.filters.minSteps ?? 0}-{activeSmartCol.filters.maxSteps ?? '∞'}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
+                    {(activeSmartCol.filters.minCfg !== undefined || activeSmartCol.filters.maxCfg !== undefined) && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>CFG: {activeSmartCol.filters.minCfg ?? 0}-{activeSmartCol.filters.maxCfg ?? '∞'}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
                 </>
             )}
 
@@ -107,6 +141,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs border border-red-200">
                     <div className="w-3 h-3 text-red-500">❤️</div>
                     <span>Favorites</span>
+                    <button onClick={() => setFilters(f => ({ ...f, favoritesOnly: false }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
@@ -144,6 +179,34 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     <button onClick={() => setFilters(f => ({ ...f, hypernetworks: f.hypernetworks.filter(x => x !== h) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
+
+            {visibleSamplers.map(s => (
+                <div key={s} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 text-xs border border-indigo-200 dark:border-indigo-500/30">
+                    <span className="truncate max-w-[100px]">{s}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, samplers: (f.samplers || []).filter(x => x !== s) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {visibleGenTypes.map(g => (
+                <div key={g} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 text-xs border border-cyan-200 dark:border-cyan-500/30">
+                    <span>{g}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, generationTypes: (f.generationTypes || []).filter(x => x !== g) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {(filters.minSteps !== undefined || filters.maxSteps !== undefined) && (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-200 text-xs border border-orange-200 dark:border-orange-500/30">
+                    <span>Steps: {filters.minSteps ?? 0}-{filters.maxSteps ?? '∞'}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, minSteps: undefined, maxSteps: undefined }))}><X className="w-3 h-3" /></button>
+                </div>
+            )}
+
+            {(filters.minCfg !== undefined || filters.maxCfg !== undefined) && (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-200 text-xs border border-yellow-200 dark:border-yellow-500/30">
+                    <span>CFG: {filters.minCfg ?? 0}-{filters.maxCfg ?? '∞'}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, minCfg: undefined, maxCfg: undefined }))}><X className="w-3 h-3" /></button>
+                </div>
+            )}
 
             <button
                 onClick={clearAllFilters}

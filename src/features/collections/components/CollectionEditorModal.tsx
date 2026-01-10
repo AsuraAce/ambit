@@ -67,6 +67,12 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 next.favoritesOnly = false;
             } else if (key === 'searchQuery') {
                 next.searchQuery = '';
+            } else if (key === 'minSteps' || key === 'maxSteps') {
+                next.minSteps = undefined;
+                next.maxSteps = undefined;
+            } else if (key === 'minCfg' || key === 'maxCfg') {
+                next.minCfg = undefined;
+                next.maxCfg = undefined;
             }
 
             return next;
@@ -110,6 +116,25 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             );
         }
 
+        // Numeric Ranges
+        if (draftFilters.minSteps !== undefined || draftFilters.maxSteps !== undefined) {
+            chips.push(
+                <div key="steps" className="flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-200 text-xs border border-orange-200 dark:border-orange-500/30">
+                    <span>Steps: {draftFilters.minSteps ?? 0}-{draftFilters.maxSteps ?? '∞'}</span>
+                    <button onClick={() => removeFilter('minSteps', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
+                </div>
+            );
+        }
+
+        if (draftFilters.minCfg !== undefined || draftFilters.maxCfg !== undefined) {
+            chips.push(
+                <div key="cfg" className="flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-200 text-xs border border-yellow-200 dark:border-yellow-500/30">
+                    <span>CFG: {draftFilters.minCfg ?? 0}-{draftFilters.maxCfg ?? '∞'}</span>
+                    <button onClick={() => removeFilter('minCfg', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
+                </div>
+            );
+        }
+
         // Arrays (Models, Tools, etc)
         const categories = [
             { key: 'models', label: 'Model', color: 'blue' },
@@ -117,6 +142,8 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             { key: 'loras', label: 'LoRA', color: 'purple' },
             { key: 'embeddings', label: 'Embedding', color: 'emerald' },
             { key: 'hypernetworks', label: 'Hypernet', color: 'rose' },
+            { key: 'samplers', label: 'Sampler', color: 'indigo' },
+            { key: 'generationTypes', label: 'GenType', color: 'cyan' },
         ];
 
         categories.forEach(({ key, color }) => {
@@ -141,6 +168,12 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                             break;
                         case 'rose':
                             className += "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 border-rose-200 dark:border-rose-500/30";
+                            break;
+                        case 'indigo':
+                            className += "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/30";
+                            break;
+                        case 'cyan':
+                            className += "bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 border-cyan-200 dark:border-cyan-500/30";
                             break;
                         default:
                             className += "bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10";
