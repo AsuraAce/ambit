@@ -272,8 +272,8 @@ export const buildSqlWhereClause = (
         params.push(filters.maxCfg);
     }
 
-    // 9. Samplers (Array)
-    if (filters.samplers && filters.samplers.length > 0) {
+    // 9. Samplers (Array) - Skip if excluded (Disjunctive Faceting)
+    if (filters.samplers && filters.samplers.length > 0 && !excludeCategories.includes('samplers')) {
         const samplerConditions = filters.samplers.map(s => {
             params.push(s.toLowerCase().replace(/[_-]/g, ' '));
             // Normalize the stored sampler name in SQL to match the normalized filter value
@@ -282,8 +282,8 @@ export const buildSqlWhereClause = (
         conditions.push(`(${samplerConditions.join(' OR ')})`);
     }
 
-    // 10. Generation Types (Array)
-    if (filters.generationTypes && filters.generationTypes.length > 0) {
+    // 10. Generation Types (Array) - Skip if excluded (Disjunctive Faceting)
+    if (filters.generationTypes && filters.generationTypes.length > 0 && !excludeCategories.includes('generationTypes')) {
         const genTypeConditions = filters.generationTypes.map(() => {
             return `json_extract(metadata_json, '$.generationType') = ?`;
         });

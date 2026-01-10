@@ -30,15 +30,17 @@ interface SelectableRowProps {
     label: string;
     isSelected: boolean;
     onClick: () => void;
+    className?: string;
+    disabled?: boolean;
 }
 
-export const SelectableRow: React.FC<SelectableRowProps> = ({ label, isSelected, onClick }) => (
+export const SelectableRow: React.FC<SelectableRowProps> = ({ label, isSelected, onClick, className, disabled }) => (
     <div
-        onClick={onClick}
-        className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border ${isSelected
+        onClick={disabled ? undefined : onClick}
+        className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border ${isSelected
             ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
             : 'bg-transparent border-transparent text-gray-500 dark:text-gray-400 hover:bg-white/40 dark:hover:bg-white/5'
-            }`}
+            } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} ${className || ''}`}
     >
         <span>{label}</span>
         {isSelected ? (

@@ -19,7 +19,9 @@ const ChipSelect: React.FC<{
     selected: string[];
     onChange: (selected: string[]) => void;
     formatLabel?: (value: string) => string;
-}> = ({ label, options, selected, onChange, formatLabel }) => {
+    /** Optional list of currently available options (for dimming unavailable ones) */
+    availableOptions?: string[];
+}> = ({ label, options, selected, onChange, formatLabel, availableOptions }) => {
     if (options.length === 0) return null;
 
     const toggleOption = (opt: string) => {
@@ -32,19 +34,30 @@ const ChipSelect: React.FC<{
 
     const format = formatLabel || ((v: string) => v);
 
+    // If availableOptions is provided, use it for availability check; otherwise all are available
+    const isAvailable = (opt: string) => {
+        if (!availableOptions) return true;
+        if (selected.includes(opt)) return true; // Always show selected as available
+        return availableOptions.includes(opt);
+    };
+
     return (
         <div className="space-y-2">
             <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</div>
             <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-2">
                 {options.map(opt => {
                     const isSelected = selected.includes(opt);
+                    const available = isAvailable(opt);
                     return (
                         <button
                             key={opt}
-                            onClick={() => toggleOption(opt)}
+                            onClick={() => available && toggleOption(opt)}
+                            disabled={!available}
                             className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all ${isSelected
                                 ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300'
-                                : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-300 dark:hover:border-sage-500/30'
+                                : available
+                                    ? 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-300 dark:hover:border-sage-500/30'
+                                    : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-600 opacity-50 cursor-not-allowed line-through'
                                 }`}
                         >
                             <span className="flex items-center gap-1">
@@ -179,8 +192,8 @@ export const ParameterSection: React.FC<ParameterSectionProps> = ({
                     />
                 )}
 
-                {/* Generation Type Filter - only if types exist */}
-                {hasGenTypes && ranges?.generationTypes && (
+                {/* Generation Type Filter - uses disjunctive query (won't self-filter) */}
+                {ranges?.generationTypes && ranges.generationTypes.length > 0 && (
                     <ChipSelect
                         label="Generation Type"
                         options={ranges.generationTypes}

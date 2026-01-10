@@ -1,13 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { commands, ParameterRanges } from '../bindings';
-
-/**
- * Hook to fetch parameter ranges for dynamic filter UI.
- * Returns min/max for numeric parameters and distinct values for categorical ones.
- * Only shows parameters that have actual data in the database.
- */
-import { useQuery } from '@tanstack/react-query';
-import { commands, ParameterRanges } from '../bindings';
 import { FilterState } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useCollections } from '../contexts/CollectionContext';
@@ -17,7 +9,8 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
  * Hook to fetch parameter ranges for dynamic filter UI.
  * Returns min/max for numeric parameters and distinct values for categorical ones.
  * 
- * REACTIVE: Samplers and Generation Types respect the provided filters (drill-down).
+ * DISJUNCTIVE: Samplers and Generation Types exclude their OWN filter from the query
+ *              to prevent self-filtering while still respecting global filters.
  * GLOBAL: Steps and CFG ranges remain global (ignoring filters) for UI stability.
  */
 export function useParameterRangesQuery(filters: FilterState) {
@@ -25,20 +18,34 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { collections: allCollections } = useCollections();
 
     return useQuery<ParameterRanges>({
-        // Refetch when filters or context changes
-        queryKey: ['parameterRanges', filters, settings.maskingMode, settings.maskedKeywords, privacyEnabled, filters.collectionId],
+        // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
+        queryKey: [
+            'parameterRanges',
+            filters.collectionId,
+            filters.dateRange,
+            filters.models,
+            filters.tools,
+            filters.loras,
+            // Intentionally EXCLUDE samplers and generationTypes from query key
+            // so selecting them doesn't cause a refetch (Disjunctive)
+            settings.maskingMode,
+            settings.maskedKeywords,
+            privacyEnabled
+        ],
         queryFn: async () => {
-            // Build Where Clause
+            // Build Where Clause EXCLUDING samplers and generationTypes (Disjunctive Faceting)
+            // This ensures that selecting "Euler a" doesn't hide other samplers,
+            // and selecting "txt2img" doesn't hide other generation types.
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,
                 settings.maskingMode,
                 settings.maskedKeywords,
-                allCollections
+                allCollections,
+                false,
+                ['samplers', 'generationTypes'] // Exclude these from WHERE clause
             );
 
-            // Pass where clause, params, AND collectionId/loraName to backend
-            // This ensures manual collections and single-loras are properly JOINed
             const result = await commands.getParameterRanges(
                 where,
                 JSON.stringify(params),
@@ -56,4 +63,3 @@ export function useParameterRangesQuery(filters: FilterState) {
         placeholderData: (previousData) => previousData, // Smooth transitions
     });
 }
-

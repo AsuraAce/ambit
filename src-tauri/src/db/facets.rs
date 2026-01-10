@@ -267,7 +267,7 @@ pub async fn get_valid_facet_names(
         let tools = {
             let prefixed = prefix_columns(&base_where);
             let query = format!(
-                "SELECT DISTINCT i.tool FROM images i {} {} {} AND i.tool IS NOT NULL AND i.tool != ''",
+                "SELECT DISTINCT COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {} {} {}",
                 collection_join, lora_join, prefixed
             );
             let params = build_params(collection_id.is_some(), lora_name.is_some());
