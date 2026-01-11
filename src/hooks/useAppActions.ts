@@ -224,6 +224,19 @@ export const useAppActions = ({
         }
     };
 
+    const runBackfill = async () => {
+        addToast("Starting background backfill...", "info");
+        const { backfillParameterColumns } = await import('../services/db/maintenanceRepo');
+        const count = await backfillParameterColumns();
+        if (count > 0) {
+            addToast(`Backfill complete: ${count} images updated`, "success");
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            await queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
+        } else {
+            addToast("Backfill complete: No images needed updating", "success");
+        }
+    };
+
     return {
         executeDelete,
         handleDeleteViewerImage,
@@ -237,6 +250,8 @@ export const useAppActions = ({
         handleShortcutFavorite,
         handleShortcutPin,
         handleRename,
-        toggleFavorite
+        toggleFavorite,
+        runBackfill
     };
 };
+

@@ -117,7 +117,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     // const storeToggleFavorite = useSearchStore(s => s.toggleFavorite);
     // const fetchData = useSearchStore(s => s.fetchData);
 
-    // Derived loadMore
+    // Expose actions for debugging/maintenance
+    React.useEffect(() => {
+        // @ts-ignore
+        if (!window.app) window.app = {};
+        // @ts-ignore
+        window.app.actions = actions;
+    }, [actions]);
+
     // Derived loadMore
     // const loadMoreImages = React.useCallback(() => {
     //    fetchData(true, [...collections, ...smartCollections]);

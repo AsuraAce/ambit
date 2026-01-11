@@ -57,12 +57,16 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
 
                 {
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, model_hash, model_name, tool, resolved_model_name)
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
                              json_extract(?7, '$.tool'),
-                             COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?7, '$.modelHash')), json_extract(?7, '$.model'))
+                             COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?7, '$.modelHash')), json_extract(?7, '$.model')),
+                             CAST(json_extract(?7, '$.steps') AS INTEGER),
+                             CAST(json_extract(?7, '$.cfg') AS REAL),
+                             REPLACE(REPLACE(LOWER(json_extract(?7, '$.sampler')), '_', ' '), '-', ' '),
+                             json_extract(?7, '$.generationType')
                          )
                          ON CONFLICT(id) DO UPDATE SET 
                             path=excluded.path,
@@ -79,7 +83,11 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             model_hash=excluded.model_hash,
                             model_name=excluded.model_name,
                             tool=excluded.tool,
-                            resolved_model_name=excluded.resolved_model_name"
+                            resolved_model_name=excluded.resolved_model_name,
+                            steps=excluded.steps,
+                            cfg=excluded.cfg,
+                            sampler=excluded.sampler,
+                            generation_type=excluded.generation_type"
                     ).map_err(|e| e.to_string())?;
 
 
@@ -311,6 +319,104 @@ pub async fn reset_migration_18(app: tauri::AppHandle) -> Result<String, String>
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
+/// This runs in batches to avoid blocking the database and can be called after app startup.
+/// Returns the number of rows updated.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn backfill_parameter_columns(app: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        let start = std::time::Instant::now();
+        
+        // Diagnostic: Check actual column population status
+        let total_images: i64 = conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0)).unwrap_or(0);
+        let with_steps: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE steps IS NOT NULL", [], |r| r.get(0)).unwrap_or(0);
+        let with_metadata: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE metadata_json IS NOT NULL", [], |r| r.get(0)).unwrap_or(0);
+        
+        println!("[Backfill] Diagnostics: {} total images, {} with steps column, {} with metadata_json", 
+            total_images, with_steps, with_metadata);
+        
+        // Check how many rows need backfilling
+        let needs_backfill: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM images WHERE steps IS NULL AND metadata_json IS NOT NULL",
+            [],
+            |r| r.get(0)
+        ).unwrap_or(0);
+        
+        if needs_backfill == 0 {
+            println!("[Backfill] No rows need backfilling.");
+            return Ok(0);
+        }
+        
+        // Diagnostic: Sample one row to see if it has steps in the JSON
+        let sample_result: Result<(String, String), _> = conn.query_row(
+            "SELECT COALESCE(CAST(json_extract(metadata_json, '$.steps') AS TEXT), 'NULL'), substr(metadata_json, 1, 200) 
+             FROM images WHERE steps IS NULL AND metadata_json IS NOT NULL LIMIT 1",
+            [],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        );
+        
+        if let Ok((steps_in_json, sample_json)) = &sample_result {
+            println!("[Backfill] Sample NULL row - steps in JSON: {}, JSON preview: {}", steps_in_json, sample_json);
+            
+            // If sample shows NULL in JSON, these images don't have generation metadata
+            if steps_in_json == "NULL" {
+                println!("[Backfill] These {} images don't have generation metadata in JSON - skipping backfill.", needs_backfill);
+                println!("[Backfill] Running ANALYZE to optimize future queries...");
+                let _ = conn.execute("ANALYZE images", []);
+                let duration = start.elapsed();
+                println!("[Backfill] Completed in {:.2}s (0 rows needed actual update)", duration.as_secs_f64());
+                return Ok(0);
+            }
+        }
+        
+        // Check how many rows actually have data to backfill
+        let with_data: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM images WHERE steps IS NULL AND json_extract(metadata_json, '$.steps') IS NOT NULL",
+            [],
+            |r| r.get(0)
+        ).unwrap_or(0);
+        
+        println!("[Backfill] Starting backfill of {} rows ({} have source data)...", needs_backfill, with_data);
+        
+        // Run ANALYZE first to help the query planner use the index on steps
+        println!("[Backfill] Running ANALYZE to optimize query plan...");
+        let _ = conn.execute("ANALYZE images", []);
+        
+        if with_data == 0 {
+            println!("[Backfill] No rows have source data - nothing to update.");
+            let duration = start.elapsed();
+            println!("[Backfill] Completed in {:.2}s", duration.as_secs_f64());
+            return Ok(0);
+        }
+        
+        // Only update rows that actually have steps data in JSON
+        let updated = conn.execute(
+            "UPDATE images SET 
+                steps = CAST(json_extract(metadata_json, '$.steps') AS INTEGER),
+                cfg = CAST(json_extract(metadata_json, '$.cfg') AS REAL),
+                sampler = REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' '),
+                generation_type = json_extract(metadata_json, '$.generationType')
+             WHERE steps IS NULL 
+               AND json_extract(metadata_json, '$.steps') IS NOT NULL",
+            []
+        ).map_err(|e| e.to_string())?;
+        
+        let duration = start.elapsed();
+        println!("[Backfill] Completed {} rows in {:.2}s", updated, duration.as_secs_f64());
+        
+        // Run ANALYZE again after the update
+        let _ = conn.execute("ANALYZE images", []);
+        
+        Ok(updated)
+    }).await.map_err(|e| e.to_string())?
+}
+
+
 /// Numeric range for a parameter
 #[derive(serde::Serialize, specta::Type)]
 pub struct NumericRange {
@@ -385,12 +491,12 @@ pub async fn get_parameter_ranges(
             from_clause.push_str(&format!(" JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '{}'", lora));
         }
 
-        // Steps range (GLOBAL: ignore filters)
+        // Steps range (GLOBAL: ignore filters) - Using denormalized column
         let steps: Option<NumericRange> = conn.query_row(
-            "SELECT MIN(json_extract(metadata_json, '$.steps')), MAX(json_extract(metadata_json, '$.steps')) 
+            "SELECT MIN(steps), MAX(steps) 
              FROM images 
              WHERE is_deleted = 0 
-               AND json_extract(metadata_json, '$.steps') > 0",
+               AND steps > 0",
             [],
             |row| {
                 let min: Option<f64> = row.get(0).ok();
@@ -402,12 +508,12 @@ pub async fn get_parameter_ranges(
             }
         ).unwrap_or(None);
         
-        // CFG range (GLOBAL: ignore filters)
+        // CFG range (GLOBAL: ignore filters) - Using denormalized column
         let cfg: Option<NumericRange> = conn.query_row(
-            "SELECT MIN(json_extract(metadata_json, '$.cfg')), MAX(json_extract(metadata_json, '$.cfg')) 
+            "SELECT MIN(cfg), MAX(cfg) 
              FROM images 
              WHERE is_deleted = 0 
-               AND json_extract(metadata_json, '$.cfg') > 0",
+               AND cfg > 0",
             [],
             |row| {
                 let min: Option<f64> = row.get(0).ok();
@@ -419,7 +525,7 @@ pub async fn get_parameter_ranges(
             }
         ).unwrap_or(None);
         
-        // Denoising strength range (GLOBAL: ignore filters)
+        // Denoising strength range (GLOBAL: ignore filters) - still uses json_extract since not denormalized
         let denoising_strength: Option<NumericRange> = conn.query_row(
             "SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) 
              FROM images 
@@ -436,15 +542,15 @@ pub async fn get_parameter_ranges(
             }
         ).unwrap_or(None);
         
-        // Distinct samplers (REACTIVE: respect filters)
+        // Distinct samplers (REACTIVE: respect filters) - Using denormalized column
         let samplers: Vec<String> = {
             let sql = format!(
-                "SELECT DISTINCT json_extract(metadata_json, '$.sampler')
+                "SELECT DISTINCT sampler
                  {} 
                  {} 
-                 AND json_extract(metadata_json, '$.sampler') IS NOT NULL 
-                 AND json_extract(metadata_json, '$.sampler') != '' 
-                 AND json_extract(metadata_json, '$.sampler') != 'Unknown'
+                 AND sampler IS NOT NULL 
+                 AND sampler != '' 
+                 AND sampler != 'unknown'
                  ORDER BY 1",
                  from_clause, // Injects "FROM images JOIN ..."
                  reactive_where // Injects "WHERE ..."
@@ -457,15 +563,15 @@ pub async fn get_parameter_ranges(
             rows.filter_map(|r| r.ok()).collect()
         };
         
-        // Distinct generation types (REACTIVE: respect filters)
+        // Distinct generation types (REACTIVE: respect filters) - Using denormalized column
         let generation_types: Vec<String> = {
             let sql = format!(
-                "SELECT DISTINCT json_extract(metadata_json, '$.generationType')
+                "SELECT DISTINCT generation_type
                  {} 
                  {} 
-                 AND json_extract(metadata_json, '$.generationType') IS NOT NULL 
-                 AND json_extract(metadata_json, '$.generationType') != '' 
-                 AND json_extract(metadata_json, '$.generationType') != 'unknown'
+                 AND generation_type IS NOT NULL 
+                 AND generation_type != '' 
+                 AND generation_type != 'unknown'
                  ORDER BY 1",
                  from_clause, // Injects "FROM images JOIN ..."
                  reactive_where // Injects "WHERE ..."

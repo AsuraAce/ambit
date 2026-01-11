@@ -61,6 +61,19 @@ async getParameterRanges(whereClause: string | null, paramsJson: string | null, 
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
+ * This runs in batches to avoid blocking the database and can be called after app startup.
+ * Returns the number of rows updated.
+ */
+async backfillParameterColumns() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("backfill_parameter_columns") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async rebuildFacetCache() : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
@@ -73,6 +86,9 @@ async rebuildFacetCache() : Promise<Result<number, string>> {
  * Get distinct facet names that exist in the current filtered result set.
  * This is used for drill-down filtering - hiding facets that have no images
  * in the current filter context.
+ * 
+ * OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
+ * to reduce database round-trips and allow SQLite to share table scans.
  */
 async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null) : Promise<Result<ValidFacetNames, string>> {
     try {

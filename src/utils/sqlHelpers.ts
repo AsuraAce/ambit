@@ -254,38 +254,38 @@ export const buildSqlWhereClause = (
         }
     }
 
-    // 8. Range Sliders
+    // 8. Range Sliders - Use denormalized columns (perf: no json_extract!)
     if (filters.minSteps !== undefined) {
-        conditions.push("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) >= ?");
+        conditions.push("steps >= ?");
         params.push(filters.minSteps);
     }
     if (filters.maxSteps !== undefined) {
-        conditions.push("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) <= ?");
+        conditions.push("steps <= ?");
         params.push(filters.maxSteps);
     }
     if (filters.minCfg !== undefined) {
-        conditions.push("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) >= ?");
+        conditions.push("cfg >= ?");
         params.push(filters.minCfg);
     }
     if (filters.maxCfg !== undefined) {
-        conditions.push("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) <= ?");
+        conditions.push("cfg <= ?");
         params.push(filters.maxCfg);
     }
 
-    // 9. Samplers (Array) - Skip if excluded (Disjunctive Faceting)
+    // 9. Samplers (Array) - Use denormalized sampler column (already normalized)
     if (filters.samplers && filters.samplers.length > 0 && !excludeCategories.includes('samplers')) {
-        const samplerConditions = filters.samplers.map(s => {
-            params.push(s.toLowerCase().replace(/[_-]/g, ' '));
-            // Normalize the stored sampler name in SQL to match the normalized filter value
-            return `REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' ') = ?`;
+        const samplerConditions = filters.samplers.map(() => {
+            return `sampler = ?`;
         });
+        // Push normalized values to match the pre-normalized column
+        filters.samplers.forEach(s => params.push(s.toLowerCase().replace(/[_-]/g, ' ')));
         conditions.push(`(${samplerConditions.join(' OR ')})`);
     }
 
-    // 10. Generation Types (Array) - Skip if excluded (Disjunctive Faceting)
+    // 10. Generation Types (Array) - Use denormalized generation_type column
     if (filters.generationTypes && filters.generationTypes.length > 0 && !excludeCategories.includes('generationTypes')) {
         const genTypeConditions = filters.generationTypes.map(() => {
-            return `json_extract(metadata_json, '$.generationType') = ?`;
+            return `generation_type = ?`;
         });
         filters.generationTypes.forEach(gt => params.push(gt));
         conditions.push(`(${genTypeConditions.join(' OR ')})`);

@@ -921,6 +921,39 @@ pub fn init_db() -> Vec<Migration> {
     };
 
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28, migration29, migration30, migration31, migration32,
+        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(),
     ]
 }
+
+/// Migration 33: Denormalize parameter columns for faster filtering
+/// Adds steps, cfg, sampler, and generation_type columns with indexes
+/// 
+/// NOTE: Backfill is done via TRIGGER on insert and via a separate background command
+/// to avoid blocking app startup on large databases.
+fn migration33() -> Migration {
+    Migration {
+        version: 33,
+        description: "denormalize_parameter_columns",
+        sql: "
+            -- Add new columns for fast parameter filtering (instant, no row scan)
+            ALTER TABLE images ADD COLUMN steps INTEGER;
+            ALTER TABLE images ADD COLUMN cfg REAL;
+            ALTER TABLE images ADD COLUMN sampler TEXT;
+            ALTER TABLE images ADD COLUMN generation_type TEXT;
+            
+            -- Create indexes (will be populated as data is backfilled)
+            CREATE INDEX IF NOT EXISTS idx_images_steps ON images(steps);
+            CREATE INDEX IF NOT EXISTS idx_images_cfg ON images(cfg);
+            CREATE INDEX IF NOT EXISTS idx_images_sampler ON images(sampler);
+            CREATE INDEX IF NOT EXISTS idx_images_generation_type ON images(generation_type);
+            
+            -- Composite indexes for common filter patterns
+            CREATE INDEX IF NOT EXISTS idx_images_filter_steps ON images(is_deleted, steps);
+            CREATE INDEX IF NOT EXISTS idx_images_filter_cfg ON images(is_deleted, cfg);
+            CREATE INDEX IF NOT EXISTS idx_images_filter_sampler ON images(is_deleted, sampler, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_images_filter_gen_type ON images(is_deleted, generation_type, timestamp DESC);
+        ",
+        kind: MigrationKind::Up,
+    }
+}
+

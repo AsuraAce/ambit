@@ -99,6 +99,9 @@ pub struct ValidFacetNames {
 /// Get distinct facet names that exist in the current filtered result set.
 /// This is used for drill-down filtering - hiding facets that have no images
 /// in the current filter context.
+/// 
+/// OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
+/// to reduce database round-trips and allow SQLite to share table scans.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn get_valid_facet_names(
@@ -149,7 +152,8 @@ pub async fn get_valid_facet_names(
             let columns = [
                 "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
                 "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
-                "metadata_json", "path", "id", "width", "height", "file_size"
+                "metadata_json", "path", "id", "width", "height", "file_size",
+                "steps", "cfg", "sampler", "generation_type" // Added new denormalized columns
             ];
             
             for col in columns {
@@ -158,7 +162,7 @@ pub async fn get_valid_facet_names(
                     (format!("WHERE {}=", col), format!("WHERE i.{}=", col)),
                     (format!(" {} ", col), format!(" i.{} ", col)),
                     (format!(" {}=", col), format!(" i.{}=", col)),
-                    (format!("({}", col), format!("(i.{}", col)),
+                    (format!("({}",  col), format!("(i.{}", col)),
                 ];
                 for (from, to) in patterns {
                     result = result.replace(&from, &to);
@@ -166,8 +170,6 @@ pub async fn get_valid_facet_names(
             }
             result
         };
-
-        println!("[ValidFacets] WHERE: {}, CollectionId: {:?}, LoraName: {:?}", base_where, collection_id, lora_name);
 
         // Build query parts for collection and LoRA JOINs
         let collection_join = collection_id.as_ref().map(|_| 
@@ -178,104 +180,68 @@ pub async fn get_valid_facet_names(
             "JOIN image_loras il_filter ON il_filter.image_id = i.id AND il_filter.lora_name = ?"
         ).unwrap_or("");
 
-        // Build params for each query (base params + collection_id + lora_name as needed)
-        let build_params = |include_collection: bool, include_lora: bool| -> Vec<rusqlite::types::Value> {
-            let mut p = Vec::new();
-            
-            // JOIN params come first in the SQL string
-            if include_collection {
-                if let Some(ref cid) = collection_id {
-                    p.push(rusqlite::types::Value::Text(cid.clone()));
-                }
+        let prefixed = prefix_columns(&base_where);
+
+        // Build combined UNION ALL query for all facet types
+        // Each subquery adds a 'facet_type' discriminator column
+        let combined_query = format!(
+            "SELECT 'checkpoint' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
+             UNION ALL
+             SELECT 'lora', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
+             UNION ALL
+             SELECT 'embedding', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
+             UNION ALL
+             SELECT 'hypernetwork', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
+             UNION ALL
+             SELECT 'tool', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}",
+            coll = collection_join,
+            lora = lora_join,
+            where = prefixed
+        );
+
+        // Build params - we need to repeat them 5 times (once per subquery)
+        let mut all_params: Vec<rusqlite::types::Value> = Vec::new();
+        for _ in 0..5 {
+            if let Some(ref cid) = collection_id {
+                all_params.push(rusqlite::types::Value::Text(cid.clone()));
             }
-            if include_lora {
-                if let Some(ref ln) = lora_name {
-                    p.push(rusqlite::types::Value::Text(ln.clone()));
-                }
+            if let Some(ref ln) = lora_name {
+                all_params.push(rusqlite::types::Value::Text(ln.clone()));
             }
-            
-            // WHERE params come last
-            p.extend(sql_params.clone());
-            p
-        };
+            all_params.extend(sql_params.clone());
+        }
 
-        // 1. Checkpoints - query images with optional collection/lora JOINs
-        let checkpoints = {
-            let prefixed = prefix_columns(&base_where);
-            let query = format!(
-                "SELECT DISTINCT i.resolved_model_name FROM images i {} {} {} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''",
-                collection_join, lora_join, prefixed
-            );
-            println!("[ValidFacets] Checkpoint query: {}", query);
-            let params = build_params(collection_id.is_some(), lora_name.is_some());
-            let mut stmt = conn.prepare(&query).map_err(|e| format!("Checkpoint query failed: {}", e))?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(&params), |row| row.get::<_, String>(0))
-                .map_err(|e| format!("Checkpoint query execution failed: {}", e))?;
-            let result: Vec<_> = rows.filter_map(|r| r.ok()).collect();
-            println!("[ValidFacets] Checkpoints found: {}", result.len());
-            result
-        };
+        // Execute single query and categorize results
+        let mut checkpoints: Vec<String> = Vec::new();
+        let mut loras: Vec<String> = Vec::new();
+        let mut embeddings: Vec<String> = Vec::new();
+        let mut hypernetworks: Vec<String> = Vec::new();
+        let mut tools: Vec<String> = Vec::new();
 
-        // 2. LoRAs - use junction table with optional collection JOIN
-        let loras = {
-            let prefixed = prefix_columns(&base_where);
-            // For LoRAs, we add a JOIN for image_loras to get DISTINCT lora names
-            // If filtering by lora_name, we still want to show OTHER loras used with those images
-            let query = format!(
-                "SELECT DISTINCT il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {} {} {}",
-                collection_join, lora_join, prefixed
-            );
-            println!("[ValidFacets] LoRA query: {}", query);
-            let params = build_params(collection_id.is_some(), lora_name.is_some());
-            let mut stmt = conn.prepare(&query).map_err(|e| format!("LoRA query failed: {}", e))?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(&params), |row| row.get::<_, String>(0))
-                .map_err(|e| format!("LoRA query execution failed: {}", e))?;
-            let result: Vec<_> = rows.filter_map(|r| r.ok()).collect();
-            println!("[ValidFacets] LoRAs found: {}", result.len());
-            result
-        };
+        // Use HashSets for deduplication (UNION ALL doesn't dedupe)
+        use std::collections::HashSet;
+        let mut cp_set: HashSet<String> = HashSet::new();
+        let mut lora_set: HashSet<String> = HashSet::new();
+        let mut emb_set: HashSet<String> = HashSet::new();
+        let mut hyper_set: HashSet<String> = HashSet::new();
+        let mut tool_set: HashSet<String> = HashSet::new();
 
-        // 3. Embeddings - use junction table
-        let embeddings = {
-            let prefixed = prefix_columns(&base_where);
-            let query = format!(
-                "SELECT DISTINCT ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {} {} {}",
-                collection_join, lora_join, prefixed
-            );
-            let params = build_params(collection_id.is_some(), lora_name.is_some());
-            let mut stmt = conn.prepare(&query).map_err(|e| format!("Embedding query failed: {}", e))?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(&params), |row| row.get::<_, String>(0))
-                .map_err(|e| format!("Embedding query execution failed: {}", e))?;
-            rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
-        };
+        let mut stmt = conn.prepare(&combined_query).map_err(|e| format!("Combined facet query failed: {}", e))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(&all_params), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| format!("Combined facet query execution failed: {}", e))?;
 
-        // 4. Hypernetworks - use junction table
-        let hypernetworks = {
-            let prefixed = prefix_columns(&base_where);
-            let query = format!(
-                "SELECT DISTINCT ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {} {} {}",
-                collection_join, lora_join, prefixed
-            );
-            let params = build_params(collection_id.is_some(), lora_name.is_some());
-            let mut stmt = conn.prepare(&query).map_err(|e| format!("Hypernetwork query failed: {}", e))?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(&params), |row| row.get::<_, String>(0))
-                .map_err(|e| format!("Hypernetwork query execution failed: {}", e))?;
-            rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
-        };
-
-        // 5. Tools - use denormalized column with optional collection/lora JOINs
-        let tools = {
-            let prefixed = prefix_columns(&base_where);
-            let query = format!(
-                "SELECT DISTINCT COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {} {} {}",
-                collection_join, lora_join, prefixed
-            );
-            let params = build_params(collection_id.is_some(), lora_name.is_some());
-            let mut stmt = conn.prepare(&query).map_err(|e| format!("Tool query failed: {}", e))?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(&params), |row| row.get::<_, String>(0))
-                .map_err(|e| format!("Tool query execution failed: {}", e))?;
-            rows.filter_map(|r| r.ok()).collect::<Vec<_>>()
-        };
+        for row in rows.flatten() {
+            let (facet_type, name) = row;
+            match facet_type.as_str() {
+                "checkpoint" => { if cp_set.insert(name.clone()) { checkpoints.push(name); } }
+                "lora" => { if lora_set.insert(name.clone()) { loras.push(name); } }
+                "embedding" => { if emb_set.insert(name.clone()) { embeddings.push(name); } }
+                "hypernetwork" => { if hyper_set.insert(name.clone()) { hypernetworks.push(name); } }
+                "tool" => { if tool_set.insert(name.clone()) { tools.push(name); } }
+                _ => {}
+            }
+        }
 
         println!("[ValidFacets] Results - CP:{} LoRAs:{} Emb:{} Hyper:{} Tools:{}", 
             checkpoints.len(), loras.len(), embeddings.len(), hypernetworks.len(), tools.len());
@@ -289,6 +255,7 @@ pub async fn get_valid_facet_names(
         })
     }).await.map_err(|e| e.to_string())?
 }
+
 
 fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();

@@ -18,6 +18,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::reset_migration_18,
             db::commands::optimize_database,
             db::commands::get_parameter_ranges,
+            db::commands::backfill_parameter_columns,
             db::facets::rebuild_facet_cache,
             db::facets::get_valid_facet_names,
 

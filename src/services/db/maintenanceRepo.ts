@@ -4,6 +4,19 @@ import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 
+/**
+ * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
+ * This should be called once after migration 33 to populate existing data.
+ * Returns the number of rows updated.
+ */
+export const backfillParameterColumns = async (): Promise<number> => {
+    console.log('[Backfill] Starting parameter column backfill...');
+    const count = await unwrap(commands.backfillParameterColumns());
+    console.log(`[Backfill] Completed. ${count} rows updated.`);
+    return count;
+};
+
+
 export const normalizeAllPaths = async () => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
