@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin, ListChecks } from 'lucide-react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin, Circle, CircleDot } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
@@ -347,7 +347,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                 ? "Match All: Show images that have EVERY selected item"
                                 : "Match Any: Show images with AT LEAST ONE selected item"}
                         >
-                            {isAllMode ? <ListChecks className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
+                            {isAllMode ? <CircleDot className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
@@ -368,7 +368,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     )}
 
                     <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
-                        <AnimatePresence mode="popLayout">
+                        <AnimatePresence mode="popLayout" initial={false}>
                             {filteredItems.map(item => (
                                 <motion.div
                                     key={`${item.name}-${item.hash || 'no-hash'}`}
@@ -376,7 +376,11 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
-                                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                                    transition={{
+                                        layout: { duration: 0.2, ease: 'easeInOut' },
+                                        opacity: { duration: 0.15 },
+                                        scale: { duration: 0.15 }
+                                    }}
                                 >
                                     {viewMode === 'grid' ? renderGridItem(item) : renderListItem(item)}
                                 </motion.div>
