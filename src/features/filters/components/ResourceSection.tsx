@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin, ListChecks } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
@@ -290,6 +291,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         );
     };
 
+    const isAllMode = filters.matchModes?.[filterKey] === 'all';
+
     return (
         <div className="space-y-2">
             <SectionHeader
@@ -297,8 +300,11 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 isOpen={isOpen}
                 onToggle={onToggle}
                 isLoading={isLoading}
-                action={isOpen && (
-                    <div className="flex items-center gap-1">
+            />
+            {isOpen && (
+                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300 ease-spring">
+                    {/* Toolbar Row */}
+                    <div className="flex items-center gap-1.5 px-2">
                         <SortDropdown
                             title={`Sort ${singularType}s`}
                             options={[
@@ -311,31 +317,21 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             ]}
                             currentValue={sortOption}
                             onSelect={(id) => setSortOption(id as any)}
+                            align="left"
+                            triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                         />
-
                         <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const nextMode = viewMode === 'list' ? 'grid' : 'list';
-                                setSettings(prev => ({
-                                    ...prev,
-                                    resourceViewModes: {
-                                        ...prev.resourceViewModes,
-                                        [type]: nextMode
-                                    }
-                                }));
-                            }}
-                            className={`p-1 rounded transition-colors ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                            onClick={toggleViewMode}
+                            className={`transition-colors p-1.5 rounded-lg border ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                             title={viewMode === 'list' ? "Switch to Grid View" : "Switch to List View"}
                         >
                             {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
                         </button>
-                        {/* Match Mode Toggle */}
+                        {/* Match Mode Toggle - Icon Only */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                const currentMode = filters.matchModes?.[filterKey] || 'any';
-                                const nextMode = currentMode === 'any' ? 'all' : 'any';
+                                const nextMode = isAllMode ? 'any' : 'all';
                                 setFilters(prev => ({
                                     ...prev,
                                     matchModes: {
@@ -344,39 +340,24 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                     }
                                 }));
                             }}
-                            className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-[10px] font-medium transition-colors border ${(filters.matchModes?.[filterKey] === 'all')
-                                ? 'bg-sage-100 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 border-sage-200 dark:border-sage-500/30'
-                                : 'bg-transparent text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-gray-300'
-                                }`}
-                            title={(filters.matchModes?.[filterKey] === 'all')
-                                ? "Match All (AND): Images must have ALL selected items"
-                                : "Match Any (OR): Images can have ANY selected item"}
+                            className={`transition-colors p-1.5 rounded-lg border ${isAllMode
+                                ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30'
+                                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                            title={isAllMode
+                                ? "Match All: Show images that have EVERY selected item"
+                                : "Match Any: Show images with AT LEAST ONE selected item"}
                         >
-                            {(filters.matchModes?.[filterKey] === 'all') ? (
-                                <>
-                                    <span className="text-[9px] uppercase tracking-wider">All</span>
-                                    <ListChecks className="w-3 h-3" />
-                                </>
-                            ) : (
-                                <>
-                                    <span className="text-[9px] uppercase tracking-wider">Any</span>
-                                    <ListIcon className="w-3 h-3" />
-                                </>
-                            )}
+                            {isAllMode ? <ListChecks className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
                         </button>
-
                         <button
-                            onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); }}
-                            className={`p-1 rounded ${isSearchOpen ? 'text-sage-500' : 'text-gray-400 hover:text-gray-600'}`}
-                            title={`Filter ${singularType}s`}
+                            onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
+                            className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                            title={`Search ${singularType}s`}
                         >
                             <Search className="w-3.5 h-3.5" />
                         </button>
                     </div>
-                )}
-            />
-            {isOpen && (
-                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300 ease-spring">
+
                     {isSearchOpen && (
                         <SearchInput
                             value={searchQuery}
@@ -387,7 +368,20 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     )}
 
                     <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
-                        {filteredItems.map(item => viewMode === 'grid' ? renderGridItem(item) : renderListItem(item))}
+                        <AnimatePresence mode="popLayout">
+                            {filteredItems.map(item => (
+                                <motion.div
+                                    key={`${item.name}-${item.hash || 'no-hash'}`}
+                                    layout
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                                >
+                                    {viewMode === 'grid' ? renderGridItem(item) : renderListItem(item)}
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
 
                         {filteredItems.length === 0 && !isLoading && (
                             <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>
