@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
+import { useLibraryStore } from '../stores/libraryStore';
+
 
 interface UseLibraryStatsQueryProps {
     filters: FilterState;
@@ -70,8 +72,11 @@ export const useLibraryStatsQuery = ({
         );
     }, [filters]);
 
+    // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
+    const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
+
     return useQuery({
-        queryKey: ['libraryStats', filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
             const searchRepo = await import('../services/db/searchRepo');
 

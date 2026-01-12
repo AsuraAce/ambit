@@ -128,16 +128,16 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
             setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
 
-            // Rebuild facet cache asynchronously to prevent UI freeze
-            setTimeout(async () => {
-                try {
-                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
-                    await rebuildFacetCache();
-                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
-                } catch (e) {
-                    console.error('[Sync] Failed to rebuild facet cache after sync', e);
-                }
-            }, 50);
+            // Rebuild facet cache and signal UI to refresh
+            try {
+                const { rebuildFacetCache } = await import('../services/db/imageRepo');
+                await rebuildFacetCache();
+                // Increment version to trigger React Query refetch in useLibraryStatsQuery
+                useLibraryStore.getState().incrementFacetCacheVersion();
+                setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
+            } catch (e) {
+                console.error('[Sync] Failed to rebuild facet cache after sync', e);
+            }
 
             if (options.mode === 'manual' && newTs) {
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));

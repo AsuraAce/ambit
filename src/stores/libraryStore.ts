@@ -37,6 +37,9 @@ interface LibraryState {
     isActivityDockDismissed: boolean;
     isPopulatingThumbnails: boolean;
 
+    // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
+    facetCacheVersion: number;
+
     // Actions
     setSyncStatus: (status: SyncStatus) => void;
     setSyncProgress: (progress: SyncProgress) => void;
@@ -53,6 +56,7 @@ interface LibraryState {
     setModelResolutionProgress: (progress: SyncProgress | null) => void;
     setIsActivityDockDismissed: (val: boolean) => void;
     setIsPopulatingThumbnails: (val: boolean) => void;
+    incrementFacetCacheVersion: () => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -79,6 +83,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     modelResolutionProgress: null,
     isActivityDockDismissed: false,
     isPopulatingThumbnails: false,
+    facetCacheVersion: 0,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -96,4 +101,5 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setModelResolutionProgress: (progress) => set({ modelResolutionProgress: progress }),
     setIsActivityDockDismissed: (val) => set({ isActivityDockDismissed: val }),
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
+    incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 }));

@@ -5,6 +5,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
+import { useLibraryStore } from '../stores/libraryStore';
 
 export interface ImportStats {
     processed: number;
@@ -204,6 +205,8 @@ export const processNativePaths = async (
     try {
         const { rebuildFacetCache } = await import('./db/imageRepo');
         await rebuildFacetCache();
+        // Increment version to trigger React Query refetch in useLibraryStatsQuery
+        useLibraryStore.getState().incrementFacetCacheVersion();
     } catch (e) {
         console.error('[Import] Failed to rebuild facet cache after import', e);
     }
