@@ -15,6 +15,17 @@ interface SettingsModalProps {
 
 type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
 
+const TAB_LABELS: Record<SettingsTab, string> = {
+  general: 'General',
+  folders: 'Folders',
+  privacy: 'Privacy',
+  experiments: 'Experiments',
+  invokeai: 'InvokeAI',
+  a1111: 'SD WebUI',
+  comfyui: 'ComfyUI',
+  dev: 'Dev Tools'
+};
+
 interface TabButtonProps {
   id: SettingsTab;
   label: string;
@@ -127,8 +138,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
             <div className="flex-1 flex flex-col min-w-0 bg-background">
               <div className="flex items-center justify-between p-8 pb-4 shrink-0">
                 <div className="flex flex-col">
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white capitalize">
-                    {activeTab === 'a1111' ? 'SD WebUI' : activeTab}
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {TAB_LABELS[activeTab]}
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and connections.</p>
                 </div>

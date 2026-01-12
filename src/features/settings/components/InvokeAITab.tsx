@@ -70,15 +70,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     };
 
     return (
-        <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="px-1">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
-                    InvokeAI Integration
-                </h3>
-                <p className="text-sm text-gray-500">
-                    Connect and manage your InvokeAI installation.
-                </p>
-            </div>
+        <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">

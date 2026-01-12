@@ -192,12 +192,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     const hiddenCount = candidates.length - displayedCandidates.length;
 
     return (
-        <div className="space-y-6 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="px-1">
-                <p className="text-sm text-gray-500">
-                    Connect your A1111, Forge, SD.Next, or Anapnoe installation.
-                </p>
-            </div>
+        <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="text-[10px] font-black text-white px-4 py-2 bg-sage-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-sage-500/20">
