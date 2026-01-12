@@ -2,24 +2,29 @@
 export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): any {
     const rawVal = row[metaCol];
 
-    if (!rawVal) return {};
-
-    let meta: any = {};
-    if (rawVal) {
-        try {
-            meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
-        } catch (e) { meta = {}; }
-    }
-
-    const mapped: any = {
+    // Base metadata - always includes tool: 'InvokeAI' since we know the source
+    const baseMetadata: any = {
         tool: 'InvokeAI',
         positivePrompt: '',
         negativePrompt: '',
         hasWorkflowHint: row.has_workflow === 1 || row.has_workflow === true,
-        isIntermediate: row.is_intermediate === 1 || row.is_intermediate === true || (meta && meta.is_intermediate === true)
+        isIntermediate: row.is_intermediate === 1 || row.is_intermediate === true
     };
 
+    // Even if metadata is empty, we still know this is an InvokeAI image
+    if (!rawVal) return baseMetadata;
+
+    let meta: any = {};
+    try {
+        meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+    } catch (e) { meta = {}; }
+
+    // Use base metadata and extend with parsed values
+    const mapped = { ...baseMetadata };
+    if (meta.is_intermediate === true) mapped.isIntermediate = true;
+
     const root = meta.image || meta.generation || meta;
+
 
     if (root.positive_prompt) mapped.positivePrompt = root.positive_prompt;
     if (root.negative_prompt) mapped.negativePrompt = root.negative_prompt;
