@@ -211,7 +211,8 @@ export const buildSqlWhereClause = (
                     else if (val.startsWith('<')) { sql = "height < ?"; param = Number(val.slice(1)); }
                     else { sql = "height = ?"; param = Number(val); }
                 } else if (key === 'model') {
-                    sql = `metadata_json LIKE ?`;
+                    // Search specific model entries only - prevents matching random JSON keys like "scheuler"
+                    sql = `(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)`;
                     param = `%${val}%`;
                 } else if (key === 'seed') {
                     sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
@@ -234,13 +235,16 @@ export const buildSqlWhereClause = (
                     params.push(`%${val}%`);
                     continue; // Skip the normal sql handling below
                 } else if (key === 'sampler') {
-                    sql = `json_extract(metadata_json, '$.sampler') LIKE ?`;
+                    // Use indexed column
+                    sql = `sampler LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'tool') {
-                    sql = `json_extract(metadata_json, '$.tool') LIKE ?`;
+                    // Use indexed column
+                    sql = `tool LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'lora') {
-                    sql = `json_extract(metadata_json, '$.loras') LIKE ?`;
+                    // Use normalized junction table for accurate lookup
+                    sql = `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)`;
                     param = `%${val}%`;
                 } else if (key === 'upscaled') {
                     sql = `json_extract(metadata_json, '$.upscaled') = ?`;
