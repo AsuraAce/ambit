@@ -125,8 +125,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           {/* Favorite Icon */}
           {image.isFavorite && (
             <div
-              className="transition-all duration-300 animate-in zoom-in pointer-events-auto"
-              title="Favorite"
+              className="transition-all duration-300 animate-in zoom-in pointer-events-auto cursor-pointer active:scale-95"
+              title="Unfavorite"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFavorite(e);
+              }}
             >
               <Heart className="w-5 h-5 fill-red-500 text-red-500 drop-shadow-md" />
             </div>
@@ -141,10 +145,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
       )}
 
-      {/* Selection Checkbox */}
       <div
         className={`absolute top-2 left-2 z-20 transition-all duration-300 ease-spring cursor-pointer p-1 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'}`}
-        onClick={onToggleSelection}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelection(e);
+        }}
       >
         <div className={`w-5 h-5 rounded-full border flex items-center justify-center shadow-sm backdrop-blur-sm transition-colors ${isSelected ? 'bg-sage-500 border-sage-500' : 'bg-black/40 border-white/30 hover:bg-black/60'}`}>
           {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
@@ -190,7 +196,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
               )}
               <button
                 className="p-1.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer active:scale-95"
-                onClick={onToggleFavorite}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite(e);
+                }}
                 title={image.isFavorite ? "Unfavorite" : "Favorite"}
               >
                 <Heart className={`w-4 h-4 ${image.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
