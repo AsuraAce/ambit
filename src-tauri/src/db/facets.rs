@@ -1,5 +1,6 @@
 use rusqlite::params;
 use tauri::Emitter;
+use regex::Regex;
 use super::{resolve_db_path, configure_connection, ProgressPayload};
 
 #[tauri::command(rename_all = "camelCase")]
@@ -146,28 +147,46 @@ pub async fn get_valid_facet_names(
             where_clause.clone()
         };
 
+
         // Helper to create prefixed WHERE clause for queries that JOIN with images table aliased as 'i'
+        // Uses Regex to robustly identify "whole word" columns, avoiding matches inside other words
+        // or effectively handling parens/operators.
         let prefix_columns = |clause: &str| -> String {
-            let mut result = clause.to_string();
             let columns = [
                 "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
                 "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
                 "metadata_json", "path", "id", "width", "height", "file_size",
-                "steps", "cfg", "sampler", "generation_type" // Added new denormalized columns
+                "steps", "cfg", "sampler", "generation_type"
             ];
             
-            for col in columns {
-                let patterns = vec![
-                    (format!("WHERE {} ", col), format!("WHERE i.{} ", col)),
-                    (format!("WHERE {}=", col), format!("WHERE i.{}=", col)),
-                    (format!(" {} ", col), format!(" i.{} ", col)),
-                    (format!(" {}=", col), format!(" i.{}=", col)),
-                    (format!("({}",  col), format!("(i.{}", col)),
-                ];
-                for (from, to) in patterns {
-                    result = result.replace(&from, &to);
+            let mut result = clause.to_string();
+            
+            // Regex pattern:
+            // 1. (?i) Case insensitive (though columns are usually lowercase in our code)
+            // 2. \b(col1|col2|...)\b -> Match whole word only
+            // 3. We check if it's NOT already prefixed by i. manually by looking at our replacement?
+            //    Actually, regex replace_all doesn't look behind easily in Rust's regex crate (no lookaround).
+            //    BUT, if we just match \bcol\b, "i.col" matches "col" as a word boundary?
+            //    "i.col" -> "." is a boundary? Yes. 
+            //    So "i.col" would match "col". We need to avoid double prefixing.
+            //    Wait, "i.col". "." is NOT a word char. So "col" starts at boundary. 
+            //    We can match `(?P<prefix>i\.)?(?P<col>\b(col1|col2...)\b)`? 
+            //    And if prefix is there, keep it. If not, add it.
+            
+            // Construct the large OR pattern
+            let pattern_str = format!(r"(?i)(i\.)?\b({})\b", columns.join("|"));
+            let re = Regex::new(&pattern_str).unwrap(); // compiled once per call is fine, or lazy_static if frequent
+            
+            result = re.replace_all(&result, |caps: &regex::Captures| {
+                if caps.get(1).is_some() {
+                    // Already prefixed with "i."
+                    caps[0].to_string()
+                } else {
+                    // Not prefixed, add "i."
+                    format!("i.{}", &caps[2])
                 }
-            }
+            }).to_string();
+
             result
         };
 
@@ -639,4 +658,6 @@ mod tests {
             [], |r| r.get(0)).unwrap();
         assert_eq!(cp_thumb_manual, "manual_override.png", "Manual thumbnail should take precedence");
     }
+
+
 }

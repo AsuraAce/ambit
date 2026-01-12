@@ -214,6 +214,11 @@ export const buildSqlWhereClause = (
                     // Search specific model entries only - prevents matching random JSON keys like "scheuler"
                     sql = `(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)`;
                     param = `%${val}%`;
+                    // Push param twice for the two ? placeholders
+                    conditions.push(sql);
+                    params.push(param);
+                    params.push(param);
+                    continue; // Skip the normal sql handling below
                 } else if (key === 'seed') {
                     sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
                     param = `%${val}%`;
