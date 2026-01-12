@@ -29,21 +29,21 @@ async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>) : 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Reset migration 18 if it failed partially. This deletes the migration record
- * and allows it to run again on next app launch.
- */
-async resetMigration18() : Promise<Result<string, string>> {
+async optimizeDatabase() : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("reset_migration_18") };
+    return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async optimizeDatabase() : Promise<Result<string, string>> {
+/**
+ * Request a database purge on next app startup.
+ * Creates a marker file and immediately restarts the application.
+ */
+async purgeDatabase() : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
+    return { status: "ok", data: await TAURI_INVOKE("purge_database") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

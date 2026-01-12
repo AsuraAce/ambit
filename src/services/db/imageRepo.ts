@@ -310,28 +310,21 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     }
 };
 
-export const purgeLibrary = async () => {
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        console.log('[DB] Purging library (optimized)...');
+/**
+ * Purges the entire library database by calling the backend command.
+ * Returns the backend's message (e.g., instructions to restart).
+ */
+export const purgeLibrary = async (): Promise<string> => {
+    console.log('[Purge] Calling backend to purge database...');
+    const result = await commands.purgeDatabase();
+    console.log('[Purge] Backend response:', result);
 
-        // Drop triggers to speed up mass deletion on large libraries
-        console.log('[DB] Dropping FTS triggers...');
-        await db.execute('DROP TRIGGER IF EXISTS images_ai');
-        await db.execute('DROP TRIGGER IF EXISTS images_ad');
-        await db.execute('DROP TRIGGER IF EXISTS images_au');
-
-        console.log('[DB] Clearing tables...');
-        await db.execute('DELETE FROM collection_images');
-        await db.execute('DELETE FROM images');
-        await db.execute('DELETE FROM images_fts');
-        await db.execute('DELETE FROM collections');
-
-        console.log('[DB] Rebuilding facet cache (clearing)...');
-        await rebuildFacetCache();
-
-        console.log('[DB] Library purged. Triggers will be recreated on next load.');
-    });
+    // The result is either { status: 'ok', data: message } or { status: 'error', error: message }
+    if (result.status === 'ok') {
+        return result.data;
+    } else {
+        throw new Error(result.error);
+    }
 };
 
 export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {

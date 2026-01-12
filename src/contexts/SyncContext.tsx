@@ -172,7 +172,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             const { appRepository } = await import('../services/repository');
 
             console.log('[Purge] Purging main library, FTS index, and all collections...');
-            await purgeLibrary();
+            const backendMessage = await purgeLibrary();
 
             console.log('[Purge] Clearing legacy storage file...');
             const legacyState = await appRepository.load();
@@ -186,12 +186,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             console.log('[Purge] Resetting settings...');
             setSettings(prev => ({ ...prev, lastSyncedAt: null }));
 
-            addToast('Library purged successfully', 'success');
-            console.log('[Purge] Purge complete. Reloading window...');
+            // Show the backend's message (e.g., "Purge scheduled. Please restart...")
+            addToast(backendMessage, 'success');
+            console.log('[Purge] Purge complete. User should restart the app.');
 
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            // Note: In production, the app auto-restarts. In dev mode, user must restart terminal.
         } catch (e: any) {
             console.error("[Purge] Purge failed:", e);
             addToast('Purge failed: ' + e.message, 'error');

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Trash2, X, Loader2 } from 'lucide-react';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -8,9 +8,10 @@ interface ConfirmDialogProps {
   message: string;
   confirmLabel?: string;
   isDangerous?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   zIndex?: number;
+  isLoading?: boolean;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -21,7 +22,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isDangerous = false,
   onConfirm,
   onCancel,
-  zIndex = 60
+  zIndex = 60,
+  isLoading = false
 }) => {
   return (
     <AnimatePresence>
@@ -33,8 +35,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           style={{ zIndex }}
           className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md"
         >
-          {/* Overlay click to cancel */}
-          <div className="absolute inset-0" onClick={onCancel} />
+          {/* Overlay click to cancel (disabled while loading) */}
+          <div className="absolute inset-0" onClick={!isLoading ? onCancel : undefined} />
 
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
@@ -50,8 +52,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             <div className="p-8">
               <div className="flex flex-col items-center text-center">
                 <div className={`p-4 rounded-2xl mb-6 shadow-xl ${isDangerous
-                    ? 'bg-red-50 dark:bg-red-500/10 text-red-500'
-                    : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-400'
+                  ? 'bg-red-50 dark:bg-red-500/10 text-red-500'
+                  : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-400'
                   }`}>
                   {isDangerous ? <Trash2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
                 </div>
@@ -67,16 +69,18 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               <div className="mt-10 flex flex-col gap-3">
                 <button
                   onClick={onConfirm}
+                  disabled={isLoading}
                   className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
-                      ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'
-                      : 'bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-sage-500/40'
-                    }`}
+                    ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'
+                    : 'bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-sage-500/40'
+                    } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                  {confirmLabel}
+                  {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : confirmLabel}
                 </button>
                 <button
                   onClick={onCancel}
-                  className="w-full py-3 px-6 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors rounded-2xl flex items-center justify-center gap-2"
+                  disabled={isLoading}
+                  className={`w-full py-3 px-6 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors rounded-2xl flex items-center justify-center gap-2 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Cancel
                 </button>
@@ -86,7 +90,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             {/* Close Button Top Right */}
             <button
               onClick={onCancel}
-              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all"
+              disabled={isLoading}
+              className={`absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all ${isLoading ? 'opacity-0 pointer-events-none' : ''}`}
             >
               <X className="w-4 h-4" />
             </button>

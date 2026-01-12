@@ -259,65 +259,47 @@ pub async fn optimize_database(app: tauri::AppHandle) -> Result<String, String> 
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Reset migration 18 if it failed partially. This deletes the migration record
-/// and allows it to run again on next app launch.
+
+
+
+/// Request a database purge on next app startup.
+/// Creates a marker file and immediately restarts the application.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn reset_migration_18(app: tauri::AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let db_path = resolve_db_path(&app)?;
-        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-        configure_connection(&conn).map_err(|e| e.to_string())?;
-        
-        // Check if migration 18 exists in the migrations table
-        let has_migration: bool = conn.query_row(
-            "SELECT COUNT(*) > 0 FROM _sqlx_migrations WHERE version = 18",
-            [],
-            |r| r.get(0)
-        ).unwrap_or(false);
-        
-        if !has_migration {
-            return Ok("Migration 18 not found in database - nothing to reset".to_string());
-        }
-        
-        // Delete the migration record
-        conn.execute("DELETE FROM _sqlx_migrations WHERE version = 18", [])
-            .map_err(|e| format!("Failed to delete migration record: {}", e))?;
-        
-        // Try to drop columns that may have been partially created
-        // SQLite doesn't support DROP COLUMN directly in older versions, 
-        // but newer versions (3.35+) do. We'll try and ignore errors.
-        let columns_to_check = ["model_hash", "model_name", "tool", "resolved_model_name"];
-        for col in &columns_to_check {
-            // Check if column exists
-            let col_exists: bool = conn.query_row(
-                &format!("SELECT COUNT(*) > 0 FROM pragma_table_info('images') WHERE name = '{}'", col),
-                [],
-                |r| r.get(0)
-            ).unwrap_or(false);
-            
-            if col_exists {
-                // Try to drop it (may fail on older SQLite)
-                let _ = conn.execute(&format!("ALTER TABLE images DROP COLUMN {}", col), []);
-            }
-        }
-        
-        // Also try to drop any indexes that may have been created
-        let indexes = [
-            "idx_images_model_hash_denorm",
-            "idx_images_tool_denorm", 
-            "idx_images_resolved_model",
-            "idx_images_filter_model",
-            "idx_images_filter_tool",
-            "idx_collection_images_by_collection"
-        ];
-        for idx in &indexes {
-            let _ = conn.execute(&format!("DROP INDEX IF EXISTS {}", idx), []);
-        }
-        
-        Ok("Migration 18 reset successfully. Please restart the app to re-run the migration.".to_string())
-    }).await.map_err(|e| e.to_string())?
+pub async fn purge_database(app: tauri::AppHandle) -> Result<String, String> {
+
+    
+    // Get the path where we'll put the marker file (same dir as db)
+    // Note: In dev mode, Tauri uses 'com.tauri.dev' by default. 
+    // We should ideally read this from context, but for now we'll write to the resolved DB path's parent
+    // to be 100% sure we're in the right place.
+    let db_path = resolve_db_path(&app)?;
+    let marker_path = db_path.parent()
+        .ok_or("Failed to get DB parent directory")?
+        .join(".purge_on_restart");
+    
+    // Write the marker file
+    std::fs::write(&marker_path, "purge requested")
+        .map_err(|e| format!("Failed to create purge marker: {}", e))?;
+    
+    println!("[Purge] Created purge marker at {:?}. Restarting app...", marker_path);
+    
+    // In production, we can auto-restart seamlessly.
+    // In dev (debug), auto-restart kills the Vite dev server, showing a "Connection Refused" error.
+    // So in dev, we ask the user to restart manually.
+    #[cfg(not(debug_assertions))]
+    {
+        app.restart();
+        Ok("Database purge scheduled. Restarting...".to_string())
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        Ok("Purge scheduled. Please restart 'npm run tauri dev' to complete.".to_string())
+    }
 }
+
+
 
 /// Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
 /// This runs in batches to avoid blocking the database and can be called after app startup.
@@ -477,7 +459,7 @@ pub async fn get_parameter_ranges(
         }).collect();
         
         // Base where clause for reactive queries with conditional JOINs
-        let mut reactive_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
+        let reactive_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
         
         // If collection_id or lora_name provided, we need to construct a specific FROM/JOIN clause
         // Note: The main table in get_parameter_ranges is 'images'

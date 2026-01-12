@@ -15,8 +15,9 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::save_images_batch,
             db::commands::get_db_diagnostics,
             db::commands::refresh_boards_native,
-            db::commands::reset_migration_18,
+
             db::commands::optimize_database,
+            db::commands::purge_database,
             db::commands::get_parameter_ranges,
             db::commands::backfill_parameter_columns,
             db::facets::rebuild_facet_cache,
@@ -63,6 +64,9 @@ pub fn run() {
         )
         .expect("Failed to export TypeScript bindings");
 
+    // Check for deferred purge request BEFORE initializing the database
+    check_and_execute_deferred_purge();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::migrations::init_db()).build())
@@ -74,6 +78,49 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Check for and execute any pending database purge request.
+/// This runs BEFORE the SQL plugin initializes, so the DB file isn't locked yet.
+fn check_and_execute_deferred_purge() {
+    // We need to check both potential locations because Tauri might look in either
+    // depending on system configuration and version.
+    let mut paths_to_check = Vec::new();
+    
+    if let Some(config_dir) = dirs::config_dir() {
+        paths_to_check.push(config_dir.join("com.ambit.alpha"));
+        paths_to_check.push(config_dir.join("com.tauri.dev")); // Check default dev path too
+    }
+    if let Some(data_local_dir) = dirs::data_local_dir() {
+        paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
+        paths_to_check.push(data_local_dir.join("com.tauri.dev")); // Check default dev path too
+    }
+    
+    for app_dir in paths_to_check {
+        let marker_path = app_dir.join(".purge_on_restart");
+
+        if marker_path.exists() {
+            println!("[Purge] Found purge marker at {:?}! Proceeding to delete database...", marker_path);
+            
+            // Delete the marker first
+            let _ = std::fs::remove_file(&marker_path);
+            
+            // Delete database files
+            let db_path = app_dir.join("images.db");
+            let wal_path = app_dir.join("images.db-wal");
+            let shm_path = app_dir.join("images.db-shm");
+            
+            if db_path.exists() {
+                match std::fs::remove_file(&db_path) {
+                    Ok(_) => println!("[Purge] SUCCESS: Database deleted. Fresh DB will be created."),
+                    Err(e) => eprintln!("[Purge] FAILED to delete database: {}", e),
+                }
+            }
+            
+            if wal_path.exists() { let _ = std::fs::remove_file(&wal_path); }
+            if shm_path.exists() { let _ = std::fs::remove_file(&shm_path); }
+        }
+    }
 }
 
 #[cfg(test)]
