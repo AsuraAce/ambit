@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { Database, Zap, AlertTriangle, Loader2, Shield, Trash2, History as HistoryIcon } from 'lucide-react';
+import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -162,7 +163,7 @@ export const DevTab: React.FC = () => {
             <ConfirmDialog
                 isOpen={confirmAction.isOpen && confirmAction.type === 'purge'}
                 title="Purge Application Database?"
-                message="DANGER: This will delete ALL images and metadata from your Ambit library. Your actual image files on disk will NOT be touched, but you will lose all Ambit-specific data (collections, tags, favorites). Are you sure?"
+                message={`DANGER: This will delete ALL images and metadata from your ${APP_NAME} library. Your actual image files on disk will NOT be touched, but you will lose all ${APP_NAME}-specific data (collections, tags, favorites). Are you sure?`}
                 confirmLabel="Purge Database"
                 isDangerous={true}
                 onConfirm={handlePurge}

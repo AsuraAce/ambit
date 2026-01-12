@@ -11,6 +11,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { AppSettings } from '../../../types';
+import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 import { GeneralTab } from './GeneralTab';
 import { FoldersTab } from './FoldersTab';
@@ -90,7 +91,7 @@ export const SettingsTabs: React.FC<SettingsTabsProps> = ({ settings, setSetting
 
         <div className="p-4 border-t border-gray-200 dark:border-white/5">
           <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest text-center px-2">
-            Ambit Alpha v0.9
+            {APP_NAME} Alpha v{APP_VERSION}
           </div>
         </div>
       </div>

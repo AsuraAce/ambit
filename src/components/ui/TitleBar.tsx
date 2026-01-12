@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Monitor, Loader2 } from "lucide-react";
 import { useLibraryContext } from "../../hooks/useLibraryContext";
+import { APP_NAME } from "../../constants/app";
 
 
 
@@ -88,7 +89,7 @@ export const TitleBar = () => {
             >
                 <div className="flex items-center gap-2 pointer-events-none">
                     <div className="w-3 h-3 bg-sage-500 rounded-full" />
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">AMBIT</span>
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{APP_NAME.toUpperCase()}</span>
                 </div>
 
                 <div className="flex h-full">

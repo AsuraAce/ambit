@@ -4,6 +4,9 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
+import { getDb } from '../db/client';
+import { APP_NAME } from '../../constants/app';
+import { AIImage } from '../../types';
 
 export const syncImages = async (
     rootPath: string,
@@ -22,15 +25,15 @@ export const syncImages = async (
         imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
     }
 
-    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
+    let dbPath = isFile ? rootPath : `${imagesRoot} /databases/invokeai.db`;
+    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')} `;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb;
     try {
         invokeDb = await Database.load(connectionString);
     } catch (e) {
-        throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
+        throw new Error(`Could not connect to InvokeAI DB at ${dbPath} `);
     }
 
     onProgress(0, 0, 'Analyzing database schema...');
@@ -89,11 +92,11 @@ export const syncImages = async (
         }
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause}`);
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
+    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause} `);
     const totalToImport = countRes[0]?.count || 0;
 
-    onProgress(0, 0, 'Scanning Ambit library...');
+    onProgress(0, 0, `Scanning ${APP_NAME} library...`);
     const { getDb, insertImagesBatch } = await import('../db');
     const ambitDb = await getDb();
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
@@ -143,13 +146,13 @@ export const syncImages = async (
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
-        `;
+`;
 
         const rows = await (invokeDb as any).select(query);
         if (rows.length === 0) break;
 
         const batchPaths = rows.map((row: any) => {
-            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
+            const rawPath = `${imagesRoot} /outputs/images / ${row.image_name} `;
             return rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
 
@@ -228,8 +231,8 @@ export const syncImages = async (
                 }
 
                 let thumbnailPath = (hasThumbnailName && row.thumbnail_name)
-                    ? `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`
-                    : `${imagesRoot}/outputs/images/thumbnails/${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"}`;
+                    ? `${imagesRoot} /outputs/images / thumbnails / ${row.thumbnail_name} `
+                    : `${imagesRoot} /outputs/images / thumbnails / ${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"} `;
 
                 const newImg: any = {
                     id: fullPath,

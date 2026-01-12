@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useRef, useState } from 'react';
 import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw } from 'lucide-react';
+import { APP_NAME } from '../../../constants/app';
 import { AppSettings, MonitoredFolder } from '../../../types';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { useLibraryStore } from '../../../stores/libraryStore';
@@ -157,7 +158,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Local Monitoring</strong>
-                        Ambit watches these folders for new <span className="font-semibold">generated images</span> and adds them to your library.
+                        {APP_NAME} watches these folders for new <span className="font-semibold">generated images</span> and adds them to your library.
                     </div>
                 </div>
 
@@ -230,7 +231,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         <FolderSearch className="w-5 h-5 flex-shrink-0 mt-0.5" />
                         <div>
                             <strong className="block mb-1">Resource Discovery</strong>
-                            Add your Model/LoRA folders here. Ambit will scan them for thumbnails (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
+                            Add your Model/LoRA folders here. {APP_NAME} will scan them for thumbnails (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
                         </div>
                     </div>
                     <div className="flex gap-2">

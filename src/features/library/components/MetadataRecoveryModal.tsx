@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Wand2, Bot, Palette, Hash } from 'lucide-react';
-import { RecoveryStyle } from '../../../types';
+import { X, Sparkles, BrainCircuit, Loader2, Wand2, Info } from 'lucide-react';
+import { APP_NAME } from '../../../constants/app';
+import { RecoveryStyle, AIImage } from '../../../types';
 
 interface MetadataRecoveryModalProps {
     isOpen: boolean;
@@ -66,12 +67,12 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                     <div className="py-12 flex flex-col items-center justify-center text-center">
                         <div className="w-12 h-12 border-4 border-amethyst-500/30 border-t-amethyst-500 rounded-full animate-spin mb-4" />
                         <h4 className="text-gray-900 dark:text-white font-bold mb-2">Analyzing Image...</h4>
-                        <p className="text-sm text-gray-500">Ambit AI is analyzing the visuals to reconstruct the prompt.</p>
+                        <p className="text-sm text-gray-500">{APP_NAME} AI is analyzing the visuals to reconstruct the prompt.</p>
                     </div>
                 ) : (
                     <>
                         <p className="text-sm text-gray-500 mb-4">
-                            This image lacks metadata. Select a target style, and Ambit AI will analyze the visuals to generate a new prompt for you.
+                            This image lacks metadata. Select a target style, and {APP_NAME} AI will analyze the visuals to generate a new prompt for you.
                         </p>
 
                         <div className="space-y-3 mb-6">
@@ -80,8 +81,8 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                                     key={opt.id}
                                     onClick={() => setSelectedStyle(opt.id)}
                                     className={`w-full text-left p-3 rounded-lg border transition-all flex items-start gap-3 ${selectedStyle === opt.id
-                                            ? 'bg-amethyst-50 dark:bg-amethyst-900/20 border-amethyst-500 ring-1 ring-amethyst-500'
-                                            : 'bg-gray-50 dark:bg-gray-950 border-gray-200 dark:border-gray-800 hover:border-amethyst-300'
+                                        ? 'bg-amethyst-50 dark:bg-amethyst-900/20 border-amethyst-500 ring-1 ring-amethyst-500'
+                                        : 'bg-gray-50 dark:bg-gray-950 border-gray-200 dark:border-gray-800 hover:border-amethyst-300'
                                         }`}
                                 >
                                     <div className={`mt-0.5 ${selectedStyle === opt.id ? 'text-amethyst-600 dark:text-amethyst-400' : 'text-gray-400'}`}>

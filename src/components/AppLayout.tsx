@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { APP_NAME } from '../constants/app';
 import { AppSidebar } from '../features/collections/components/AppSidebar';
 import { AppHeader } from './ui/AppHeader';
 import { SelectionBar } from '../features/library/components/SelectionBar';
@@ -360,7 +362,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             </div>
                                             <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">Your Library is Empty</h3>
                                             <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-                                                Import your images to start organizing, searching, and exploring your AI creations with Ambit.
+                                                Import your images to start organizing, searching, and exploring your AI creations with {APP_NAME}.
                                             </p>
                                             <button
                                                 onClick={() => fileOps.fileInputRef.current?.click()}

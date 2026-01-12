@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Heart, Coffee, Github } from 'lucide-react';
+import { APP_NAME } from '../../constants/app';
 
 interface DonationModalProps {
     isOpen: boolean;
@@ -47,7 +48,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                 <Heart className="w-8 h-8 text-red-500 fill-current animate-pulse" />
                             </div>
 
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Support Ambit</h2>
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Support {APP_NAME}</h2>
                             <p className="text-gray-600 dark:text-gray-400 text-sm mb-8 leading-relaxed max-w-xs">
                                 If this tool helps you organize your generative art, consider supporting development. Every coffee helps!
                             </p>

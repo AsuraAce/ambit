@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab } from './';
+import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -101,7 +102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
               <div className="absolute top-0 left-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
 
               <div className="relative z-10">
-                <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">Ambit Preferences</h2>
+                <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">{APP_NAME} Preferences</h2>
                 <nav className="space-y-6">
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Application</h4>
@@ -130,7 +131,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
               </div>
 
               <div className="mt-auto relative z-10 text-xs text-gray-500 px-4">
-                v0.9.3 Beta
+                v{APP_VERSION}
               </div>
             </div>
 

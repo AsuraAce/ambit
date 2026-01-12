@@ -10,6 +10,7 @@ import { GeneratorSection } from './GeneratorSection';
 import { ArchitectureSection } from './ArchitectureSection';
 import { ResourceSection } from './ResourceSection';
 import { DateRangeSection } from './DateRangeSection';
+import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface FilterPanelProps {
     filters: FilterState;
@@ -371,13 +372,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             {/* Footer / Status */}
             <div className="p-4 border-t border-gray-200 dark:border-white/5 text-[10px] text-gray-600 dark:text-zinc-400 flex items-center justify-between min-w-[18rem]">
                 <div className="flex items-center gap-2">
-                    <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">Ambit Web</span>
+                    <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">{APP_NAME}</span>
                 </div>
                 <div className="flex items-center gap-3">
                     <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100">
                         <Github className="w-3 h-3" />
                     </a>
-                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v0.9.4 Beta</span>
+                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{APP_VERSION}</span>
                 </div>
             </div>
         </div>

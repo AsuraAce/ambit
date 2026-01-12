@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { RefreshCw, Zap, ZapOff, XCircle, Loader2, Globe, CheckCircle2, Boxes } from 'lucide-react';
+import { APP_NAME } from '../../../constants/app';
 import { AppSettings } from '../../../types';
 import { useLibrary } from '../../../contexts/LibraryContext';
 
@@ -41,7 +42,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
             <div className="mb-8 space-y-6 relative z-10">
                 <p className="text-sm text-gray-500 font-medium">
-                    Automate the bridge between InvokeAI and your Ambit library.
+                    Automate the bridge between InvokeAI and your {APP_NAME} library.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -187,7 +188,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         </div>
                         <div>
                             <div className="uppercase tracking-widest text-[9px] mb-0.5">Library Updated</div>
-                            Repository successfully synchronized with Ambit.
+                            Repository successfully synchronized with {APP_NAME}.
                         </div>
                     </div>
                 )}

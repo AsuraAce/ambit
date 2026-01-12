@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Keyboard, Search, Command, Hash, Sliders, Monitor, Puzzle, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Keyboard, MousePointer2, Command, Search, Filter, Settings, Info, ChevronDown, ChevronUp, FileCode, Monitor } from 'lucide-react';
+import { APP_NAME } from '../../constants/app';
 
 interface ShortcutsModalProps {
     isOpen: boolean;
@@ -129,7 +130,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
 
                 {/* Header */}
                 <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white pl-2">Ambit Help & Guide</h2>
+                    <h2 className="text-lg font-bold text-gray-900 dark:text-white pl-2">{APP_NAME} Help & Guide</h2>
                     <button onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
