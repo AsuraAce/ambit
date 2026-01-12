@@ -60,7 +60,7 @@ export const SearchBar = React.memo(({
         // Suggestions logic (isolated)
         const lastToken = val.split(' ').pop()?.toLowerCase() || '';
         if (lastToken.length >= 1) {
-            const operators = ['model:', 'tool:', 'steps:', 'cfg:', 'seed:', 'neg:', 'sampler:', 'lora:', 'w:', 'h:', 'upscaled:'];
+            const operators = ['neg:', 'file:', 'all:', 'model:', 'tool:', 'lora:', 'sampler:', 'seed:', 'steps:', 'cfg:', 'w:', 'h:', 'upscaled:'];
             const opMatches = operators.filter(op => op.startsWith(lastToken) && op !== lastToken);
             // In a real app we'd get tags from props, but for now we'll stick to operators to avoid excessive re-renders
             setSuggestions(opMatches);
@@ -124,7 +124,7 @@ export const SearchBar = React.memo(({
                 <input
                     ref={searchProps.inputRef}
                     type="text"
-                    placeholder={searchProps.isAiSearchEnabled ? "Ask Ambit..." : "Search prompts..."}
+                    placeholder={searchProps.isAiSearchEnabled ? "Ask Ambit..." : "Search prompt..."}
                     className={`w-full bg-gray-100 dark:bg-zinc-800/50 border rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none transition-all text-gray-900 dark:text-gray-100 placeholder-gray-500 ${searchProps.isAiSearchEnabled ? 'border-amethyst-300 dark:border-amethyst-800 focus:border-amethyst-500/50 focus:ring-1 focus:ring-amethyst-500/30' : 'border-gray-200 dark:border-white/10 focus:border-sage-500/50 focus:ring-1 focus:ring-sage-500/30'}`}
                     value={localValue}
                     onChange={handleSearchChange}

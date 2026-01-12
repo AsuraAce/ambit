@@ -219,6 +219,20 @@ export const buildSqlWhereClause = (
                 } else if (key === 'neg' || key === 'negative') {
                     sql = `json_extract(metadata_json, '$.negativePrompt') LIKE ?`;
                     param = `%${val}%`;
+                } else if (key === 'file' || key === 'filename' || key === 'path') {
+                    // Search filename/path only
+                    sql = `path LIKE ?`;
+                    param = `%${val}%`;
+                } else if (key === 'all') {
+                    // Legacy behavior: search everything (path + full metadata)
+                    if (isNegative) {
+                        conditions.push(`(path NOT LIKE ? AND metadata_json NOT LIKE ?)`);
+                    } else {
+                        conditions.push(`(path LIKE ? OR metadata_json LIKE ?)`);
+                    }
+                    params.push(`%${val}%`);
+                    params.push(`%${val}%`);
+                    continue; // Skip the normal sql handling below
                 } else if (key === 'sampler') {
                     sql = `json_extract(metadata_json, '$.sampler') LIKE ?`;
                     param = `%${val}%`;
@@ -242,13 +256,13 @@ export const buildSqlWhereClause = (
                     params.push(param);
                 }
             } else {
-                // General text search (Prompts, Filename)
+                // General text search - POSITIVE PROMPT ONLY (not negative prompt or metadata blob)
+                // This prevents semantic inversions where searching "nsfw" matches images avoiding NSFW
                 if (isNegative) {
-                    conditions.push(`(path NOT LIKE ? AND metadata_json NOT LIKE ?)`);
+                    conditions.push(`json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?`);
                 } else {
-                    conditions.push(`(path LIKE ? OR metadata_json LIKE ?)`);
+                    conditions.push(`json_extract(metadata_json, '$.positivePrompt') LIKE ?`);
                 }
-                params.push(`%${term}%`);
                 params.push(`%${term}%`);
             }
         }

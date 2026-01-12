@@ -94,17 +94,27 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     ];
 
     const searchOperators = [
-        { op: 'steps:20', desc: 'Exact step count', icon: <Hash className="w-3 h-3" /> },
+        // Content Search
+        { op: 'sunset', desc: 'Search positive prompt (default)', icon: <Search className="w-3 h-3" /> },
+        { op: 'neg:blur', desc: 'Search negative prompt', icon: <Hash className="w-3 h-3" /> },
+        { op: 'file:portrait', desc: 'Search filename/path', icon: <Hash className="w-3 h-3" /> },
+        { op: 'all:anime', desc: 'Search all metadata (legacy)', icon: <Hash className="w-3 h-3" /> },
+
+        // Model & Resources
+        { op: 'model:sdxl', desc: 'Filter by model', icon: <Monitor className="w-3 h-3" /> },
+        { op: 'lora:detail', desc: 'Filter by LoRA', icon: <Puzzle className="w-3 h-3" /> },
+        { op: 'tool:invoke', desc: 'Filter by generator', icon: <Command className="w-3 h-3" /> },
+        { op: 'sampler:euler', desc: 'Filter by sampler', icon: <Sliders className="w-3 h-3" /> },
+
+        // Parameters
         { op: 'steps:>30', desc: 'Steps greater than 30', icon: <Hash className="w-3 h-3" /> },
-        { op: 'cfg:<7', desc: 'CFG Scale less than 7', icon: <Sliders className="w-3 h-3" /> },
-        { op: 'model:sdxl', desc: 'Filter by Model (partial match)', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'lora:detail', desc: 'Filter by LoRA (partial match)', icon: <Puzzle className="w-3 h-3" /> },
-        { op: 'sampler:euler', desc: 'Filter by Sampler', icon: <Sliders className="w-3 h-3" /> },
-        { op: 'w:>1024', desc: 'Width filter (also: width:)', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'h:<768', desc: 'Height filter (also: height:)', icon: <Monitor className="w-3 h-3" /> },
+        { op: 'cfg:<7', desc: 'CFG less than 7', icon: <Sliders className="w-3 h-3" /> },
+        { op: 'seed:12345', desc: 'Filter by seed', icon: <Hash className="w-3 h-3" /> },
+
+        // Dimensions
+        { op: 'w:>1024', desc: 'Width filter', icon: <Monitor className="w-3 h-3" /> },
+        { op: 'h:<768', desc: 'Height filter', icon: <Monitor className="w-3 h-3" /> },
         { op: 'upscaled:true', desc: 'Show upscaled only', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'neg:blur', desc: 'Search Negative Prompt', icon: <Hash className="w-3 h-3" /> },
-        { op: 'tool:invoke', desc: 'Filter by Generator Tool', icon: <Command className="w-3 h-3" /> },
     ];
 
     return (
@@ -188,7 +198,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div>
                                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
-                                    Combine text with operators for precise filtering. AI Search overrides these if enabled.
+                                    By default, search matches the <strong>positive prompt only</strong>. Use operators below to search other fields.
                                 </p>
 
                                 <div className="bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden">
