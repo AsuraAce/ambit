@@ -6,6 +6,7 @@ import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
 import { OnboardingWizard } from './components/ui/OnboardingWizard';
+import { ImportModal } from './components/ui/ImportModal';
 import { ImageViewer } from './features/viewer/components/ImageViewer';
 import { LoadingScreen } from './components/ui/LoadingScreen';
 import { TitleBar } from './components/ui/TitleBar';
@@ -59,6 +60,7 @@ export default function App() {
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportIds, setExportIds] = useState<Set<string>>(new Set());
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
@@ -315,6 +317,13 @@ export default function App() {
                     scopeName={scopeName}
                     isFiltering={isFiltering}
                     fileOps={fileOps}
+                    onOpenImportModal={() => {
+                        if (settings.hideImportModal) {
+                            fileOps.fileInputRef.current?.click();
+                        } else {
+                            setIsImportModalOpen(true);
+                        }
+                    }}
                     clearAllFilters={clearAllFilters}
                     scrollContainerRef={scrollContainerRef}
                     images={images}
@@ -347,7 +356,16 @@ export default function App() {
                 <OnboardingWizard
                     isOpen={!settings.hasCompletedOnboarding}
                     onComplete={(s) => { setSettings(p => ({ ...p, ...s })); addToast("Setup complete!", "success"); }}
+                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                     initialApiKey={settings.googleGeminiApiKey || process.env.API_KEY}
+                />
+                <ImportModal
+                    isOpen={isImportModalOpen}
+                    onClose={() => setIsImportModalOpen(false)}
+                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
+                    onImportFiles={() => fileOps.fileInputRef.current?.click()}
+                    settings={settings}
+                    setSettings={setSettings}
                 />
                 <input
                     type="file"

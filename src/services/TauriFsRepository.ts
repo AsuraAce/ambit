@@ -50,6 +50,7 @@ export class TauriFsRepository implements IRepository {
                         libraryShowGrids: false,
                         resourceFolders: [],
                         resourceViewModes: {},
+                        hideImportModal: false,
                         ...saved.settings
                     }
                 };
@@ -85,7 +86,8 @@ export class TauriFsRepository implements IRepository {
                 monitoredFolders: [], // Start fresh
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
-                enableAI: false
+                enableAI: false,
+                hideImportModal: false
             },
             recentSearches: []
         };

@@ -27,7 +27,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     syncBoardsToCollections: false,
     importOrphans: true,
     starredAs: 'favorite',
-    resourceViewModes: {}
+    resourceViewModes: {},
+    hideImportModal: false
 };
 
 // Debounce timer for auto-save

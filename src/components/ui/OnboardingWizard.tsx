@@ -1,28 +1,31 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, Import, ServerOff, FileJson, Aperture } from 'lucide-react';
+import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
     onComplete: (settings: Partial<AppSettings>) => void;
+    onOpenSettings?: (tab: 'invokeai' | 'comfyui' | 'a1111') => void;
     initialApiKey?: string;
 }
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     isOpen,
     onComplete,
+    onOpenSettings,
     initialApiKey
 }) => {
     const [step, setStep] = useState(1);
     const [apiKey, setApiKey] = useState(initialApiKey || '');
     const [enableAI, setEnableAI] = useState(!!initialApiKey);
     const [blurNsfw, setBlurNsfw] = useState(true);
+    const [dontShowOnStartup, setDontShowOnStartup] = useState(true); // Default: checked = don't show again
 
     if (!isOpen) return null;
 
-    const totalSteps = 3;
+    const totalSteps = 4;
     const isEnvKey = !!process.env.API_KEY;
 
     const handleNext = () => {
@@ -34,15 +37,19 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 enableAI,
                 googleGeminiApiKey: apiKey,
                 maskedKeywords: blurNsfw ? ['nsfw', 'nude', 'naked', 'blood', 'gore', 'violence'] : [],
-                maskingMode: 'blur', // Default
-                hasCompletedOnboarding: true
+                maskingMode: 'blur',
+                hasCompletedOnboarding: dontShowOnStartup // Only mark complete if checkbox is checked
             });
         }
     };
 
+    const handleBack = () => {
+        if (step > 1) setStep(step - 1);
+    };
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/90 backdrop-blur-md animate-in fade-in duration-500">
-            <div className="w-full max-w-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[550px]">
+            <div className="w-full max-w-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px]">
 
                 {/* Left Panel - Visuals */}
                 <div className="w-full md:w-1/3 bg-gradient-to-br from-gray-900 to-sage-900 p-8 flex flex-col justify-between text-white relative overflow-hidden">
@@ -57,8 +64,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                     <div className="relative z-10 space-y-4">
                         <StepIndicator current={step} step={1} label="Welcome" />
-                        <StepIndicator current={step} step={2} label="Intelligence" />
-                        <StepIndicator current={step} step={3} label="Privacy" />
+                        <StepIndicator current={step} step={2} label="Integrations" />
+                        <StepIndicator current={step} step={3} label="Intelligence" />
+                        <StepIndicator current={step} step={4} label="Privacy" />
                     </div>
                 </div>
 
@@ -82,8 +90,54 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         </div>
                     )}
 
-                    {/* STEP 2: AI SETUP */}
+                    {/* STEP 2: INTEGRATIONS (NEW) */}
                     {step === 2 && (
+                        <div className="flex-1 flex flex-col animate-in slide-in-from-right-4 duration-300">
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Connect Your Generators</h2>
+                                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                                    Import images with full metadata, favorites, and automatic syncing by connecting your AI image generators.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3 mb-6">
+                                <IntegrationCard
+                                    icon={<Image className="w-6 h-6" />}
+                                    title="InvokeAI"
+                                    features={["Boards", "Favorites", "Live sync"]}
+                                    color="indigo"
+                                    onSetup={() => onOpenSettings?.('invokeai')}
+                                />
+                                <IntegrationCard
+                                    icon={<Workflow className="w-6 h-6" />}
+                                    title="ComfyUI"
+                                    features={["Workflows", "Node data"]}
+                                    color="emerald"
+                                    onSetup={() => onOpenSettings?.('comfyui')}
+                                />
+                                <IntegrationCard
+                                    icon={<Palette className="w-6 h-6" />}
+                                    title="A1111 / Forge"
+                                    features={["Outputs", "Metadata"]}
+                                    color="amber"
+                                    onSetup={() => onOpenSettings?.('a1111')}
+                                />
+                            </div>
+
+                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                                    <strong className="text-gray-700 dark:text-gray-300">Why integrations?</strong> Direct integration with your generators means richer metadata, automatic syncing of favorites and boards, and real-time updates when you create new images.
+                                </p>
+                            </div>
+
+                            <p className="text-xs text-gray-400 mt-4 text-center">
+                                You can also set these up later in <strong>Settings</strong>.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* STEP 3: AI SETUP */}
+                    {step === 3 && (
                         <div className="flex-1 flex flex-col justify-center animate-in slide-in-from-right-4 duration-300">
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Activate Intelligence</h2>
@@ -127,8 +181,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         </div>
                     )}
 
-                    {/* STEP 3: PRIVACY */}
-                    {step === 3 && (
+                    {/* STEP 4: PRIVACY */}
+                    {step === 4 && (
                         <div className="flex-1 flex flex-col justify-center animate-in slide-in-from-right-4 duration-300">
                             <div className="mb-6">
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Privacy & Safety</h2>
@@ -173,19 +227,43 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                     {/* Footer Controls */}
                     <div className="flex items-center justify-between pt-6 border-t border-gray-100 dark:border-gray-800">
-                        <div className="flex gap-1">
-                            {[1, 2, 3].map(i => (
-                                <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? 'w-8 bg-sage-600' : 'w-2 bg-gray-200 dark:bg-gray-700'}`} />
-                            ))}
+                        <div className="flex items-center gap-4">
+                            <div className="flex gap-1">
+                                {[1, 2, 3, 4].map(i => (
+                                    <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? 'w-8 bg-sage-600' : 'w-2 bg-gray-200 dark:bg-gray-700'}`} />
+                                ))}
+                            </div>
+
+                            {step === totalSteps && (
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <div
+                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${dontShowOnStartup ? 'bg-sage-600 border-sage-600' : 'border-gray-400'}`}
+                                        onClick={() => setDontShowOnStartup(!dontShowOnStartup)}
+                                    >
+                                        {dontShowOnStartup && <Check className="w-3 h-3 text-white" />}
+                                    </div>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">Don't show on startup</span>
+                                </label>
+                            )}
                         </div>
 
-                        <button
-                            onClick={handleNext}
-                            className="px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity flex items-center gap-2"
-                        >
-                            {step === totalSteps ? "Get Started" : "Next Step"}
-                            <ArrowRight className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-2">
+                            {step > 1 && (
+                                <button
+                                    onClick={handleBack}
+                                    className="px-4 py-3 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-xl font-medium text-sm transition-colors"
+                                >
+                                    Back
+                                </button>
+                            )}
+                            <button
+                                onClick={handleNext}
+                                className="px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity flex items-center gap-2"
+                            >
+                                {step === totalSteps ? "Get Started" : "Next Step"}
+                                <ArrowRight className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -213,3 +291,42 @@ const FeatureRow = ({ icon, title, desc }: { icon: React.ReactNode, title: strin
         </div>
     </div>
 );
+
+interface IntegrationCardProps {
+    icon: React.ReactNode;
+    title: string;
+    features: string[];
+    color: 'indigo' | 'emerald' | 'amber';
+    onSetup?: () => void;
+}
+
+const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features, color, onSetup }) => {
+    const colorClasses = {
+        indigo: 'border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10',
+        emerald: 'border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/10',
+        amber: 'border-amber-200 dark:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+    };
+
+    const iconColors = {
+        indigo: 'text-indigo-500',
+        emerald: 'text-emerald-500',
+        amber: 'text-amber-500'
+    };
+
+    return (
+        <div className={`p-4 border rounded-xl transition-colors ${colorClasses[color]} cursor-pointer group`} onClick={onSetup}>
+            <div className={`${iconColors[color]} mb-3`}>{icon}</div>
+            <div className="font-bold text-sm text-gray-900 dark:text-white mb-2">{title}</div>
+            <ul className="space-y-1 mb-3">
+                {features.map((f, i) => (
+                    <li key={i} className="text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5 text-gray-400" />{f}
+                    </li>
+                ))}
+            </ul>
+            <div className={`text-xs font-bold ${iconColors[color]} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                Set Up →
+            </div>
+        </div>
+    );
+};

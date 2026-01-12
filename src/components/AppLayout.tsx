@@ -45,6 +45,7 @@ interface AppLayoutProps {
     scopeName: string;
     isFiltering: boolean;
     fileOps: any;
+    onOpenImportModal: () => void;
     clearAllFilters: () => void;
 
     // Grid/View Props
@@ -81,7 +82,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, scopeTotal, scopeName,
-    fileOps, scrollContainerRef,
+    fileOps, onOpenImportModal, scrollContainerRef,
     handlers, setViewingImageId,
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
@@ -238,7 +239,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     totalCount={scopeTotal}
                     scopeName={scopeName}
                     isFiltering={isFiltering}
-                    onImport={() => fileOps.fileInputRef.current?.click()}
+                    onImport={onOpenImportModal}
                     onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                     clearAllFilters={clearAllFilters}
                 />
@@ -365,7 +366,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                 Import your images to start organizing, searching, and exploring your AI creations with {APP_NAME}.
                                             </p>
                                             <button
-                                                onClick={() => fileOps.fileInputRef.current?.click()}
+                                                onClick={onOpenImportModal}
                                                 className="px-8 py-3.5 bg-sage-600 hover:bg-sage-500 text-white rounded-2xl font-bold shadow-xl shadow-sage-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                                             >
                                                 <Import className="w-5 h-5" />

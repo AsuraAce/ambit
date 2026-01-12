@@ -73,6 +73,27 @@ export const DevTab: React.FC = () => {
                             </button>
                         </div>
 
+                        {/* Reset Onboarding */}
+                        <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
+                            <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Onboarding</div>
+                                <div className="text-xs text-gray-500 mt-0.5">Show the onboarding wizard again on next reload.</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSettings((p: any) => ({
+                                        ...p,
+                                        hasCompletedOnboarding: false,
+                                        hideImportModal: false
+                                    }));
+                                }}
+                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                            >
+                                <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
+                            </button>
+                        </div>
+
                         {/* Purge Database */}
                         <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
                             <div>
