@@ -82,19 +82,10 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
         };
     }
 
-    // Heuristic: If missing metadata but has InvokeAI Workflow chunk, mark as Intermediate
-    if (info.chunks && (info.chunks.invokeai_workflow || info.chunks['sd-metadata'])) {
-        return {
-            metadata: { tool: GeneratorTool.INVOKEAI, model: 'Unknown' },
-            extra: {},
-            isIntermediate: true,
-            width: info.width,
-            height: info.height,
-            fileSize: info.size,
-            timestamp: info.modified,
-            thumbnail: info.thumbnail
-        };
-    }
+    // Note: Removed heuristic that marked workflow-chunk-only images as intermediate.
+    // This caused false positives for valid InvokeAI images with stripped metadata.
+    // Now we let normal parsing flow handle these - the worker will detect InvokeAI
+    // from chunks, and is_intermediate is only set if explicit in metadata.
 
     const filename = path.split(/[\\/]/).pop() || "unknown";
 

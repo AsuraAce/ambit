@@ -1115,9 +1115,9 @@ self.onmessage = async (e: MessageEvent) => {
             metadata.model = metadata.model || filenameMeta.model;
         }
 
-        if (metadata.tool === GeneratorTool.UNKNOWN) {
-            isIntermediate = true;
-        }
+        // Note: We no longer mark Unknown tool images as intermediate.
+        // Only explicit is_intermediate flags from InvokeAI metadata are trusted.
+        // This prevents false positives for non-AI images (photos, archived art).
 
         // Path-based generation type detection (A1111 standard)
         if (!metadata.generationType || metadata.generationType === 'unknown') {
