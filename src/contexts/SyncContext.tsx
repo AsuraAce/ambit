@@ -4,6 +4,9 @@ import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useToast } from '../hooks/useToast';
 import { useLibraryStore } from '../stores/libraryStore';
+import { useSearchStore } from '../stores/searchStore';
+import { useQueryClient } from '@tanstack/react-query';
+
 
 interface SyncContextType {
     startInvokeSync: (options?: any) => Promise<void>;
@@ -24,6 +27,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     const { settings, settingsRef, setSettings } = useSettings();
     const { setCollections } = useCollections();
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
 
     // Zustand State
     const syncStatus = useLibraryStore(s => s.syncStatus);
@@ -186,6 +190,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             console.log('[Purge] Resetting settings...');
             setSettings(prev => ({ ...prev, lastSyncedAt: null }));
 
+            // Reset React Query cache and Zustand store to prevent stale state
+            console.log('[Purge] Clearing React Query cache and store...');
+            queryClient.clear();
+            useSearchStore.getState().clearAllFilters();
+            useSearchStore.getState().setImages([]);
+
             // Show the backend's message (e.g., "Purge scheduled. Please restart...")
             addToast(backendMessage, 'success');
             console.log('[Purge] Purge complete. User should restart the app.');
@@ -195,7 +205,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             console.error("[Purge] Purge failed:", e);
             addToast('Purge failed: ' + e.message, 'error');
         }
-    }, [addToast, setSettings]);
+    }, [addToast, setSettings, queryClient]);
 
     return (
         <SyncContext.Provider value={{

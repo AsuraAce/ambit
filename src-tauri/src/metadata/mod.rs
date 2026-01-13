@@ -135,6 +135,14 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.hires_upscaler.is_none() { base.hires_upscaler = secondary.hires_upscaler; }
     if base.model_hash.is_none() { base.model_hash = secondary.model_hash; }
     
+    // Merge generation type (prefer specific over 'unknown')
+    if (base.generation_type.is_empty() || base.generation_type == "unknown") 
+        && !secondary.generation_type.is_empty() 
+        && secondary.generation_type != "unknown" 
+    {
+        base.generation_type = secondary.generation_type;
+    }
+    
     // Union for resources
     for lora in secondary.loras {
         if !base.loras.contains(&lora) {

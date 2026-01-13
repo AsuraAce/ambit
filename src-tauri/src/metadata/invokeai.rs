@@ -150,6 +150,20 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         });
     }
 
+    // Detect postprocessing-only images (upscales, face fixes, etc.)
+    // These have postprocessing data but no generation data (no prompt, no steps, no model)
+    // Note: generation_type defaults to "unknown", so check for both empty and unknown
+    if (meta.generation_type.is_empty() || meta.generation_type == "unknown") 
+        && meta.positive_prompt.is_empty() 
+        && meta.steps == 0 
+    {
+        if let Some(pp) = root.get("postprocessing") {
+            if pp.is_array() && !pp.as_array().unwrap().is_empty() {
+                meta.generation_type = "postprocess".to_string();
+            }
+        }
+    }
+
     meta
 }
 
@@ -285,6 +299,35 @@ mod tests {
         assert_eq!(meta.hires_upscaler.as_deref(), Some("bilinear"));
         assert!(meta.positive_prompt.contains("kendo"));
         assert!(meta.negative_prompt.contains("worst quality"));
+    }
+
+    #[test]
+    fn test_extract_invokeai_postprocessing_only() {
+        // Real postprocessing-only metadata (upscaled image with no generation data)
+        let payload = json!({
+            "image": {
+                "postprocessing": [
+                    {
+                        "orig_path": ["C:\\path\\to\\original.png"],
+                        "orig_hash": "7b50037210f6fb694db857cff31c15d98bdb35983a7bc25c259224a74d2d440e",
+                        "type": "esrgan",
+                        "scale": 4,
+                        "strength": 0.75
+                    },
+                    {
+                        "type": "gfpgan",
+                        "strength": 0.8
+                    }
+                ]
+            }
+        });
+        let meta = extract_invokeai_metadata(&payload);
+
+        assert_eq!(meta.tool, "InvokeAI");
+        assert_eq!(meta.generation_type, "postprocess");
+        assert!(meta.positive_prompt.is_empty());
+        assert_eq!(meta.steps, 0);
+        assert!(meta.model.is_empty() || meta.model == "Unknown");
     }
 }
 

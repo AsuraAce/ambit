@@ -393,15 +393,14 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             {/* Tabs */}
             <div className="flex border-b border-gray-200 dark:border-white/5 shrink-0 bg-white dark:bg-zinc-900 p-2 gap-2">
                 {(['info', 'edit', 'workflow'] as const).map(tab => (
-                    (tab !== 'workflow' || image.metadata.workflowJson || image.metadata.tool === 'InvokeAI' || image.metadata.hasWorkflowHint) && (
+                    (tab !== 'workflow' || image.metadata.workflowJson || image.metadata.hasWorkflowHint === true) && (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            title={tab === 'workflow' && image.metadata.hasWorkflowHint === false ? 'No workflow recorded for this image' : undefined}
                             className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-all rounded-lg flex items-center justify-center gap-2 ${activeTab === tab ? 'text-white bg-sage-600 shadow-lg shadow-sage-500/20' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                         >
                             {tab === 'workflow' && (
-                                <Workflow className={`w-3 h-3 ${image.metadata.hasWorkflowHint === false ? 'opacity-10 grayscale brightness-200' : ''}`} />
+                                <Workflow className="w-3 h-3" />
                             )}
                             {tab}
                         </button>
@@ -738,53 +737,58 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2"><FileText className="w-3 h-3 text-sage-500" /><h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3></div>
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                const text = await navigator.clipboard.readText();
-                                                if (!text || !text.includes('Steps:')) return;
+                                    {/* Only show paste button for SD WebUI compatible tools */}
+                                    {(image.metadata.tool === GeneratorTool.AUTOMATIC1111 ||
+                                        image.metadata.tool === GeneratorTool.FORGE ||
+                                        image.metadata.tool === GeneratorTool.UNKNOWN) && (
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const text = await navigator.clipboard.readText();
+                                                        if (!text || !text.includes('Steps:')) return;
 
-                                                // Intelligent A1111 Parser
-                                                const parts = text.split('\n');
-                                                let positive = '';
-                                                let negative = '';
-                                                let state = 0; // 0: positive, 1: negative, 2: params
+                                                        // Intelligent SD WebUI Parser
+                                                        const parts = text.split('\n');
+                                                        let positive = '';
+                                                        let negative = '';
+                                                        let state = 0; // 0: positive, 1: negative, 2: params
 
-                                                for (const line of parts) {
-                                                    const clean = line.trim();
-                                                    if (!clean) continue;
+                                                        for (const line of parts) {
+                                                            const clean = line.trim();
+                                                            if (!clean) continue;
 
-                                                    if (clean.startsWith('Negative prompt:')) {
-                                                        state = 1;
-                                                        negative = clean.replace('Negative prompt:', '').trim();
-                                                        continue;
+                                                            if (clean.startsWith('Negative prompt:')) {
+                                                                state = 1;
+                                                                negative = clean.replace('Negative prompt:', '').trim();
+                                                                continue;
+                                                            }
+                                                            if (clean.startsWith('Steps:')) {
+                                                                state = 2;
+                                                                continue;
+                                                            }
+
+                                                            if (state === 0) positive += (positive ? '\n' : '') + clean;
+                                                            else if (state === 1) negative += (negative ? '\n' : '') + clean;
+                                                        }
+
+                                                        if (positive) {
+                                                            setPromptValue(positive);
+                                                            setIsPromptDirty(true);
+                                                        }
+                                                        if (negative) {
+                                                            setNegativePromptValue(negative);
+                                                            setIsNegativePromptDirty(true);
+                                                        }
+                                                    } catch (e) {
+                                                        console.error("Failed to paste metadata", e);
                                                     }
-                                                    if (clean.startsWith('Steps:')) {
-                                                        state = 2;
-                                                        continue;
-                                                    }
-
-                                                    if (state === 0) positive += (positive ? '\n' : '') + clean;
-                                                    else if (state === 1) negative += (negative ? '\n' : '') + clean;
-                                                }
-
-                                                if (positive) {
-                                                    setPromptValue(positive);
-                                                    setIsPromptDirty(true);
-                                                }
-                                                if (negative) {
-                                                    setNegativePromptValue(negative);
-                                                    setIsNegativePromptDirty(true);
-                                                }
-                                            } catch (e) {
-                                                console.error("Failed to paste metadata", e);
-                                            }
-                                        }}
-                                        className="text-[10px] px-2 py-1 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded transition-colors flex items-center gap-1 text-gray-500"
-                                        title="Paste from A1111 Clipboard"
-                                    >
-                                        <ClipboardList className="w-3 h-3" /> Recreate from A1111
-                                    </button>
+                                                }}
+                                                className="text-[10px] px-2 py-1 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded transition-colors flex items-center gap-1 text-gray-500"
+                                                title="Paste metadata from SD WebUI clipboard"
+                                            >
+                                                <ClipboardList className="w-3 h-3" /> Paste from SD WebUI
+                                            </button>
+                                        )}
                                     {(isPromptDirty || isNegativePromptDirty) && <button onClick={savePrompt} className="text-xs flex items-center gap-1 bg-sage-500 text-white px-2 py-1 rounded shadow-md hover:bg-sage-600"><Save className="w-3 h-3" /> Save</button>}
                                 </div>
                             </div>
