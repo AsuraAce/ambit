@@ -30,7 +30,8 @@ export const useFileOperations = ({
     const {
         isImporting, setIsImporting, importProgress, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
-        thumbnailProgress, setThumbnailProgress
+        thumbnailProgress, setThumbnailProgress,
+        setImportAbortController // Added
     } = useLibraryStore();
     const { refreshHiddenAvailability } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
@@ -116,29 +117,37 @@ export const useFileOperations = ({
 
     const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool) => {
         setIsImporting(true);
+        const abortCtrl = new AbortController();
+        setImportAbortController(abortCtrl);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths(paths, thumbDir, (current, total, message) => {
                 setImportProgress({ current, total, message });
-            }, defaultTool);
+            }, defaultTool, abortCtrl.signal);
+
+            // If aborted, result might be partial. That's fine.
             await commitImportResult(result);
         } catch (error) {
-            addToast("Import failed", "error");
+            console.error("Import error", error);
+            addToast("Import failed or cancelled", "error");
         } finally {
             setIsImporting(false);
             setImportProgress(null);
+            setImportAbortController(null);
         }
     };
 
     const scanDirectory = async (dirPath: string) => {
         setIsImporting(true);
+        const abortCtrl = new AbortController();
+        setImportAbortController(abortCtrl);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
                 setImportProgress({ current, total, message });
-            });
+            }, undefined, abortCtrl.signal);
             if (result.images.length > 0) {
                 await commitImportResult(result, true);
             }
@@ -147,6 +156,7 @@ export const useFileOperations = ({
         } finally {
             setIsImporting(false);
             setImportProgress(null);
+            setImportAbortController(null);
         }
     };
 

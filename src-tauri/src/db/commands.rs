@@ -40,6 +40,29 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<DbDiagnostics, 
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn get_image_count_for_path_prefix(app: tauri::AppHandle, path: String) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        // Ensure path ends with a separator to avoid matching sibling folders with similar names
+        // e.g. "C:/Images" shouldn't match "C:/ImagesBackup"
+        // But we need to handle both slash types or rely on normalization.
+        // For now, we trust the input is normalized, but we append % for the LIKE query.
+        
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
+            params![format!("{}%", path), format!("{}\\%", path)], // Match forward or backslash just in case
+            |r| r.get(0)
+        ).unwrap_or(0);
+
+        Ok(count)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;

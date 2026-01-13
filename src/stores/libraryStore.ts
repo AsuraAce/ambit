@@ -30,6 +30,7 @@ interface LibraryState {
     // Transient UI State (Progress)
     isImporting: boolean;
     importProgress: SyncProgress | null;
+    importAbortController: AbortController | null; // Added
     isRegeneratingThumbnails: boolean;
     thumbnailProgress: SyncProgress | null;
     isResolvingModels: boolean;
@@ -50,6 +51,8 @@ interface LibraryState {
 
     setIsImporting: (isImporting: boolean) => void;
     setImportProgress: (progress: SyncProgress | null) => void;
+    setImportAbortController: (ctrl: AbortController | null) => void; // Added
+    cancelImport: () => void; // Added
     setIsRegeneratingThumbnails: (val: boolean) => void;
     setThumbnailProgress: (progress: SyncProgress | null) => void;
     setIsResolvingModels: (val: boolean) => void;
@@ -77,6 +80,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     isImporting: false,
     importProgress: null,
+    importAbortController: null,
     isRegeneratingThumbnails: false,
     thumbnailProgress: null,
     isResolvingModels: false,
@@ -95,6 +99,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     setIsImporting: (val) => set({ isImporting: val, isActivityDockDismissed: val ? false : undefined }),
     setImportProgress: (progress) => set({ importProgress: progress }),
+    setImportAbortController: (ctrl) => set({ importAbortController: ctrl }),
+    cancelImport: () => set((state) => {
+        if (state.importAbortController) {
+            state.importAbortController.abort();
+            return { isImporting: false, importProgress: null, importAbortController: null };
+        }
+        return {};
+    }),
     setIsRegeneratingThumbnails: (val) => set({ isRegeneratingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setThumbnailProgress: (progress) => set({ thumbnailProgress: progress }),
     setIsResolvingModels: (val) => set({ isResolvingModels: val, isActivityDockDismissed: val ? false : undefined }),

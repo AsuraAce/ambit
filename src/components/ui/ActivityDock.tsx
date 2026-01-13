@@ -10,7 +10,8 @@ export const ActivityDock: React.FC = () => {
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
-        isPopulatingThumbnails
+        isPopulatingThumbnails,
+        cancelImport // Added
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -107,10 +108,21 @@ export const ActivityDock: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Subtle Footer */}
-                        <div className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center gap-2">
-                            <Info className="w-3 h-3 text-gray-400" />
-                            <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header border.</span>
+                        {/* Subtle Footer with CANCEL button */}
+                        <div className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <Info className="w-3 h-3 text-gray-400" />
+                                <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header border.</span>
+                            </div>
+
+                            {isImporting && (
+                                <button
+                                    onClick={cancelImport}
+                                    className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"
+                                >
+                                    Cancel
+                                </button>
+                            )}
                         </div>
                     </div>
                 </motion.div>

@@ -29,6 +29,14 @@ async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>) : 
     else return { status: "error", error: e  as any };
 }
 },
+async getImageCountForPathPrefix(path: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_image_count_for_path_prefix", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async optimizeDatabase() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("optimize_database") };

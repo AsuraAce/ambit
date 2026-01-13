@@ -6,6 +6,9 @@ import { AppSettings, MonitoredFolder } from '../../../types';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { commands } from '../../../bindings';
+import { useToast } from '../../../hooks/useToast';
+import { normalizePath } from '../../../utils/pathUtils';
 
 interface TabProps {
     settings: AppSettings;
@@ -15,6 +18,39 @@ interface TabProps {
 export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [newFolderPath, setNewFolderPath] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { addToast } = useToast();
+
+    // Fetch image counts on mount and when folders change
+    React.useEffect(() => {
+        const fetchCounts = async () => {
+            if (!settings.monitoredFolders.length) return;
+
+            let hasUpdates = false;
+            const updatedFolders = await Promise.all(settings.monitoredFolders.map(async (folder) => {
+                try {
+                    const res = await commands.getImageCountForPathPrefix(folder.path);
+                    if (res.status === 'ok' && res.data !== folder.imageCount) {
+                        hasUpdates = true;
+                        return { ...folder, imageCount: res.data };
+                    }
+                } catch (e) {
+                    console.error('Failed to get count for', folder.path, e);
+                }
+                return folder;
+            }));
+
+            if (hasUpdates) {
+                setSettings(prev => ({ ...prev, monitoredFolders: updatedFolders }));
+            }
+        };
+        fetchCounts();
+    }, [settings.monitoredFolders.length, setSettings]); // Only run on length change (add/remove) to avoid loops, or use deep check?
+    // Actually, if we update settings, this effect triggers again. We need to be careful.
+    // The check `res.data !== folder.imageCount` prevents infinite loops if data stabilizes.
+    // However, including `settings.monitoredFolders` in deps will trigger it on every update.
+    // We should probably rely on a separate interval or just length/mount.
+    // For now, let's trust the strict equality check to stop the cycle.
+
 
     const [newResourcePath, setNewResourcePath] = useState('');
     const [isScanningResources, setIsScanningResources] = useState(false);
@@ -24,9 +60,22 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         e.preventDefault();
         if (!newFolderPath.trim()) return;
 
+        const normalizedNew = normalizePath(newFolderPath);
+
+        // Path-based Deduplication
+        const existing = settings.monitoredFolders.find(f => normalizePath(f.path) === normalizedNew);
+        if (existing) {
+            addToast(`Folder is already monitored: ${existing.path}`, 'info');
+
+            // Optional: Highlight the existing folder?
+            // For now just clear input to indicate "done/found"
+            setNewFolderPath('');
+            return;
+        }
+
         const newFolder: MonitoredFolder = {
             id: `folder_${Date.now()}`,
-            path: newFolderPath,
+            path: normalizedNew,
             isActive: true,
             imageCount: 0
         };

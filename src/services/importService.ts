@@ -87,7 +87,8 @@ export const processNativePaths = async (
     paths: string[],
     thumbnailDir: string | undefined,
     onProgress?: (current: number, total: number, message?: string) => void,
-    defaultTool?: GeneratorTool // Added argument
+    defaultTool?: GeneratorTool, // Added argument
+    abortSignal?: AbortSignal
 ): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     let skipped = 0;
@@ -98,6 +99,7 @@ export const processNativePaths = async (
     if (onProgress) onProgress(0, paths.length, 'Scanning folders...');
 
     for (let i = 0; i < paths.length; i++) {
+        if (abortSignal?.aborted) break;
         const p = paths[i];
         if (onProgress) onProgress(i, paths.length, `Scanning: ${p.split(/[\\/]/).pop() || p}`);
         try {
@@ -127,6 +129,10 @@ export const processNativePaths = async (
     if (onProgress) onProgress(0, totalToProcess, 'Processing images...');
 
     for (let i = 0; i < allPaths.length; i += BATCH_SIZE) {
+        if (abortSignal?.aborted) {
+            console.log('Import cancelled by user');
+            break;
+        }
         const chunk = allPaths.slice(i, i + BATCH_SIZE);
 
         try {

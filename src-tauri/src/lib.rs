@@ -15,6 +15,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::save_images_batch,
             db::commands::get_db_diagnostics,
             db::commands::refresh_boards_native,
+            db::commands::get_image_count_for_path_prefix,
 
             db::commands::optimize_database,
             db::commands::purge_database,

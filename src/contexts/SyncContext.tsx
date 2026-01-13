@@ -188,7 +188,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             });
 
             console.log('[Purge] Resetting settings...');
-            setSettings(prev => ({ ...prev, lastSyncedAt: null }));
+            setSettings(prev => ({ ...prev, lastSyncedAt: null, monitoredFolders: [] }));
 
             // Reset React Query cache and Zustand store to prevent stale state
             console.log('[Purge] Clearing React Query cache and store...');
