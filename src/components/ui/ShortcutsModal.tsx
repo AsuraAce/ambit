@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Keyboard, MousePointer2, Command, Search, Filter, Settings, Info, ChevronDown, ChevronUp, FileCode, Monitor, Hash, Puzzle, Sliders } from 'lucide-react';
+import { X, Keyboard, Command, Search, ChevronDown, ChevronRight, Monitor, Hash, Puzzle, Sliders } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
 
 interface ShortcutsModalProps {
