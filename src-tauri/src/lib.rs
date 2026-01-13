@@ -88,12 +88,16 @@ fn check_and_execute_deferred_purge() {
     let mut paths_to_check = Vec::new();
     
     if let Some(config_dir) = dirs::config_dir() {
+        paths_to_check.push(config_dir.join("com.ambit.app"));
+        paths_to_check.push(config_dir.join("com.ambit.dev"));
         paths_to_check.push(config_dir.join("com.ambit.alpha"));
-        paths_to_check.push(config_dir.join("com.tauri.dev")); // Check default dev path too
+        paths_to_check.push(config_dir.join("com.tauri.dev"));
     }
     if let Some(data_local_dir) = dirs::data_local_dir() {
+        paths_to_check.push(data_local_dir.join("com.ambit.app"));
+        paths_to_check.push(data_local_dir.join("com.ambit.dev"));
         paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
-        paths_to_check.push(data_local_dir.join("com.tauri.dev")); // Check default dev path too
+        paths_to_check.push(data_local_dir.join("com.tauri.dev"));
     }
     
     for app_dir in paths_to_check {
