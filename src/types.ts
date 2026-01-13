@@ -62,6 +62,7 @@ export interface ImageMetadata {
   hiresUpscaler?: string;
   modelHash?: string;
   generationType?: 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
+  isFavorite?: boolean; // Extracted from legacy metadata (e.g. Subject: favorite)
 }
 
 export interface ParseResult {

@@ -5,8 +5,18 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
     meta.tool = "InvokeAI".to_string();
 
-    // Handle root vs image wrapped
+    // Handle root vs image wrapped (v2.x has metadata in "image" object)
     let root = json.get("image").unwrap_or(json);
+
+    // ===== V2.x Format Support =====
+    // model_weights is at the TOP level in v2.x, not inside "image"
+    if let Some(weights) = json.get("model_weights").and_then(|s| s.as_str()) {
+        meta.model = weights.to_string();
+    }
+    // model_hash at top level
+    if let Some(hash) = json.get("model_hash").and_then(|s| s.as_str()) {
+        meta.model_hash = Some(hash.to_string());
+    }
 
     // Check optional is_intermediate flag
     if let Some(val) = root.get("is_intermediate") {
@@ -15,24 +25,29 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
+    // Prompt extraction - v2.x uses array format inside root.prompt
     if let Some(prompt) = root.get("prompt") {
         if let Some(arr) = prompt.as_array() {
-            // Old format
+            // Old v2.x format: [{"prompt": "...", "weight": 1.0}, ...]
             let mut prompt_parts = Vec::new();
             for p in arr {
                 if let Some(pt) = p.get("prompt").and_then(|s| s.as_str()) {
                     prompt_parts.push(pt);
                 }
             }
-            meta.positive_prompt = prompt_parts.join(" ");
+            if !prompt_parts.is_empty() {
+                meta.positive_prompt = prompt_parts.join(" ");
+            }
         }
     }
 
-    // Try new InvokeAI Graph format / Metadata
-    if let Some(pos) = root.get("positive_prompt").and_then(|s| s.as_str()) {
-        meta.positive_prompt = pos.trim().to_string();
-    } else if let Some(pos) = root.get("positive_conditioning").and_then(|s| s.as_str()) {
-        meta.positive_prompt = pos.trim().to_string();
+    // Try new InvokeAI Graph format / Metadata (v3.x)
+    if meta.positive_prompt.is_empty() {
+        if let Some(pos) = root.get("positive_prompt").and_then(|s| s.as_str()) {
+            meta.positive_prompt = pos.trim().to_string();
+        } else if let Some(pos) = root.get("positive_conditioning").and_then(|s| s.as_str()) {
+            meta.positive_prompt = pos.trim().to_string();
+        }
     }
 
     if let Some(neg) = root.get("negative_prompt").and_then(|s| s.as_str()) {
@@ -52,20 +67,34 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
 
     if let Some(seed) = root.get("seed").and_then(|v| v.as_i64()) {
         meta.seed = seed;
+    } else if let Some(seed) = root.get("seed").and_then(|v| v.as_u64()) {
+        // Handle unsigned seed values (common in v2.x)
+        meta.seed = seed as i64;
     }
 
-    if let Some(sampler) = root.get("scheduler").and_then(|s| s.as_str()) {
+    // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
+    if let Some(sampler) = root.get("sampler").and_then(|s| s.as_str()) {
+        meta.sampler = sampler.to_string();
+    } else if let Some(sampler) = root.get("scheduler").and_then(|s| s.as_str()) {
         meta.sampler = sampler.to_string();
     } else if let Some(sampler) = root.get("sampler_name").and_then(|s| s.as_str()) {
         meta.sampler = sampler.to_string();
     }
 
-    if let Some(model) = root.get("model") {
-        if let Some(name) = model.get("model_name").and_then(|s| s.as_str()) {
-             meta.model = name.to_string();
-        } else if let Some(name) = model.as_str() {
-             meta.model = name.to_string();
+    // Model - v3.x has nested object, v2.x has model_weights at root (handled above)
+    if meta.model.is_empty() {
+        if let Some(model) = root.get("model") {
+            if let Some(name) = model.get("model_name").and_then(|s| s.as_str()) {
+                 meta.model = name.to_string();
+            } else if let Some(name) = model.as_str() {
+                 meta.model = name.to_string();
+            }
         }
+    }
+
+    // Generation type from v2.x "type" field
+    if let Some(gen_type) = root.get("type").and_then(|s| s.as_str()) {
+        meta.generation_type = gen_type.to_string();
     }
 
     // Resources (LoRAs, ControlNets)
@@ -145,5 +174,40 @@ mod tests {
         assert_eq!(meta.positive_prompt, "mountain landscape");
         assert_eq!(meta.negative_prompt, "clouds");
         assert!(meta.is_intermediate);
+    }
+
+    #[test]
+    fn test_extract_invokeai_v2x_archived_format() {
+        // Real v2.x format from InvokeAI 2.2.5 archived images
+        let payload = json!({
+            "model": "stable diffusion",
+            "model_weights": "Cyberpunk-Anime-Diffusion",
+            "model_hash": "a8f7dcece7bc4a6273ed1efa427d481b03237a8f635f1bc44128dd48217a2947",
+            "app_id": "invoke-ai/InvokeAI",
+            "app_version": "2.2.5",
+            "image": {
+                "prompt": [
+                    {"prompt": "human flower by Android Jones", "weight": 1.0}
+                ],
+                "steps": 50,
+                "cfg_scale": 7.5,
+                "seed": 3038946690_u64,
+                "sampler": "k_lms",
+                "type": "txt2img",
+                "width": 512,
+                "height": 768
+            }
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        
+        assert_eq!(meta.tool, "InvokeAI");
+        assert_eq!(meta.model, "Cyberpunk-Anime-Diffusion");
+        assert_eq!(meta.model_hash.as_deref(), Some("a8f7dcece7bc4a6273ed1efa427d481b03237a8f635f1bc44128dd48217a2947"));
+        assert_eq!(meta.steps, 50);
+        assert_eq!(meta.cfg, 7.5);
+        assert_eq!(meta.seed, 3038946690);
+        assert_eq!(meta.sampler, "k_lms");
+        assert_eq!(meta.generation_type, "txt2img");
+        assert!(meta.positive_prompt.contains("human flower"));
     }
 }

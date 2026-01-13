@@ -56,6 +56,8 @@ pub struct ImageMetadata {
     pub model_hash: Option<String>,
     #[serde(rename = "generationType")]
     pub generation_type: String,
+    #[serde(rename = "isFavorite", default)]
+    pub is_favorite: bool,
 }
 
 impl Default for ImageMetadata {
@@ -86,6 +88,7 @@ impl Default for ImageMetadata {
             hires_upscaler: None,
             model_hash: None,
             generation_type: "unknown".to_string(),
+            is_favorite: false,
         }
     }
 }
@@ -93,6 +96,11 @@ impl Default for ImageMetadata {
 pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.tool == "Unknown" && secondary.tool != "Unknown" {
         base.tool = secondary.tool;
+    }
+    
+    // Merge favorites (if either is true, result is true)
+    if secondary.is_favorite {
+        base.is_favorite = true;
     }
     
     if base.model == "Unknown" || base.model.is_empty() {

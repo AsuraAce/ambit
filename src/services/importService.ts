@@ -174,7 +174,7 @@ export const processNativePaths = async (
                     timestamp: result.timestamp || Date.now(),
                     width: result.width || 0,
                     height: result.height || 0,
-                    isFavorite: !!result.extra.isFavorite,
+                    isFavorite: !!result.metadata.isFavorite || !!result.extra.isFavorite,
                     isDeleted: false,
                     isMissing: false,
                     metadata: {

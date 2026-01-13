@@ -157,8 +157,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 <div className="p-4 bg-sage-50 dark:bg-sage-500/10 border border-sage-200 dark:border-sage-500/20 rounded-xl text-sm text-sage-800 dark:text-sage-200 flex items-start gap-3">
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
-                        <strong className="block mb-1">Local Monitoring</strong>
-                        {APP_NAME} watches these folders for new <span className="font-semibold">generated images</span> and adds them to your library.
+                        <strong className="block mb-1">Image Folders</strong>
+                        Add folders containing AI-generated images. Use this for <span className="font-semibold">archived images</span>, unsupported generators, or folders not covered by the Integrations tab.
                     </div>
                 </div>
 

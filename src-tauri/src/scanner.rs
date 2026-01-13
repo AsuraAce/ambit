@@ -523,7 +523,7 @@ pub fn scan_image_internal(
         found_metadata = true;
     }
 
-    // 2. InvokeAI (Cumulative Merge)
+    // 2. InvokeAI (Cumulative Merge & Tool Finalization)
     if let Some(content) = chunks
         .get("invokeai_metadata")
         .or_else(|| chunks.get("sd-metadata"))
@@ -532,6 +532,8 @@ pub fn scan_image_internal(
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
             let invoke_meta = metadata::extract_invokeai_metadata(&json);
             metadata::merge_metadata(&mut parsed_metadata, invoke_meta);
+            // Finalize tool label: InvokeAI chunks exist, so it's an InvokeAI generation
+            parsed_metadata.tool = "InvokeAI".to_string();
             found_metadata = true;
         }
     }
@@ -551,6 +553,10 @@ pub fn scan_image_internal(
         .or_else(|| chunks.get("invokeai_graph")) 
     {
         parsed_metadata.workflow_json = Some(workflow.clone());
+        // These chunk names are InvokeAI-specific, set tool if not already set by specific parser
+        if parsed_metadata.tool.is_empty() || parsed_metadata.tool == "Automatic1111" {
+            parsed_metadata.tool = "InvokeAI".to_string();
+        }
         found_metadata = true;
     }
 
@@ -564,6 +570,23 @@ pub fn scan_image_internal(
 
     if parsed_metadata.generation_type != "unknown" {
         found_metadata = true;
+    }
+
+    // Check for Legacy Favorite tag in generic chunks (Subject, Keywords, Description)
+    // Common in XMP/IPTC or standard PNG chunks used by older managers
+    if !parsed_metadata.is_favorite {
+        let is_fav = chunks.get("Subject")
+            .or_else(|| chunks.get("Keywords"))
+            .or_else(|| chunks.get("Description"))
+            .map(|s| s.to_lowercase().contains("favorite"))
+            .unwrap_or(false);
+        
+        if is_fav {
+            parsed_metadata.is_favorite = true;
+            // Ensure we consider metadata found if we found a favorite tag, 
+            // so that the metadata object (and thus the flag) is returned.
+            found_metadata = true;
+        }
     }
 
     let chunks_to_return = if parsed_metadata.workflow_json.is_some() {
