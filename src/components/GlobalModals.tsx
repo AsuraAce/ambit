@@ -52,6 +52,7 @@ interface GlobalModalsProps {
     filters?: any;
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: any) => void;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
@@ -84,7 +85,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     settings,
     filters,
     collectionToEditId,
-    onSaveCollectionFilters
+    onSaveCollectionFilters,
+    onScanFolder // Added
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
@@ -96,6 +98,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 onSave={onSettingsSave}
                 settings={settings}
                 initialTab={initialSettingsTab as any}
+                onScanFolder={onScanFolder}
             />
 
             <ExportModal

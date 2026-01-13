@@ -12,6 +12,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
   initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+  onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
 type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
@@ -56,7 +57,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   onClose,
   settings,
   onSave,
-  initialTab = 'general'
+  initialTab = 'general',
+  onScanFolder
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
@@ -151,7 +153,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
                 {activeTab === 'general' && <GeneralTab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} onScanFolder={onScanFolder} />}
                 {activeTab === 'invokeai' && <InvokeAITab settings={localSettings} setSettings={setLocalSettings} />}
                 {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} onClose={onClose} />}
                 {activeTab === 'comfyui' && <ComfyUITab settings={localSettings} setSettings={setLocalSettings} />}

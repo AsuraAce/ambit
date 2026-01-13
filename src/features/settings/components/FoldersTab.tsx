@@ -13,44 +13,61 @@ import { normalizePath } from '../../../utils/pathUtils';
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>; // Added
 }
 
-export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder }) => {
     const [newFolderPath, setNewFolderPath] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToast();
+    const [scanningIds, setScanningIds] = useState<Set<string>>(new Set()); // Track scanning folders
+
+    // Fetch counts logic extracted for reuse
+    const fetchCounts = async () => {
+        if (!settings.monitoredFolders.length) return;
+
+        let hasUpdates = false;
+        const updatedFolders = await Promise.all(settings.monitoredFolders.map(async (folder) => {
+            try {
+                const res = await commands.getImageCountForPathPrefix(folder.path);
+                if (res.status === 'ok' && res.data !== folder.imageCount) {
+                    hasUpdates = true;
+                    return { ...folder, imageCount: res.data };
+                }
+            } catch (e) {
+                console.error('Failed to get count for', folder.path, e);
+            }
+            return folder;
+        }));
+
+        if (hasUpdates) {
+            setSettings(prev => ({ ...prev, monitoredFolders: updatedFolders }));
+        }
+    };
 
     // Fetch image counts on mount and when folders change
     React.useEffect(() => {
-        const fetchCounts = async () => {
-            if (!settings.monitoredFolders.length) return;
-
-            let hasUpdates = false;
-            const updatedFolders = await Promise.all(settings.monitoredFolders.map(async (folder) => {
-                try {
-                    const res = await commands.getImageCountForPathPrefix(folder.path);
-                    if (res.status === 'ok' && res.data !== folder.imageCount) {
-                        hasUpdates = true;
-                        return { ...folder, imageCount: res.data };
-                    }
-                } catch (e) {
-                    console.error('Failed to get count for', folder.path, e);
-                }
-                return folder;
-            }));
-
-            if (hasUpdates) {
-                setSettings(prev => ({ ...prev, monitoredFolders: updatedFolders }));
-            }
-        };
         fetchCounts();
-    }, [settings.monitoredFolders.length, setSettings]); // Only run on length change (add/remove) to avoid loops, or use deep check?
-    // Actually, if we update settings, this effect triggers again. We need to be careful.
-    // The check `res.data !== folder.imageCount` prevents infinite loops if data stabilizes.
-    // However, including `settings.monitoredFolders` in deps will trigger it on every update.
-    // We should probably rely on a separate interval or just length/mount.
-    // For now, let's trust the strict equality check to stop the cycle.
+    }, [settings.monitoredFolders.length]); // Only run on length change
 
+    const handleRescan = async (id: string, path: string, variant?: string) => {
+        if (!onScanFolder) return;
+        setScanningIds(prev => new Set(prev).add(id));
+        try {
+            await onScanFolder([{ path, variant }]);
+            addToast(`Rescan complete for ${path}`, 'success');
+            await fetchCounts(); // Refresh counts
+        } catch (e) {
+            console.error(e);
+            addToast(`Rescan failed for ${path}`, 'error');
+        } finally {
+            setScanningIds(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+    };
 
     const [newResourcePath, setNewResourcePath] = useState('');
     const [isScanningResources, setIsScanningResources] = useState(false);
@@ -223,6 +240,15 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{folder.imageCount} images</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRescan(folder.id, folder.path, folder.variant)}
+                                        disabled={scanningIds.has(folder.id)}
+                                        className={`p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all ${scanningIds.has(folder.id) ? 'opacity-50 cursor-wait' : ''}`}
+                                        title="Rescan Folder"
+                                    >
+                                        <RefreshCw className={`w-4 h-4 ${scanningIds.has(folder.id) ? 'animate-spin' : ''}`} />
+                                    </button>
                                     <button
                                         type="button"
                                         onClick={() => removeFolder(folder.id)}
