@@ -14,7 +14,10 @@ pub fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
                 .or_else(|| {
                     l.get("model").and_then(|m| {
                         m.as_str()
+                            // v3.x: model.model_name
                             .or_else(|| m.get("model_name").and_then(|v| v.as_str()))
+                            // v5.x: model.name
+                            .or_else(|| m.get("name").and_then(|v| v.as_str()))
                     })
                 });
 
@@ -42,7 +45,11 @@ pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
                 .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
                 .or_else(|| {
                     c.get("model")
-                        .and_then(|m| m.get("model_name").and_then(|v| v.as_str()))
+                        .and_then(|m| {
+                            m.get("model_name").and_then(|v| v.as_str())
+                                // v5.x: model.name
+                                .or_else(|| m.get("name").and_then(|v| v.as_str()))
+                        })
                 });
 
             if let Some(n) = name {

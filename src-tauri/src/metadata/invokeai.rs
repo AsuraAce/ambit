@@ -81,20 +81,57 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         meta.sampler = sampler.to_string();
     }
 
-    // Model - v3.x has nested object, v2.x has model_weights at root (handled above)
-    if meta.model.is_empty() {
+    // Model - v5.x uses model.name, v3.x uses model.model_name, v2.x uses model_weights at root
+    if meta.model.is_empty() || meta.model == "Unknown" {
         if let Some(model) = root.get("model") {
+            // Try v3.x format: model.model_name
             if let Some(name) = model.get("model_name").and_then(|s| s.as_str()) {
-                 meta.model = name.to_string();
-            } else if let Some(name) = model.as_str() {
-                 meta.model = name.to_string();
+                meta.model = name.to_string();
+            }
+            // Try v5.x format: model.name
+            else if let Some(name) = model.get("name").and_then(|s| s.as_str()) {
+                meta.model = name.to_string();
+            }
+            // Fallback: model as string
+            else if let Some(name) = model.as_str() {
+                meta.model = name.to_string();
+            }
+            
+            // Extract model hash from v5.x format (model.hash with blake3: prefix)
+            if meta.model_hash.is_none() {
+                if let Some(hash) = model.get("hash").and_then(|s| s.as_str()) {
+                    // Strip blake3: or similar prefix if present
+                    let clean_hash = hash.split(':').last().unwrap_or(hash);
+                    meta.model_hash = Some(clean_hash.to_string());
+                }
             }
         }
     }
 
-    // Generation type from v2.x "type" field
-    if let Some(gen_type) = root.get("type").and_then(|s| s.as_str()) {
+    // Generation type - v2.x uses "type", v3.x uses "generation_mode"
+    if let Some(gen_type) = root.get("generation_mode").and_then(|s| s.as_str()) {
         meta.generation_type = gen_type.to_string();
+    } else if let Some(gen_type) = root.get("type").and_then(|s| s.as_str()) {
+        meta.generation_type = gen_type.to_string();
+    }
+
+    // Clip Skip (v3.x)
+    if let Some(clip) = root.get("clip_skip").and_then(|v| v.as_u64()) {
+        if clip > 0 {
+            meta.clip_skip = Some(clip as u32);
+        }
+    }
+
+    // Hires Fix (v3.x uses hrf_*)
+    if let Some(enabled) = root.get("hrf_enabled").and_then(|v| v.as_bool()) {
+        if enabled {
+            if let Some(strength) = root.get("hrf_strength").and_then(|v| v.as_f64()) {
+                meta.denoising_strength = Some(strength as f32);
+            }
+            if let Some(method) = root.get("hrf_method").and_then(|s| s.as_str()) {
+                meta.hires_upscaler = Some(method.to_string());
+            }
+        }
     }
 
     // Resources (LoRAs, ControlNets)
@@ -210,4 +247,44 @@ mod tests {
         assert_eq!(meta.generation_type, "txt2img");
         assert!(meta.positive_prompt.contains("human flower"));
     }
+
+    #[test]
+    fn test_extract_invokeai_v3x_format() {
+        // Real v3.x format with generation_mode, model object, clip_skip, hrf_*
+        let payload = json!({
+            "generation_mode": "txt2img",
+            "positive_prompt": "A young couple enjoying kendo",
+            "negative_prompt": "(worst quality, low quality)",
+            "width": 1024,
+            "height": 1536,
+            "seed": 624077823,
+            "cfg_scale": 7.0,
+            "steps": 24,
+            "scheduler": "dpmpp_2m_k",
+            "clip_skip": 2,
+            "model": {
+                "model_name": "westernAnimation_v1",
+                "base_model": "sd-1",
+                "model_type": "main"
+            },
+            "hrf_enabled": true,
+            "hrf_method": "bilinear",
+            "hrf_strength": 0.6
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        
+        assert_eq!(meta.tool, "InvokeAI");
+        assert_eq!(meta.model, "westernAnimation_v1");
+        assert_eq!(meta.steps, 24);
+        assert_eq!(meta.cfg, 7.0);
+        assert_eq!(meta.seed, 624077823);
+        assert_eq!(meta.sampler, "dpmpp_2m_k");
+        assert_eq!(meta.generation_type, "txt2img");
+        assert_eq!(meta.clip_skip, Some(2));
+        assert_eq!(meta.denoising_strength, Some(0.6));
+        assert_eq!(meta.hires_upscaler.as_deref(), Some("bilinear"));
+        assert!(meta.positive_prompt.contains("kendo"));
+        assert!(meta.negative_prompt.contains("worst quality"));
+    }
 }
+

@@ -99,7 +99,12 @@ export const useImagesQuery = ({
                 isPinned: lastImage.isPinned ? 1 : 0
             };
         },
-        placeholderData: (previousData) => previousData, // Keep previous data while fetching new filter results
+        placeholderData: (previousData) => {
+            // Only use placeholder if previous data has images
+            // Prevents stale empty states when switching from "no results" filters (e.g., favorites with 0 items)
+            const hasImages = (previousData?.pages[0]?.images.length ?? 0) > 0;
+            return hasImages ? previousData : undefined;
+        },
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
 };
