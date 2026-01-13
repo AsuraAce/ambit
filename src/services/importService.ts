@@ -6,6 +6,31 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
+import { getDb } from './db/connection';
+
+/**
+ * Queries the database for paths that already exist.
+ * Used to skip already-imported files during rescan.
+ */
+const getExistingPaths = async (paths: string[]): Promise<Set<string>> => {
+    if (paths.length === 0) return new Set();
+
+    const db = await getDb();
+    const CHUNK_SIZE = 900; // SQLite parameter limit
+    const existingSet = new Set<string>();
+
+    for (let i = 0; i < paths.length; i += CHUNK_SIZE) {
+        const chunk = paths.slice(i, i + CHUNK_SIZE).map(normalizePath);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = await db.select<{ id: string }[]>(
+            `SELECT id FROM images WHERE id IN (${placeholders})`,
+            chunk
+        );
+        rows.forEach(r => existingSet.add(r.id));
+    }
+
+    return existingSet;
+};
 
 export interface ImportStats {
     processed: number;
@@ -115,25 +140,35 @@ export const processNativePaths = async (
         }
     }
 
-    // 2. Batch size for bulk scanning
+    // 2. Pre-filter: Remove already-imported paths (optimization for rescan)
+    if (onProgress) onProgress(0, allPaths.length, 'Checking for new files...');
+    const existingPaths = await getExistingPaths(allPaths);
+    const newPaths = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
+
+    const skippedExisting = allPaths.length - newPaths.length;
+    if (skippedExisting > 0) {
+        console.log(`[Import] Skipping ${skippedExisting} already-imported files`);
+    }
+
+    // 3. Batch size for bulk scanning
     const BATCH_SIZE = 50;
-    const totalToProcess = allPaths.length;
+    const totalToProcess = newPaths.length;
 
     if (totalToProcess === 0) {
         return {
             images: [],
-            stats: { processed: 0, imported: 0, skipped: 0, errors: 0 }
+            stats: { processed: allPaths.length, imported: 0, skipped: skippedExisting, errors: 0 }
         };
     }
 
     if (onProgress) onProgress(0, totalToProcess, 'Processing images...');
 
-    for (let i = 0; i < allPaths.length; i += BATCH_SIZE) {
+    for (let i = 0; i < newPaths.length; i += BATCH_SIZE) {
         if (abortSignal?.aborted) {
             console.log('Import cancelled by user');
             break;
         }
-        const chunk = allPaths.slice(i, i + BATCH_SIZE);
+        const chunk = newPaths.slice(i, i + BATCH_SIZE);
 
         try {
             // Optimization: Skip thumbnails for bulk import -> true
