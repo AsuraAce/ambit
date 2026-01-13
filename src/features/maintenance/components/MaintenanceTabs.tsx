@@ -5,10 +5,11 @@ import { MaintenanceTab } from '../../../hooks/useMaintenanceData';
 interface MaintenanceTabsProps {
     activeTab: MaintenanceTab;
     onTabChange: (tab: MaintenanceTab) => void;
+    intermediatesCount?: number;
 }
 
-export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onTabChange }) => {
-    const tabs = [
+export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onTabChange, intermediatesCount = 0 }) => {
+    const allTabs = [
         { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
         { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
         { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
@@ -16,6 +17,11 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
         { id: 'missing', label: 'Missing', color: 'text-orange-500' },
         { id: 'trash', label: 'Trash', color: 'text-red-500' },
     ];
+
+    // Hide Intermediates tab if there are no intermediate images
+    const tabs = allTabs.filter(tab =>
+        tab.id !== 'intermediates' || intermediatesCount > 0
+    );
 
     return (
         <div className="flex-shrink-0 pt-4 pl-6 pr-8 pb-4 z-20">

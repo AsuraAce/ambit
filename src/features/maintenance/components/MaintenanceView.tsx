@@ -14,6 +14,7 @@ import { IntermediatesTab } from './IntermediatesTab';
 import { MaintenanceTabs } from './MaintenanceTabs';
 import { ScanPlaceholder } from './ScanPlaceholder';
 import { useSelection } from '../../../hooks/useSelection';
+import { useLibraryStore } from '../../../stores/libraryStore';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -58,6 +59,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 }) => {
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
+    const intermediatesCount = useLibraryStore(s => s.maintenanceCounts.intermediates);
 
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
@@ -275,7 +277,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
-            <MaintenanceTabs activeTab={activeTab} onTabChange={setActiveTab} />
+            <MaintenanceTabs activeTab={activeTab} onTabChange={setActiveTab} intermediatesCount={intermediatesCount} />
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto relative custom-scrollbar px-6 pb-8" ref={scrollContainerRef}>
