@@ -179,7 +179,8 @@ export const processNativePaths = async (
                     isMissing: false,
                     metadata: {
                         ...mapMetadata(result.metadata),
-                        tool: finalTool
+                        tool: finalTool,
+                        hasWorkflowHint: !!result.metadata.workflowJson
                     }
                 };
 

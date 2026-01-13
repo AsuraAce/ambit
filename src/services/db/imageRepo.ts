@@ -272,10 +272,27 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
     try {
         const metadata = JSON.parse(rows[0].metadata_json);
         metadata.workflowJson = workflowJson;
+        metadata.hasWorkflowHint = true; // Mark as having workflow
 
         await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
     } catch (e) {
         console.error('[DB] Failed to update workflow for image', normalizedId, e);
+    }
+};
+
+export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean): Promise<void> => {
+    const db = await getDb();
+    const normalizedId = normalizePath(id);
+    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]) as any[];
+    if (rows.length === 0) return;
+
+    try {
+        const metadata = JSON.parse(rows[0].metadata_json);
+        metadata.hasWorkflowHint = hasWorkflow;
+
+        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
+    } catch (e) {
+        console.error('[DB] Failed to update workflow hint for image', normalizedId, e);
     }
 };
 

@@ -6,7 +6,7 @@ import { AIImage } from '../../../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { scanImageWorkflow } from '../../../services/metadataParser';
-import { updateImageWorkflow } from '../../../services/db/imageRepo';
+import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 
 interface WorkflowInspectorProps {
     image: AIImage;
@@ -66,6 +66,47 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
 
+    // Helper to validate if JSON is a node graph
+    const isWorkflowGraph = (jsonStr: string): boolean => {
+        try {
+            let parseTarget = jsonStr;
+            if (!jsonStr.trim().startsWith('{') && !jsonStr.trim().startsWith('[')) {
+                // Try to extract JSON blob from mixed content
+                const start = jsonStr.indexOf('{');
+                const end = jsonStr.lastIndexOf('}');
+                if (start !== -1 && end !== -1 && end > start) {
+                    parseTarget = jsonStr.substring(start, end + 1);
+                }
+            }
+
+            const json = JSON.parse(parseTarget);
+
+            // Case 1: Standard Node Graph (ComfyUI / InvokeAI)
+            if (Array.isArray(json.nodes) && json.nodes.length > 0) return true;
+
+            // Case 2: Flat Object Graph (API formats)
+            // Must contain objects with 'class_type', 'type', 'inputs', or 'widgets_values'
+            if (typeof json === 'object' && !Array.isArray(json) && json !== null) {
+                const keys = Object.keys(json);
+                if (keys.length === 0) return false;
+
+                // Heuristic: At least 50% of top-level values must look like nodes
+                const nodeLikeCount = keys.filter(k => {
+                    const val = json[k];
+                    return val && typeof val === 'object' && !Array.isArray(val) && (
+                        val.class_type || val.type || val.node_type || val.inputs || val.widgets_values
+                    );
+                }).length;
+
+                return nodeLikeCount > 0 && (nodeLikeCount / keys.length) > 0.5;
+            }
+
+            return false;
+        } catch (e) {
+            return false;
+        }
+    };
+
     // Lazy Load Workflow if missing
     React.useEffect(() => {
         // Only attempt if:
@@ -85,10 +126,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 try {
                     console.log('[Workflow] Lazy loading for:', image.filename);
                     const result = await scanImageWorkflow(image.id);
-                    if (result) {
+
+                    const isValidWorkflow = result && isWorkflowGraph(result);
+
+                    console.log('[Workflow] Scan result:', isValidWorkflow ? 'Found VALID workflow' : 'No valid graph found', result?.substring(0, 100));
+
+                    if (isValidWorkflow) {
                         setLocalWorkflow(result);
-                        await updateImageWorkflow(image.id, result);
-                        onWorkflowLoaded?.(result);
+                        await updateImageWorkflow(image.id, result!); // result is checked in isValidWorkflow
+                        onWorkflowLoaded?.(result!);
+                    } else {
+                        // No workflow found - persist this so we hide the tab next time
+                        console.log('[Workflow] No workflow found (or invalid graph), setting hasWorkflowHint=false for:', image.id);
+                        await updateImageWorkflowHint(image.id, false);
                     }
                 } catch (e) {
                     console.error('[Workflow] Failed lazy loading', e);
