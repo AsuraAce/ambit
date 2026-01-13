@@ -303,7 +303,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     await fetchNextPage();
                 }
             },
-            clearAllFilters,
+            clearAllFilters: () => {
+                clearAllFilters();
+                // Explicitly invalidate to ensure fresh data if cache was stale
+                queryClient.invalidateQueries({ queryKey: ['images'] });
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            },
             isFiltering: isFetching && !isFetchingNextPage,
             activeSqlWhere,
             activeSqlParams,

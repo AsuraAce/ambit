@@ -192,7 +192,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             // Reset React Query cache and Zustand store to prevent stale state
             console.log('[Purge] Clearing React Query cache and store...');
-            queryClient.clear();
+            await queryClient.resetQueries();
             useSearchStore.getState().clearAllFilters();
             useSearchStore.getState().setImages([]);
 
