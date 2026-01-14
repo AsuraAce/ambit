@@ -90,18 +90,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: "spring", stiffness: 350, damping: 25 }}
-            className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-auto max-h-[85vh] overflow-hidden"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{
+              opacity: { duration: 0.15, delay: 0.05 },
+              scale: { type: "spring", stiffness: 400, damping: 30, delay: 0.05 }
+            }}
+            className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-[680px] max-h-[85vh] overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
 
             {/* Sidebar */}
             <div className="w-64 bg-gradient-to-b from-gray-900 to-sage-950 flex flex-col p-4 shrink-0 relative overflow-hidden">
-              {/* Noise Texture Overlay */}
-              <div className="absolute top-0 left-0 w-full h-full bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
+              {/* Noise Texture Overlay - inline SVG to prevent network-related flash */}
+              <div
+                className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+                }}
+              />
 
               <div className="relative z-10">
                 <h2 className="text-lg font-bold text-white mb-8 px-4 mt-2 tracking-tight">{APP_NAME} Preferences</h2>
