@@ -1,11 +1,12 @@
 import * as React from 'react';
-import { useCallback } from 'react';
-import { Layers, Zap, RefreshCw, Check, Image } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Layers, Zap, RefreshCw, Check, Image, Trash2, Database } from 'lucide-react';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { AIImage } from '../../../types';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
 import { MaintenanceHeader } from './MaintenanceHeader';
+import { useToast } from '../../../hooks/useToast';
 
 interface ThumbnailsTabProps {
     images: AIImage[];
@@ -50,6 +51,43 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     }, [selectedIds, onItemClick, maskedKeywords]);
 
     const { isRegeneratingThumbnails } = useLibrary();
+    const { addToast } = useToast();
+    const [isCleaningUp, setIsCleaningUp] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleCleanup = async () => {
+        setIsCleaningUp(true);
+        try {
+            const { cleanupOrphanThumbnails } = await import('../../../services/thumbnailService');
+            const count = await cleanupOrphanThumbnails();
+            if (count > 0) {
+                addToast(`Cleaned up ${count} orphan thumbnail${count === 1 ? '' : 's'}`, 'success');
+            } else {
+                addToast('No orphan thumbnails found', 'info');
+            }
+        } catch (e) {
+            addToast('Failed to clean up thumbnails', 'error');
+        } finally {
+            setIsCleaningUp(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            const { syncExistingThumbnailsToDB } = await import('../../../services/thumbnailService');
+            const count = await syncExistingThumbnailsToDB();
+            if (count > 0) {
+                addToast(`Synced ${count} existing thumbnail${count === 1 ? '' : 's'} to database`, 'success');
+            } else {
+                addToast('All thumbnails already synced to database', 'info');
+            }
+        } catch (e) {
+            addToast('Failed to sync thumbnails', 'error');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     const actions = (
         <div className="flex flex-wrap items-center gap-3">
@@ -92,6 +130,17 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                     {images.length > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{images.length}</span>}
                 </button>
             )}
+
+            {/* Sync DB Button - heals thumbnails that exist on disk but aren't in DB */}
+            <button
+                disabled={isRegeneratingThumbnails || isSyncing}
+                onClick={handleSync}
+                className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-500/20"
+                title="Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)"
+            >
+                <Database className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
+                {isSyncing ? 'Syncing...' : 'Sync DB'}
+            </button>
         </div>
     );
 
@@ -110,6 +159,14 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                     className="mt-6 text-xs font-bold text-sage-600 hover:underline"
                 >
                     Switch to {thumbnailsScope === 'global' ? 'Filtered' : 'Global'} scope
+                </button>
+                <button
+                    onClick={handleCleanup}
+                    disabled={isCleaningUp}
+                    className="mt-4 flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+                >
+                    <Trash2 className={`w-3.5 h-3.5 ${isCleaningUp ? 'animate-pulse' : ''}`} />
+                    {isCleaningUp ? 'Cleaning up...' : 'Clean up unused thumbnails'}
                 </button>
             </div>
         );

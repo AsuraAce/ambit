@@ -368,3 +368,62 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
     console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
     return result.rowsAffected;
 };
+
+/**
+ * Update the thumbnail_path for a single image.
+ * Used by lazy thumbnail generation to persist generated thumbnails.
+ */
+export const updateThumbnailPath = async (id: string, thumbnailPath: string): Promise<void> => {
+    const db = await getDb();
+    const normalizedId = normalizePath(id);
+    const normalizedThumb = normalizePath(thumbnailPath);
+    await db.execute(
+        'UPDATE images SET thumbnail_path = ? WHERE id = ?',
+        [normalizedThumb, normalizedId]
+    );
+};
+
+/**
+ * Batch update thumbnail paths for multiple images.
+ * Uses individual updates with retry to avoid database lock issues.
+ */
+export const updateThumbnailPathsBatch = async (updates: { id: string; thumbnailPath: string }[]): Promise<void> => {
+    if (updates.length === 0) return;
+
+    const db = await getDb();
+    let failCount = 0;
+
+    // Individual updates with retry - avoids holding a transaction lock
+    for (const { id, thumbnailPath } of updates) {
+        const normalizedId = normalizePath(id);
+        const normalizedThumb = normalizePath(thumbnailPath);
+
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                await db.execute(
+                    'UPDATE images SET thumbnail_path = ? WHERE id = ?',
+                    [normalizedThumb, normalizedId]
+                );
+                break;
+            } catch (e: unknown) {
+                const errorMsg = e instanceof Error ? e.message : String(e);
+                if (errorMsg.includes('database is locked') && retries > 1) {
+                    retries--;
+                    await new Promise(r => setTimeout(r, 50));
+                } else {
+                    failCount++;
+                    if (failCount <= 3) {
+                        console.warn(`[DB] Thumbnail update failed for ${normalizedId.slice(-40)}:`, errorMsg);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if (failCount > 0) {
+        console.warn(`[DB] ${failCount} thumbnail updates failed`);
+    }
+};
+

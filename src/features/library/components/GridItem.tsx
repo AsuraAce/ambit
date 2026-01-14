@@ -1,7 +1,7 @@
 
 
 import * as React from 'react';
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { motion, MotionProps } from 'framer-motion';
 import { AIImage } from '../../../types';
 import { ImageCard } from './ImageCard';
@@ -47,6 +47,10 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     // Unified Masking Logic
     const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
 
+    // Retry tracking for error recovery (max 2 attempts)
+    const MAX_THUMB_RETRIES = 2;
+    const retryCountRef = useRef(0);
+
     // Lazy Generation: If thumbnailUrl equals url (no real thumbnail), generate in background
     React.useEffect(() => {
         // Only trigger if: not missing, not already generating, and thumbnail == source
@@ -55,10 +59,14 @@ export const GridItem: React.FC<GridItemProps> = memo(({
             import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
                 generateSingleThumbnail(image.id).then((newThumb) => {
                     if (newThumb) {
-                        // Success: update with real thumbnail path (no cache-bust needed, path change triggers re-render)
+                        // Success: update React state
                         setImages(prev => prev.map(img =>
                             img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
                         ));
+                        // Persist to database so we don't regenerate on restart
+                        import('../../../services/db/imageRepo').then(({ updateThumbnailPath }) => {
+                            updateThumbnailPath(image.id, newThumb);
+                        });
                     }
                     // If generation fails, keep using source (no change needed)
                 }).catch(() => {
@@ -68,16 +76,31 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         }
     }, [image.id, image.isMissing, image.thumbnailUrl, image.url, setImages]);
 
-    // Error Handler: If real thumbnail fails to load, regenerate it
+    // Error Handler: If real thumbnail fails to load, regenerate it (with retry limit)
     const handleImageError = () => {
+        // Check retry limit to prevent infinite loops
+        if (retryCountRef.current >= MAX_THUMB_RETRIES) {
+            if (!image.isMissing) {
+                setImages(prev => prev.map(img =>
+                    img.id === image.id ? { ...img, isMissing: true } : img
+                ));
+            }
+            return;
+        }
+
         // If we have a thumbnail URL that differs from source, try to regenerate
         if (image.thumbnailUrl && image.thumbnailUrl !== image.url && !image.isMissing) {
+            retryCountRef.current++;
             import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
                 generateSingleThumbnail(image.id).then((newThumb) => {
                     if (newThumb) {
                         setImages(prev => prev.map(img =>
                             img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
                         ));
+                        // Persist regenerated thumbnail
+                        import('../../../services/db/imageRepo').then(({ updateThumbnailPath }) => {
+                            updateThumbnailPath(image.id, newThumb);
+                        });
                     } else {
                         // Generation failed: fallback to source
                         setImages(prev => prev.map(img =>

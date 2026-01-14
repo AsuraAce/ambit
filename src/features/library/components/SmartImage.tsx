@@ -77,14 +77,12 @@ export const SmartImage: React.FC<SmartImageProps> = ({
         setRetryCount(c => c + 1);
       }, Math.pow(2, retryCount) * 500);
     } else if (fallbackSrc && currentSrc !== fallbackSrc) {
-      console.warn('[SmartImage] Retries failed, switching to fallbackSrc:', fallbackSrc);
       // Notify parent that thumbnail failed (triggers lazy generation)
       if (onImageError) onImageError();
       setCurrentSrc(fallbackSrc);
       setRetryCount(0);
       setStatus('loading');
     } else {
-      console.error('[SmartImage] Final failure for URL:', currentSrc);
       setStatus('error');
       if (onImageError) onImageError();
     }
@@ -94,25 +92,33 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const processedSrc = React.useMemo(() => {
     if (!currentSrc) return '';
 
+    let result = currentSrc;
+
     try {
       // If it's already an asset URL, use it directly to avoid double-encoding
       if (currentSrc.startsWith('http://asset.localhost/') || currentSrc.startsWith('asset:')) {
-        return repairAssetUrl(currentSrc);
+        result = repairAssetUrl(currentSrc);
       }
-
       // Handle local paths that aren't yet converted
-      if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:')) {
+      else if (!currentSrc.startsWith('http') && !currentSrc.startsWith('blob:') && !currentSrc.startsWith('data:')) {
         // Normalize slashes but DO NOT encode them before convertFileSrc
         const normalizedPath = currentSrc.replace(/\\/g, '/');
         const url = convertFileSrc(normalizedPath);
-        return repairAssetUrl(url);
+        result = repairAssetUrl(url);
       }
     } catch (e) {
       console.warn('[SmartImage] Error normalizing URL:', e, { currentSrc });
     }
 
-    return currentSrc;
-  }, [currentSrc]);
+    // Add cache-buster when retrying to force browser to reload
+    if (retryCount > 0 && result && !result.includes('?')) {
+      result = `${result}?retry=${retryCount}`;
+    } else if (retryCount > 0 && result) {
+      result = `${result}&retry=${retryCount}`;
+    }
+
+    return result;
+  }, [currentSrc, retryCount]);
 
   const finalWrapperClass = wrapperClassName || className || '';
   const loadingClasses = `transition-all duration-500 ease-out ${status === 'loaded' ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`;

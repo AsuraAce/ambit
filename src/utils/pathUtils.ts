@@ -30,9 +30,11 @@ export const getFilename = (path: string): string => {
 export const repairAssetUrl = (url: string): string => {
     if (!url) return '';
     if (url.startsWith('http://asset.localhost/') || url.startsWith('asset:')) {
-        // We replace %2F with / because some parsers struggle with encoded slashes, 
-        // but we MUST KEEP %3A (colon) encoded for Windows drive letters to be parsed correctly by the backend.
-        return url.replace(/%2F/g, '/'); // .replace(/%3A/g, ':');
+        // Decode both slashes and colons - Tauri's asset protocol needs plain paths
+        return url
+            .replace(/%2F/gi, '/')
+            .replace(/%3A/gi, ':')
+            .replace(/%5C/gi, '/');  // Also handle encoded backslashes
     }
     return url;
 };
