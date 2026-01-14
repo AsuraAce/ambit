@@ -207,6 +207,10 @@ export interface ToastMessage {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export interface ContextMenuState {
