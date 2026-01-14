@@ -462,25 +462,34 @@ pub fn scan_image_internal(
 
     if let Some(dir) = &thumbnail_dir {
         if !skip_thumbnail {
-            use base64::{engine::general_purpose, Engine as _};
-            let safe_name = general_purpose::STANDARD_NO_PAD.encode(path.as_bytes());
-            let thumb_filename = format!("{}.webp", safe_name);
-            let thumb_path = PathBuf::from(dir).join(thumb_filename);
-
+            use std::hash::{Hash, Hasher};
+            use std::collections::hash_map::DefaultHasher;
+            
+            // Generate a deterministic 16-char hex hash of the path
+            let mut hasher = DefaultHasher::new();
+            path.hash(&mut hasher);
+            let thumb_filename = format!("{:016x}.webp", hasher.finish());
+            let thumb_path = PathBuf::from(dir).join(&thumb_filename);
+            
+            // Ensure directory exists FIRST
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                println!("[Thumb] Failed to create thumbnail dir: {}", e);
+            }
+            
             generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
 
             if !thumb_path.exists() {
                 match image::open(&path) {
                     Ok(img) => {
                         let thumb = img.resize(400, 400, image::imageops::FilterType::CatmullRom);
-                        let _ = std::fs::create_dir_all(dir);
                         if let Err(e) = thumb.save(&thumb_path) {
-                            println!("Failed to save thumbnail: {}", e);
+                            println!("[Thumb] Failed to save thumbnail: {}", e);
                             generated_thumbnail_path = String::new();
                         }
                     }
                     Err(e) => {
-                        println!("Failed to open image for thumbnail: {}", e);
+                        println!("[Thumb] Failed to open image: {}", e);
+                        generated_thumbnail_path = String::new();
                     }
                 }
             }

@@ -47,8 +47,51 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     // Unified Masking Logic
     const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
 
-    // Error Handler: If image fails to load, mark it as missing in global state
+    // Lazy Generation: If thumbnailUrl equals url (no real thumbnail), generate in background
+    React.useEffect(() => {
+        // Only trigger if: not missing, not already generating, and thumbnail == source
+        if (!image.isMissing && image.thumbnailUrl === image.url && image.url) {
+            // Generate thumbnail in background (fire-and-forget, updates state on success)
+            import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
+                generateSingleThumbnail(image.id).then((newThumb) => {
+                    if (newThumb) {
+                        // Success: update with real thumbnail path (no cache-bust needed, path change triggers re-render)
+                        setImages(prev => prev.map(img =>
+                            img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
+                        ));
+                    }
+                    // If generation fails, keep using source (no change needed)
+                }).catch(() => {
+                    // Silent failure - source image continues to work
+                });
+            });
+        }
+    }, [image.id, image.isMissing, image.thumbnailUrl, image.url, setImages]);
+
+    // Error Handler: If real thumbnail fails to load, regenerate it
     const handleImageError = () => {
+        // If we have a thumbnail URL that differs from source, try to regenerate
+        if (image.thumbnailUrl && image.thumbnailUrl !== image.url && !image.isMissing) {
+            import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
+                generateSingleThumbnail(image.id).then((newThumb) => {
+                    if (newThumb) {
+                        setImages(prev => prev.map(img =>
+                            img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
+                        ));
+                    } else {
+                        // Generation failed: fallback to source
+                        setImages(prev => prev.map(img =>
+                            img.id === image.id ? { ...img, thumbnailUrl: img.url } : img
+                        ));
+                    }
+                }).catch(() => {
+                    setImages(prev => prev.map(img => img.id === image.id ? { ...img, isMissing: true } : img));
+                });
+            });
+            return;
+        }
+
+        // Source image failed: mark as missing
         if (!image.isMissing) {
             setImages(prev => prev.map(img => img.id === image.id ? { ...img, isMissing: true } : img));
         }

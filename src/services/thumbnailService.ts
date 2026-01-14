@@ -17,6 +17,27 @@ export const getThumbnailDir = async (): Promise<string | undefined> => {
     }
 };
 
+/**
+ * Generate a single thumbnail on-demand.
+ * Used when an image fails to load its thumbnail (lazy generation).
+ */
+export const generateSingleThumbnail = async (imagePath: string): Promise<string | null> => {
+    const thumbDir = await getThumbnailDir();
+    if (!thumbDir) {
+        console.warn("[Thumb] No thumbnail dir resolved");
+        return null;
+    }
+
+    try {
+        // Force generation: skipThumbnail=false, extractWorkflow=false (speed)
+        const result = await scanImageNative(imagePath, thumbDir, false, false);
+        return result.thumbnail || null;
+    } catch (e) {
+        console.error(`[Thumb] Failed to generate for ${imagePath}:`, e);
+        return null;
+    }
+};
+
 export const regenerateThumbnailsForImages = async (
     candidates: AIImage[],
     onProgress?: (current: number, total: number) => void

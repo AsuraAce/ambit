@@ -163,6 +163,9 @@ export const processNativePaths = async (
 
     if (onProgress) onProgress(0, totalToProcess, 'Processing images...');
 
+    // First batch generates thumbnails for instant landing page experience
+    const FIRST_BATCH_WITH_THUMBS = 100;
+
     for (let i = 0; i < newPaths.length; i += BATCH_SIZE) {
         if (abortSignal?.aborted) {
             console.log('Import cancelled by user');
@@ -170,9 +173,12 @@ export const processNativePaths = async (
         }
         const chunk = newPaths.slice(i, i + BATCH_SIZE);
 
+        // Generate thumbnails for first batch, skip rest for speed (lazy generation later)
+        const isFirstBatch = i < FIRST_BATCH_WITH_THUMBS;
+        const skipThumbnail = !isFirstBatch;
+
         try {
-            // Optimization: Skip thumbnails for bulk import -> true
-            const results = await scanImagesBulk(chunk, thumbnailDir || '', true, true, defaultTool);
+            const results = await scanImagesBulk(chunk, thumbnailDir || '', skipThumbnail, true, defaultTool);
             const batchImages: AIImage[] = [];
 
             for (let j = 0; j < results.length; j++) {
