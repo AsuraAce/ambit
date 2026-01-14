@@ -1,11 +1,12 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Database, Zap, AlertTriangle, Loader2, Shield, Trash2, History as HistoryIcon } from 'lucide-react';
+import { Database, Zap, AlertTriangle, Loader2, Shield, Trash2, History as HistoryIcon, ImageOff } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { clearAllThumbnailPaths } from '../../../services/db/imageRepo';
 
 export const DevTab: React.FC = () => {
     const { fetchData, setSettings, cleanLibrary } = useLibraryContext();
@@ -29,6 +30,7 @@ export const DevTab: React.FC = () => {
     // Danger Zone State
     const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
     const [isPurging, setIsPurging] = useState(false);
+    const [isClearing, setIsClearing] = useState(false);
 
     const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
 
@@ -91,6 +93,32 @@ export const DevTab: React.FC = () => {
                                 className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
                             >
                                 <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
+                            </button>
+                        </div>
+
+                        {/* Clear Thumbnails (Emergency Fix) */}
+                        <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
+                            <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Clear Broken Thumbnails</div>
+                                <div className="text-xs text-gray-500 mt-0.5">Fix 500 errors by clearing stale thumbnail paths. Images will use source files.</div>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={isClearing}
+                                onClick={async () => {
+                                    setIsClearing(true);
+                                    try {
+                                        const count = await clearAllThumbnailPaths();
+                                        alert(`Cleared ${count} thumbnail paths. Reload the app to see images.`);
+                                        await fetchData(false);
+                                    } finally {
+                                        setIsClearing(false);
+                                    }
+                                }}
+                                className="px-3 py-2 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
+                                {isClearing ? 'Clearing...' : 'Clear Thumbnails'}
                             </button>
                         </div>
 

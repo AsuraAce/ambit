@@ -357,3 +357,14 @@ export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediat
         hasGrids: gridCheck.length > 0
     };
 };
+
+/** 
+ * Emergency fix: Clear all thumbnail_path entries to force fallback to source images.
+ * Use when thumbnails are broken/missing.
+ */
+export const clearAllThumbnailPaths = async (): Promise<number> => {
+    const db = await getDb();
+    const result = await db.execute('UPDATE images SET thumbnail_path = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""');
+    console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
+    return result.rowsAffected;
+};
