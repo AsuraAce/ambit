@@ -4,6 +4,7 @@ import { RefreshCw, Zap, ZapOff, XCircle, Loader2, Globe, CheckCircle2, Boxes } 
 import { APP_NAME } from '../../../constants/app';
 import { AppSettings } from '../../../types';
 import { useLibrary } from '../../../contexts/LibraryContext';
+import { useToast } from '../../../hooks/useToast';
 
 
 interface SyncSectionProps {
@@ -14,10 +15,31 @@ interface SyncSectionProps {
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
     const { syncState, startInvokeSync, cancelSync } = useLibrary();
     const { status, progress } = syncState;
+    const { addToast } = useToast();
 
     // Local state for sync options
     const [syncFavorites, setSyncFavorites] = useState(true);
     const [syncBoards, setSyncBoards] = useState(true);
+
+    const handleStarredAsChange = (value: string) => {
+        setSettings(prev => ({ ...prev, starredAs: value as any }));
+        addToast(`Starred images mapped to ${value}`, 'success');
+    };
+
+    const handleSyncBoardsToggle = (checked: boolean) => {
+        setSettings(prev => ({ ...prev, syncBoardsToCollections: checked }));
+        addToast(checked ? 'Boards will sync to collections' : 'Board sync disabled', 'success');
+    };
+
+    const handleImportIntermediatesToggle = (checked: boolean) => {
+        setSettings(prev => ({ ...prev, importIntermediates: checked }));
+        addToast(checked ? 'Intermediates import enabled' : 'Intermediates import disabled', 'success');
+    };
+
+    const handleImportOrphansToggle = (checked: boolean) => {
+        setSettings(prev => ({ ...prev, importOrphans: checked }));
+        addToast(checked ? 'Orphan recovery enabled' : 'Orphan recovery disabled', 'success');
+    };
 
 
     const handleSync = () => {
@@ -62,7 +84,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                                     <span className="text-[10px] uppercase font-black text-gray-400 tracking-tighter">Map to</span>
                                     <select
                                         value={settings.starredAs || 'favorite'}
-                                        onChange={(e) => setSettings(prev => ({ ...prev, starredAs: e.target.value as any }))}
+                                        onChange={(e) => handleStarredAsChange(e.target.value)}
                                         className="flex-1 bg-gray-100 dark:bg-zinc-800 text-xs font-bold outline-none text-sage-600 dark:text-sage-300 cursor-pointer py-1.5 px-2 rounded-lg"
                                     >
                                         <option value="favorite">Favorites</option>
@@ -89,7 +111,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                             <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
                                 <label className="flex items-center gap-2 cursor-pointer group/sub">
                                     <div className={`w-8 h-4 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-sage-600' : 'bg-gray-300 dark:bg-white/10'}`}>
-                                        <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.syncBoardsToCollections || false} onChange={e => setSettings(prev => ({ ...prev, syncBoardsToCollections: e.target.checked }))} />
+                                        <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.syncBoardsToCollections || false} onChange={e => handleSyncBoardsToggle(e.target.checked)} />
                                         <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full pointer-events-none transition-transform ${settings.syncBoardsToCollections ? 'translate-x-4' : 'translate-x-0'}`} />
                                     </div>
                                     <span className="text-[10px] font-bold text-gray-500 group-hover/sub:text-sage-600 transition-colors">Persistent Collections</span>
@@ -106,7 +128,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <label className="flex items-start gap-3 cursor-pointer group/toggle">
                             <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importIntermediates ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importIntermediates || false} onChange={e => setSettings(prev => ({ ...prev, importIntermediates: e.target.checked }))} />
+                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importIntermediates || false} onChange={e => handleImportIntermediatesToggle(e.target.checked)} />
                                 <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importIntermediates ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>
@@ -117,7 +139,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
                         <label className="flex items-start gap-3 cursor-pointer group/toggle">
                             <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans !== false ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans !== false} onChange={e => setSettings(prev => ({ ...prev, importOrphans: e.target.checked }))} />
+                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans !== false} onChange={e => handleImportOrphansToggle(e.target.checked)} />
                                 <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans !== false ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>

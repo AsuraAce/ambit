@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { LibraryHealth } from '../../maintenance/components/LibraryHealth';
-
+import { useToast } from '../../../hooks/useToast';
 import { AppSettings } from '../../../types';
 
 interface TabProps {
@@ -10,7 +10,19 @@ interface TabProps {
 }
 
 export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+    const { addToast } = useToast();
 
+    const handleThemeToggle = () => {
+        const newTheme = settings.theme === 'dark' ? 'light' : 'dark';
+        setSettings(prev => ({ ...prev, theme: newTheme }));
+        addToast(`Switched to ${newTheme} mode`, 'success');
+    };
+
+    const handleConfirmDeleteToggle = () => {
+        const newValue = !settings.confirmDelete;
+        setSettings(prev => ({ ...prev, confirmDelete: newValue }));
+        addToast(newValue ? 'Delete confirmations enabled' : 'Delete confirmations disabled', 'success');
+    };
 
     return (
         <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -28,7 +40,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
                     <button
                         type="button"
-                        onClick={() => setSettings(prev => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
+                        onClick={handleThemeToggle}
                         className="text-xs font-bold px-4 py-2 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
                     >
                         Switch
@@ -38,21 +50,19 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">File Operations</h4>
-                <label className="flex items-center justify-between cursor-pointer group">
+                <div className="flex items-center justify-between cursor-pointer group">
                     <div>
                         <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Confirm Deletions</div>
                         <div className="text-sm text-gray-500">Show a warning before moving files to Trash</div>
                     </div>
-                    <div className={`w-12 h-7 rounded-full relative transition-colors ${settings.confirmDelete ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                        <input
-                            type="checkbox"
-                            className="hidden"
-                            checked={settings.confirmDelete}
-                            onChange={() => setSettings(prev => ({ ...prev, confirmDelete: !prev.confirmDelete }))}
-                        />
+                    <button
+                        type="button"
+                        onClick={handleConfirmDeleteToggle}
+                        className={`w-12 h-7 rounded-full relative transition-colors ${settings.confirmDelete ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                    >
                         <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.confirmDelete ? 'left-6' : 'left-1'}`} />
-                    </div>
-                </label>
+                    </button>
+                </div>
 
                 <div className="pt-6 border-t border-gray-100 dark:border-white/5">
                     <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />

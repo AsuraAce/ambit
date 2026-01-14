@@ -14,7 +14,6 @@ import { ExportModal } from '../../features/library/components/ExportModal';
 import { CommandPalette } from './CommandPalette';
 import { AddToCollectionModal } from '../../features/collections/components/AddToCollectionModal';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
-import { useToast } from '../../hooks/useToast';
 
 interface GlobalModalsProps {
   // Modal Visibility States
@@ -105,12 +104,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   const { settings, setSettings } = useSettings();
   const { collections, smartCollections } = useCollections();
   const { images, toggleFavorite } = useSearch();
-  const { addToast } = useToast();
 
-  const handleSettingsSave = (s: AppSettings) => {
-    setSettings(s);
-    addToast('Settings saved', 'success');
-  };
+  // Individual tabs now handle their own toast notifications
   const close = (key: keyof typeof modals) => setModals((p: any) => ({ ...p, [key]: false }));
 
   const collectionName = collections.find(c => c.id === collectionToDeleteId)?.name || 'Collection';
@@ -121,7 +116,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         isOpen={modals.settings}
         onClose={() => close('settings')}
         settings={settings}
-        onSave={onSettingsSave}
+        onSave={onSettingsSave || setSettings}
         initialTab={initialSettingsTab}
       />
 

@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Folder, Save, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
+import { X, Monitor, Folder, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab } from './';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
@@ -60,24 +60,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   initialTab = 'general',
   onScanFolder
 }) => {
-  const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
+  // Reset to initial tab when modal opens
   useEffect(() => {
     if (isOpen) {
-      setLocalSettings(settings);
       setActiveTab(initialTab);
     }
-  }, [isOpen, settings, initialTab]);
+  }, [isOpen, initialTab]);
 
-
-  const isDirty = JSON.stringify(localSettings) !== JSON.stringify(settings);
-
-  const handleSave = () => {
-    if (!isDirty) return;
-    onSave(localSettings);
-    onClose();
-  };
+  // Auto-save wrapper: calls onSave directly on any change
+  const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
+    (updater) => {
+      if (typeof updater === 'function') {
+        onSave(updater(settings));
+      } else {
+        onSave(updater);
+      }
+    },
+    [onSave, settings]
+  );
 
   return (
     <AnimatePresence>
@@ -160,36 +162,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
-                {activeTab === 'general' && <GeneralTab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'folders' && <FoldersTab settings={localSettings} setSettings={setLocalSettings} onScanFolder={onScanFolder} />}
-                {activeTab === 'invokeai' && <InvokeAITab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'a1111' && <A1111Tab settings={localSettings} setSettings={setLocalSettings} onClose={onClose} />}
-                {activeTab === 'comfyui' && <ComfyUITab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'privacy' && <PrivacyTab settings={localSettings} setSettings={setLocalSettings} />}
-                {activeTab === 'experiments' && <ExperimentsTab settings={localSettings} setSettings={setLocalSettings} />}
+                {activeTab === 'general' && <GeneralTab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'folders' && <FoldersTab settings={settings} setSettings={handleSettingsChange} onScanFolder={onScanFolder} />}
+                {activeTab === 'invokeai' && <InvokeAITab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'a1111' && <A1111Tab settings={settings} setSettings={handleSettingsChange} onClose={onClose} />}
+                {activeTab === 'comfyui' && <ComfyUITab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'experiments' && <ExperimentsTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'dev' && <DevTab />}
               </div>
 
-              <div className="p-6 border-t border-gray-200 dark:border-white/5 flex justify-end gap-3 bg-card shrink-0">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={!isDirty}
-                  className={`px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all transform active:scale-95 ${isDirty
-                    ? 'bg-sage-600 hover:bg-sage-500 text-white shadow-sage-500/20 cursor-pointer'
-                    : 'bg-gray-200 dark:bg-white/5 text-gray-400 dark:text-gray-500 shadow-none cursor-not-allowed opacity-50'
-                    }`}
-                >
-                  <Save className="w-4 h-4" /> Save Changes
-                </button>
-              </div>
+              {/* Footer removed - settings auto-save on change */}
             </div>
           </motion.div>
         </motion.div>

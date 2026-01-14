@@ -382,7 +382,7 @@ export default function App() {
                     setModals={modals.setModals}
                     selectedIds={selectedIds}
                     filteredImages={images}
-                    onSettingsSave={(s) => { setSettings(s); addToast('Settings saved', 'success'); }}
+                    onSettingsSave={setSettings}
                     onExportConfirm={(name, folder) => {
                         actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
                         setExportIds(new Set());

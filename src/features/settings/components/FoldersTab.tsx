@@ -73,6 +73,37 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const [isScanningResources, setIsScanningResources] = useState(false);
     const resourceInputRef = useRef<HTMLInputElement>(null);
 
+    // Debounced auto-scan for newly added folders
+    const pendingScansRef = useRef<{ path: string, variant?: string }[]>([]);
+    const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const queueFolderForScan = (path: string, variant?: string) => {
+        pendingScansRef.current.push({ path, variant });
+
+        // Clear existing timeout
+        if (scanDebounceRef.current) {
+            clearTimeout(scanDebounceRef.current);
+        }
+
+        // Set new debounce - 500ms to allow batch adding
+        scanDebounceRef.current = setTimeout(async () => {
+            if (pendingScansRef.current.length === 0 || !onScanFolder) return;
+
+            const foldersToScan = [...pendingScansRef.current];
+            pendingScansRef.current = [];
+
+            // No intermediate toast - just scan silently and report completion
+            try {
+                await onScanFolder(foldersToScan);
+                addToast(`Scanned ${foldersToScan.length} folder(s)`, 'success');
+                await fetchCounts();
+            } catch (e) {
+                console.error('Auto-scan failed:', e);
+                addToast('Folder scan failed', 'error');
+            }
+        }, 500);
+    };
+
     const handleAddFolder = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newFolderPath.trim()) return;
@@ -83,9 +114,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         const existing = settings.monitoredFolders.find(f => normalizePath(f.path) === normalizedNew);
         if (existing) {
             addToast(`Folder is already monitored: ${existing.path}`, 'info');
-
-            // Optional: Highlight the existing folder?
-            // For now just clear input to indicate "done/found"
             setNewFolderPath('');
             return;
         }
@@ -102,6 +130,10 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             monitoredFolders: [...prev.monitoredFolders, newFolder]
         }));
         setNewFolderPath('');
+        addToast(`Added folder: ${normalizedNew}`, 'success');
+
+        // Queue for auto-scan
+        queueFolderForScan(normalizedNew);
     };
 
     const handleAddResourceFolder = async (e: React.FormEvent) => {
