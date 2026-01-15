@@ -25,15 +25,15 @@ export const syncImages = async (
         imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
     }
 
-    let dbPath = isFile ? rootPath : `${imagesRoot} /databases/invokeai.db`;
-    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')} `;
+    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
+    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb;
     try {
         invokeDb = await Database.load(connectionString);
     } catch (e) {
-        throw new Error(`Could not connect to InvokeAI DB at ${dbPath} `);
+        throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
     }
 
     onProgress(0, 0, 'Analyzing database schema...');
@@ -152,7 +152,7 @@ export const syncImages = async (
         if (rows.length === 0) break;
 
         const batchPaths = rows.map((row: any) => {
-            const rawPath = `${imagesRoot} /outputs/images / ${row.image_name} `;
+            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
             return rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
 
@@ -231,8 +231,8 @@ export const syncImages = async (
                 }
 
                 let thumbnailPath = (hasThumbnailName && row.thumbnail_name)
-                    ? `${imagesRoot} /outputs/images / thumbnails / ${row.thumbnail_name} `
-                    : `${imagesRoot} /outputs/images / thumbnails / ${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"} `;
+                    ? `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`
+                    : `${imagesRoot}/outputs/images/thumbnails/${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"}`;
 
                 const newImg: any = {
                     id: fullPath,
