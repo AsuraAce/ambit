@@ -62,7 +62,8 @@ export const generateSingleThumbnail = async (imagePath: string): Promise<string
  */
 export const regenerateThumbnailsForImages = async (
     candidates: AIImage[],
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number) => void,
+    signal?: AbortSignal
 ): Promise<AIImage[]> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir || candidates.length === 0) return [];
@@ -75,6 +76,12 @@ export const regenerateThumbnailsForImages = async (
 
     // Process in batches
     for (let i = 0; i < total; i += BATCH_SIZE) {
+        // Check for cancellation between batches
+        if (signal?.aborted) {
+            console.log('[Thumb] Regeneration cancelled by user');
+            break;
+        }
+
         const batch = candidates.slice(i, i + BATCH_SIZE);
         const paths = batch.map(img => img.id);
 

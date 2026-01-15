@@ -451,15 +451,16 @@ pub fn scan_image_internal(
         })
         .unwrap_or(0);
 
-    let img_reader = image::io::Reader::open(&path)
-        .map_err(|e| e.to_string())?
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?;
-
-    let dimensions = img_reader.into_dimensions().map_err(|e| e.to_string())?;
+    // Try to read dimensions - if this fails, we may still be able to return a cached thumbnail
+    let dimensions_result = image::io::Reader::open(&path)
+        .and_then(|r| r.with_guessed_format())
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
 
     let mut generated_thumbnail_path = String::new();
 
+    // Handle thumbnail generation/lookup BEFORE we fail on dimensions
+    // This allows us to return cached thumbnails even for images with format issues
     if let Some(dir) = &thumbnail_dir {
         if !skip_thumbnail {
             use std::hash::{Hash, Hasher};
@@ -475,26 +476,71 @@ pub fn scan_image_internal(
             if let Err(e) = std::fs::create_dir_all(dir) {
                 println!("[Thumb] Failed to create thumbnail dir: {}", e);
             }
-            
-            generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
 
-            if !thumb_path.exists() {
-                match image::open(&path) {
-                    Ok(img) => {
-                        let thumb = img.resize(400, 400, image::imageops::FilterType::CatmullRom);
-                        if let Err(e) = thumb.save(&thumb_path) {
-                            println!("[Thumb] Failed to save thumbnail: {}", e);
-                            generated_thumbnail_path = String::new();
+            if thumb_path.exists() {
+                // Thumbnail already exists, use it
+                generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+            } else {
+                // Need to generate - this requires image::open which may also fail
+                // Use Reader with guessed format for better format detection
+                let open_result = image::io::Reader::open(&path)
+                    .and_then(|r| r.with_guessed_format());
+                
+                match open_result {
+                    Ok(reader) => {
+                        match reader.decode() {
+                            Ok(img) => {
+                                let thumb = img.resize(400, 400, image::imageops::FilterType::CatmullRom);
+                                if let Err(e) = thumb.save(&thumb_path) {
+                                    println!("[Thumb] Failed to save thumbnail: {}", e);
+                                } else {
+                                    generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+                                }
+                            }
+                            Err(e) => {
+                                // Log first failure in detail, then just count
+                                static LOGGED_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                                let count = LOGGED_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if count < 3 {
+                                    println!("[Thumb] Failed to decode image ({}): {} - path: {}", count + 1, e, &path);
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        println!("[Thumb] Failed to open image: {}", e);
-                        generated_thumbnail_path = String::new();
+                        static OPEN_ERR_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                        let count = OPEN_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if count < 3 {
+                            // Check if file exists
+                            let exists = std::path::Path::new(&path).exists();
+                            println!("[Thumb] Failed to open image ({}): {} - exists: {} - path: {}", count + 1, e, exists, &path);
+                        }
                     }
                 }
             }
         }
     }
+
+    // Now check dimensions - if we got a thumbnail, we can still return a partial result
+    let dimensions = match dimensions_result {
+        Ok(dims) => dims,
+        Err(e) => {
+            // If we have a thumbnail, return a partial result instead of failing completely
+            if !generated_thumbnail_path.is_empty() {
+                return Ok(ScanResult {
+                    width: 0,
+                    height: 0,
+                    size,
+                    modified,
+                    thumbnail: generated_thumbnail_path,
+                    chunks: std::collections::HashMap::new(),
+                    metadata: None,
+                });
+            }
+            // No thumbnail and no dimensions - this is a real failure
+            return Err(format!("Failed to read image dimensions: {}", e));
+        }
+    };
 
     let mut file = File::open(&path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 8];

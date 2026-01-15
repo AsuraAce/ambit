@@ -33,6 +33,7 @@ interface LibraryState {
     importAbortController: AbortController | null; // Added
     isRegeneratingThumbnails: boolean;
     thumbnailProgress: SyncProgress | null;
+    thumbnailAbortController: AbortController | null;
     isResolvingModels: boolean;
     modelResolutionProgress: SyncProgress | null;
     isActivityDockDismissed: boolean;
@@ -55,6 +56,8 @@ interface LibraryState {
     cancelImport: () => void; // Added
     setIsRegeneratingThumbnails: (val: boolean) => void;
     setThumbnailProgress: (progress: SyncProgress | null) => void;
+    setThumbnailAbortController: (ctrl: AbortController | null) => void;
+    cancelThumbnailRegeneration: () => void;
     setIsResolvingModels: (val: boolean) => void;
     setModelResolutionProgress: (progress: SyncProgress | null) => void;
     setIsActivityDockDismissed: (val: boolean) => void;
@@ -83,6 +86,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     importAbortController: null,
     isRegeneratingThumbnails: false,
     thumbnailProgress: null,
+    thumbnailAbortController: null,
     isResolvingModels: false,
     modelResolutionProgress: null,
     isActivityDockDismissed: false,
@@ -109,6 +113,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }),
     setIsRegeneratingThumbnails: (val) => set({ isRegeneratingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setThumbnailProgress: (progress) => set({ thumbnailProgress: progress }),
+    setThumbnailAbortController: (ctrl) => set({ thumbnailAbortController: ctrl }),
+    cancelThumbnailRegeneration: () => set((state) => {
+        if (state.thumbnailAbortController) {
+            state.thumbnailAbortController.abort();
+            return { isRegeneratingThumbnails: false, thumbnailProgress: null, thumbnailAbortController: null };
+        }
+        return {};
+    }),
     setIsResolvingModels: (val) => set({ isResolvingModels: val, isActivityDockDismissed: val ? false : undefined }),
     setModelResolutionProgress: (progress) => set({ modelResolutionProgress: progress }),
     setIsActivityDockDismissed: (val) => set({ isActivityDockDismissed: val }),

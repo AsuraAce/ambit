@@ -147,6 +147,20 @@
       ]
     },
     {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$APPLOCALDATA/.thumbnails/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    {
       "identifier": "shell:allow-open",
       "allow": [
         {

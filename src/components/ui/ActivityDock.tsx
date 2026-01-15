@@ -11,7 +11,8 @@ export const ActivityDock: React.FC = () => {
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
         isPopulatingThumbnails,
-        cancelImport // Added
+        cancelImport,
+        cancelThumbnailRegeneration
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -115,9 +116,9 @@ export const ActivityDock: React.FC = () => {
                                 <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header border.</span>
                             </div>
 
-                            {isImporting && (
+                            {(isImporting || isRegeneratingThumbnails) && (
                                 <button
-                                    onClick={cancelImport}
+                                    onClick={isImporting ? cancelImport : cancelThumbnailRegeneration}
                                     className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"
                                 >
                                     Cancel

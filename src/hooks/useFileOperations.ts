@@ -31,7 +31,8 @@ export const useFileOperations = ({
         isImporting, setIsImporting, importProgress, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
         thumbnailProgress, setThumbnailProgress,
-        setImportAbortController // Added
+        setImportAbortController,
+        setThumbnailAbortController
     } = useLibraryStore();
     const { refreshHiddenAvailability } = useSearch();
     const [isExporting, setIsExporting] = useState(false);
@@ -242,28 +243,23 @@ export const useFileOperations = ({
         const targetIds = Array.isArray(arg) ? arg : undefined;
         const onProgress = typeof arg === 'function' ? arg : undefined;
 
-        // Find candidates: Images where the thumbnail IS the full image
-        // We compare the URLs because convertFileSrc ensures they are both in the same format if they match.
-        let candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
+        let candidates: AIImage[];
 
-        if (targetIds) {
-            // Check which IDs we already have in memory
-            const knownIds = new Set(images.map(i => i.id));
-            const missingIds = targetIds.filter(id => !knownIds.has(id));
-
-            // Start with known candidates
-            candidates = images.filter(img => targetIds.includes(img.id));
-
-            // Fetch missing objects if needed
-            if (missingIds.length > 0) {
-                try {
-                    const { getImagesByIds } = await import('../services/db/imageRepo');
-                    const fetched = await getImagesByIds(missingIds);
-                    candidates = [...candidates, ...fetched];
-                } catch (e) {
-                    console.error("Failed to fetch missing images for regeneration", e);
-                }
+        if (targetIds && targetIds.length > 0) {
+            // When specific IDs are provided (e.g., from maintenance view), 
+            // fetch ALL of them from DB since they may not be in the gallery images array.
+            // The maintenance view has already pre-filtered these as needing regeneration.
+            try {
+                const { getImagesByIds } = await import('../services/db/imageRepo');
+                candidates = await getImagesByIds(targetIds);
+            } catch (e) {
+                console.error("Failed to fetch images for regeneration", e);
+                candidates = [];
             }
+        } else {
+            // Find candidates from gallery: Images where the thumbnail IS the full image
+            // We compare the URLs because convertFileSrc ensures they are both in the same format if they match.
+            candidates = images.filter(img => img.url === img.thumbnailUrl && !img.url.startsWith('blob:') && !img.url.startsWith('data:'));
         }
 
         if (candidates.length === 0) {
@@ -271,6 +267,8 @@ export const useFileOperations = ({
             return;
         }
 
+        const abortCtrl = new AbortController();
+        setThumbnailAbortController(abortCtrl);
         setIsRegeneratingThumbnails(true);
         setThumbnailProgress({ current: 0, total: candidates.length });
 
@@ -278,14 +276,17 @@ export const useFileOperations = ({
             const updates = await regenerateThumbnailsForImages(candidates, (curr, tot) => {
                 setThumbnailProgress({ current: curr, total: tot });
                 if (onProgress) onProgress(curr, tot);
-            });
+            }, abortCtrl.signal);
 
             if (updates.length > 0) {
                 setImages(prev => {
                     const updateMap = new Map(updates.map(u => [u.id, u]));
                     return prev.map(p => updateMap.get(p.id) || p);
                 });
-                addToast(`Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`, "success");
+                const msg = abortCtrl.signal.aborted
+                    ? `Cancelled after optimizing ${updates.length} thumbnails.`
+                    : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
+                addToast(msg, "success");
                 await refreshCollectionThumbnails();
             }
         } catch (e) {
@@ -294,8 +295,9 @@ export const useFileOperations = ({
         } finally {
             setIsRegeneratingThumbnails(false);
             setThumbnailProgress(null);
+            setThumbnailAbortController(null);
         }
-    }, [images, setImages, addToast, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress]);
+    }, [images, setImages, addToast, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController]);
 
     return {
         isImporting,
