@@ -66,6 +66,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
     const [duplicatesScope, setDuplicatesScope] = useState<'global' | 'filtered'>('global');
     const [intermediatesScope, setIntermediatesScope] = useState<'global' | 'filtered'>('global');
+    const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -233,7 +234,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         if (ids) {
             clearSelection();
         }
-        await refreshData('thumbnails', false, { scope: thumbnailsScope });
+        await refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable });
     };
 
     const handleResolveDuplicate = useCallback(async (keepId: string, deleteIds: string[]) => {
@@ -268,6 +269,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setIntermediatesScope(scope);
         refreshData('intermediates', false, { scope });
     }, [refreshData]);
+
+    const handleIncludeUpgradeableChange = useCallback((include: boolean) => {
+        setIncludeUpgradeable(include);
+        refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable: include });
+    }, [refreshData, thumbnailsScope]);
 
 
     const handleBackgroundClick = useCallback(() => {
@@ -320,6 +326,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
+                                includeUpgradeable={includeUpgradeable}
+                                onIncludeUpgradeableChange={handleIncludeUpgradeableChange}
                             />
                         </motion.div>
                     )}
@@ -463,7 +471,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         >
                             <ScanPlaceholder
                                 tab={activeTab}
-                                onStartScan={(tab, scope) => refreshData(tab, true, { scope })}
+                                onStartScan={(tab, scope) => refreshData(tab, true, {
+                                    scope,
+                                    includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined
+                                })}
                             />
                         </motion.div>
                     )}

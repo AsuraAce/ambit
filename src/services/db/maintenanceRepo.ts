@@ -136,11 +136,36 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
     return rows.map(mapRowToImage);
 };
 
-export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
     const db = await getDb();
+
+    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
+
+    if (includeUpgradeable) {
+        // Include images that HAVE a thumbnail but it's not our standard high-quality one
+        // Standard = in .thumbnails folder AND is .webp
+        // So we want: NOT (standard) AND NOT (unoptimized case above, processed implicitly by OR)
+        // Logic: (Unoptimized) OR (HasThumb AND (NotWebP OR NotInThumbnails))
+        unoptimizedCondition = `
+            (
+                ${unoptimizedCondition}
+                OR 
+                (
+                    thumbnail_path IS NOT NULL 
+                    AND thumbnail_path != '' 
+                    AND path != thumbnail_path
+                    AND (
+                        thumbnail_path NOT LIKE '%.webp' OR 
+                        thumbnail_path NOT LIKE '%.thumbnails%'
+                    )
+                )
+            )
+        `;
+    }
+
     let query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
-        WHERE (path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')
+        WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0

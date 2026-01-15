@@ -21,7 +21,11 @@ interface ThumbnailsTabProps {
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
     onBackgroundClick: () => void;
+    includeUpgradeable: boolean;
+    onIncludeUpgradeableChange: (include: boolean) => void;
 }
+
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     images,
@@ -35,8 +39,12 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
+    includeUpgradeable,
+    onIncludeUpgradeableChange
 }) => {
+    const devModeEnabled = useSettingsStore(s => s.devModeEnabled);
+
     const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
         return (
             <MaintenanceItem
@@ -109,6 +117,20 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 </button>
             </div>
 
+            <div className="flex items-center gap-2 mr-2 px-2 py-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-xl">
+                <input
+                    type="checkbox"
+                    id="includeUpgradeable"
+                    checked={includeUpgradeable}
+                    onChange={(e) => onIncludeUpgradeableChange(e.target.checked)}
+                    disabled={isRegeneratingThumbnails}
+                    className="w-3.5 h-3.5 rounded-md border-gray-300 text-sage-600 focus:ring-sage-500 cursor-pointer"
+                />
+                <label htmlFor="includeUpgradeable" className="text-[10px] font-medium text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+                    Include upgradeable
+                </label>
+            </div>
+
             {selectedIds.size > 0 ? (
                 <button
                     disabled={isRegeneratingThumbnails}
@@ -132,15 +154,18 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
             )}
 
             {/* Sync DB Button - heals thumbnails that exist on disk but aren't in DB */}
-            <button
-                disabled={isRegeneratingThumbnails || isSyncing}
-                onClick={handleSync}
-                className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-500/20"
-                title="Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)"
-            >
-                <Database className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
-                {isSyncing ? 'Syncing...' : 'Sync DB'}
-            </button>
+            {/* Sync DB Button - heals thumbnails that exist on disk but aren't in DB */}
+            {devModeEnabled && (
+                <button
+                    disabled={isRegeneratingThumbnails || isSyncing}
+                    onClick={handleSync}
+                    className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-500/20"
+                    title="Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)"
+                >
+                    <Database className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
+                    {isSyncing ? 'Syncing...' : 'Sync DB'}
+                </button>
+            )}
         </div>
     );
 

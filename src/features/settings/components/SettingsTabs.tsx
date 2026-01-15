@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   Monitor,
   Folder,
@@ -8,7 +8,8 @@ import {
   Shield,
   Palette,
   DatabaseZap,
-  ChevronRight
+  ChevronRight,
+  Code
 } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
@@ -20,6 +21,9 @@ import { ExperimentsTab } from './ExperimentsTab';
 import { InvokeAITab } from './InvokeAITab';
 import { A1111Tab } from './A1111Tab';
 import { AdvancedTab } from './AdvancedTab';
+import { DevTab } from './DevTab';
+import { useSettingsStore } from '../../../stores/settingsStore';
+import { useToast } from '../../../hooks/useToast';
 
 interface SettingsTabsProps {
   settings: AppSettings;
@@ -27,17 +31,43 @@ interface SettingsTabsProps {
 }
 
 export const SettingsTabs: React.FC<SettingsTabsProps> = ({ settings, setSettings }) => {
-  const [activeTab, setActiveTab] = useState<'general' | 'folders' | 'privacy' | 'invoke' | 'a1111' | 'advanced' | 'ai'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'folders' | 'privacy' | 'invoke' | 'a1111' | 'advanced' | 'ai' | 'dev'>('general');
+  const devModeEnabled = useSettingsStore(s => s.devModeEnabled);
+  const toggleDevMode = useSettingsStore(s => s.toggleDevMode);
+  const { addToast } = useToast();
 
-  const tabs = useMemo(() => [
-    { id: 'general', label: 'General', icon: Monitor, description: 'Theme and basic behavior' },
-    { id: 'folders', label: 'Watchfolders', icon: Folder, description: 'Image library sources' },
-    { id: 'a1111', label: 'Stable Diffusion', icon: Palette, description: 'A1111 & Forge integration' },
-    { id: 'invoke', label: 'InvokeAI', icon: DatabaseZap, description: 'InvokeAI database sync' },
-    { id: 'ai', label: 'AI Features', icon: FlaskConical, description: 'Gemini & Local AI' },
-    { id: 'privacy', label: 'Privacy', icon: Eye, description: 'Keyword masking' },
-    { id: 'advanced', label: 'Advanced', icon: Shield, description: 'System & Maintenance' },
-  ], []);
+  const [clickCount, setClickCount] = useState(0);
+  const clickTimerRef = useRef<NodeJS.Timeout>();
+
+  const handleVersionClick = () => {
+    setClickCount(c => c + 1);
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = setTimeout(() => setClickCount(0), 500);
+
+    if (clickCount >= 2) { // 3rd click
+      toggleDevMode();
+      addToast(devModeEnabled ? 'Dev mode disabled' : 'Dev mode enabled 🔧', 'info');
+      setClickCount(0);
+    }
+  };
+
+  const tabs = useMemo(() => {
+    const baseTabs = [
+      { id: 'general', label: 'General', icon: Monitor, description: 'Theme and basic behavior' },
+      { id: 'folders', label: 'Watchfolders', icon: Folder, description: 'Image library sources' },
+      { id: 'a1111', label: 'Stable Diffusion', icon: Palette, description: 'A1111 & Forge integration' },
+      { id: 'invoke', label: 'InvokeAI', icon: DatabaseZap, description: 'InvokeAI database sync' },
+      { id: 'ai', label: 'AI Features', icon: FlaskConical, description: 'Gemini & Local AI' },
+      { id: 'privacy', label: 'Privacy', icon: Eye, description: 'Keyword masking' },
+      { id: 'advanced', label: 'Advanced', icon: Shield, description: 'System & Maintenance' },
+    ];
+
+    if (devModeEnabled) {
+      baseTabs.push({ id: 'dev', label: 'Dev', icon: Code, description: 'Developer Tools' });
+    }
+
+    return baseTabs;
+  }, [devModeEnabled]);
 
   const renderActiveTab = () => {
     switch (activeTab) {
@@ -48,6 +78,7 @@ export const SettingsTabs: React.FC<SettingsTabsProps> = ({ settings, setSetting
       case 'invoke': return <InvokeAITab settings={settings} setSettings={setSettings} />;
       case 'a1111': return <A1111Tab settings={settings} setSettings={setSettings} />;
       case 'advanced': return <AdvancedTab settings={settings} setSettings={setSettings} />;
+      case 'dev': return <DevTab />;
       default: return <GeneralTab settings={settings} setSettings={setSettings} />;
     }
   };
@@ -90,9 +121,12 @@ export const SettingsTabs: React.FC<SettingsTabsProps> = ({ settings, setSetting
         </nav>
 
         <div className="p-4 border-t border-gray-200 dark:border-white/5">
-          <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest text-center px-2">
+          <button
+            onClick={handleVersionClick}
+            className="w-full text-[9px] font-black text-gray-400 uppercase tracking-widest text-center px-2 hover:text-sage-500 transition-colors cursor-default"
+          >
             {APP_NAME} Alpha v{APP_VERSION}
-          </div>
+          </button>
         </div>
       </div>
 

@@ -7,10 +7,12 @@ interface SettingsState {
     settings: AppSettings;
     privacyEnabled: boolean;
     isLoaded: boolean;
+    devModeEnabled: boolean;
 
     // Actions
     setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
     setPrivacyEnabled: (enabled: boolean) => void;
+    toggleDevMode: () => void;
     initialize: () => Promise<void>;
 }
 
@@ -40,6 +42,9 @@ export const useSettingsStore = create<SettingsState>()(
             settings: DEFAULT_SETTINGS,
             privacyEnabled: true,
             isLoaded: false,
+            devModeEnabled: false,
+
+            toggleDevMode: () => set(s => ({ devModeEnabled: !s.devModeEnabled })),
 
             setSettings: (update) => {
                 set((state) => {

@@ -6,11 +6,14 @@ import { APP_NAME } from "../../constants/app";
 
 
 
+import { useSettingsStore } from "../../stores/settingsStore";
+
 export const TitleBar = () => {
     const [appWindow, setAppWindow] = useState<any>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showOnHover, setShowOnHover] = useState(false);
+    const devModeEnabled = useSettingsStore(s => s.devModeEnabled);
 
     useEffect(() => {
         const initWindow = async () => {
@@ -90,6 +93,11 @@ export const TitleBar = () => {
                 <div className="flex items-center gap-2 pointer-events-none">
                     <div className="w-3 h-3 bg-sage-500 rounded-full" />
                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{APP_NAME.toUpperCase()}</span>
+                    {devModeEnabled && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] font-bold rounded animate-pulse">
+                            DEV
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex h-full">
