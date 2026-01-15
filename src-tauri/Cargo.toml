@@ -26,6 +26,7 @@ tauri-plugin-log = "2"
 tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-dialog = "2"
 image = "0.24"
+webp = "0.3"
 base64 = "0.21"
 rayon = "1.8"
 flate2 = "1.1.5"
