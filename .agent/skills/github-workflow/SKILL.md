@@ -55,7 +55,23 @@ git status
 git fetch origin
 ```
 
+### Context Switching (CRITICAL)
+
+If you are already on a feature branch (e.g., `fix/bug-a`) and the user assigns a NEW, unrelated task (e.g., "now build feature B"):
+
+1.  **Stop.** Do not mix unrelated changes.
+2.  **Commit** any pending work on the current branch.
+3.  **Switch** to `main` (or parent branch).
+4.  **Create** a new branch for the new task (`feat/feature-b`).
+
 ### Making Commits (Local)
+
+**Verification Rule:**
+> [!IMPORTANT]
+> **Verify BEFORE Committing.**
+> Never treat commits as "save points" for broken code. Run tests (`npm test`) or verify the build (`npm run build`) *before* running `git commit`.
+>
+> If automated testing isn't feasible (e.g., complex UI interactions), **perform manual verification** or ask the user to confirm functionality before committing. The commit history should represent a chain of functional states.
 
 Use conventional commit format:
 
