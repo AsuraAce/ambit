@@ -484,6 +484,7 @@ export default function App() {
                                 setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
                             }}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
+                            onRecoverMetadata={() => modals.openModal('recovery')}
                             onAddToCollection={(id) => handleOpenCollectionModal('add')}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}
