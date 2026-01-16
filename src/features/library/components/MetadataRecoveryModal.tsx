@@ -54,7 +54,7 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
             <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-2xl p-6 transform scale-100 animate-in zoom-in-95 duration-300 ease-spring">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Wand2 className="w-5 h-5 text-amethyst-500" /> Recover Metadata
+                        <Wand2 className="w-5 h-5 text-amethyst-500" /> AI Prompt Recovery
                     </h3>
                     {!isProcessing && (
                         <button onClick={onClose} className="text-gray-500 hover:text-gray-900 dark:hover:text-white">
@@ -72,7 +72,7 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                 ) : (
                     <>
                         <p className="text-sm text-gray-500 mb-4">
-                            This image lacks metadata. Select a target style, and {APP_NAME} AI will analyze the visuals to generate a new prompt for you.
+                            Select a target style, and AI will analyze the image to generate a new positive prompt for you.
                         </p>
 
                         <div className="space-y-3 mb-6">

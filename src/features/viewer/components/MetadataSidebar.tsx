@@ -422,18 +422,32 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                     <div className="flex justify-between items-center mb-2">
                                         <div className="flex items-center gap-2">
                                             <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3>
-                                            {isModified('positivePrompt') && (
-                                                <span className="text-[10px] font-bold text-amber-500 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-500/30">Edited</span>
+                                            {/* Toggle: Original / AI Generated */}
+                                            {image.originalMetadata && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt && (
+                                                <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-zinc-800/50 rounded-lg border border-gray-200 dark:border-white/10">
+                                                    <button
+                                                        onClick={() => setPromptValue(image.metadata.positivePrompt || '')}
+                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.metadata.positivePrompt ? 'bg-amethyst-500 text-white shadow' : 'text-gray-500 hover:text-amethyst-500'}`}
+                                                    >
+                                                        AI
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setPromptValue(image.originalMetadata?.positivePrompt || '')}
+                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.originalMetadata?.positivePrompt ? 'bg-sage-500 text-white shadow' : 'text-gray-500 hover:text-sage-500'}`}
+                                                    >
+                                                        Original
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {onRecoverMetadata && (
-                                                <button onClick={onRecoverMetadata} className="text-amethyst-600 dark:text-amethyst-400 hover:text-amethyst-500 p-1.5 rounded bg-amethyst-100 dark:bg-amethyst-900/20 border border-amethyst-200 dark:border-amethyst-500/20 transition-colors" title="Recover Metadata with AI">
+                                                <button onClick={onRecoverMetadata} className="text-amethyst-600 dark:text-amethyst-400 hover:text-amethyst-500 p-1.5 rounded bg-amethyst-100 dark:bg-amethyst-900/20 border border-amethyst-200 dark:border-amethyst-500/20 transition-colors" title="AI Prompt Recovery">
                                                     <Wand2 className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
                                             {image.originalMetadata && onRevertMetadata && (
-                                                <button onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20" title="Revert to original metadata">
+                                                <button onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20" title="Revert all metadata to original">
                                                     <Undo2 className="w-3 h-3" />
                                                 </button>
                                             )}
@@ -444,7 +458,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                         </div>
                                     </div>
                                     <div className={`p-4 bg-white dark:bg-zinc-950/50 rounded-xl border text-sm font-sans leading-relaxed max-h-48 overflow-y-auto shadow-inner transition-colors ${isModified('positivePrompt') ? 'border-amber-300 dark:border-amber-500/30 text-gray-800 dark:text-gray-200' : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300'}`}>
-                                        {image.metadata.positivePrompt || <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI.</span>}
+                                        {promptValue || <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI.</span>}
                                     </div>
                                 </div>
 

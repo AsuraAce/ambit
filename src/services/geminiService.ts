@@ -234,18 +234,10 @@ export const recoverImageMetadata = async (
             throw new Error("Failed to validate Gemini response");
         }
 
-        // Map generic tool guess to our strict enums if possible, or default to UNKNOWN
-        const tool = isValidGeneratorTool(validated.tool) ? validated.tool : GeneratorTool.UNKNOWN;
-
+        // SCOPE REDUCTION: Only return positivePrompt.
+        // All other metadata (model, tool, steps, etc.) cannot be reliably inferred from images.
         return {
-            positivePrompt: validated.positivePrompt,
-            negativePrompt: validated.negativePrompt,
-            tool,
-            model: validated.model === 'Unknown' ? 'Unknown' : (validated.model || 'Unknown'),
-            // Enforce strict zeros if Gemini hallucinated them despite instructions
-            steps: 0,
-            cfg: 0,
-            seed: 0
+            positivePrompt: validated.positivePrompt
         };
     }
 

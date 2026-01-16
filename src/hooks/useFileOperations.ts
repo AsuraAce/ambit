@@ -223,9 +223,16 @@ export const useFileOperations = ({
             if (!apiKey) throw new Error("No API Key");
 
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey);
+            // SCOPE REDUCTION: Only apply positivePrompt from AI. Other fields untouched.
+            const recoveredPrompt = recoveredMeta.positivePrompt;
+
             const updatedImg = {
                 ...img,
-                metadata: { ...img.metadata, ...recoveredMeta },
+                metadata: {
+                    ...img.metadata,
+                    positivePrompt: recoveredPrompt
+                },
+                // Preserve originalMetadata on first edit. Don't overwrite on subsequent re-runs.
                 originalMetadata: img.originalMetadata || img.metadata
             };
 
