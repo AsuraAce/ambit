@@ -76,42 +76,44 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Bar Chart */}
-                        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm">
-                            <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider">Generations per Model (Click to Filter)</h3>
-                            <ResponsiveContainer width="100%" height="85%">
-                                <BarChart data={modelStats} style={{ outline: 'none' }}>
-                                    <XAxis dataKey="name" stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
-                                    <YAxis stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: '#18181b', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '0.5rem' }}
-                                        cursor={{ fill: '#27272a', opacity: 0.2 }}
-                                    />
-                                    <Bar
-                                        dataKey="count"
-                                        radius={[6, 6, 0, 0]}
-                                        onClick={(data: any) => {
-                                            if (data && data.fullName) {
-                                                onFilter('model', data.fullName);
-                                            }
-                                        }}
-                                        cursor="pointer"
-                                        activeBar={{
-                                            fillOpacity: 0.9,
-                                            stroke: '#ffffff',
-                                            strokeWidth: 1.5,
-                                            strokeOpacity: 0.5
-                                        }}
-                                    >
-                                        {modelStats.map((entry, index) => (
-                                            <Cell
-                                                key={`cell-${index}`}
-                                                fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]}
-                                                style={{ outline: 'none' }}
-                                            />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
+                        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col">
+                            <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
+                            <div className="flex-1 min-h-0 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={modelStats} style={{ outline: 'none' }}>
+                                        <XAxis dataKey="name" stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
+                                        <YAxis stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: '#18181b', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '0.5rem' }}
+                                            cursor={{ fill: '#27272a', opacity: 0.2 }}
+                                        />
+                                        <Bar
+                                            dataKey="count"
+                                            radius={[6, 6, 0, 0]}
+                                            onClick={(data: any) => {
+                                                if (data && data.fullName) {
+                                                    onFilter('model', data.fullName);
+                                                }
+                                            }}
+                                            cursor="pointer"
+                                            activeBar={{
+                                                fillOpacity: 0.9,
+                                                stroke: '#ffffff',
+                                                strokeWidth: 1.5,
+                                                strokeOpacity: 0.5
+                                            }}
+                                        >
+                                            {modelStats.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]}
+                                                    style={{ outline: 'none' }}
+                                                />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
 
                         {/* Word Cloud */}
