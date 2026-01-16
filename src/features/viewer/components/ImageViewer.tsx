@@ -13,6 +13,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
+import { useToast } from '../../../hooks/useToast';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -119,7 +120,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, handlers } = useZoomPan();
     const { palette, isLoading: isPaletteLoading } = usePalette(displayImage.url);
-    const ai = useImageAI(settings.googleGeminiApiKey, settings.enableAI);
+    const { addToast } = useToast();
+    const ai = useImageAI({
+        apiKey: settings.googleGeminiApiKey,
+        enableAI: settings.enableAI,
+        onError: (msg) => addToast(msg, 'error')
+    });
 
     // --- UI State ---
     const [activeTab, setActiveTab] = useState<'info' | 'edit' | 'workflow'>('info');
