@@ -161,7 +161,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-4">
+              <div className={activeTab === 'dev' ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto custom-scrollbar p-8 pt-4"}>
                 {activeTab === 'general' && <GeneralTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'folders' && <FoldersTab settings={settings} setSettings={handleSettingsChange} onScanFolder={onScanFolder} />}
                 {activeTab === 'invokeai' && <InvokeAITab settings={settings} setSettings={handleSettingsChange} />}
