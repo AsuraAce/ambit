@@ -8,7 +8,6 @@ import { AppContextMenu } from './components/ui/AppContextMenu';
 import { OnboardingWizard } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
 import { ImageViewer } from './features/viewer/components/ImageViewer';
-import { LoadingScreen } from './components/ui/LoadingScreen';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
 import { useToast } from './hooks/useToast';
@@ -287,7 +286,26 @@ export default function App() {
         handleRemoveFromCollection: handleRemoveFromCollection,
     });
 
-    if (!isLoaded) return <LoadingScreen />;
+
+
+    // Handle static loading screen removal
+    useEffect(() => {
+        if (isLoaded) {
+            const loader = document.getElementById('static-loading');
+            if (loader) {
+                // Trigger fade out
+                loader.style.opacity = '0';
+                loader.style.pointerEvents = 'none';
+
+                // Remove from DOM after transition completes
+                setTimeout(() => {
+                    loader.remove();
+                }, 500); // slightly longer than CSS transition (0.4s) to be safe
+            }
+        }
+    }, [isLoaded]);
+
+    if (!isLoaded) return null;
 
 
     return (
