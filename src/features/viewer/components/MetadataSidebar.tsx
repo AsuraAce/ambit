@@ -668,8 +668,10 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                 >
                                     <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Prompt Analysis</span>
                                     <div className="flex items-center justify-between w-full">
-                                        <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">Get insights</span>
-                                        <Wand2 className="w-4 h-4 text-amethyst-500" />
+                                        <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">
+                                            {isAnalyzing ? "Analyzing..." : "Get insights"}
+                                        </span>
+                                        {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-500 border-t-transparent" /> : <Wand2 className="w-4 h-4 text-amethyst-500" />}
                                     </div>
                                 </button>
 
@@ -679,8 +681,10 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                 >
                                     <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Variations</span>
                                     <div className="flex items-center justify-between w-full">
-                                        <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">Create twists</span>
-                                        <Shuffle className="w-4 h-4 text-amethyst-500" />
+                                        <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">
+                                            {isAnalyzing ? "Creating..." : "Create twists"}
+                                        </span>
+                                        {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-500 border-t-transparent" /> : <Shuffle className="w-4 h-4 text-amethyst-500" />}
                                     </div>
                                 </button>
                             </div>

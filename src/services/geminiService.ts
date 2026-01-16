@@ -30,8 +30,11 @@ export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: str
       "${currentPrompt}"
       
       Provide 3 specific improvements or variations to enhance the visual quality or change the style slightly.
-      Format the output as a simple markdown list.
-      Keep it concise.
+      
+      At the end, provide exactly ONE "Applied Example" that combines these improvements into a single, high-quality prompt.
+      
+      Format the output using Markdown. Use "### Analysis" for the list and "### Applied Example" for the example.
+      Keep it professional and concise.
     `;
 
         const response: GenerateContentResponse = await ai.models.generateContent({
