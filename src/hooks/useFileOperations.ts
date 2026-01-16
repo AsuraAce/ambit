@@ -223,11 +223,17 @@ export const useFileOperations = ({
             if (!apiKey) throw new Error("No API Key");
 
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey);
-            setImages(prev => prev.map(pImg => pImg.id === img.id ? {
-                ...pImg,
-                metadata: { ...pImg.metadata, ...recoveredMeta },
-                originalMetadata: pImg.originalMetadata || pImg.metadata
-            } : pImg));
+            const updatedImg = {
+                ...img,
+                metadata: { ...img.metadata, ...recoveredMeta },
+                originalMetadata: img.originalMetadata || img.metadata
+            };
+
+            setImages(prev => prev.map(pImg => pImg.id === img.id ? updatedImg : pImg));
+
+            // Persist to DB
+            const { insertImage } = await import('../services/db/imageRepo');
+            await insertImage(updatedImg);
 
             addToast("Metadata recovered successfully!", "success");
             onComplete();

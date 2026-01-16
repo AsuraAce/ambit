@@ -101,7 +101,17 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     const displayImage = useMemo(() => {
         // Use full image if available, else fallback to partial
-        const base = fullImage || image;
+        // CRITICAL FIX: Merge dynamic store state (image) over fullImage to catch updates like metadata recovery
+        // that happen without a full re-fetch.
+        const base = fullImage ? {
+            ...fullImage,
+            ...image, // Prioritize reactive props (isFavorite, notes, etc)
+            metadata: {
+                ...fullImage.metadata,
+                ...image.metadata // Prioritize reactive metadata (e.g. recovered prompts)
+            }
+        } : image;
+
         if (!activeVersionId) return base;
         return versions.find(v => v.id === activeVersionId) || base;
     }, [image, fullImage, versions, activeVersionId]);
