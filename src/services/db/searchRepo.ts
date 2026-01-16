@@ -325,9 +325,6 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             return `images.${col}`;
         });
 
-        // DEBUG: Trace the regex replacement
-        console.log('[DB] getKeywordStats safeWhere:', safeWhere);
-
         // 1. Flip JOIN order: Filter 'images' first, then lookup FTS text
         // 2. Add RANDOM() sort to LIMIT to get a representative sample of the filtered set
         //    (instead of just the first N oldest images)

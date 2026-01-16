@@ -33,9 +33,6 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     // Fix: Initialize tip once on mount so it doesn't change when filtering
     const [randomTip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
 
-    // DEBUG: Confirm Charts version
-    console.log('[Charts] Rendered StatsDashboard v2 (Flex Fix)');
-
     return (
         <div className="h-full flex flex-col overflow-hidden">
             {/* Floating Pill Header - Matching AppHeader & Maintenance Style */}
@@ -82,7 +79,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col">
                             <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
                             <div className="flex-1 min-h-0 w-full">
-                                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                     <BarChart data={modelStats} style={{ outline: 'none' }}>
                                         <XAxis dataKey="name" stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
                                         <YAxis stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
