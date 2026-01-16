@@ -12,6 +12,8 @@ interface AIResultModalProps {
     onCopy: (text: string) => void;
 }
 
+// ... imports ...
+
 export const AIResultModal: React.FC<AIResultModalProps> = ({
     isOpen,
     onClose,
@@ -21,10 +23,15 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
 }) => {
     const [copiedAll, setCopiedAll] = React.useState(false);
     const [activeTab, setActiveTab] = React.useState(0);
+    // New state for Analysis tabs: 0 = Analysis Report, 1 = Applied Example
+    const [activeAnalysisTab, setActiveAnalysisTab] = React.useState(0);
 
-    // Reset tab when modal opens with new content
+    // Reset tabs when modal opens with new content
     React.useEffect(() => {
-        if (isOpen) setActiveTab(0);
+        if (isOpen) {
+            setActiveTab(0);
+            setActiveAnalysisTab(0);
+        }
     }, [isOpen, content]);
 
     if (!isOpen || !content) return null;
@@ -67,8 +74,8 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                         exit={{ opacity: 0, y: 10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         className={cn(
-                            "relative w-full bg-white dark:bg-[#0a0a0c] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden",
-                            "max-w-2xl"
+                            "relative w-full bg-white dark:bg-[#0a0a0c] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden",
+                            "max-w-2xl h-[600px]" // Fixed height for consistency
                         )}
                     >
                         {/* Decorative top line */}
@@ -114,42 +121,61 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                         </div>
 
                         {/* Content Area */}
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <div className="flex-1 min-h-0 flex flex-col">
                             {type === 'analysis' ? (
-                                /* ANALYSIS VIEW */
-                                <div className="p-6">
-                                    {/* Analysis Tips */}
-                                    <div className="mb-6">
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <Sparkles className="w-4 h-4 text-amethyst-500" />
-                                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Suggested Improvements</h4>
-                                        </div>
-                                        <div className="bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-100 dark:border-white/5 p-5">
-                                            <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                <ReactMarkdown
-                                                    components={{
-                                                        h3: () => null,
-                                                        p: ({ node, ...props }) => <p {...props} className="mb-3 last:mb-0 text-sm" />,
-                                                        strong: ({ node, ...props }) => <strong {...props} className="text-gray-800 dark:text-white font-semibold" />,
-                                                        em: ({ node, ...props }) => <em {...props} className="text-amethyst-600 dark:text-amethyst-400 not-italic font-medium" />
-                                                    }}
-                                                >
-                                                    {analysisText}
-                                                </ReactMarkdown>
-                                            </div>
-                                        </div>
+                                /* ANALYSIS VIEW - Now Tabbed */
+                                <div className="flex flex-col h-full">
+                                    {/* Analysis Tabs */}
+                                    <div className="flex items-center justify-center gap-2 p-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/30 dark:bg-white/[0.01]">
+                                        <button
+                                            onClick={() => setActiveAnalysisTab(0)}
+                                            className={cn(
+                                                "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2",
+                                                activeAnalysisTab === 0
+                                                    ? "bg-amethyst-500 text-white shadow-lg shadow-amethyst-500/20"
+                                                    : "bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-500 border border-gray-200 dark:border-white/10 hover:border-amethyst-300"
+                                            )}
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5" /> Analysis Report
+                                        </button>
+                                        {masteredPrompt && (
+                                            <button
+                                                onClick={() => setActiveAnalysisTab(1)}
+                                                className={cn(
+                                                    "px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2",
+                                                    activeAnalysisTab === 1
+                                                        ? "bg-amethyst-500 text-white shadow-lg shadow-amethyst-500/20"
+                                                        : "bg-white dark:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-amethyst-500 border border-gray-200 dark:border-white/10 hover:border-amethyst-300"
+                                                )}
+                                            >
+                                                <Wand2 className="w-3.5 h-3.5" /> Applied Example
+                                            </button>
+                                        )}
                                     </div>
 
-                                    {/* Mastered Prompt */}
-                                    {masteredPrompt && (
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-4">
-                                                <Wand2 className="w-4 h-4 text-amethyst-500" />
-                                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Applied Example</h4>
+                                    {/* Tab Content */}
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                                        {activeAnalysisTab === 0 ? (
+                                            <div className="bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-100 dark:border-white/5 p-5">
+                                                <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                    <ReactMarkdown
+                                                        components={{
+                                                            h3: () => null,
+                                                            p: ({ node, ...props }) => <p {...props} className="mb-3 last:mb-0 text-sm" />,
+                                                            strong: ({ node, ...props }) => <strong {...props} className="text-gray-800 dark:text-white font-semibold" />,
+                                                            em: ({ node, ...props }) => <em {...props} className="text-amethyst-600 dark:text-amethyst-400 not-italic font-medium" />
+                                                        }}
+                                                    >
+                                                        {analysisText}
+                                                    </ReactMarkdown>
+                                                </div>
                                             </div>
-                                            <MasteredPromptCard prompt={masteredPrompt} onCopy={onCopy} />
-                                        </div>
-                                    )}
+                                        ) : (
+                                            <div>
+                                                <MasteredPromptCard prompt={masteredPrompt} onCopy={onCopy} />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ) : (
                                 /* VARIATIONS VIEW - Tabbed Interface */
@@ -173,7 +199,7 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                     </div>
 
                                     {/* Active Variation Content */}
-                                    <div className="flex-1 p-6">
+                                    <div className="flex-1 p-6 overflow-hidden">
                                         <VariationDisplay
                                             text={variations[activeTab]}
                                             index={activeTab}
