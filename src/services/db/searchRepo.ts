@@ -309,13 +309,20 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             'timestamp', 'thumbnail_path', 'is_favorite', 'is_pinned', 'is_missing',
             'user_masked', 'group_id', 'board_id', 'notes', 'original_metadata_json',
             // New denormalized columns
-            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen'
+            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'sampler', 'generation_type'
         ];
 
-        const columnRegex = new RegExp(`(\\bimages\\.) ?\\b(${columnsToPrefix.join('|')}) \\b`, 'g');
+        // Improved Regex:
+        // (?:\\bimages\\.)? -> Matches optional "images." prefix (non-capturing)
+        // \\b(${columnsToPrefix.join('|')}) -> Matches the column name itself
+        // \\b -> Word boundary to ensure full match
+        const columnRegex = new RegExp(`(?:\\bimages\\.)?\\b(${columnsToPrefix.join('|')})\\b`, 'g');
 
-        const safeWhere = finalWhere.replace(columnRegex, (match, prefix, col) => {
-            return prefix ? match : `images.${col} `;
+        const safeWhere = finalWhere.replace(columnRegex, (match, col) => {
+            // Note: 'match' is the full string (e.g. "id" or "images.id")
+            // 'col' is the captured group 1 (e.g. "id")
+            // We always want to return "images.id"
+            return `images.${col}`;
         });
 
         // 1. Flip JOIN order: Filter 'images' first, then lookup FTS text
