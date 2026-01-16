@@ -2,6 +2,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { FilterState, RecoveryStyle, ImageMetadata, GeneratorTool } from "../types";
+import { AI_PROMPTS, AIPromptKey, RECOVERY_STYLES } from "../constants/aiPrompts";
 import {
     GeminiFilterResponseSchema,
     GeminiMetadataResponseSchema,
@@ -17,25 +18,24 @@ const getAIClient = (apiKey: string) => {
 };
 
 /**
+ * Helper to resolve prompt (user override vs default)
+ */
+const resolvePrompt = (key: AIPromptKey, overrides?: Record<string, string>): string => {
+    return overrides?.[key] || AI_PROMPTS[key];
+};
+
+/**
  * Analyzes a prompt and suggests improvements using Gemini 2.5 Flash.
  */
-export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: string): Promise<string> => {
+export const analyzePromptAndSuggest = async (
+    currentPrompt: string,
+    apiKey: string,
+    prompts?: Record<string, string>
+): Promise<string> => {
     try {
         const ai = getAIClient(apiKey);
-
-        const prompt = `
-      You are an expert AI Image Generation Prompt Engineer.
-      Analyze the following prompt used for an image generation:
-      
-      "${currentPrompt}"
-      
-      Provide 3 specific improvements or variations to enhance the visual quality or change the style slightly.
-      
-      At the end, provide exactly ONE "Applied Example" that combines these improvements into a single, high-quality prompt.
-      
-      Format the output using Markdown. Use "### Analysis" for the list and "### Applied Example" for the example.
-      Keep it professional and concise.
-    `;
+        const template = resolvePrompt('ANALYSIS', prompts);
+        const prompt = template.replace('{{prompt}}', currentPrompt);
 
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -55,21 +55,19 @@ export const analyzePromptAndSuggest = async (currentPrompt: string, apiKey: str
 /**
  * Generates 3 distinct variations of a prompt.
  */
-export const generatePromptVariations = async (currentPrompt: string, apiKey: string): Promise<string[]> => {
+export const generatePromptVariations = async (
+    currentPrompt: string,
+    apiKey: string,
+    prompts?: Record<string, string>
+): Promise<string[]> => {
     try {
         const ai = getAIClient(apiKey);
+        const template = resolvePrompt('VARIATIONS', prompts);
+        const prompt = template.replace('{{prompt}}', currentPrompt);
 
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: `Take the following image generation prompt and create 3 distinct variations of it.
-            
-            Original Prompt: "${currentPrompt}"
-            
-            Variation 1: Artistic/Stylized (Change the art medium or style significantly).
-            Variation 2: Cinematic/Realistic (Focus on lighting, photography, and realism).
-            Variation 3: Creative Twist (Keep the subject but change the setting or mood).
-            
-            Return ONLY a JSON array of strings. Do not include markdown formatting.`,
+            contents: prompt,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -93,12 +91,19 @@ export const generatePromptVariations = async (currentPrompt: string, apiKey: st
 /**
  * Generates a creative title for an image based on its prompt.
  */
-export const generateTitleFromPrompt = async (promptText: string, apiKey: string): Promise<string> => {
+export const generateTitleFromPrompt = async (
+    promptText: string,
+    apiKey: string,
+    prompts?: Record<string, string>
+): Promise<string> => {
     try {
         const ai = getAIClient(apiKey);
+        const template = resolvePrompt('TITLE', prompts);
+        const prompt = template.replace('{{prompt}}', promptText);
+
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `Generate a short, 3-5 word artistic title for an image generated with this prompt: "${promptText}". Return ONLY the title, no quotes.`,
+            contents: prompt,
         });
         return response.text?.trim() || "Untitled Creation";
     } catch (error) {
@@ -109,28 +114,23 @@ export const generateTitleFromPrompt = async (promptText: string, apiKey: string
 /**
  * Converts natural language query into a structured FilterState object.
  */
-export const generateFiltersFromQuery = async (query: string, apiKey: string): Promise<Partial<FilterState>> => {
+export const generateFiltersFromQuery = async (
+    query: string,
+    apiKey: string,
+    prompts?: Record<string, string>
+): Promise<Partial<FilterState>> => {
     try {
         const ai = getAIClient(apiKey);
 
+        const template = resolvePrompt('FILTERS', prompts);
+        const prompt = template.replace('{{query}}', query);
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: `Translate this user search query into a JSON filter object for an image library: "${query}".
-            
-            Available tools (enums): ComfyUI, Automatic1111, Midjourney, InvokeAI.
-            Available models (strings): SDXL 1.0, Stable Diffusion 1.5, Flux.1, Pony Diffusion V6.
-            Date ranges: 'today', 'week', 'month', 'all'.
-            
-            CRITICAL INSTRUCTIONS:
-            1. 'searchQuery': Extract ONLY the key subject matter keywords. Remove conversational phrases like "show me", "find", "images of", "pictures from", "look for". 
-               Example: "Show me cyberpunk cities" -> searchQuery: "cyberpunk cities".
-               Example: "Find images from yesterday" -> searchQuery: "".
-            2. 'dateRange': If the user mentions "yesterday", "last 24 hours", or "today", set dateRange to 'today'. "Last 7 days" -> 'week'.
-            3. 'favoritesOnly': Set to true if "favorites", "liked", or "best" is mentioned.
-            4. 'tools'/'models': Match loosely.
-            `,
+            contents: prompt,
             config: {
                 responseMimeType: "application/json",
+                // Schema remains hardcoded as it defines internal logic
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
@@ -165,37 +165,21 @@ export const generateFiltersFromQuery = async (query: string, apiKey: string): P
 export const recoverImageMetadata = async (
     base64Image: string,
     style: RecoveryStyle,
-    apiKey: string
+    apiKey: string,
+    prompts?: Record<string, string>
 ): Promise<Partial<ImageMetadata>> => {
     const ai = getAIClient(apiKey);
 
-    let systemInstruction = "You are an AI Vision assistant specialized in describing images for Generative AI reproduction.";
-    let stylePrompt = "";
+    const stylePrompt = RECOVERY_STYLES[style] || RECOVERY_STYLES.generic;
+    const template = resolvePrompt('RECOVERY_GENERIC', prompts); // Use generic template key, could make specific keys if needed
+    // NOTE: For recovery, we are only templating the wrapping instruction. 
+    // The specific style instructions are still hardcoded in RECOVERY_STYLES for simplicity, 
+    // unless we want to explode that into multiple full prompt templates. 
+    // For now, let's keep it simple: The "Master Template" is exposed.
 
-    switch (style) {
-        case 'midjourney':
-            stylePrompt = "Format the output as a Midjourney v6 prompt. Use --v 6 syntax parameters if applicable. Focus on artistic style, lighting, and composition.";
-            break;
-        case 'sdxl':
-            stylePrompt = "Format the output as a Stable Diffusion XL (SDXL) prompt. Use booru tags for key elements if helpful, but prioritize natural language description. Mention art style, artist references, and quality boosters (e.g. 'masterpiece, best quality').";
-            break;
-        case 'danbooru':
-            stylePrompt = "Format the output as a list of comma-separated Danbooru tags. Focus on character traits, clothing, background elements, and framing.";
-            break;
-        default:
-            stylePrompt = "Provide a detailed descriptive prompt that would generate this image. Include subject, medium, style, lighting, and color palette.";
-    }
-
-    const prompt = `Analyze this image. ${stylePrompt}
-    
-    IMPORTANT: 
-    1. Do NOT guess technical parameters (CFG, Steps, Seed) as they are impossible to know from visual inspection. Return 0 for them.
-    2. Do NOT guess the Model Architecture unless there is clear visual evidence (e.g. text watermark). Default 'model' to "Unknown".
-    3. Default 'tool' to "Unknown".
-    4. Provide a generic safety 'negativePrompt' (e.g., 'low quality, blurry, watermark').
-    
-    Return the result as JSON.
-    `;
+    // We might need a slightly different template handling for recovery since it inserts `stylePrompt` mid-string.
+    // Let's use {{stylePrompt}} in the constant.
+    const prompt = template.replace('{{stylePrompt}}', stylePrompt);
 
     // Remove data:image/png;base64, prefix if present
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
@@ -219,7 +203,7 @@ export const recoverImageMetadata = async (
                     steps: { type: Type.NUMBER },
                     seed: { type: Type.NUMBER },
                     model: { type: Type.STRING },
-                    tool: { type: Type.STRING } // Just a guess
+                    tool: { type: Type.STRING }
                 },
                 required: ["positivePrompt"]
             }
@@ -235,7 +219,6 @@ export const recoverImageMetadata = async (
         }
 
         // SCOPE REDUCTION: Only return positivePrompt.
-        // All other metadata (model, tool, steps, etc.) cannot be reliably inferred from images.
         return {
             positivePrompt: validated.positivePrompt
         };

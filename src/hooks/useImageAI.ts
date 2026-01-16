@@ -31,10 +31,11 @@ function parseGeminiError(error: unknown): string {
 interface UseImageAIOptions {
   apiKey?: string;
   enableAI?: boolean;
+  prompts?: Record<string, string>; // New: System prompt overrides
   onError?: (message: string) => void;
 }
 
-export const useImageAI = ({ apiKey, enableAI, onError }: UseImageAIOptions) => {
+export const useImageAI = ({ apiKey, enableAI, prompts, onError }: UseImageAIOptions) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'analysis' | 'variations'>('analysis');
@@ -48,7 +49,7 @@ export const useImageAI = ({ apiKey, enableAI, onError }: UseImageAIOptions) => 
 
     setIsAnalyzing(true);
     try {
-      const insight = await analyzePromptAndSuggest(prompt, apiKey);
+      const insight = await analyzePromptAndSuggest(prompt, apiKey, prompts);
       setResult(insight);
       setModalType('analysis');
       setModalOpen(true);
@@ -68,7 +69,7 @@ export const useImageAI = ({ apiKey, enableAI, onError }: UseImageAIOptions) => 
 
     setIsAnalyzing(true);
     try {
-      const vars = await generatePromptVariations(prompt, apiKey);
+      const vars = await generatePromptVariations(prompt, apiKey, prompts);
       setResult(vars);
       setModalType('variations');
       setModalOpen(true);

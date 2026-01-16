@@ -201,6 +201,7 @@ export interface AppSettings {
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
   resourceSortOptions?: Record<string, FacetSortOption>; // Persisted sort option per resource section
   hideImportModal?: boolean; // User dismissed the import education modal
+  systemPrompts?: Record<string, string>; // Dev override for AI prompts
 }
 
 export interface ToastMessage {

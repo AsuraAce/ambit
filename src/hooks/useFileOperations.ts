@@ -222,7 +222,7 @@ export const useFileOperations = ({
             const apiKey = settings.googleGeminiApiKey || process.env.API_KEY;
             if (!apiKey) throw new Error("No API Key");
 
-            const recoveredMeta = await recoverImageMetadata(base64, style, apiKey);
+            const recoveredMeta = await recoverImageMetadata(base64, style, apiKey, settings.systemPrompts);
             // SCOPE REDUCTION: Only apply positivePrompt from AI. Other fields untouched.
             const recoveredPrompt = recoveredMeta.positivePrompt;
 
