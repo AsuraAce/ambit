@@ -7,7 +7,7 @@ import { AIImage } from '../../types';
 export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, 
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
-    images.metadata_json
+    images.metadata_json, images.original_metadata_json
 `;
 
 // Helper to keep mapping consistent
