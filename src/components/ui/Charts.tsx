@@ -33,6 +33,9 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     // Fix: Initialize tip once on mount so it doesn't change when filtering
     const [randomTip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
 
+    // DEBUG: Confirm Charts version
+    console.log('[Charts] Rendered StatsDashboard v2 (Flex Fix)');
+
     return (
         <div className="h-full flex flex-col overflow-hidden">
             {/* Floating Pill Header - Matching AppHeader & Maintenance Style */}
