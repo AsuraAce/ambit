@@ -1,6 +1,6 @@
 ---
 name: github-workflow
-description: Git and GitHub workflow management for LLM agents. Use this skill when managing commits, branches, pull requests, or any git operations. Prioritizes local-first development with publishing (push) only on explicit user request.
+description: Git and GitHub workflow management. Use this skill BEFORE writing any code and when managing commits, branches, pull requests, or any git operations. Prioritizes local-first development with publishing (push) only on explicit user request.
 ---
 
 # GitHub Workflow for LLM Agents
