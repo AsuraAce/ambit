@@ -180,6 +180,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
             }
         } else {
             setLocalTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });
+            if (brandNew.length > 0) {
+                addToast(`Linked ${brandNew.length} folders. Import started in background...`, 'info');
+            }
         }
 
         setCandidates([]);
@@ -412,7 +415,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     <Plus className="w-4 h-4" />
                                     {candidates.some(c => selectedPaths.has(c.path) && c.isAlreadyLinked)
                                         ? `Link/Sync ${selectedPaths.size} Folders`
-                                        : `Link ${selectedPaths.size} Folders`}
+                                        : `Link & Import ${selectedPaths.size} Folders`}
                                 </button>
                             </div>
 
