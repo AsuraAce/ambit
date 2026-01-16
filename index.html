@@ -1,13 +1,134 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ambit | Local AI Workspace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  </head>
-  <body class="antialiased overflow-hidden font-sans transition-colors duration-300 ease-spring">
-    <div id="root"></div>
-    <script type="module" src="/src/index.tsx"></script>
-  </body>
+<html lang="en" class="dark" style="background-color: #09090b;">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ambit | Local AI Workspace</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <style>
+    /* Critical: Set background immediately to prevent white flash */
+    html,
+    body {
+      background-color: #09090b !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden !important;
+    }
+
+    /* Static loading screen - matches React LoadingScreen exactly */
+    .static-loading {
+      position: fixed;
+      inset: 0;
+      background-color: #020617;
+      /* slate-950 */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      /* gap-4 */
+      font-family: 'Inter', system-ui, sans-serif;
+      z-index: 9999;
+      opacity: 1;
+      transition: opacity 0.4s ease-out;
+    }
+
+    .static-loading__spinner-container {
+      position: relative;
+    }
+
+    .static-loading__glow {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(115, 140, 85, 0.2);
+      /* sage-500/20 */
+      filter: blur(24px);
+      /* blur-xl */
+      border-radius: 9999px;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .static-loading__spinner {
+      width: 3rem;
+      /* w-12 = 48px */
+      height: 3rem;
+      /* h-12 = 48px */
+      color: #8ca36b;
+      /* sage-400 */
+      animation: spin 1s linear infinite;
+      position: relative;
+      z-index: 10;
+    }
+
+    .static-loading__text {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      /* gap-2 */
+    }
+
+    .static-loading__title {
+      font-size: 1.5rem;
+      /* text-2xl */
+      font-weight: bold;
+      color: white;
+      letter-spacing: -0.025em;
+      /* tracking-tight */
+      margin: 0;
+    }
+
+    .static-loading__subtitle {
+      font-size: 0.875rem;
+      /* text-sm */
+      color: #9ca3af;
+      /* gray-400 */
+      font-weight: 500;
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      margin: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+  </style>
+</head>
+
+<body style="background-color: #09090b; margin: 0; overflow: hidden;">
+  <div id="root"></div>
+  <!-- Static loading screen - persists until removed by App.tsx -->
+  <div id="static-loading" class="static-loading">
+    <div class="static-loading__spinner-container">
+      <div class="static-loading__glow"></div>
+      <!-- Lucide Loader2 icon SVG -->
+      <svg class="static-loading__spinner" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+      </svg>
+    </div>
+    <div class="static-loading__text">
+      <h1 class="static-loading__title">Ambit</h1>
+      <p class="static-loading__subtitle">Initializing library...</p>
+    </div>
+  </div>
+  <script type="module" src="/src/index.tsx"></script>
+</body>
+
 </html>
