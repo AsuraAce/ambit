@@ -8,12 +8,20 @@ interface WordCloudProps {
     totalImages: number;
 }
 
-export const WordCloud: React.FC<WordCloudProps> = ({ keywords, onWordClick, totalImages }) => {
-    if (keywords.length === 0) {
+export const WordCloud: React.FC<WordCloudProps & { isLoading?: boolean }> = ({ keywords, onWordClick, totalImages, isLoading }) => {
+    if (isLoading) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2 h-full">
                 <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
                 <p className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-40">Analyzing Library</p>
+            </div>
+        );
+    }
+
+    if (keywords.length === 0) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2 h-full opacity-60">
+                <p className="text-xs uppercase tracking-wider font-medium">No keywords found</p>
             </div>
         );
     }

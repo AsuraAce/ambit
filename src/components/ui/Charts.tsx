@@ -124,6 +124,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                                 <WordCloud
                                     keywords={isFiltering ? [] : (keywordStats || [])}
                                     totalImages={totalGenerations}
+                                    isLoading={isFiltering}
                                     onWordClick={(word) => {
                                         setFilters((prev: any) => ({
                                             ...prev,
