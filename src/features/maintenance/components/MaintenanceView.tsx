@@ -272,7 +272,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleIncludeUpgradeableChange = useCallback((include: boolean) => {
         setIncludeUpgradeable(include);
-        refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable: include });
+        refreshData('thumbnails', true, { scope: thumbnailsScope, includeUpgradeable: include });
     }, [refreshData, thumbnailsScope]);
 
 

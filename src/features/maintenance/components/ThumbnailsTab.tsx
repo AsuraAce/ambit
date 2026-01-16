@@ -169,34 +169,6 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         </div>
     );
 
-    if (images.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="p-6 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">
-                    <Check className="w-16 h-16 text-blue-500" />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Optimized</h2>
-                <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
-                    All images in this scope have high-quality thumbnails.
-                </p>
-                <button
-                    onClick={() => onScopeChange(thumbnailsScope === 'global' ? 'filtered' : 'global')}
-                    className="mt-6 text-xs font-bold text-sage-600 hover:underline"
-                >
-                    Switch to {thumbnailsScope === 'global' ? 'Filtered' : 'Global'} scope
-                </button>
-                <button
-                    onClick={handleCleanup}
-                    disabled={isCleaningUp}
-                    className="mt-4 flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
-                >
-                    <Trash2 className={`w-3.5 h-3.5 ${isCleaningUp ? 'animate-pulse' : ''}`} />
-                    {isCleaningUp ? 'Cleaning up...' : 'Clean up unused thumbnails'}
-                </button>
-            </div>
-        );
-    }
-
     return (
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col items-stretch">
             <MaintenanceHeader
@@ -211,17 +183,37 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 variant="blue"
             />
 
-            <VirtualGrid
-                items={images}
-                renderItem={renderItem}
-                layout="masonry"
-                minItemWidth={200}
-                gap={16}
-                padding={0}
-                scrollContainerRef={scrollContainerRef}
-                onRangeSelection={onRangeSelection}
-                onBackgroundClick={onBackgroundClick}
-            />
+            {images.length > 0 ? (
+                <VirtualGrid
+                    items={images}
+                    renderItem={renderItem}
+                    layout="masonry"
+                    minItemWidth={200}
+                    gap={16}
+                    padding={0}
+                    scrollContainerRef={scrollContainerRef}
+                    onRangeSelection={onRangeSelection}
+                    onBackgroundClick={onBackgroundClick}
+                />
+            ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                    <div className="p-6 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">
+                        <Check className="w-16 h-16 text-blue-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Optimized</h2>
+                    <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
+                        All images in this scope have high-quality thumbnails.
+                    </p>
+                    <button
+                        onClick={handleCleanup}
+                        disabled={isCleaningUp}
+                        className="mt-4 flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+                    >
+                        <Trash2 className={`w-3.5 h-3.5 ${isCleaningUp ? 'animate-pulse' : ''}`} />
+                        {isCleaningUp ? 'Cleaning up...' : 'Clean up unused thumbnails'}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
