@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, BrainCircuit, Loader2, Wand2, Info } from 'lucide-react';
+import { X, Sparkles, BrainCircuit, Loader2, Wand2, Info, Palette, Bot, Hash } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { RecoveryStyle, AIImage } from '../../../types';
 
