@@ -397,7 +397,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features
                 ))}
             </ul>
             <div className={`text-[11px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0 ${colors.text}`}>
-                Connect API →
+                Connect →
             </div>
         </motion.div>
     );
