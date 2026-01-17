@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image, ChevronRight, Zap } from 'lucide-react';
+import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
 
@@ -159,10 +159,49 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step === 3 && (
                                 <div className="flex-1 flex flex-col">
                                     <div className="mb-6">
-                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Intelligent Analysis</h2>
+                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Intelligent Assistance</h2>
                                         <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
-                                            Power natural language search and complex metadata analysis using advanced AI.
+                                            Enhance your creative workflow with AI-powered utilities designed for query understanding and prompt engineering.
                                         </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 mb-6">
+                                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 flex items-start gap-3">
+                                            <div className="p-2 bg-white dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 shadow-sm text-sage-500">
+                                                <History className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-bold text-gray-900 dark:text-white">Prompt Recovery</div>
+                                                <div className="text-[10px] text-gray-500 leading-tight mt-0.5">Restore lost generation data</div>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 flex items-start gap-3">
+                                            <div className="p-2 bg-white dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 shadow-sm text-sage-500">
+                                                <BrainCircuit className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-bold text-gray-900 dark:text-white">Prompt Analysis</div>
+                                                <div className="text-[10px] text-gray-500 leading-tight mt-0.5">Improvement advice & tips</div>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 flex items-start gap-3">
+                                            <div className="p-2 bg-white dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 shadow-sm text-sage-500">
+                                                <Wand2 className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-bold text-gray-900 dark:text-white">Variations</div>
+                                                <div className="text-[10px] text-gray-500 leading-tight mt-0.5">Generate creative alternates</div>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 flex items-start gap-3">
+                                            <div className="p-2 bg-white dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 shadow-sm text-sage-500">
+                                                <Search className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-bold text-gray-900 dark:text-white">NL Search</div>
+                                                <div className="text-[10px] text-gray-500 leading-tight mt-0.5">Find images naturally</div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <motion.label
@@ -184,7 +223,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         <input type="checkbox" className="hidden" checked={enableAI} onChange={() => setEnableAI(!enableAI)} />
                                         <div className="flex-1">
                                             <span className="font-bold text-gray-900 dark:text-white block">Enable Intelligence Features</span>
-                                            <span className="text-xs text-gray-500">Analysis, search enrichment, and tags.</span>
+                                            <span className="text-xs text-gray-500">Unlock all AI-powered features.</span>
                                         </div>
                                     </motion.label>
 
