@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Shield, Trash2, History as HistoryIcon, ImageOff, Loader2, Database, AlertTriangle } from 'lucide-react';
+import { Shield, Trash2, History as HistoryIcon, ImageOff, Loader2, Database, AlertTriangle, Monitor } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
@@ -92,6 +92,38 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                 </section>
             </div>
 
+            {/* Interface Section */}
+            <div className="space-y-4 pt-4">
+                <div className="flex items-center gap-2 px-1">
+                    <Monitor className="w-4 h-4 text-blue-500" />
+                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Interface</h4>
+                </div>
+
+                <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden divide-y divide-gray-100 dark:divide-white/5">
+                    {/* Reset Onboarding */}
+                    <div className="p-6 flex items-center justify-between">
+                        <div>
+                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Onboarding</div>
+                            <div className="text-xs text-gray-500 mt-1">Show the onboarding wizard again on next reload.</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                updateContextSettings((p: any) => ({
+                                    ...p,
+                                    hasCompletedOnboarding: false,
+                                    hideImportModal: false
+                                }));
+                                addToast('Onboarding reset. Reload to see wizard.', 'info');
+                            }}
+                            className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                        >
+                            <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* Danger Zone Section */}
             <div className="space-y-4 pt-4">
                 <div className="flex items-center gap-2 px-1">
@@ -116,27 +148,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                         </button>
                     </div>
 
-                    {/* Reset Onboarding */}
-                    <div className="p-6 flex items-center justify-between">
-                        <div>
-                            <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Onboarding</div>
-                            <div className="text-xs text-gray-500 mt-1">Show the onboarding wizard again on next reload.</div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                updateContextSettings((p: any) => ({
-                                    ...p,
-                                    hasCompletedOnboarding: false,
-                                    hideImportModal: false
-                                }));
-                                addToast('Onboarding reset. Reload to see wizard.', 'info');
-                            }}
-                            className="px-3 py-2 bg-white dark:bg-white/5 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-50 dark:hover:bg-rose-500/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                        >
-                            <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
-                        </button>
-                    </div>
+
 
                     {/* Clear Thumbnails */}
                     <div className="p-6 flex items-center justify-between">
