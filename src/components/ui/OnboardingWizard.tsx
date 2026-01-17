@@ -108,7 +108,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                     <div className="space-y-4">
                                         <FeatureRow icon={<BrainCircuit className="w-6 h-6 text-sage-400" />} title="Semantic Indexing" desc="Find assets by visual content, mood, and composition." />
                                         <FeatureRow icon={<Zap className="w-6 h-6 text-sage-400" />} title="Native Metadata" desc="Full inspection of generation parameters, seeds, and node graphs." />
-                                        <FeatureRow icon={<Lock className="w-6 h-6 text-sage-400" />} title="Data Sovereignty" desc="Your library remains local. Zero telemetry, absolute privacy." />
+                                        <FeatureRow icon={<Lock className="w-6 h-6 text-sage-400" />} title="Local-First Privacy" desc="Your library remains local. No background telemetry or tracking." />
                                     </div>
                                 </div>
                             )}
