@@ -35,14 +35,16 @@ export const ExperimentsTab: React.FC<TabProps> = React.memo(({ settings, setSet
                 </h4>
 
                 <div className="space-y-6">
-                    <div className="flex items-center justify-between cursor-pointer group">
+                    <div
+                        onClick={handleAIToggle}
+                        className="flex items-center justify-between cursor-pointer group"
+                    >
                         <div>
                             <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Enable AI Features</div>
                             <div className="text-sm text-gray-500">Unlocks natural language search, prompt analysis, and metadata recovery.</div>
                         </div>
                         <button
                             type="button"
-                            onClick={handleAIToggle}
                             className={`w-12 h-7 rounded-full relative transition-colors ${settings.enableAI ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                         >
                             <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAI ? 'left-6' : 'left-1'}`} />
