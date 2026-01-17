@@ -297,7 +297,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step > 1 && (
                                 <button
                                     onClick={handleBack}
-                                    className="px-6 py-4 text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-xl font-bold text-sm transition-all hover:bg-gray-50 dark:hover:bg-white/5 active:scale-95"
+                                    className="px-6 py-3 text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-xl font-bold text-sm transition-all hover:bg-gray-50 dark:hover:bg-white/5 active:scale-95"
                                 >
                                     Back
                                 </button>
