@@ -475,7 +475,7 @@ export default function App() {
                             onToggleFavorite={(id) => toggleFavorite(id)}
                             onTogglePin={(id, p) => actions.handlePinImage(id, p)}
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
-                            onOpenSettings={() => { modals.setInitialSettingsTab('experiments'); modals.openModal('settings'); }}
+                            onOpenSettings={() => { modals.setInitialSettingsTab('intelligence'); modals.openModal('settings'); }}
                             onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
                             onSearch={(term) => {
                                 import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {

@@ -58,7 +58,7 @@ interface GlobalModalsProps {
   isRecoveringMetadata: boolean;
   isExporting: boolean;
   slideshowShuffle: boolean;
-  initialSettingsTab: 'general' | 'experiments';
+  initialSettingsTab: 'general' | 'experiments' | 'intelligence';
   shortcutsModalTab: 'shortcuts' | 'search';
 
   // Command Palette Specifics

@@ -8,7 +8,7 @@ interface TabProps {
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
-export const ExperimentsTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const { addToast } = useToast();
 
     const handleAIToggle = () => {
@@ -30,8 +30,8 @@ export const ExperimentsTab: React.FC<TabProps> = React.memo(({ settings, setSet
     return (
         <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-                    <FlaskConical className="w-4 h-4" /> AI Integration
+                <h4 className="text-xs font-bold text-sage-500 uppercase tracking-wider mb-6 flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4" /> Ambit Intelligence
                 </h4>
 
                 <div className="space-y-6">

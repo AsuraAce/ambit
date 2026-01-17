@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Shield, FlaskConical, Terminal, Link } from 'lucide-react';
+import { X, Monitor, Shield, FlaskConical, Terminal, Link, Sparkles } from 'lucide-react';
 import { AppSettings } from '../../../types';
-import { GeneralTab, PrivacyTab, ExperimentsTab, DevTab, AdvancedTab, ConnectionsTab } from './';
+import { GeneralTab, PrivacyTab, IntelligenceTab, DevTab, AdvancedTab, ConnectionsTab } from './';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface SettingsModalProps {
@@ -11,17 +11,17 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
-  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
-type SettingsTab = 'general' | 'connections' | 'privacy' | 'experiments' | 'dev' | 'advanced';
+type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
   connections: 'Connections',
+  intelligence: 'Intelligence',
   privacy: 'Privacy',
-  experiments: 'Experiments',
   dev: 'Dev Tools',
   advanced: 'Advanced'
 };
@@ -67,6 +67,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
       if (['folders', 'invokeai', 'a1111', 'comfyui'].includes(initialTab)) {
         setActiveTab('connections');
         setConnectionSubTab(initialTab as any);
+      } else if (initialTab === 'experiments') {
+        setActiveTab('intelligence');
+        setConnectionSubTab(undefined);
       } else {
         setActiveTab(initialTab as SettingsTab);
         setConnectionSubTab(undefined);
@@ -125,6 +128,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Application</h4>
                     <TabButton id="general" label="General" icon={<Monitor className="w-4 h-4" />} isActive={activeTab === 'general'} onClick={setActiveTab} />
                     <TabButton id="connections" label="Connections" icon={<Link className="w-4 h-4" />} isActive={activeTab === 'connections'} onClick={setActiveTab} />
+                    <TabButton id="intelligence" label="Intelligence" icon={<Sparkles className="w-4 h-4" />} isActive={activeTab === 'intelligence'} onClick={setActiveTab} />
                   </div>
 
                   <div>
@@ -135,7 +139,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
                     <TabButton id="advanced" label="Advanced" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'advanced'} onClick={setActiveTab} />
-                    <TabButton id="experiments" label="Experiments" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'experiments'} onClick={setActiveTab} />
                     <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
                   </div>
                 </nav>
@@ -171,8 +174,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     onClose={onClose}
                   />
                 )}
+                {activeTab === 'intelligence' && <IntelligenceTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'experiments' && <ExperimentsTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'advanced' && <AdvancedTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'dev' && <DevTab />}
               </div>
