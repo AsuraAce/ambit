@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Folder, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
+import { X, Monitor, Shield, FlaskConical, Terminal, Link } from 'lucide-react';
 import { AppSettings } from '../../../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab, AdvancedTab } from './';
+import { GeneralTab, PrivacyTab, ExperimentsTab, DevTab, AdvancedTab, ConnectionsTab } from './';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface SettingsModalProps {
@@ -15,16 +15,13 @@ interface SettingsModalProps {
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
-type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev' | 'advanced';
+type SettingsTab = 'general' | 'connections' | 'privacy' | 'experiments' | 'dev' | 'advanced';
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
-  folders: 'Folders',
+  connections: 'Connections',
   privacy: 'Privacy',
   experiments: 'Experiments',
-  invokeai: 'InvokeAI',
-  a1111: 'SD WebUI',
-  comfyui: 'ComfyUI',
   dev: 'Dev Tools',
   advanced: 'Advanced'
 };
@@ -61,12 +58,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   initialTab = 'general',
   onScanFolder
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [connectionSubTab, setConnectionSubTab] = useState<'folders' | 'invokeai' | 'a1111' | 'comfyui' | undefined>(undefined);
 
   // Reset to initial tab when modal opens
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      if (['folders', 'invokeai', 'a1111', 'comfyui'].includes(initialTab)) {
+        setActiveTab('connections');
+        setConnectionSubTab(initialTab as any);
+      } else {
+        setActiveTab(initialTab as SettingsTab);
+        setConnectionSubTab(undefined);
+      }
     }
   }, [isOpen, initialTab]);
 
@@ -120,14 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Application</h4>
                     <TabButton id="general" label="General" icon={<Monitor className="w-4 h-4" />} isActive={activeTab === 'general'} onClick={setActiveTab} />
-                    <TabButton id="folders" label="Folders" icon={<Folder className="w-4 h-4" />} isActive={activeTab === 'folders'} onClick={setActiveTab} />
-                  </div>
-
-                  <div>
-                    <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Generators</h4>
-                    <TabButton id="invokeai" label="InvokeAI" icon={<DatabaseZap className="w-4 h-4" />} isActive={activeTab === 'invokeai'} onClick={setActiveTab} />
-                    <TabButton id="a1111" label="SD WebUI" icon={<Palette className="w-4 h-4" />} isActive={activeTab === 'a1111'} onClick={setActiveTab} />
-                    <TabButton id="comfyui" label="ComfyUI" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'comfyui'} onClick={setActiveTab} />
+                    <TabButton id="connections" label="Connections" icon={<Link className="w-4 h-4" />} isActive={activeTab === 'connections'} onClick={setActiveTab} />
                   </div>
 
                   <div>
@@ -165,17 +162,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 
               <div className={activeTab === 'dev' ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto custom-scrollbar p-8 pt-4"}>
                 {activeTab === 'general' && <GeneralTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'folders' && <FoldersTab settings={settings} setSettings={handleSettingsChange} onScanFolder={onScanFolder} />}
-                {activeTab === 'invokeai' && <InvokeAITab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'a1111' && <A1111Tab settings={settings} setSettings={handleSettingsChange} onClose={onClose} />}
-                {activeTab === 'comfyui' && <ComfyUITab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'connections' && (
+                  <ConnectionsTab
+                    settings={settings}
+                    setSettings={handleSettingsChange}
+                    onScanFolder={onScanFolder}
+                    initialSubTab={connectionSubTab}
+                    onClose={onClose}
+                  />
+                )}
                 {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'advanced' && <AdvancedTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'dev' && <DevTab />}
               </div>
 
-              {/* Footer removed - settings auto-save on change */}
             </div>
           </motion.div>
         </motion.div>
