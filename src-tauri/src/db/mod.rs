@@ -6,6 +6,7 @@ pub mod migrations;
 pub mod commands;
 pub mod facets;
 pub mod error;
+pub mod backup;
 
 
 /// Apply performance-optimized PRAGMAs to a SQLite connection.

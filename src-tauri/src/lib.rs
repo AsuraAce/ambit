@@ -24,6 +24,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::facets::rebuild_facet_cache,
             db::facets::get_valid_facet_names,
 
+            // db backup commands
+            db::backup::get_backups,
+            db::backup::backup_database,
+            db::backup::check_and_run_autobackup,
+
             // scanner commands
             scanner::scan_image,
             scanner::scan_images_bulk,
@@ -78,6 +83,20 @@ pub fn run() {
         .manage(WatcherState::default())
         .manage(ModelResolutionState::default())
         .invoke_handler(builder.invoke_handler())
+        .setup(|app| {
+            // Run auto-backup check in background
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Wait a bit for app to settle
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                match db::backup::check_and_run_autobackup(handle).await {
+                    Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
+                    Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
+                    Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
+                }
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

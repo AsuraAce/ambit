@@ -6,3 +6,4 @@ export * from './InvokeAITab';
 export * from './A1111Tab';
 export * from './ComfyUITab';
 export * from './DevTab';
+export * from './AdvancedTab';

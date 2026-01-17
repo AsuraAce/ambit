@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Folder, Shield, FlaskConical, DatabaseZap, Palette, Terminal } from 'lucide-react';
 import { AppSettings } from '../../../types';
-import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab } from './';
+import { GeneralTab, FoldersTab, PrivacyTab, ExperimentsTab, InvokeAITab, A1111Tab, ComfyUITab, DevTab, AdvancedTab } from './';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface SettingsModalProps {
@@ -15,7 +15,7 @@ interface SettingsModalProps {
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
-type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+type SettingsTab = 'general' | 'folders' | 'privacy' | 'experiments' | 'invokeai' | 'a1111' | 'comfyui' | 'dev' | 'advanced';
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
@@ -25,7 +25,8 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   invokeai: 'InvokeAI',
   a1111: 'SD WebUI',
   comfyui: 'ComfyUI',
-  dev: 'Dev Tools'
+  dev: 'Dev Tools',
+  advanced: 'Advanced'
 };
 
 interface TabButtonProps {
@@ -136,6 +137,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
+                    <TabButton id="advanced" label="Advanced" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'advanced'} onClick={setActiveTab} />
                     <TabButton id="experiments" label="Experiments" icon={<FlaskConical className="w-4 h-4" />} isActive={activeTab === 'experiments'} onClick={setActiveTab} />
                     <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
                   </div>
@@ -169,6 +171,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 {activeTab === 'comfyui' && <ComfyUITab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'experiments' && <ExperimentsTab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'advanced' && <AdvancedTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'dev' && <DevTab />}
               </div>
 

@@ -106,6 +106,33 @@ async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: 
     else return { status: "error", error: e  as any };
 }
 },
+async getBackups() : Promise<Result<BackupInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_backups") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async backupDatabase() : Promise<Result<BackupInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("backup_database") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Check if we need to run an auto-backup (first run of the day).
+ */
+async checkAndRunAutobackup() : Promise<Result<BackupInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_and_run_autobackup") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_image", { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
@@ -276,6 +303,7 @@ async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<
 
 /** user-defined types **/
 
+export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean }

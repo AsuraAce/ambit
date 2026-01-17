@@ -1,20 +1,18 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Database, Zap, AlertTriangle, Loader2, Shield, Trash2, History as HistoryIcon, ImageOff, BrainCircuit, Undo2, Save, Wrench, ShieldAlert } from 'lucide-react';
+import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
-import { clearAllThumbnailPaths } from '../../../services/db/imageRepo';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
 
-type DevTabId = 'prompts' | 'tools' | 'danger';
+type DevTabId = 'prompts' | 'tools';
 
 export const DevTab: React.FC = () => {
-    const { fetchData, setSettings: updateContextSettings, cleanLibrary } = useLibraryContext();
+    const { fetchData } = useLibraryContext();
     const { settings, setSettings } = useSettingsStore();
 
     const [activeTab, setActiveTab] = useState<DevTabId>('prompts');
@@ -37,26 +35,6 @@ export const DevTab: React.FC = () => {
         } finally {
             setIsGenerating(false);
             setProgress({ current: 0, total: 0 });
-        }
-    };
-
-    // Danger Zone State
-    const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
-    const [isPurging, setIsPurging] = useState(false);
-    const [isClearing, setIsClearing] = useState(false);
-
-    const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
-
-    // Handle Purge async correctly
-    const handlePurge = async () => {
-        setIsPurging(true);
-        try {
-            await cleanLibrary();
-        } catch (e) {
-            console.error('[Purge] Failed:', e);
-        } finally {
-            setIsPurging(false);
-            closeConfirm();
         }
     };
 
@@ -92,7 +70,6 @@ export const DevTab: React.FC = () => {
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
         { id: 'prompts', label: 'AI Prompts', icon: BrainCircuit },
         { id: 'tools', label: 'Tools', icon: Wrench },
-        { id: 'danger', label: 'Danger Zone', icon: ShieldAlert },
     ];
 
     return (
@@ -275,126 +252,8 @@ export const DevTab: React.FC = () => {
                         </section>
                     )}
 
-                    {/* Danger Zone Section */}
-                    {activeTab === 'danger' && (
-                        <section className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                            <div className="flex items-start gap-3 p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl mb-6">
-                                <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
-                                <div>
-                                    <h4 className="text-sm font-bold text-rose-700 dark:text-rose-400">Advanced Resets & Repairs</h4>
-                                    <p className="text-xs text-rose-800/70 dark:text-rose-400/70 mt-1 leading-relaxed">
-                                        These actions reset specific parts of the application state. Use with caution.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="p-4 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl space-y-6">
-                                {/* Reset Sync Cursor */}
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Sync Cursor</div>
-                                        <div className="text-xs text-gray-500 mt-0.5">Force a full re-scan of external libraries on next sync.</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setConfirmAction({ type: 'reset', isOpen: true })}
-                                        className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                                    >
-                                        <HistoryIcon className="w-3.5 h-3.5" /> Reset Cursor
-                                    </button>
-                                </div>
-
-                                {/* Reset Onboarding */}
-                                <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Onboarding</div>
-                                        <div className="text-xs text-gray-500 mt-0.5">Show the onboarding wizard again on next reload.</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            updateContextSettings((p: any) => ({
-                                                ...p,
-                                                hasCompletedOnboarding: false,
-                                                hideImportModal: false
-                                            }));
-                                        }}
-                                        className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                                    >
-                                        <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
-                                    </button>
-                                </div>
-
-                                {/* Clear Thumbnails (Emergency Fix) */}
-                                <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Clear Broken Thumbnails</div>
-                                        <div className="text-xs text-gray-500 mt-0.5">Fix 500 errors by clearing stale thumbnail paths. Images will use source files.</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        disabled={isClearing}
-                                        onClick={async () => {
-                                            setIsClearing(true);
-                                            try {
-                                                const count = await clearAllThumbnailPaths();
-                                                alert(`Cleared ${count} thumbnail paths. Reload the app to see images.`);
-                                                await fetchData(false);
-                                            } finally {
-                                                setIsClearing(false);
-                                            }
-                                        }}
-                                        className="px-3 py-2 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
-                                    >
-                                        {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
-                                        {isClearing ? 'Clearing...' : 'Clear Thumbnails'}
-                                    </button>
-                                </div>
-
-                                {/* Purge Database */}
-                                <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-rose-600 dark:text-rose-400">Purge Database</div>
-                                        <div className="text-xs text-gray-500 mt-0.5">Remove all imported metadata and reset application state.</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setConfirmAction({ type: 'purge', isOpen: true })}
-                                        className="px-3 py-2 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" /> Purge Database
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
-                    )}
                 </div>
             </div>
-
-            <ConfirmDialog
-                isOpen={confirmAction.isOpen && confirmAction.type === 'reset'}
-                title="Reset Sync Cursor?"
-                message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE external library from the beginning. This process may take some time.`}
-                confirmLabel="Reset Cursor"
-                onConfirm={() => {
-                    updateContextSettings((p: any) => ({ ...p, lastSyncedAt: null }));
-                    closeConfirm();
-                }}
-                onCancel={closeConfirm}
-                zIndex={220}
-            />
-
-            <ConfirmDialog
-                isOpen={confirmAction.isOpen && confirmAction.type === 'purge'}
-                title="Purge Application Database?"
-                message={`DANGER: This will delete ALL images and metadata from your ${APP_NAME} library. Your actual image files on disk will NOT be touched, but you will lose all ${APP_NAME}-specific data (collections, tags, favorites). Are you sure?`}
-                confirmLabel="Purge Database"
-                isDangerous={true}
-                onConfirm={handlePurge}
-                isLoading={isPurging}
-                onCancel={closeConfirm}
-                zIndex={220}
-            />
         </>
     );
 };
