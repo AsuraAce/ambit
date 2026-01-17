@@ -22,7 +22,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const [apiKey, setApiKey] = useState(initialApiKey || '');
     const [enableAI, setEnableAI] = useState(!!initialApiKey);
     const [blurNsfw, setBlurNsfw] = useState(true);
-    const [dontShowOnStartup, setDontShowOnStartup] = useState(true);
+    const [showOnStartup, setShowOnStartup] = useState(false);
 
     if (!isOpen) return null;
 
@@ -35,10 +35,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         } else {
             onComplete({
                 enableAI,
-                googleGeminiApiKey: apiKey,
+                googleGeminiApiKey: apiKey.trim(),
                 maskedKeywords: blurNsfw ? ['nsfw', 'nude', 'naked', 'blood', 'gore', 'violence'] : [],
                 maskingMode: 'blur',
-                hasCompletedOnboarding: dontShowOnStartup
+                hasCompletedOnboarding: !showOnStartup
             });
         }
     };
@@ -168,6 +168,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                     <motion.label
                                         whileHover={{ backgroundColor: 'rgba(139, 174, 124, 0.1)' }}
                                         className={`flex items-center gap-4 p-5 border rounded-2xl cursor-pointer transition-all duration-300 mb-6 ${enableAI ? 'border-sage-500/50 bg-sage-500/5' : 'border-gray-200 dark:border-white/10'}`}
+                                        role="checkbox"
+                                        aria-checked={enableAI}
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                setEnableAI(!enableAI);
+                                            }
+                                        }}
                                     >
                                         <div className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all ${enableAI ? 'bg-sage-500 border-sage-500 shadow-lg shadow-sage-500/20' : 'border-gray-400'}`}>
                                             {enableAI && <Check className="w-4 h-4 text-white" />}
@@ -254,6 +263,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             <div
                                                 className={`w-14 h-7 rounded-full relative transition-all duration-300 cursor-pointer shadow-inner flex-shrink-0 ${blurNsfw ? 'bg-sage-500' : 'bg-gray-300 dark:bg-zinc-700'}`}
                                                 onClick={() => setBlurNsfw(!blurNsfw)}
+                                                role="switch"
+                                                aria-checked={blurNsfw}
+                                                tabIndex={0}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                        e.preventDefault();
+                                                        setBlurNsfw(!blurNsfw);
+                                                    }
+                                                }}
                                             >
                                                 <motion.div
                                                     animate={{ x: blurNsfw ? 28 : 4 }}
@@ -281,12 +299,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     className="flex items-center gap-2 cursor-pointer select-none group"
+                                    onClick={() => setShowOnStartup(!showOnStartup)}
+                                    role="checkbox"
+                                    aria-checked={showOnStartup}
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            setShowOnStartup(!showOnStartup);
+                                        }
+                                    }}
                                 >
                                     <div
-                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${dontShowOnStartup ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/20' : 'border-gray-400 group-hover:border-sage-400'}`}
-                                        onClick={() => setDontShowOnStartup(!dontShowOnStartup)}
+                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${showOnStartup ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/20' : 'border-gray-400 group-hover:border-sage-400'}`}
                                     >
-                                        {dontShowOnStartup && <Check className="w-3 h-3 text-white" />}
+                                        {showOnStartup && <Check className="w-3 h-3 text-white" />}
                                     </div>
                                     <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 group-hover:text-gray-300 transition-colors whitespace-nowrap">Start on Every Boot</span>
                                 </motion.label>
@@ -384,6 +411,14 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features
             whileHover={{ y: -4 }}
             className={`p-6 border border-gray-100 dark:border-white/10 rounded-2xl transition-all duration-300 cursor-pointer bg-white dark:bg-white/[0.02] group ${colors.bg} ${colors.border} ${colors.glow}`}
             onClick={onSetup}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && onSetup) {
+                    e.preventDefault();
+                    onSetup();
+                }
+            }}
         >
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 shadow-sm transition-transform duration-500 group-hover:scale-110 ${colors.icon}`}>
                 {icon}
