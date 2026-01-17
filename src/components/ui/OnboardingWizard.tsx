@@ -99,16 +99,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step === 1 && (
                                 <div className="flex-1 flex flex-col">
                                     <div className="mb-6">
-                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Scope Your Imagination.</h2>
+                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Unified Asset Management.</h2>
                                         <p className="text-gray-500 dark:text-gray-400 leading-relaxed text-lg">
-                                            {APP_NAME} unifies your local AI workflow. Organize your creations from <strong>ComfyUI</strong>, <strong>Forge</strong>, and <strong>InvokeAI</strong> in one place.
+                                            The central hub for your local generative workflow. Seamlessly organize, analyze, and retrieve assets from <strong>InvokeAI</strong>, <strong>ComfyUI</strong>, and <strong>SD WebUI</strong>.
                                         </p>
                                     </div>
 
                                     <div className="space-y-4">
-                                        <FeatureRow icon={<BrainCircuit className="w-6 h-6 text-sage-400" />} title="Semantic Discovery" desc="Search by content, style, or feeling—not just tags." />
-                                        <FeatureRow icon={<Zap className="w-6 h-6 text-sage-400" />} title="Full Metadata" desc="View prompts, samplers, and node parameters instantly." />
-                                        <FeatureRow icon={<Lock className="w-6 h-6 text-sage-400" />} title="Extreme Privacy" desc="Local processing. Your images never leave your machine." />
+                                        <FeatureRow icon={<BrainCircuit className="w-6 h-6 text-sage-400" />} title="Semantic Indexing" desc="Find assets by visual content, mood, and composition." />
+                                        <FeatureRow icon={<Zap className="w-6 h-6 text-sage-400" />} title="Native Metadata" desc="Full inspection of generation parameters, seeds, and node graphs." />
+                                        <FeatureRow icon={<Lock className="w-6 h-6 text-sage-400" />} title="Data Sovereignty" desc="Your library remains local. Zero telemetry, absolute privacy." />
                                     </div>
                                 </div>
                             )}
@@ -117,9 +117,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step === 2 && (
                                 <div className="flex-1 flex flex-col">
                                     <div className="mb-6">
-                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Connect Generators</h2>
+                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Workspace Integrations</h2>
                                         <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed max-w-md">
-                                            Enable automatic syncing of outputs, favorites, and boards by linking your existing backends.
+                                            Map your existing output directories to enable real-time synchronization and unified library management.
                                         </p>
                                     </div>
 
@@ -159,9 +159,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step === 3 && (
                                 <div className="flex-1 flex flex-col">
                                     <div className="mb-6">
-                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Activate AI Insights</h2>
+                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Intelligent Analysis</h2>
                                         <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
-                                            Power natural language search and complex metadata analysis using Google Gemini.
+                                            Power natural language search and complex metadata analysis using advanced AI.
                                         </p>
                                     </div>
 
@@ -226,23 +226,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             {step === 4 && (
                                 <div className="flex-1 flex flex-col">
                                     <div className="mb-6">
-                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Privacy & Safety</h2>
+                                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Privacy & Control</h2>
                                         <div className="space-y-4 mb-6">
                                             <div className="flex items-start gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
                                                 <ServerOff className="w-6 h-6 text-sage-500 mt-1" />
                                                 <div className="flex-1">
                                                     <h4 className="font-bold text-sm text-gray-900 dark:text-white">Local-First Architecture</h4>
                                                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                                                        Images are indexed and stored on your hardware. No telemetry, no cloud uploads, no tracking.
+                                                        Your library metadata and indices are stored locally on your machine. No telemetry or background tracking.
                                                     </p>
                                                 </div>
                                             </div>
                                             <div className="flex items-start gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
                                                 <FileJson className="w-6 h-6 text-sage-500 mt-1" />
                                                 <div className="flex-1">
-                                                    <h4 className="font-bold text-sm text-gray-900 dark:text-white">AI Data Sovereignty</h4>
+                                                    <h4 className="font-bold text-sm text-gray-900 dark:text-white">Cloud Intelligence</h4>
                                                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                                                        If enabled, only metadata strings are sent to Gemini for vector analysis. You remain in control.
+                                                        AI features run only on-demand. Your data never leaves your device unless you explicitly trigger an AI feature.
                                                     </p>
                                                 </div>
                                             </div>
@@ -255,9 +255,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 <EyeOff className="w-8 h-8 text-sage-500" />
                                             </div>
                                             <div className="flex-1">
-                                                <h4 className="font-bold text-gray-900 dark:text-white">Safety Masking</h4>
+                                                <h4 className="font-bold text-gray-900 dark:text-white">Content Masking</h4>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                                                    Automatically blur content containing sensitive keywords in prompts. Best for shared workspaces.
+                                                    Optional blurring of sensitive content for professional or shared environments.
                                                 </p>
                                             </div>
                                             <div
