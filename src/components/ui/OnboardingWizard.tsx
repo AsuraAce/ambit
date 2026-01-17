@@ -140,7 +140,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         />
                                         <IntegrationCard
                                             icon={<Palette className="w-6 h-6" />}
-                                            title="A1111 / Forge"
+                                            title="SD WebUI"
                                             features={["Outputs", "Legacy"]}
                                             color="amber"
                                             onSetup={() => onOpenSettings?.('a1111')}
