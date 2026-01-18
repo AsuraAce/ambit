@@ -102,6 +102,8 @@ pub fn start_native_folder_watcher(
             } else {
                  println!("[Rust Watcher] Added path: {}", path_str);
             }
+        } else {
+            println!("[Rust Watcher] Skipping non-existent path: {}", path_str);
         }
     }
 

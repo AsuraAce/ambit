@@ -72,8 +72,17 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             }
 
             if (currentSettings.invokeAiPath) {
-                const cleanRoot = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
-                pathsToWatch.push(`${cleanRoot}/outputs/images`);
+                let invokeRoot = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
+
+                // Handle cases where user selected the DB file or databases folder
+                if (invokeRoot.toLowerCase().endsWith('.db')) {
+                    invokeRoot = invokeRoot.replace(/\/[\w-]+\.db$/i, ''); // Strip filename
+                    invokeRoot = invokeRoot.replace(/\/databases$/i, '');   // Strip databases folder if present
+                } else if (invokeRoot.toLowerCase().endsWith('/databases')) {
+                    invokeRoot = invokeRoot.replace(/\/databases$/i, '');
+                }
+
+                pathsToWatch.push(`${invokeRoot}/outputs/images`);
             }
 
             if (pathsToWatch.length === 0) {
@@ -90,7 +99,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
                 if (cb.settings.invokeAiPath) {
                     // Use 'live' mode to avoid blocking UI
-                    await cb.startInvokeSync({ mode: 'live' });
+                    // Add delay to allow InvokeAI to commit the image to its SQLite DB
+                    // (Watcher detects file creation immediately, but DB write lags)
+                    setTimeout(async () => {
+                        await cb.startInvokeSync({ mode: 'live' });
+                    }, 2500);
                 }
             });
 
