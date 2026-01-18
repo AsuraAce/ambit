@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useRef, useState } from 'react';
 import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
-import { AppSettings, MonitoredFolder } from '../../../types';
+import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useQueryClient } from '@tanstack/react-query';
@@ -10,10 +10,43 @@ import { commands } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { normalizePath } from '../../../utils/pathUtils';
 
+// Helper to detect generator from path
+const detectGeneratorVariant = (path: string): GeneratorTool => {
+    const lower = path.toLowerCase();
+    if (lower.includes('invokeai')) return GeneratorTool.INVOKEAI;
+    if (lower.includes('comfyui') || lower.includes('comfy')) return GeneratorTool.COMFYUI;
+    if (lower.includes('webui') || lower.includes('stable-diffusion-webui') || lower.includes('a1111')) return GeneratorTool.AUTOMATIC1111;
+    if (lower.includes('sdnext') || lower.includes('sd.next')) return GeneratorTool.SDNEXT;
+    if (lower.includes('forge')) return GeneratorTool.FORGE;
+    if (lower.includes('anapnoe')) return GeneratorTool.ANAPNOE;
+    return GeneratorTool.UNKNOWN;
+};
+
+// Helper for variant icons/badges
+const getVariantIcon = (variant?: GeneratorTool) => {
+    switch (variant) {
+        case GeneratorTool.INVOKEAI:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-300 border border-zinc-700">INVOKE</div>;
+        case GeneratorTool.COMFYUI:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/30 text-blue-300 border border-blue-800/50">COMFY</div>;
+        case GeneratorTool.AUTOMATIC1111:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-900/30 text-orange-300 border border-orange-800/50">A1111</div>;
+        case GeneratorTool.SDNEXT:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/30 text-indigo-300 border border-indigo-800/50">SD.NEXT</div>;
+        case GeneratorTool.FORGE:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/30 text-emerald-300 border border-emerald-800/50">FORGE</div>;
+        case GeneratorTool.ANAPNOE:
+            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-900/30 text-fuchsia-300 border border-fuchsia-800/50">ANAPNOE</div>;
+        default:
+            // Standard folder icon fallback (handled by caller usually, but strictly returning null here isn't great if used directly)
+            return null;
+    }
+};
+
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>; // Added
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
 }
 
 export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder }) => {
@@ -24,15 +57,25 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
     // Fetch counts logic extracted for reuse
     const fetchCounts = async () => {
-        if (!settings.monitoredFolders.length) return;
+        if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
 
         let hasUpdates = false;
         const updatedFolders = await Promise.all(settings.monitoredFolders.map(async (folder) => {
             try {
+                // Determine Variant if unknown
+                let variant = folder.variant;
+                if (!variant || variant === GeneratorTool.UNKNOWN) {
+                    variant = detectGeneratorVariant(folder.path);
+                    if (variant !== folder.variant) hasUpdates = true;
+                }
+
                 const res = await commands.getImageCountForPathPrefix(folder.path);
                 if (res.status === 'ok' && res.data !== folder.imageCount) {
                     hasUpdates = true;
-                    return { ...folder, imageCount: res.data };
+                    return { ...folder, imageCount: res.data, variant };
+                }
+                if (variant !== folder.variant) {
+                    return { ...folder, variant };
                 }
             } catch (e) {
                 console.error('Failed to get count for', folder.path, e);
@@ -49,6 +92,29 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     React.useEffect(() => {
         fetchCounts();
     }, [settings.monitoredFolders.length]); // Only run on length change
+
+    // Construct Combined List (Monitored + Managed Integrations)
+    const combinedFolders = React.useMemo(() => {
+        const list = [...settings.monitoredFolders];
+
+        // Inject Managed InvokeAI Folder
+        if (settings.invokeAiPath) {
+            const exists = list.some(f => f.path.startsWith(settings.invokeAiPath!) || settings.invokeAiPath!.startsWith(f.path));
+            if (!exists) {
+                list.unshift({
+                    id: 'managed_invoke',
+                    path: `${settings.invokeAiPath}/outputs/images`,
+                    pathRaw: `${settings.invokeAiPath}/outputs/images`,
+                    isActive: true,
+                    imageCount: 0,
+                    variant: GeneratorTool.INVOKEAI,
+                    isManaged: true
+                } as any);
+            }
+        }
+        return list;
+    }, [settings.monitoredFolders, settings.invokeAiPath]);
+
 
     const handleRescan = async (id: string, path: string, variant?: string) => {
         if (!onScanFolder) return;
@@ -92,7 +158,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             const foldersToScan = [...pendingScansRef.current];
             pendingScansRef.current = [];
 
-            // No intermediate toast - just scan silently and report completion
             try {
                 await onScanFolder(foldersToScan);
                 addToast(`Scanned ${foldersToScan.length} folder(s)`, 'success');
@@ -118,11 +183,14 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             return;
         }
 
+        const variant = detectGeneratorVariant(normalizedNew);
+
         const newFolder: MonitoredFolder = {
             id: `folder_${Date.now()}`,
             path: normalizedNew,
             isActive: true,
-            imageCount: 0
+            imageCount: 0,
+            variant: variant
         };
 
         setSettings(prev => ({
@@ -133,7 +201,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         addToast(`Added folder: ${normalizedNew}`, 'success');
 
         // Queue for auto-scan
-        queueFolderForScan(normalizedNew);
+        queueFolderForScan(normalizedNew, variant);
     };
 
     const handleAddResourceFolder = async (e: React.FormEvent) => {
@@ -170,10 +238,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     };
 
 
-
     const queryClient = useQueryClient();
     const { isPopulatingThumbnails } = useLibraryStore();
-
 
     const removeFolder = (id: string) => {
         setSettings(prev => ({
@@ -232,7 +298,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         if (files && files.length > 0) {
             const relativePath = files[0].webkitRelativePath;
             const folderName = relativePath.split('/')[0] || 'Selected_Folder';
-            // Use simulated path only if we can't get real path (native specific)
             setNewResourcePath(`D:/AI_Models/${folderName}`);
         }
         if (e.target) e.target.value = '';
@@ -256,42 +321,71 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Image Folders</strong>
-                        Add folders containing AI-generated images. Use this for <span className="font-semibold">archived images</span>, unsupported generators, or folders not covered by the Integrations tab.
+                        Add folders containing AI-generated images. Use this for <span className="font-semibold">archived images</span> or specific output directories.
                     </div>
                 </div>
 
                 <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-sm">
                     <div className="p-2 space-y-1">
-                        {settings.monitoredFolders.map(folder => (
+                        {combinedFolders.map(folder => (
                             <div key={folder.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 group transition-colors">
                                 <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
-                                        <Folder className="w-4 h-4" />
+                                    {/* Variant Icon / Badge */}
+                                    <div className="flex-shrink-0 w-16 flex justify-center">
+                                        {/* Auto-detect generic folder icon separately if variant is UNKNOWN/undefined */}
+                                        {(!folder.variant || folder.variant === GeneratorTool.UNKNOWN) ? (
+                                            <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
+                                                <Folder className="w-4 h-4" />
+                                            </div>
+                                        ) : getVariantIcon(folder.variant)}
                                     </div>
-                                    <span className="text-sm text-gray-700 dark:text-gray-300 font-mono truncate">{folder.path}</span>
+
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                        <span className="text-sm text-gray-700 dark:text-gray-300 font-mono truncate">
+                                            {(folder as any).isManaged ? (folder as any).pathRaw : folder.path}
+                                        </span>
+                                        {/* Consistent Subtitle for EVERYTHING */}
+                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                                            {(folder as any).isManaged ? (
+                                                <>
+                                                    <Monitor className="w-3 h-3" /> Managed Integration
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Folder className="w-3 h-3" /> Monitored Folder
+                                                </>
+                                            )}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-4">
-                                    <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{folder.imageCount} images</span>
+                                    {!(folder as any).isManaged && (
+                                        <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{folder.imageCount} images</span>
+                                    )}
+
                                     <button
                                         type="button"
-                                        onClick={() => handleRescan(folder.id, folder.path, folder.variant)}
+                                        onClick={() => handleRescan(folder.id, (folder as any).pathRaw || folder.path, folder.variant)}
                                         disabled={scanningIds.has(folder.id)}
                                         className={`p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all ${scanningIds.has(folder.id) ? 'opacity-50 cursor-wait' : ''}`}
                                         title="Rescan Folder"
                                     >
                                         <RefreshCw className={`w-4 h-4 ${scanningIds.has(folder.id) ? 'animate-spin' : ''}`} />
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFolder(folder.id)}
-                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+
+                                    {!(folder as any).isManaged && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFolder(folder.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
-                        {settings.monitoredFolders.length === 0 && (
+                        {combinedFolders.length === 0 && (
                             <div className="text-sm text-gray-400 text-center py-8 italic">No image folders monitored.</div>
                         )}
                     </div>

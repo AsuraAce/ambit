@@ -130,20 +130,26 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             setSyncStatus('complete');
             const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
-            setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
+            // Conditional Facet Rebuild
+            const hasChanges = (imported || 0) > 0 || (updated || 0) > 0 || orphansImported > 0;
 
-            // Rebuild facet cache and signal UI to refresh
-            try {
-                const { rebuildFacetCache } = await import('../services/db/imageRepo');
-                await rebuildFacetCache();
-                // Increment version to trigger React Query refetch in useLibraryStatsQuery
-                useLibraryStore.getState().incrementFacetCacheVersion();
-                setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
-            } catch (e) {
-                console.error('[Sync] Failed to rebuild facet cache after sync', e);
+            if (hasChanges) {
+                setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
+                try {
+                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
+                    await rebuildFacetCache();
+                    // Increment version to trigger React Query refetch in useLibraryStatsQuery
+                    useLibraryStore.getState().incrementFacetCacheVersion();
+                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
+                } catch (e) {
+                    console.error('[Sync] Failed to rebuild facet cache after sync', e);
+                }
+            } else {
+                console.log('[Sync] No changes detected, skipping facet cache rebuild.');
             }
 
-            if (options.mode === 'manual' && newTs) {
+            // Always update timestamp on success to advance the cursor (crucial for Live Sync efficiency)
+            if (newTs) {
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
 
