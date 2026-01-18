@@ -14,7 +14,26 @@ export interface DbCollection {
     manual_exclusions?: string;
     custom_thumbnail?: string;
     source: 'ambit' | 'invoke';
+    updated_at?: number;
 }
+
+export const ensureCollectionSchema = async () => {
+    const db = await getDb();
+    try {
+        // Check if updated_at column exists
+        const columns = await db.select<{ name: string }[]>('PRAGMA table_info(collections)');
+        const hasUpdatedAt = columns.some(c => c.name === 'updated_at');
+
+        if (!hasUpdatedAt) {
+            console.log('[DB] Migrating collections table: adding updated_at column');
+            await db.execute('ALTER TABLE collections ADD COLUMN updated_at INTEGER');
+            // Backfill updated_at with created_at for existing records
+            await db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL');
+        }
+    } catch (e) {
+        console.error('[DB] Failed to ensure collection schema', e);
+    }
+};
 
 export const upsertCollection = async (collection: Partial<Collection> & { id: string, name: string }) => {
     const { dbMutex } = await import('./connection');
@@ -24,8 +43,8 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
 
         try {
             await db.execute(
-                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 color = excluded.color,
@@ -35,7 +54,8 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                 filter_state = excluded.filter_state,
                 manual_exclusions = excluded.manual_exclusions,
                 custom_thumbnail = excluded.custom_thumbnail,
-                source = excluded.source`,
+                source = excluded.source,
+                updated_at = excluded.updated_at`,
                 [
                     collection.id,
                     collection.name,
@@ -46,7 +66,8 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     collection.filters ? JSON.stringify(collection.filters) : null,
                     collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
                     collection.customThumbnail || null,
-                    collection.source || 'ambit'
+                    collection.source || 'ambit',
+                    collection.updatedAt || now
                 ]
             );
         } catch (e) {
@@ -65,12 +86,15 @@ export const addImagesToCollection = async (collectionId: string, imageIds: stri
     const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
+        const now = Date.now();
         for (const imgId of imageIds) {
             await db.execute(
                 'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
                 [collectionId, normalizePath(imgId)]
             );
         }
+        // Update collection timestamp
+        await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [now, collectionId]);
     });
 };
 
@@ -81,6 +105,8 @@ export const removeImagesFromCollection = async (collectionId: string, imageIds:
         `DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (${placeholders})`,
         [collectionId, ...imageIds.map(normalizePath)]
     );
+    // Update collection timestamp
+    await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [Date.now(), collectionId]);
 };
 
 export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
@@ -118,6 +144,7 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             isArchived: !!c.is_archived,
             isPinned: !!c.is_pinned,
             createdAt: c.created_at,
+            updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
             count: countMap.get(c.id) || 0,
             imageIds: [] as string[],
             thumbnail: rawThumb ? (rawThumb.startsWith('http') ? rawThumb : convertFileSrc(normalizePath(rawThumb))) : undefined,

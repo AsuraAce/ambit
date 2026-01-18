@@ -28,7 +28,7 @@ interface CollectionListProps<T extends Collection> {
     emptyMessage?: string;
 }
 
-export type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc';
+export type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc' | 'recent_desc' | 'recent_asc';
 
 export function CollectionList<T extends Collection>({
     collections,
@@ -52,7 +52,7 @@ export function CollectionList<T extends Collection>({
     const [searchQuery, setSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const { settings, setSettings } = useSettings();
-    const sort = (settings.resourceSortOptions?.['collections'] as CollectionSort) || 'date_desc';
+    const sort = (settings.resourceSortOptions?.['collections'] as CollectionSort) || 'recent_desc';
 
     const setSort = (newSort: CollectionSort) => {
         setSettings(prev => ({
@@ -142,7 +142,9 @@ export function CollectionList<T extends Collection>({
                 case 'count_asc': return (a.count ?? a.imageIds.length) - (b.count ?? b.imageIds.length);
                 case 'count_desc': return (b.count ?? b.imageIds.length) - (a.count ?? a.imageIds.length);
                 case 'date_asc': return a.createdAt - b.createdAt;
-                case 'date_desc': default: return b.createdAt - a.createdAt;
+                case 'date_desc': return b.createdAt - a.createdAt;
+                case 'recent_asc': return (a.updatedAt || a.createdAt) - (b.updatedAt || b.createdAt);
+                case 'recent_desc': default: return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
             }
         });
 
@@ -167,8 +169,10 @@ export function CollectionList<T extends Collection>({
                 <SortDropdown
                     title="Sort Collections"
                     options={[
+                        { id: 'recent_desc', label: 'Recently Used', icon: Clock },
+                        { id: 'recent_asc', label: 'Least Recently Used', icon: Clock },
                         { id: 'date_desc', label: 'Newest Created', icon: Calendar },
-                        { id: 'date_asc', label: 'Oldest Created', icon: Clock },
+                        { id: 'date_asc', label: 'Oldest Created', icon: Calendar },
                         { id: 'name_asc', label: 'Name (A-Z)', icon: ArrowUpWideNarrow },
                         { id: 'name_desc', label: 'Name (Z-A)', icon: ArrowDownWideNarrow },
                         { id: 'count_desc', label: 'Most Images', icon: SortDesc },

@@ -72,7 +72,10 @@ export const useCollectionStore = create<CollectionState>()(
                 if (get().isLoaded) return;
 
                 try {
-                    const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection } = await import('../services/db/collectionRepo');
+                    const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection, ensureCollectionSchema } = await import('../services/db/collectionRepo');
+
+                    // 0. Ensure schema is up to date (add updated_at if missing)
+                    await ensureCollectionSchema();
 
                     // 1. Try to load from SQLite
                     let dbCols = await getAllCollectionsWithStats();

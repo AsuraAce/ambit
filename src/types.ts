@@ -137,6 +137,7 @@ export interface Collection {
   customThumbnail?: string;
   color?: string;
   createdAt: number;
+  updatedAt?: number; // Added for 'Recently Updated' sort
   isArchived?: boolean;
   isPinned?: boolean;
   filters?: FilterState; // Added for Smart/Hybrid logic
