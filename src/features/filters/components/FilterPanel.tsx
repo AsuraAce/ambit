@@ -246,17 +246,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         {isOrganizeDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
                     </button>
                     <button
-                        onClick={() => setActiveTab('generate')}
-                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'generate'
-                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
-                            }`}
-                    >
-                        <Sliders className="w-3.5 h-3.5" />
-                        Filters
-                        {isGenerateDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
-                    </button>
-                    <button
                         onClick={() => setActiveTab('resources')}
                         className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'resources'
                             ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
@@ -266,6 +255,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         <Puzzle className="w-3.5 h-3.5" />
                         Assets
                         {isResourcesDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('generate')}
+                        className={`flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ease-out ${activeTab === 'generate'
+                            ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-white/50 dark:hover:bg-white/5'
+                            }`}
+                    >
+                        <Sliders className="w-3.5 h-3.5" />
+                        Filters
+                        {isGenerateDirty && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-sage-500 rounded-full" />}
                     </button>
                 </div>
             </div>
@@ -293,24 +293,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 onResetCollectionThumbnail={onResetCollectionThumbnail}
                                 isDirty={isDirty}
                                 onEditCollection={onEditCollection}
-                            />
-                        </div>
-                    )}
-
-                    {/* GENERATE TAB */}
-                    {activeTab === 'generate' && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
-                            <GeneratorSection
-                                filters={filters} setFilters={setFilters}
-                                tools={facets.tools}
-                                isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.tools}
-                            />
-
-                            <ParameterSection
-                                filters={filters} setFilters={setFilters}
-                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
                             />
                         </div>
                     )}
@@ -358,6 +340,24 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     validNames={validFacetNames?.hypernetworks}
                                 />
                             )}
+                        </div>
+                    )}
+
+                    {/* GENERATE TAB */}
+                    {activeTab === 'generate' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
+                            <GeneratorSection
+                                filters={filters} setFilters={setFilters}
+                                tools={facets.tools}
+                                isOpen={expanded.generator} onToggle={() => toggleSection('generator')}
+                                isLoading={isFacetsLoading}
+                                validNames={validFacetNames?.tools}
+                            />
+
+                            <ParameterSection
+                                filters={filters} setFilters={setFilters}
+                                isOpen={expanded.params} onToggle={() => toggleSection('params')}
+                            />
                         </div>
                     )}
 
