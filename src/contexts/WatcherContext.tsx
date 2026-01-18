@@ -90,21 +90,29 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 return;
             }
 
+            // Ref for debouncing watcher events
+            const debounceTimer = { current: null as NodeJS.Timeout | null };
+
             await watcherService.startWatching(pathsToWatch, async () => {
-                console.log('[WatcherContext] Global change detected.');
-                const cb = callbacksRef.current;
+                console.log('[WatcherContext] Global change detected - scheduling sync...');
 
-                if (cb.onNewImageDetected) cb.onNewImageDetected();
-                await cb.refreshMaintenanceCounts();
-
-                if (cb.settings.invokeAiPath) {
-                    // Use 'live' mode to avoid blocking UI
-                    // Add delay to allow InvokeAI to commit the image to its SQLite DB
-                    // (Watcher detects file creation immediately, but DB write lags)
-                    setTimeout(async () => {
-                        await cb.startInvokeSync({ mode: 'live' });
-                    }, 2500);
+                // Trailing debounce: Clear existing timer and set a new one
+                if (debounceTimer.current) {
+                    clearTimeout(debounceTimer.current);
                 }
+
+                debounceTimer.current = setTimeout(async () => {
+                    console.log('[WatcherContext] Debounce complete - triggering sync');
+                    const cb = callbacksRef.current;
+
+                    if (cb.onNewImageDetected) cb.onNewImageDetected();
+                    await cb.refreshMaintenanceCounts();
+
+                    if (cb.settings.invokeAiPath) {
+                        await cb.startInvokeSync({ mode: 'live' });
+                    }
+                    debounceTimer.current = null;
+                }, 3000); // 3 seconds silence required
             });
 
             if (pathsToWatch.length > 0) {

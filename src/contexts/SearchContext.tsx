@@ -39,7 +39,7 @@ interface SearchContextType {
     activeSqlWhere: string;
     activeSqlParams: any[];
     refreshMetadata: () => Promise<void>;
-    fetchData: (isLoadMore: boolean) => Promise<void>;
+    fetchData: (isLoadMore: boolean, isSilent?: boolean) => Promise<void>;
     recentSearches: string[];
     setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
     toggleFavorite: (id: string) => Promise<void>;
@@ -272,13 +272,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, [recentSearches]);
 
     // Adapter for legacy fetchData calls
-    const fetchData = useCallback(async (isLoadMore: boolean) => {
+    const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
         if (isLoadMore) {
             await fetchNextPage();
         } else {
             // Force refetch
-            // Actually filters change triggers refetch automatically.
-            // This might be used for manual refresh.
+            // Using queryClient.invalidateQueries triggers a background refetch
+            // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
             await queryClient.invalidateQueries({ queryKey: ['images'] });
         }
     }, [fetchNextPage, queryClient]);
