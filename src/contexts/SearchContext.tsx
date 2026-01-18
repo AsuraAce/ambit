@@ -309,7 +309,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 queryClient.invalidateQueries({ queryKey: ['images'] });
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             },
-            isFiltering: isFetching && !isFetchingNextPage,
+            isFiltering: isQueryLoading,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,
