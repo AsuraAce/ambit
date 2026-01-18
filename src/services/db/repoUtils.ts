@@ -7,7 +7,7 @@ import { AIImage } from '../../types';
 export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, 
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
-    images.metadata_json, images.original_metadata_json
+    images.metadata_json, images.original_metadata_json, images.original_state_json
 `;
 
 // Helper to keep mapping consistent
@@ -43,6 +43,7 @@ export function mapRowToImage(row: any): AIImage {
         boardId: row.board_id,
         notes: row.notes,
         metadata: metadata,
-        originalMetadata: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined
+        originalMetadata: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined,
+        originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
     };
 }

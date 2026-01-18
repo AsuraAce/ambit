@@ -81,6 +81,13 @@ export interface ParseResult {
   error?: boolean;
 }
 
+// Snapshot of image-level state at import time (for sync conflict resolution)
+export interface OriginalState {
+  isFavorite?: boolean;
+  isPinned?: boolean;
+  boardId?: string;
+}
+
 export interface AIImage {
   id: string;
   url: string;
@@ -101,6 +108,7 @@ export interface AIImage {
   notes?: string;
   metadata: ImageMetadata;
   originalMetadata?: ImageMetadata; // Snapshot for undo/revert
+  originalState?: OriginalState; // Snapshot of image-level state at import (for sync)
 }
 
 export interface FilterState {

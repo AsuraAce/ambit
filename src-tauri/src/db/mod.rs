@@ -63,6 +63,8 @@ pub struct ImageRecord {
     pub notes: Option<String>,
     #[serde(rename = "originalMetadataJson")]
     pub original_metadata_json: Option<String>,
+    #[serde(rename = "originalStateJson")]
+    pub original_state_json: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]

@@ -197,19 +197,62 @@ export const syncImages = async (
                     const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
                         (hasIsStarred && (row.is_starred === 1 || row.is_starred === true));
 
-                    if (isStarredInInvoke) {
-                        const mode = options.starredAs;
-                        if (mode === 'favorite' || mode === 'both') isFavorite = true;
-                        if (mode === 'pin' || mode === 'both') isPinned = true;
+                    if (existing) {
+                        // SMART SYNC: Check if user has modified from original state
+                        const userModifiedFavorite = existing.originalState?.isFavorite !== undefined &&
+                            existing.isFavorite !== existing.originalState.isFavorite;
+                        const userModifiedPinned = existing.originalState?.isPinned !== undefined &&
+                            existing.isPinned !== existing.originalState.isPinned;
+
+                        if (userModifiedFavorite) {
+                            // User explicitly changed it - preserve their choice
+                            isFavorite = existing.isFavorite;
+                        } else {
+                            // User hasn't touched it - apply InvokeAI's current value
+                            const mode = options.starredAs;
+                            if (isStarredInInvoke && (mode === 'favorite' || mode === 'both')) isFavorite = true;
+                        }
+
+                        if (userModifiedPinned) {
+                            isPinned = existing.isPinned || false;
+                        } else {
+                            const mode = options.starredAs;
+                            if (isStarredInInvoke && (mode === 'pin' || mode === 'both')) isPinned = true;
+                        }
+                    } else {
+                        // New image - apply InvokeAI's starred value directly
+                        if (isStarredInInvoke) {
+                            const mode = options.starredAs;
+                            if (mode === 'favorite' || mode === 'both') isFavorite = true;
+                            if (mode === 'pin' || mode === 'both') isPinned = true;
+                        }
                     }
                 } else if (existing) {
                     isFavorite = existing.isFavorite;
                     isPinned = existing.isPinned || false;
                 }
 
-                let boardId = options.syncBoards ? imageToBoardId.get(row.image_name) : undefined;
-                if (!options.syncBoards && existing) {
-                    boardId = existing.boardId;
+                // Determine board with smart sync
+                const invokeBoard = options.syncBoards ? imageToBoardId.get(row.image_name) : undefined;
+                let boardId: string | undefined;
+
+                if (existing) {
+                    // SMART SYNC: Check if user has modified board from original state
+                    const userModifiedBoard = existing.originalState?.boardId !== undefined &&
+                        existing.boardId !== existing.originalState.boardId;
+
+                    if (userModifiedBoard) {
+                        // User explicitly changed it - preserve their choice
+                        boardId = existing.boardId;
+                    } else if (options.syncBoards) {
+                        // User hasn't touched it - apply InvokeAI's current value
+                        boardId = invokeBoard;
+                    } else {
+                        boardId = existing.boardId;
+                    }
+                } else {
+                    // New image
+                    boardId = invokeBoard;
                 }
 
                 let needsUpdate = false;
@@ -234,6 +277,15 @@ export const syncImages = async (
                     ? `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`
                     : `${imagesRoot}/outputs/images/thumbnails/${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"}`;
 
+                // Capture originalState for new images (InvokeAI import-time values)
+                const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
+                    (hasIsStarred && (row.is_starred === 1 || row.is_starred === true));
+                const originalState = existing?.originalState || {
+                    isFavorite: isStarredInInvoke && options.starredAs !== 'none' && (options.starredAs === 'favorite' || options.starredAs === 'both'),
+                    isPinned: isStarredInInvoke && options.starredAs !== 'none' && (options.starredAs === 'pin' || options.starredAs === 'both'),
+                    boardId: invokeBoard
+                };
+
                 const newImg: any = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
@@ -248,7 +300,8 @@ export const syncImages = async (
                     isDeleted: false,
                     isMissing: false,
                     boardId: boardId,
-                    metadata: metadata
+                    metadata: metadata,
+                    originalState: originalState
                 };
 
                 if (!existing) {

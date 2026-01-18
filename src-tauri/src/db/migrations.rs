@@ -921,7 +921,7 @@ pub fn init_db() -> Vec<Migration> {
     };
 
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(),
+        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(), migration34(),
     ]
 }
 
@@ -953,6 +953,18 @@ fn migration33() -> Migration {
             CREATE INDEX IF NOT EXISTS idx_images_filter_sampler ON images(is_deleted, sampler, timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_images_filter_gen_type ON images(is_deleted, generation_type, timestamp DESC);
         ",
+        kind: MigrationKind::Up,
+    }
+}
+
+/// Migration 34: Add original_state_json column for sync conflict resolution
+/// Stores the original import-time values of isFavorite, isPinned, and boardId
+/// so the sync service can detect user modifications and preserve them.
+fn migration34() -> Migration {
+    Migration {
+        version: 34,
+        description: "add_original_state_column",
+        sql: "ALTER TABLE images ADD COLUMN original_state_json TEXT;",
         kind: MigrationKind::Up,
     }
 }
