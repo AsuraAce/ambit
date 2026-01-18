@@ -110,10 +110,16 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                     onDragOver={(e) => handleDragOver(e, col.id)}
                     onDrop={(e) => handleDrop(e, col.id)}
                     onContextMenu={(e) => handleContextMenu(e, col.id)}
-                    className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
-                        ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
-                        : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
-                        } ${dropTargetId === col.id ? 'scale-105 ring-2 ring-sage-500' : ''}`}
+                    title={col.name} // Native tooltip for full name
+                    className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring 
+                        ${isSelected
+                            ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
+                            : col.isPinned
+                                ? 'border-sage-400/70 dark:border-sage-500/50 shadow-sm' // Pinned visual cue (Distinct border)
+                                : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
+                        } 
+                        ${dropTargetId === col.id ? 'scale-105 ring-2 ring-sage-500' : ''}
+                    `}
                 >
                     {/* Thumbnail Area */}
                     <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
@@ -131,11 +137,11 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         )}
                     </div>
 
-                    {/* Overlay Info */}
+                    {/* Overlay Info - Single Line Truncated */}
                     <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-                        <p className={`text-[10px] font-medium text-white line-clamp-2 leading-tight drop-shadow-sm flex items-center gap-1 ${col.isArchived ? 'opacity-70 italic' : ''}`}>
+                        <p className={`text-[10px] font-medium text-white truncate leading-tight drop-shadow-sm flex items-center gap-1 ${col.isArchived ? 'opacity-70 italic' : ''}`}>
                             {col.name}
-                            {col.filters && <Sparkles className="w-2 h-2 text-sage-400" />}
+                            {col.filters && <Sparkles className="w-2 h-2 text-sage-400 flex-shrink-0" />}
                         </p>
                     </div>
 
@@ -146,31 +152,20 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         </div>
                     )}
 
-                    {col.isPinned && !isSelected && (
-                        <div className="absolute top-1.5 right-1.5">
-                            <Pin className="w-3 h-3 text-sage-500 fill-sage-500 drop-shadow-sm" />
-                        </div>
-                    )}
+                    {/* Pin Icon REMOVED - Visual cue is now the border */}
 
                     {col.color && (
                         <div className={`absolute top-1.5 left-1.5 w-2 h-2 rounded-full border border-white/50 shadow-sm ${getColorClass(col.color)}`} />
                     )}
 
-                    {/* Count Badge */}
-                    <div className="absolute top-1.5 right-1.5 group-hover:opacity-0 transition-opacity">
-                        {!isSelected && !col.isPinned && (
-                            <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-medium text-white/90">
+                    {/* Count Badge - Hover Only for ALL items, always Top Right */}
+                    {!isSelected && (
+                        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90 shadow-sm">
                                 {formatCountCompact(col.count ?? col.imageIds.length)}
                             </div>
-                        )}
-                    </div>
-
-                    {/* Hover Count Badge */}
-                    <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90">
-                            {formatCountCompact(col.count ?? col.imageIds.length)}
                         </div>
-                    </div>
+                    )}
                 </div>
             ) : (
                 <div
@@ -243,7 +238,8 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         {formatCountCompact(col.count ?? col.imageIds.length)}
                     </span>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 };
