@@ -159,13 +159,6 @@ export function CollectionList<T extends Collection>({
     return (
         <div className="space-y-1 animate-in slide-in-from-top-2 duration-300 ease-spring">
             <div className="flex items-center gap-1.5 px-2 pb-2">
-                <button
-                    onClick={(e) => { e.stopPropagation(); setShowArchived(!showArchived); }}
-                    className={`transition-colors p-1.5 rounded-lg border ${showArchived ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
-                    title={showArchived ? "Hide Archived" : "Include Archived"}
-                >
-                    <Archive className="w-3.5 h-3.5" />
-                </button>
                 <SortDropdown
                     title="Sort Collections"
                     options={[
@@ -184,18 +177,25 @@ export function CollectionList<T extends Collection>({
                     triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                 />
                 <button
-                    onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
-                    className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
-                    title="Search Collections"
-                >
-                    <Search className="w-3.5 h-3.5" />
-                </button>
-                <button
                     onClick={toggleViewMode}
                     className={`transition-colors p-1.5 rounded-lg border ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                     title={viewMode === 'list' ? "Switch to Grid View" : "Switch to List View"}
                 >
                     {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); setShowArchived(!showArchived); }}
+                    className={`transition-colors p-1.5 rounded-lg border ${showArchived ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                    title={showArchived ? "Hide Archived" : "Include Archived"}
+                >
+                    <Archive className="w-3.5 h-3.5" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
+                    className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                    title="Search Collections"
+                >
+                    <Search className="w-3.5 h-3.5" />
                 </button>
                 {renderToolbarExtras?.()}
             </div>
