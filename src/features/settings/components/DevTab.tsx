@@ -67,6 +67,10 @@ export const DevTab: React.FC = () => {
         }
     };
 
+    const handleDevModeToggle = () => {
+        setSettings((prev) => ({ ...prev, devMode: !prev.devMode }));
+    };
+
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
         { id: 'prompts', label: 'AI Prompts', icon: BrainCircuit },
         { id: 'tools', label: 'Tools', icon: Wrench },
@@ -211,6 +215,24 @@ export const DevTab: React.FC = () => {
                                             <strong>Note:</strong> This increases database size significantly.
                                         </p>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4 mb-6">
+                                <div
+                                    onClick={handleDevModeToggle}
+                                    className="flex items-center justify-between cursor-pointer group"
+                                >
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Developer Mode</div>
+                                        <div className="text-xs text-gray-500">Enable detailed debug logs and system audits</div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className={`w-10 h-6 rounded-full relative transition-colors ${settings.devMode ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                                    >
+                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.devMode ? 'left-5' : 'left-1'}`} />
+                                    </button>
                                 </div>
                             </div>
 
