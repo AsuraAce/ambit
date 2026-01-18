@@ -1,7 +1,6 @@
 import * as React from 'react';
-import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Compass, Gift, HelpCircle, Settings, Aperture, Pin } from 'lucide-react';
+import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Gift, HelpCircle, Settings, Aperture, Pin } from 'lucide-react';
 import { ViewMode, FilterState } from '../../../types';
-import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AppSidebarProps {
@@ -14,7 +13,6 @@ interface AppSidebarProps {
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenDonation: () => void;
-  onOpenSlideshow: () => void;
   showSupportPulse: boolean;
 }
 
@@ -28,7 +26,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onOpenSettings,
   onOpenShortcuts,
   onOpenDonation,
-  onOpenSlideshow,
   showSupportPulse
 }) => {
   return (
@@ -53,10 +50,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         <NavButton active={isFilterPanelOpen && (viewMode === 'grid' || viewMode === 'timeline' || viewMode === 'dashboard')} onClick={() => setIsFilterPanelOpen(p => !p)} icon={<Filter />} tooltip="Toggle Filters" />
         <NavButton active={filters.favoritesOnly} onClick={() => setFilters(prev => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))} icon={<Heart className={filters.favoritesOnly ? "fill-red-500 text-red-500" : ""} />} tooltip="Favorites Only" />
         <NavButton active={!!filters.pinnedOnly} onClick={() => setFilters(prev => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))} icon={<Pin className={filters.pinnedOnly ? "fill-amber-500 text-amber-500" : ""} />} tooltip="Pinned Only" />
-
-        <button onClick={onOpenSlideshow} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative text-gray-500 dark:text-zinc-400 hover:text-sage-600 dark:hover:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/20 mt-2" title="Theater Mode / Slideshow">
-          <Compass className="w-5 h-5" />
-        </button>
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-4">
