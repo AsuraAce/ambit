@@ -107,10 +107,10 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
   const { refreshCollections } = useCollections();
 
   const handleSyncComplete = useCallback(async () => {
-    await fetchData(false);
+    // Consolidated refresh
     await refreshMetadata();
     await refreshCollections();
-  }, [fetchData, refreshMetadata, refreshCollections]);
+  }, [refreshMetadata, refreshCollections]);
 
   return (
     <SyncProvider onSyncComplete={handleSyncComplete}>
@@ -123,9 +123,9 @@ const WatcherProviderWrapper: React.FC<{ children: ReactNode }> = ({ children })
   const { fetchData, refreshMetadata } = useSearch();
 
   const handleNewImage = useCallback(async () => {
-    await fetchData(false);
-    await refreshMetadata(); // Ensure View Options update on live events
-  }, [fetchData, refreshMetadata]);
+    // refreshMetadata invalidates 'images' and 'libraryStats' queries
+    await refreshMetadata();
+  }, [refreshMetadata]);
 
   return (
     <WatcherProvider onNewImageDetected={handleNewImage}>
