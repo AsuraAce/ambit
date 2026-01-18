@@ -57,6 +57,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [renderLimit, setRenderLimit] = useState(30); // Pagination limit for performance
 
     // Get view mode from settings, default to 'list'
     const viewMode = settings.resourceViewModes?.[type] || 'list';
@@ -138,6 +139,14 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         });
 
     const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
+
+    const visibleItems = filteredItems.slice(0, renderLimit);
+    const hasMore = filteredItems.length > renderLimit;
+
+    // Reset limit when query changes or type changes
+    useEffect(() => {
+        setRenderLimit(30);
+    }, [searchQuery, type, filters]);
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ResourceItem } | null>(null);
@@ -369,7 +378,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                     <div className={`pr-1 ${viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}`}>
                         <AnimatePresence mode="popLayout" initial={false}>
-                            {filteredItems.map(item => (
+                            {visibleItems.map(item => (
                                 <motion.div
                                     key={`${item.name}-${item.hash || 'no-hash'}`}
                                     layout
@@ -386,6 +395,15 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                 </motion.div>
                             ))}
                         </AnimatePresence>
+
+                        {hasMore && (
+                            <button
+                                onClick={() => setRenderLimit(prev => prev + 30)}
+                                className={`w-full py-2 text-xs font-medium text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/20 hover:bg-sage-100 dark:hover:bg-sage-900/40 rounded-lg transition-colors border border-sage-200 dark:border-sage-500/30 ${viewMode === 'grid' ? 'col-span-3' : ''}`}
+                            >
+                                Show More ({filteredItems.length - renderLimit} remaining)
+                            </button>
+                        )}
 
                         {filteredItems.length === 0 && !isLoading && (
                             <div className={`${viewMode === 'grid' ? 'col-span-3' : ''} text-xs text-gray-400 text-center py-8 italic border border-dashed border-gray-200 dark:border-white/10 rounded-xl`}>

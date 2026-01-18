@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SearchInput, SortDropdown } from './FilterPrimitives';
@@ -66,6 +67,14 @@ export function CollectionList<T extends Collection>({
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
     const viewMode = settings.resourceViewModes?.['collections'] || 'list';
+
+    // Pagination State
+    const [renderLimit, setRenderLimit] = useState(60);
+
+    // Reset pagination when search changes
+    React.useEffect(() => {
+        setRenderLimit(60);
+    }, [searchQuery, showArchived]);
 
     const toggleViewMode = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -140,6 +149,9 @@ export function CollectionList<T extends Collection>({
     const pinned = filtered.filter(c => c.isPinned);
     const others = filtered.filter(c => !c.isPinned);
 
+    const visibleOthers = others.slice(0, renderLimit);
+    const hasMore = others.length > renderLimit;
+
     const activeCol = collections.find(c => c.id === contextMenu?.collectionId);
 
     return (
@@ -201,9 +213,68 @@ export function CollectionList<T extends Collection>({
                             <Pin className="w-3 h-3" /> Pinned
                         </div>
                         <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
-                            {pinned.map(col => (
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {pinned.map(col => (
+                                    <motion.div
+                                        key={col.id}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        transition={{
+                                            layout: { duration: 0.2, ease: 'easeInOut' },
+                                            opacity: { duration: 0.15 },
+                                            scale: { duration: 0.15 }
+                                        }}
+                                    >
+                                        <CollectionItem
+                                            col={col}
+                                            filters={filters}
+                                            setFilters={setFilters}
+                                            editingColId={editingColId}
+                                            editName={editName}
+                                            setEditName={setEditName}
+                                            setEditingColId={setEditingColId}
+                                            handleRenameSubmit={handleRenameSubmit}
+                                            handleDragEnter={handleDragEnter}
+                                            handleDragOver={handleDragOver}
+                                            handleDragLeave={handleDragLeave}
+                                            handleDrop={handleDrop}
+                                            handleContextMenu={handleContextMenu}
+                                            dropTargetId={dropTargetId}
+                                            onToggleArchive={onToggleArchiveCollection}
+                                            onTogglePin={onTogglePinCollection}
+                                            onSetColor={onSetCollectionColor}
+                                            onPlay={onPlayCollection}
+                                            onExport={onExportCollection}
+                                            onResetThumbnail={onResetCollectionThumbnail}
+                                            onDelete={onDeleteCollection}
+                                            viewMode={viewMode}
+                                        />
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                        <div className="h-px bg-gray-200 dark:bg-white/5 my-2 mx-1" />
+                    </div>
+                )}
+
+                <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
+                    <AnimatePresence mode="popLayout" initial={false}>
+                        {visibleOthers.map(col => (
+                            <motion.div
+                                key={col.id}
+                                layout
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{
+                                    layout: { duration: 0.2, ease: 'easeInOut' },
+                                    opacity: { duration: 0.15 },
+                                    scale: { duration: 0.15 }
+                                }}
+                            >
                                 <CollectionItem
-                                    key={col.id}
                                     col={col}
                                     filters={filters}
                                     setFilters={setFilters}
@@ -227,41 +298,19 @@ export function CollectionList<T extends Collection>({
                                     onDelete={onDeleteCollection}
                                     viewMode={viewMode}
                                 />
-                            ))}
-                        </div>
-                        <div className="h-px bg-gray-200 dark:bg-white/5 my-2 mx-1" />
-                    </div>
-                )}
-
-                <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
-                    {others.map(col => (
-                        <CollectionItem
-                            key={col.id}
-                            col={col}
-                            filters={filters}
-                            setFilters={setFilters}
-                            editingColId={editingColId}
-                            editName={editName}
-                            setEditName={setEditName}
-                            setEditingColId={setEditingColId}
-                            handleRenameSubmit={handleRenameSubmit}
-                            handleDragEnter={handleDragEnter}
-                            handleDragOver={handleDragOver}
-                            handleDragLeave={handleDragLeave}
-                            handleDrop={handleDrop}
-                            handleContextMenu={handleContextMenu}
-                            dropTargetId={dropTargetId}
-                            onToggleArchive={onToggleArchiveCollection}
-                            onTogglePin={onTogglePinCollection}
-                            onSetColor={onSetCollectionColor}
-                            onPlay={onPlayCollection}
-                            onExport={onExportCollection}
-                            onResetThumbnail={onResetCollectionThumbnail}
-                            onDelete={onDeleteCollection}
-                            viewMode={viewMode}
-                        />
-                    ))}
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
                 </div>
+
+                {hasMore && (
+                    <button
+                        onClick={() => setRenderLimit(prev => prev + 60)}
+                        className={`w-full py-2 text-xs font-medium text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/20 hover:bg-sage-100 dark:hover:bg-sage-900/40 rounded-lg transition-colors border border-sage-200 dark:border-sage-500/30 ${viewMode === 'grid' ? 'col-span-3' : ''}`}
+                    >
+                        Show More ({others.length - renderLimit} remaining)
+                    </button>
+                )}
 
                 {filtered.length === 0 && (
                     <div className="text-xs text-gray-400 text-center py-2 italic">{emptyMessage}</div>

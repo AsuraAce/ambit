@@ -71,17 +71,25 @@ const VirtualGridInternal = <T extends { id: string }>(
 
     let rafId: number;
 
+    // Throttling State
+    let lastUpdate = 0;
+    const THROTTLE_MS = 32; // ~30fps updates for layout calculation during resize
+
     const observer = new ResizeObserver(entries => {
       if (entries[0]) {
         const newWidth = entries[0].contentRect.width;
 
-        // Cancel any pending update to avoid stacking
+        const now = Date.now();
+        if (now - lastUpdate < THROTTLE_MS) {
+          return;
+        }
+        lastUpdate = now;
+
+        // Cancel any pending update
         cancelAnimationFrame(rafId);
 
-        // Decouple from synchronous render cycle
         rafId = requestAnimationFrame(() => {
           setContainerWidth(prev => {
-            // Fix: check for significant change to avoid loop caused by scrollbar toggling
             if (Math.abs(prev - newWidth) < 1) return prev;
             return newWidth;
           });
@@ -492,6 +500,7 @@ const VirtualGridInternal = <T extends { id: string }>(
           left: 0,
           width: pos.width,
           height: pos.height,
+
           transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`,
           willChange: 'transform' // Hint to browser to promote layer
         }, i, { x: pos.left, y: pos.top, width: pos.width, height: pos.height })
