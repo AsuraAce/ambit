@@ -5,292 +5,292 @@
 
 
 export const commands = {
-    async saveImagesBatch(images: ImageRecord[]): Promise<Result<number, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("save_images_batch", { images }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async getDbDiagnostics(): Promise<Result<DbDiagnostics, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>): Promise<Result<number, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("refresh_boards_native", { boardMapping }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async getImageCountForPathPrefix(path: string): Promise<Result<number, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_image_count_for_path_prefix", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async optimizeDatabase(): Promise<Result<string, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * Request a database purge on next app startup.
-     * Creates a marker file and immediately restarts the application.
-     */
-    async purgeDatabase(): Promise<Result<string, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("purge_database") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * Get parameter ranges and distinct values for dynamic filter UI.
-     * Only returns non-null/non-default values to show what data actually exists.
-     */
-    async getParameterRanges(whereClause: string | null, paramsJson: string | null, collectionId: string | null, loraName: string | null): Promise<Result<ParameterRanges, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges", { whereClause, paramsJson, collectionId, loraName }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
-     * This runs in batches to avoid blocking the database and can be called after app startup.
-     * Returns the number of rows updated.
-     */
-    async backfillParameterColumns(): Promise<Result<number, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("backfill_parameter_columns") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async rebuildFacetCache(): Promise<Result<number, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * Get distinct facet names that exist in the current filtered result set.
-     * This is used for drill-down filtering - hiding facets that have no images
-     * in the current filter context.
-     * 
-     * OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
-     * to reduce database round-trips and allow SQLite to share table scans.
-     */
-    async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null): Promise<Result<ValidFacetNames, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { whereClause, paramsJson, collectionId, loraName }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async getBackups(): Promise<Result<BackupInfo[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_backups") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async backupDatabase(): Promise<Result<BackupInfo, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("backup_database") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * Check if we need to run an auto-backup (first run of the day).
-     */
-    async checkAndRunAutobackup(): Promise<Result<BackupInfo | null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("check_and_run_autobackup") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null): Promise<Result<ScanResult, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("scan_image", { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async scanImagesBulk(paths: string[], thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null): Promise<Result<ScanResult[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("scan_images_bulk", { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async scanImageWorkflow(path: string): Promise<Result<string | null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("scan_image_workflow", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async readImageMetadata(path: string, defaultTool: string | null): Promise<Result<ImageMetadata, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("read_image_metadata", { path, defaultTool }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async getFileSizesBulk(paths: string[]): Promise<Result<number[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("get_file_sizes_bulk", { paths }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async verifyImagePaths(paths: string[]): Promise<Result<string[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("verify_image_paths", { paths }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async auditInvokeaiFolder(path: string): Promise<Result<FolderStats, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("audit_invokeai_folder", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async listInvokeaiImages(path: string): Promise<Result<string[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("list_invokeai_images", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async scanDirectoryRecursive(path: string): Promise<Result<string[], string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("scan_directory_recursive", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async openFile(path: string): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("open_file", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async showInFolder(path: string): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("show_in_folder", { path }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async startNativeFolderWatcher(paths: string[]): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async importA1111Cache(cachePath: string): Promise<Result<ImportResult, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("import_a1111_cache", { cachePath }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async resolveHashesOnline(skipHarvest: boolean): Promise<Result<ResolutionResult, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("resolve_hashes_online", { skipHarvest }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async clearModelCache(): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async cancelModelResolution(): Promise<void> {
-        await TAURI_INVOKE("cancel_model_resolution");
-    },
-    async scanModelThumbnails(paths: string[]): Promise<Result<ThumbnailScanResult, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("scan_model_thumbnails", { paths }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async setModelThumbnail(modelHash: string, modelName: string | null, imagePath: string, resourceType: string | null): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, modelName, imagePath, resourceType }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    async unsetModelThumbnail(modelHash: string, modelName: string | null): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("unset_model_thumbnail", { modelHash, modelName }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    },
-    /**
-     * "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
-     */
-    async clearAllThumbnails(modelHash: string, modelName: string | null): Promise<Result<null, string>> {
-        try {
-            return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName }) };
-        } catch (e) {
-            if (e instanceof Error) throw e;
-            else return { status: "error", error: e as any };
-        }
-    }
+async saveImagesBatch(images: ImageRecord[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_images_batch", { images }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_boards_native", { boardMapping }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getImageCountForPathPrefix(path: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_image_count_for_path_prefix", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async optimizeDatabase() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Request a database purge on next app startup.
+ * Creates a marker file and immediately restarts the application.
+ */
+async purgeDatabase() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("purge_database") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get parameter ranges and distinct values for dynamic filter UI.
+ * Only returns non-null/non-default values to show what data actually exists.
+ */
+async getParameterRanges(whereClause: string | null, paramsJson: string | null, collectionId: string | null, loraName: string | null) : Promise<Result<ParameterRanges, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges", { whereClause, paramsJson, collectionId, loraName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
+ * This runs in batches to avoid blocking the database and can be called after app startup.
+ * Returns the number of rows updated.
+ */
+async backfillParameterColumns() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("backfill_parameter_columns") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async rebuildFacetCache() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get distinct facet names that exist in the current filtered result set.
+ * This is used for drill-down filtering - hiding facets that have no images
+ * in the current filter context.
+ * 
+ * OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
+ * to reduce database round-trips and allow SQLite to share table scans.
+ */
+async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null) : Promise<Result<ValidFacetNames, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { whereClause, paramsJson, collectionId, loraName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBackups() : Promise<Result<BackupInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_backups") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async backupDatabase() : Promise<Result<BackupInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("backup_database") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Check if we need to run an auto-backup (first run of the day).
+ */
+async checkAndRunAutobackup() : Promise<Result<BackupInfo | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_and_run_autobackup") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_image", { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scanImagesBulk(paths: string[], thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_images_bulk", { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scanImageWorkflow(path: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_image_workflow", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readImageMetadata(path: string, defaultTool: string | null) : Promise<Result<ImageMetadata, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_image_metadata", { path, defaultTool }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getFileSizesBulk(paths: string[]) : Promise<Result<number[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_file_sizes_bulk", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async verifyImagePaths(paths: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("verify_image_paths", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async auditInvokeaiFolder(path: string) : Promise<Result<FolderStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audit_invokeai_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listInvokeaiImages(path: string) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_invokeai_images", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scanDirectoryRecursive(path: string) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_directory_recursive", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openFile(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_file", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async showInFolder(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("show_in_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async startNativeFolderWatcher(paths: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importA1111Cache(cachePath: string) : Promise<Result<ImportResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_a1111_cache", { cachePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resolveHashesOnline(skipHarvest: boolean) : Promise<Result<ResolutionResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_hashes_online", { skipHarvest }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearModelCache() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelModelResolution() : Promise<void> {
+    await TAURI_INVOKE("cancel_model_resolution");
+},
+async scanModelThumbnails(paths: string[]) : Promise<Result<ThumbnailScanResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_model_thumbnails", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setModelThumbnail(modelHash: string, modelName: string | null, imagePath: string, resourceType: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, modelName, imagePath, resourceType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unset_model_thumbnail", { modelHash, modelName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
+ */
+async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+}
 }
 
 /** user-defined events **/
@@ -328,59 +328,59 @@ export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddin
 /** tauri-specta globals **/
 
 import {
-    invoke as TAURI_INVOKE,
-    Channel as TAURI_CHANNEL,
+	invoke as TAURI_INVOKE,
+	Channel as TAURI_CHANNEL,
 } from "@tauri-apps/api/core";
 import * as TAURI_API_EVENT from "@tauri-apps/api/event";
 import { type WebviewWindow as __WebviewWindow__ } from "@tauri-apps/api/webviewWindow";
 
 type __EventObj__<T> = {
-    listen: (
-        cb: TAURI_API_EVENT.EventCallback<T>,
-    ) => ReturnType<typeof TAURI_API_EVENT.listen<T>>;
-    once: (
-        cb: TAURI_API_EVENT.EventCallback<T>,
-    ) => ReturnType<typeof TAURI_API_EVENT.once<T>>;
-    emit: null extends T
-    ? (payload?: T) => ReturnType<typeof TAURI_API_EVENT.emit>
-    : (payload: T) => ReturnType<typeof TAURI_API_EVENT.emit>;
+	listen: (
+		cb: TAURI_API_EVENT.EventCallback<T>,
+	) => ReturnType<typeof TAURI_API_EVENT.listen<T>>;
+	once: (
+		cb: TAURI_API_EVENT.EventCallback<T>,
+	) => ReturnType<typeof TAURI_API_EVENT.once<T>>;
+	emit: null extends T
+		? (payload?: T) => ReturnType<typeof TAURI_API_EVENT.emit>
+		: (payload: T) => ReturnType<typeof TAURI_API_EVENT.emit>;
 };
 
 export type Result<T, E> =
-    | { status: "ok"; data: T }
-    | { status: "error"; error: E };
+	| { status: "ok"; data: T }
+	| { status: "error"; error: E };
 
 function __makeEvents__<T extends Record<string, any>>(
-    mappings: Record<keyof T, string>,
+	mappings: Record<keyof T, string>,
 ) {
-    return new Proxy(
-        {} as unknown as {
-            [K in keyof T]: __EventObj__<T[K]> & {
-                (handle: __WebviewWindow__): __EventObj__<T[K]>;
-            };
-        },
-        {
-            get: (_, event) => {
-                const name = mappings[event as keyof T];
+	return new Proxy(
+		{} as unknown as {
+			[K in keyof T]: __EventObj__<T[K]> & {
+				(handle: __WebviewWindow__): __EventObj__<T[K]>;
+			};
+		},
+		{
+			get: (_, event) => {
+				const name = mappings[event as keyof T];
 
-                return new Proxy((() => { }) as any, {
-                    apply: (_, __, [window]: [__WebviewWindow__]) => ({
-                        listen: (arg: any) => window.listen(name, arg),
-                        once: (arg: any) => window.once(name, arg),
-                        emit: (arg: any) => window.emit(name, arg),
-                    }),
-                    get: (_, command: keyof __EventObj__<any>) => {
-                        switch (command) {
-                            case "listen":
-                                return (arg: any) => TAURI_API_EVENT.listen(name, arg);
-                            case "once":
-                                return (arg: any) => TAURI_API_EVENT.once(name, arg);
-                            case "emit":
-                                return (arg: any) => TAURI_API_EVENT.emit(name, arg);
-                        }
-                    },
-                });
-            },
-        },
-    );
+				return new Proxy((() => {}) as any, {
+					apply: (_, __, [window]: [__WebviewWindow__]) => ({
+						listen: (arg: any) => window.listen(name, arg),
+						once: (arg: any) => window.once(name, arg),
+						emit: (arg: any) => window.emit(name, arg),
+					}),
+					get: (_, command: keyof __EventObj__<any>) => {
+						switch (command) {
+							case "listen":
+								return (arg: any) => TAURI_API_EVENT.listen(name, arg);
+							case "once":
+								return (arg: any) => TAURI_API_EVENT.once(name, arg);
+							case "emit":
+								return (arg: any) => TAURI_API_EVENT.emit(name, arg);
+						}
+					},
+				});
+			},
+		},
+	);
 }

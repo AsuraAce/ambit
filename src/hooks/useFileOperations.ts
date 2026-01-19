@@ -161,6 +161,52 @@ export const useFileOperations = ({
         }
     };
 
+    // Trigger InvokeAI database sync (for managed integration rescan)
+    const handleInvokeSync = useCallback(async () => {
+        if (!settings.invokeAiPath) {
+            addToast('InvokeAI not configured', 'error');
+            return;
+        }
+
+        setIsImporting(true);
+        const abortCtrl = new AbortController();
+        setImportAbortController(abortCtrl);
+
+        try {
+            const { syncImages } = await import('../services/invoke/syncService');
+            const { rebuildFacetCache, syncCollectionImages } = await import('../services/db/imageRepo');
+
+            const result = await syncImages(
+                settings.invokeAiPath,
+                (current, total, message) => {
+                    setImportProgress({ current, total, message });
+                },
+                abortCtrl.signal,
+                {
+                    syncFavorites: true,
+                    syncBoards: true,
+                    importIntermediates: settings.importIntermediates ?? false,
+                    starredAs: 'favorite',
+                    afterTimestamp: 0 // Full sync
+                }
+            );
+
+            // Post-sync tasks
+            await syncCollectionImages();
+            await rebuildFacetCache();
+            await refreshCollectionThumbnails();
+
+            addToast(`InvokeAI sync complete: ${result.imported} imported, ${result.updated} updated`, 'success');
+        } catch (e) {
+            console.error('InvokeAI sync failed', e);
+            addToast('InvokeAI sync failed', 'error');
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportAbortController(null);
+        }
+    }, [settings.invokeAiPath, settings.importIntermediates, addToast, setIsImporting, setImportProgress, setImportAbortController, refreshCollectionThumbnails]);
+
     const exportImages = async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
         const idArray = Array.from(ids);
         if (idArray.length === 0 || !destinationFolder) return;
@@ -327,6 +373,7 @@ export const useFileOperations = ({
         exportImages,
         deleteImages,
         recoverMetadata,
-        regenerateThumbnails
+        regenerateThumbnails,
+        handleInvokeSync
     };
 };

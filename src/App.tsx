@@ -449,6 +449,7 @@ export default function App() {
                     collectionToEditId={modals.collectionToEditId}
                     onSaveCollectionFilters={colOps.updateCollectionFilters}
                     onScanFolder={fileOps.handleImportFolders}
+                    onInvokeSync={fileOps.handleInvokeSync}
                 />
 
                 <AnimatePresence>

@@ -9,6 +9,7 @@ interface ConnectionsTabProps {
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     initialSubTab?: 'folders' | 'invokeai' | 'a1111' | 'comfyui';
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     onClose?: () => void;
 }
 
@@ -19,6 +20,7 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
     setSettings,
     initialSubTab = 'folders',
     onScanFolder,
+    onInvokeSync,
     onClose
 }) => {
     const [activeTab, setActiveTab] = useState<ConnectionSubTab>(initialSubTab);
@@ -62,6 +64,7 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                         settings={settings}
                         setSettings={setSettings}
                         onScanFolder={onScanFolder}
+                        onInvokeSync={onInvokeSync}
                     />
                 )}
                 {activeTab === 'invokeai' && (

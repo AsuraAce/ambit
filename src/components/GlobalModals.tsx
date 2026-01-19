@@ -53,6 +53,7 @@ interface GlobalModalsProps {
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: any) => void;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
@@ -86,7 +87,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     filters,
     collectionToEditId,
     onSaveCollectionFilters,
-    onScanFolder // Added
+    onScanFolder, // Added
+    onInvokeSync // Added for managed InvokeAI sync
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
@@ -99,6 +101,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 settings={settings}
                 initialTab={initialSettingsTab as any}
                 onScanFolder={onScanFolder}
+                onInvokeSync={onInvokeSync}
             />
 
             <ExportModal

@@ -13,6 +13,7 @@ interface SettingsModalProps {
   onSave: (settings: AppSettings) => void;
   initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+  onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
 }
 
 type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
@@ -56,7 +57,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   settings,
   onSave,
   initialTab = 'general',
-  onScanFolder
+  onScanFolder,
+  onInvokeSync
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<'folders' | 'invokeai' | 'a1111' | 'comfyui' | undefined>(undefined);
@@ -170,6 +172,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     settings={settings}
                     setSettings={handleSettingsChange}
                     onScanFolder={onScanFolder}
+                    onInvokeSync={onInvokeSync}
                     initialSubTab={connectionSubTab}
                     onClose={onClose}
                   />

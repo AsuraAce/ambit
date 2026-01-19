@@ -43,13 +43,20 @@ const getVariantIcon = (variant?: GeneratorTool) => {
     }
 };
 
+// Helper to get InvokeAI root path (strip /databases suffix if present)
+const getInvokeRootPath = (path: string): string => {
+    // invokeAiPath might be the databases folder or the root - normalize it
+    return path.replace(/[\\/](databases)?[\\/]?$/i, '');
+};
+
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync for managed integration
 }
 
-export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder }) => {
+export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder, onInvokeSync }) => {
     const [newFolderPath, setNewFolderPath] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToast();
@@ -99,12 +106,14 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
         // Inject Managed InvokeAI Folder
         if (settings.invokeAiPath) {
-            const exists = list.some(f => f.path.startsWith(settings.invokeAiPath!) || settings.invokeAiPath!.startsWith(f.path));
+            const invokeRoot = getInvokeRootPath(settings.invokeAiPath);
+            const outputsPath = `${invokeRoot}/outputs/images`;
+            const exists = list.some(f => f.path.startsWith(invokeRoot) || invokeRoot.startsWith(f.path));
             if (!exists) {
                 list.unshift({
                     id: 'managed_invoke',
-                    path: `${settings.invokeAiPath}/outputs/images`,
-                    pathRaw: `${settings.invokeAiPath}/outputs/images`,
+                    path: outputsPath,
+                    pathRaw: outputsPath,
                     isActive: true,
                     imageCount: 0,
                     variant: GeneratorTool.INVOKEAI,
@@ -116,16 +125,21 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     }, [settings.monitoredFolders, settings.invokeAiPath]);
 
 
-    const handleRescan = async (id: string, path: string, variant?: string) => {
-        if (!onScanFolder) return;
+    const handleRescan = async (id: string, path: string, variant?: string, isManaged?: boolean) => {
         setScanningIds(prev => new Set(prev).add(id));
         try {
-            await onScanFolder([{ path, variant }]);
-            addToast(`Rescan complete for ${path}`, 'success');
+            // For managed InvokeAI integration, trigger database sync instead of folder scan
+            if (isManaged && variant === GeneratorTool.INVOKEAI && onInvokeSync) {
+                await onInvokeSync();
+                addToast('InvokeAI database sync complete', 'success');
+            } else if (onScanFolder) {
+                await onScanFolder([{ path, variant }]);
+                addToast(`Rescan complete for ${path}`, 'success');
+            }
             await fetchCounts(); // Refresh counts
         } catch (e) {
             console.error(e);
-            addToast(`Rescan failed for ${path}`, 'error');
+            addToast(isManaged ? 'InvokeAI sync failed' : `Rescan failed for ${path}`, 'error');
         } finally {
             setScanningIds(prev => {
                 const next = new Set(prev);
@@ -365,10 +379,10 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                                     <button
                                         type="button"
-                                        onClick={() => handleRescan(folder.id, (folder as any).pathRaw || folder.path, folder.variant)}
+                                        onClick={() => handleRescan(folder.id, (folder as any).pathRaw || folder.path, folder.variant, (folder as any).isManaged)}
                                         disabled={scanningIds.has(folder.id)}
                                         className={`p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all ${scanningIds.has(folder.id) ? 'opacity-50 cursor-wait' : ''}`}
-                                        title="Rescan Folder"
+                                        title={(folder as any).isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
                                     >
                                         <RefreshCw className={`w-4 h-4 ${scanningIds.has(folder.id) ? 'animate-spin' : ''}`} />
                                     </button>
