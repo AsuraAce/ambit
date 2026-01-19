@@ -427,7 +427,16 @@ fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
 fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
     if let Some(link) = node.get("inputs").and_then(|v| v.get(key)).and_then(|v| v.as_array()) {
         if !link.is_empty() {
-            return link[0].as_str().map(|s| s.to_string());
+            // Handle both string IDs ("123") and numeric IDs (123)
+            if let Some(s) = link[0].as_str() {
+                return Some(s.to_string());
+            }
+            if let Some(n) = link[0].as_i64() {
+                return Some(n.to_string());
+            }
+            if let Some(n) = link[0].as_u64() {
+                return Some(n.to_string());
+            }
         }
     }
     None
