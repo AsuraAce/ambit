@@ -298,6 +298,11 @@ export const syncImages = async (
                     boardId: invokeBoard
                 };
 
+                // For existing images: preserve metadata (user edits are sacred)
+                // For new images: use freshly parsed metadata
+                const finalMetadata = existing ? existing.metadata : metadata;
+                const finalOriginalMetadata = existing?.originalMetadata || (existing ? existing.metadata : metadata);
+
                 const newImg: any = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
@@ -309,10 +314,12 @@ export const syncImages = async (
                     height: row.height || 0,
                     isFavorite,
                     isPinned,
-                    isDeleted: false,
+                    isDeleted: existing?.isDeleted || false,
                     isMissing: false,
                     boardId: boardId,
-                    metadata: metadata,
+                    notes: existing?.notes, // Preserve user notes
+                    metadata: finalMetadata,
+                    originalMetadata: finalOriginalMetadata,
                     originalState: originalState
                 };
 
