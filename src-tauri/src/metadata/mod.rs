@@ -111,7 +111,7 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.cfg == 0.0 { base.cfg = secondary.cfg; }
     if base.seed == 0 { base.seed = secondary.seed; }
     
-    if base.sampler == "Unknown" || base.sampler.is_empty() {
+    if base.sampler == "Unknown" || base.sampler.is_empty() || base.sampler == "_" {
         base.sampler = secondary.sampler;
     }
     
@@ -198,5 +198,31 @@ mod tests {
         assert_eq!(detect_generation_type(&PathBuf::from("D:/SDNext/outputs/txt2img/2023-10-01/image.png")), "txt2img");
         assert_eq!(detect_generation_type(&PathBuf::from("D:\\SDNext\\outputs\\txt2img\\image.png")), "txt2img");
         assert_eq!(detect_generation_type(&PathBuf::from("/path/to/random/image.png")), "unknown");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_metadata_override() {
+        let mut base = ImageMetadata::default();
+        base.tool = "A1111".to_string();
+        base.sampler = "_".to_string(); // Simulate bad A1111 param
+        base.steps = 0;
+        base.cfg = 0.0;
+        
+        let mut secondary = ImageMetadata::default();
+        secondary.tool = "ComfyUI".to_string();
+        secondary.sampler = "euler".to_string();
+        secondary.steps = 20;
+        secondary.cfg = 3.5;
+        
+        merge_metadata(&mut base, secondary);
+        
+        assert_eq!(base.sampler, "euler");
+        assert_eq!(base.steps, 20);
+        assert_eq!(base.cfg, 3.5);
     }
 }
