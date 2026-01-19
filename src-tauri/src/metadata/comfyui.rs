@@ -315,6 +315,60 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
         }
     }
 
+    // Workflow format fallback: Extract sampler/scheduler from specialized nodes
+    // In workflow format, KSamplerSelect has sampler in widgets_values[0]
+    // BasicScheduler has scheduler in widgets_values[0], steps in widgets_values[1]
+    if meta.sampler == "Unknown" || meta.sampler.is_empty() {
+        let mut sampler_name = String::new();
+        let mut scheduler_name = String::new();
+        
+        for (_id, node) in &nodes_map {
+            let node_type = get_node_type(node);
+            
+            // KSamplerSelect: widgets_values[0] = sampler_name (e.g., "euler")
+            if node_type == "KSamplerSelect" {
+                if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                    if let Some(s) = arr.get(0).and_then(|v| v.as_str()) {
+                        sampler_name = s.to_string();
+                    }
+                }
+            }
+            
+            // BasicScheduler: widgets_values[0] = scheduler, [1] = steps, [2] = denoise
+            if node_type == "BasicScheduler" {
+                if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                    if let Some(s) = arr.get(0).and_then(|v| v.as_str()) {
+                        scheduler_name = s.to_string();
+                    }
+                    if meta.steps == 0 {
+                        if let Some(steps) = arr.get(1).and_then(|v| v.as_u64()) {
+                            meta.steps = steps as u32;
+                        }
+                    }
+                }
+            }
+            
+            // RandomNoise: widgets_values[0] = seed
+            if node_type == "RandomNoise" && meta.seed == 0 {
+                if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                    if let Some(seed) = arr.get(0).and_then(|v| v.as_i64()) {
+                        meta.seed = seed;
+                    } else if let Some(seed) = arr.get(0).and_then(|v| v.as_u64()) {
+                        meta.seed = seed as i64;
+                    }
+                }
+            }
+        }
+        
+        if !sampler_name.is_empty() {
+            meta.sampler = if !scheduler_name.is_empty() {
+                format!("{} ({})", sampler_name, scheduler_name)
+            } else {
+                sampler_name
+            };
+        }
+    }
+
     // Final Prompt Fallback (for disconnected graphs)
     if meta.positive_prompt.is_empty() {
         let mut best_positive = None;
