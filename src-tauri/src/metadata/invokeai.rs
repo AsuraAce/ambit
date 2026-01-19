@@ -164,6 +164,14 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
+    // Check for favorite/starred status
+    // User report: "subject:favorite" key value pair in older InvokeAI images
+    if let Some(subject) = root.get("subject").and_then(|s| s.as_str()) {
+        if subject == "favorite" {
+            meta.is_favorite = true;
+        }
+    }
+
     meta
 }
 
@@ -328,6 +336,19 @@ mod tests {
         assert!(meta.positive_prompt.is_empty());
         assert_eq!(meta.steps, 0);
         assert!(meta.model.is_empty() || meta.model == "Unknown");
+    }
+
+    #[test]
+    fn test_extract_invokeai_favorite() {
+        // Test "subject": "favorite"
+        let payload = json!({
+            "prompt": [
+                { "prompt": "test" }
+            ],
+            "subject": "favorite"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert!(meta.is_favorite);
     }
 }
 
