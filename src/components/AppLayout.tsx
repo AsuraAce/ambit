@@ -180,7 +180,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 onOpenSettings={() => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); }}
                 onOpenShortcuts={() => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); }}
                 onOpenDonation={() => modals.openModal('donation')}
-                onOpenSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                 showSupportPulse={true}
             />
 
