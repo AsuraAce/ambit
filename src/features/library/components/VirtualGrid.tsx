@@ -325,9 +325,13 @@ const VirtualGridInternal = <T extends { id: string }>(
     // Check if we're clicking on a draggable item
     const isOverItem = !!target.closest('[data-draggable="true"]');
 
+    if (isOverItem) return;
+
     if (!containerRef.current || !scrollContainerRef.current) return;
 
     // Use currentTarget to get the container's rect for consistent coordinates
+    // getBoundingClientRect() already accounts for scroll position, so
+    // (clientY - rect.top) gives us grid-absolute coordinates directly
     const rect = containerRef.current.getBoundingClientRect();
     const startX = e.clientX - rect.left;
     const startY = e.clientY - rect.top;
@@ -336,15 +340,13 @@ const VirtualGridInternal = <T extends { id: string }>(
     isDraggingRef.current = false;
 
     // Prevent default for background clicks to enable box selection
-    if (!isOverItem) {
-      e.preventDefault();
-    }
+    e.preventDefault();
 
     const handleWindowMove = (we: MouseEvent) => {
       if (!dragStartRef.current || !containerRef.current) return;
 
       const currentRect = containerRef.current.getBoundingClientRect();
-      // Mouse position relative to container
+      // getBoundingClientRect() accounts for scroll, so these are grid-absolute
       const currentX = we.clientX - currentRect.left;
       const currentY = we.clientY - currentRect.top;
 
@@ -370,28 +372,17 @@ const VirtualGridInternal = <T extends { id: string }>(
       window.removeEventListener('mousemove', handleWindowMove);
       window.removeEventListener('mouseup', handleWindowUp);
 
-      if (isDraggingRef.current && dragStartRef.current && onRangeSelectionRef.current) {
-        const currentRect = containerRef.current!.getBoundingClientRect();
-        // Note: We use the final mouse position logic same as move
+      if (isDraggingRef.current && dragStartRef.current && onRangeSelectionRef.current && containerRef.current) {
+        const currentRect = containerRef.current.getBoundingClientRect();
+        // getBoundingClientRect() accounts for scroll, so these are grid-absolute
         const currentX = we.clientX - currentRect.left;
         const currentY = we.clientY - currentRect.top;
 
-        const bx = Math.min(dragStartRef.current.x, currentX);
-        const by = Math.min(dragStartRef.current.y, currentY);
-        const bw = Math.abs(currentX - dragStartRef.current.x);
-        const bh = Math.abs(currentY - dragStartRef.current.y);
-
-        // Convert viewport-relative coordinates to grid-absolute coordinates
-        // scrollContainerRef.scrollTop = how far the parent container has scrolled
-        // containerRef.offsetTop = where the grid starts within the scroll container
-        const scrollOffset = scrollContainerRef.current?.scrollTop || 0;
-        const gridTop = containerRef.current!.offsetTop;
-
-        // Grid-absolute box position for overlap checking
-        const gx = bx;
-        const gy = by + scrollOffset - gridTop;
-        const gw = bw;
-        const gh = bh;
+        // Box coordinates are already grid-absolute
+        const gx = Math.min(dragStartRef.current.x, currentX);
+        const gy = Math.min(dragStartRef.current.y, currentY);
+        const gw = Math.abs(currentX - dragStartRef.current.x);
+        const gh = Math.abs(currentY - dragStartRef.current.y);
 
         const selectedIndexes: number[] = [];
         const currentPositions = layoutResultRef.current.positions;
