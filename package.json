@@ -12,6 +12,7 @@
     "app:build": "tauri build",
     "test": "vitest",
     "test:ui": "vitest --ui",
+    "test:rust": "cross-env SKIP_TAURI_BUILD=1 cargo test --lib",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -48,6 +49,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.17",
+    "cross-env": "^10.1.0",
     "jsdom": "^27.4.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",

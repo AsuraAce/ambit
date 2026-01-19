@@ -8,6 +8,7 @@ use metadata::models::ModelResolutionState;
 
 /// Create the Specta builder with all commands registered.
 /// This is shared between the app runtime and the export test.
+#[cfg(not(test))]
 pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -57,6 +58,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 
 // Force Rebuild
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     let builder = create_builder();
 
@@ -148,7 +150,7 @@ fn check_and_execute_deferred_purge() {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(test)))] // Disabled during standard tests to avoid linking Tauri
 mod tests {
     use super::*;
 
