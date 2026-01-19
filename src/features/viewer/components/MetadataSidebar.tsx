@@ -326,11 +326,11 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     };
 
     const savePrompt = () => {
-        if (onUpdatePrompt) {
+        if (onUpdatePrompt && isPromptDirty) {
             onUpdatePrompt(image.id, promptValue);
             setIsPromptDirty(false);
         }
-        if (onUpdateNegativePrompt) {
+        if (onUpdateNegativePrompt && isNegativePromptDirty) {
             onUpdateNegativePrompt(image.id, negativePromptValue);
             setIsNegativePromptDirty(false);
         }
@@ -811,7 +811,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                 </div>
                             </div>
                             <div className="relative">
-                                <textarea value={promptValue} onChange={handlePromptChange} placeholder="Enter positive prompt..." className="w-full bg-white dark:bg-zinc-950/50 border border-gray-200 dark:border-white/10 rounded-xl p-4 text-sm font-sans leading-relaxed text-gray-700 dark:text-gray-300 focus:border-sage-500/50 outline-none resize-none h-40 shadow-inner z-10" />
+                                <textarea value={promptValue} onChange={handlePromptChange} onBlur={savePrompt} placeholder="Enter positive prompt..." className="w-full bg-white dark:bg-zinc-950/50 border border-gray-200 dark:border-white/10 rounded-xl p-4 text-sm font-sans leading-relaxed text-gray-700 dark:text-gray-300 focus:border-sage-500/50 outline-none resize-none h-40 shadow-inner z-10" />
                                 {promptSuggestions.length > 0 && (
                                     <div className="absolute top-full left-0 w-full mt-1 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-xl overflow-hidden z-50">
                                         {promptSuggestions.map((s, idx) => (
@@ -836,6 +836,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                     setNegativePromptValue(e.target.value);
                                     setIsNegativePromptDirty(true);
                                 }}
+                                onBlur={savePrompt}
                                 placeholder="Enter negative prompt..."
                                 className="w-full bg-white dark:bg-zinc-950/50 border border-gray-200 dark:border-white/10 rounded-xl p-4 text-sm font-sans leading-relaxed text-gray-700 dark:text-gray-300 focus:border-sage-500/50 outline-none resize-none h-32 shadow-inner"
                             />
