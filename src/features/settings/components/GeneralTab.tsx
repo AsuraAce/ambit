@@ -69,7 +69,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 </div>
 
                 <div className="pt-6 border-t border-gray-100 dark:border-white/5">
-                    <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />
+                    {settings.devMode && <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />}
                 </div>
             </section>
         </div>

@@ -419,7 +419,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 </button>
                             </div>
 
-                            {scanLogs.length > 0 && (
+                            {settings.devMode && scanLogs.length > 0 && (
                                 <div className="mt-4 mb-4">
                                     <details className="group">
                                         <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">

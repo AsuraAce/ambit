@@ -141,118 +141,120 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                 </div>
             </section>
 
-            <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Activity className="w-4 h-4" /> System Audit
-                    </div>
-                    <button
-                        type="button"
-                        onClick={runDiagnostics}
-                        disabled={isDiagLoading || !settings.invokeAiPath}
-                        className="text-[10px] bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 font-black uppercase tracking-widest flex items-center gap-2 text-gray-600 dark:text-gray-300"
-                    >
-                        {isDiagLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart3 className="w-3 h-3" />}
-                        {isDiagLoading ? 'Analyzing...' : 'Run Audit'}
-                    </button>
-                </h4>
+            {settings.devMode && (
+                <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
+                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Activity className="w-4 h-4" /> System Audit
+                        </div>
+                        <button
+                            type="button"
+                            onClick={runDiagnostics}
+                            disabled={isDiagLoading || !settings.invokeAiPath}
+                            className="text-[10px] bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 font-black uppercase tracking-widest flex items-center gap-2 text-gray-600 dark:text-gray-300"
+                        >
+                            {isDiagLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <BarChart3 className="w-3 h-3" />}
+                            {isDiagLoading ? 'Analyzing...' : 'Run Audit'}
+                        </button>
+                    </h4>
 
-                {!diagData ? (
-                    <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5">
-                        <div className="p-3 bg-white dark:bg-white/5 rounded-xl shadow-sm">
-                            <Search className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <div>
-                            <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Ready for Scan</p>
-                            <p className="text-[10px] text-gray-500">Run an audit to compare database entries with local output files.</p>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-top-2 relative z-10">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
-                                <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
-                                    <Database className="w-3 h-3 text-sage-500" /> InvokeAI Database
-                                </div>
-                                <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
-                                <div className="text-[9px] text-gray-500 font-medium">Synced Records</div>
+                    {!diagData ? (
+                        <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5">
+                            <div className="p-3 bg-white dark:bg-white/5 rounded-xl shadow-sm">
+                                <Search className="w-5 h-5 text-gray-400" />
                             </div>
-                            <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
-                                <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
-                                    <Files className="w-3 h-3 text-sage-500" /> Image Repository
-                                </div>
-                                <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
-                                <div className="text-[10px] text-gray-500 font-medium">Files on Disk</div>
+                            <div>
+                                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Ready for Scan</p>
+                                <p className="text-[10px] text-gray-500">Run an audit to compare database entries with local output files.</p>
                             </div>
                         </div>
-
-                        {diagData.totalInDb !== diagData.folder.imageFiles && (
-                            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-700 dark:text-amber-400 shadow-lg shadow-amber-500/5">
-                                <div className="font-black uppercase tracking-widest flex items-center gap-2 mb-2">
-                                    <AlertTriangle className="w-4 h-4" />
-                                    Count Discrepancy Found
-                                </div>
-                                <p className="opacity-90 leading-normal">
-                                    There are <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong> {diagData.totalInDb > diagData.folder.imageFiles ? 'extra records in the database' : 'extra files in the outputs folder'}.
-                                </p>
-                                {diagData.totalInDb > diagData.folder.imageFiles && (
-                                    <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: Run "Reset Cursor" to re-validate image availability.</p>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-6 pt-2">
-                            <div className="space-y-3">
-                                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
-                                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
-                                    {diagData.categories.map((c: any) => (
-                                        <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
-                                            <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
-                                            <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="space-y-3">
-                                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
-                                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
-                                    {diagData.origins.map((o: any) => (
-                                        <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
-                                            <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
-                                            <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-4 border-t border-black/5 dark:border-white/5 space-y-4">
-                            <div className="flex items-center justify-between px-1">
-                                <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest">Storage Status</div>
-                                <div className="text-[9px] text-gray-500 font-medium italic">
-                                    {diagData.folder.thumbnailFiles.toLocaleString()} Thumbnails active
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
-                                    <div key={folder} className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <FolderOpen className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                            <span className="text-gray-500 dark:text-gray-400 truncate font-mono">{folder}</span>
-                                        </div>
-                                        <span className="font-black text-gray-700 dark:text-gray-300 pl-2 tabular-nums">{count.toLocaleString()}</span>
+                    ) : (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-top-2 relative z-10">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
+                                    <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                                        <Database className="w-3 h-3 text-sage-500" /> InvokeAI Database
                                     </div>
-                                ))}
-                                {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
-                                    <div className="col-span-2 text-[10px] text-gray-500 italic p-3 bg-black/5 dark:bg-black/20 rounded-xl text-center">Output repository is flat (no sub-collections found).</div>
-                                )}
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.totalInDb.toLocaleString()}</div>
+                                    <div className="text-[9px] text-gray-500 font-medium">Synced Records</div>
+                                </div>
+                                <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
+                                    <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">
+                                        <Files className="w-3 h-3 text-sage-500" /> Image Repository
+                                    </div>
+                                    <div className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums drop-shadow-sm transition-transform group-hover/stat:scale-105 origin-left duration-500">{diagData.folder.imageFiles.toLocaleString()}</div>
+                                    <div className="text-[10px] text-gray-500 font-medium">Files on Disk</div>
+                                </div>
+                            </div>
+
+                            {diagData.totalInDb !== diagData.folder.imageFiles && (
+                                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-700 dark:text-amber-400 shadow-lg shadow-amber-500/5">
+                                    <div className="font-black uppercase tracking-widest flex items-center gap-2 mb-2">
+                                        <AlertTriangle className="w-4 h-4" />
+                                        Count Discrepancy Found
+                                    </div>
+                                    <p className="opacity-90 leading-normal">
+                                        There are <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong> {diagData.totalInDb > diagData.folder.imageFiles ? 'extra records in the database' : 'extra files in the outputs folder'}.
+                                    </p>
+                                    {diagData.totalInDb > diagData.folder.imageFiles && (
+                                        <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: Run "Reset Cursor" to re-validate image availability.</p>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-6 pt-2">
+                                <div className="space-y-3">
+                                    <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
+                                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
+                                        {diagData.categories.map((c: any) => (
+                                            <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
+                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
+                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
+                                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
+                                        {diagData.origins.map((o: any) => (
+                                            <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
+                                                <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
+                                                <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-black/5 dark:border-white/5 space-y-4">
+                                <div className="flex items-center justify-between px-1">
+                                    <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest">Storage Status</div>
+                                    <div className="text-[9px] text-gray-500 font-medium italic">
+                                        {diagData.folder.thumbnailFiles.toLocaleString()} Thumbnails active
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
+                                        <div key={folder} className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <FolderOpen className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                                <span className="text-gray-500 dark:text-gray-400 truncate font-mono">{folder}</span>
+                                            </div>
+                                            <span className="font-black text-gray-700 dark:text-gray-300 pl-2 tabular-nums">{count.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                    {Object.keys(diagData.folder.subfolders || {}).length === 0 && (
+                                        <div className="col-span-2 text-[10px] text-gray-500 italic p-3 bg-black/5 dark:bg-black/20 rounded-xl text-center">Output repository is flat (no sub-collections found).</div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </section>
+                    )}
+                </section>
+            )}
 
             <SyncSection settings={settings} setSettings={setSettings} />
         </div>

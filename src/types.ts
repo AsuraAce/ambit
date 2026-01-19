@@ -211,6 +211,7 @@ export interface AppSettings {
   resourceSortOptions?: Record<string, FacetSortOption>; // Persisted sort option per resource section
   hideImportModal?: boolean; // User dismissed the import education modal
   systemPrompts?: Record<string, string>; // Dev override for AI prompts
+  devMode?: boolean; // Toggle for experimental/dev features
 }
 
 export interface ToastMessage {
