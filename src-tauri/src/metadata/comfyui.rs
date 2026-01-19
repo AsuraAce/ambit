@@ -127,8 +127,111 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     }
 
     // ---------------------------------------------------------
-    // Extract Resources (LoRAs)
+    // Handling for SamplerCustomAdvanced (Flux / SD3)
     // ---------------------------------------------------------
+    if ksampler_id.is_empty() || meta.steps == 0 {
+        for (id, node) in &nodes_map {
+            let class_type = get_node_type(node);
+            if class_type == "SamplerCustomAdvanced" {
+                // This is likely a Flux or SD3 workflow using separated components
+                // Inputs: noise, guider, sampler, sigmas, latent_image
+
+                // 1. Trace Guider -> Model
+                if meta.model == "Unknown" || meta.model.is_empty() {
+                    if let Some(guider_id) = get_node_input_link(node, "guider") {
+                         if let Some(guider_node) = nodes_map.get(&guider_id) {
+                              // BasicGuider -> input "model"
+                              if let Some(model_id) = get_node_input_link(guider_node, "model") {
+                                  if let Some(name) = trace_model_source(&nodes_map, &model_id) {
+                                      meta.model = name;
+                                  }
+                              }
+                         }
+                    }
+                }
+
+                // 2. Trace Sigmas -> Steps / Scheduler
+                if meta.steps == 0 {
+                    if let Some(sigmas_id) = get_node_input_link(node, "sigmas") {
+                        if let Some(sigmas_node) = nodes_map.get(&sigmas_id) {
+                            // BasicScheduler -> steps, scheduler, denoise
+                            if let Some(steps) = trace_node_param(&nodes_map, sigmas_node, "steps").and_then(|v| v.as_u64()) {
+                                meta.steps = steps as u32;
+                            }
+                            // Sometimes scheduler is here
+                             if let Some(scheduler) = trace_node_param(&nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
+                                 // We'll append this to sampler later if found
+                                 // For now store or concat?
+                                 // Let's store temporarily or check if sampler already has it.
+                             }
+                        }
+                    }
+                }
+
+                // 3. Trace Sampler -> Sampler Name
+                {
+                    let mut sampler_name = String::new();
+                    let mut scheduler_name = String::new();
+
+                    if let Some(sampler_id) = get_node_input_link(node, "sampler") {
+                        if let Some(sampler_node) = nodes_map.get(&sampler_id) {
+                             if let Some(name) = trace_node_param(&nodes_map, sampler_node, "sampler_name").and_then(|v| v.as_str()) {
+                                 sampler_name = name.to_string();
+                             }
+                        }
+                    }
+                    
+                    // Try to find scheduler from sigmas
+                    if let Some(sigmas_id) = get_node_input_link(node, "sigmas") {
+                        if let Some(sigmas_node) = nodes_map.get(&sigmas_id) {
+                             if let Some(sch) = trace_node_param(&nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
+                                 scheduler_name = sch.to_string();
+                             }
+                        }
+                    }
+
+                    if !sampler_name.is_empty() {
+                        let full_name = if !scheduler_name.is_empty() {
+                            format!("{} ({})", sampler_name, scheduler_name)
+                        } else {
+                            sampler_name.clone()
+                        };
+                        
+                        // Overwrite if current is Unknown/empty OR if we found a scheduler and current one likely doesn't have it
+                        if meta.sampler == "Unknown" || meta.sampler.is_empty() || (!scheduler_name.is_empty() && !meta.sampler.contains("(") && meta.sampler != full_name) {
+                             meta.sampler = full_name;
+                        }
+                    }
+                }
+
+                 // 4. Trace Seed (from noise)
+                if meta.seed == 0 {
+                     if let Some(noise_id) = get_node_input_link(node, "noise") {
+                         if let Some(noise_node) = nodes_map.get(&noise_id) {
+                             if let Some(seed) = trace_node_param(&nodes_map, noise_node, "noise_seed").and_then(|v| v.as_i64()) {
+                                 meta.seed = seed;
+                             } else if let Some(seed) = trace_node_param(&nodes_map, noise_node, "seed").and_then(|v| v.as_i64()) {
+                                 meta.seed = seed;
+                             }
+                         }
+                     }
+                }
+
+                // 5. Trace Prompts (via Guider -> Conditioning)
+                if meta.positive_prompt.is_empty() {
+                    if let Some(guider_id) = get_node_input_link(node, "guider") {
+                         if let Some(guider_node) = nodes_map.get(&guider_id) {
+                             if let Some(cond_id) = get_node_input_link(guider_node, "conditioning") {
+                                 if let Some(text) = trace_text_source(&nodes_map, &cond_id) {
+                                     meta.positive_prompt = text;
+                                 }
+                             }
+                         }
+                    }
+                }
+            }
+        }
+    }
     for (_id, node) in &nodes_map {
         let class_type = get_node_type(node);
         
@@ -301,6 +404,9 @@ fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                         let common = ["euler", "dpmpp", "uni_pc", "heun", "ddim", "ancestral", "2m", "sde", "ddpm", "lcm", "ipndm"];
                         let lower = s.to_lowercase();
                         if common.iter().any(|&c| lower.contains(c)) { return Some(val); }
+                        // Fallback: if short string in "sampler" field, but exclude common non-sampler primitives
+                        let exclusions = ["fixed", "increment", "decrement", "random"];
+                        if !s.contains(" ") && s.len() < 20 && !exclusions.contains(&lower.as_str()) { return Some(val); }
                     }
                 },
                 "scheduler" => {
@@ -456,6 +562,7 @@ fn trace_text_source(nodes: &std::collections::HashMap<String, Value>, start_id:
                  if let Some(val) = get_node_param(node, "value")
                     .or_else(|| get_node_param(node, "text"))
                     .or_else(|| get_node_param(node, "string"))
+                    .or_else(|| get_node_param(node, "String"))
                     .or_else(|| get_node_param(node, "STRING")) // Handle uppercase for some nodes
                     .and_then(|s| s.as_str()) 
                  {
@@ -598,6 +705,15 @@ fn trace_node_param<'a>(nodes: &'a std::collections::HashMap<String, Value>, nod
 
     // 2. Try direct param
     get_node_param(node, key)
+}
+
+/// Helper to get the id of the input node linked to a key
+fn get_input_node_id(node: &Value, key: &str) -> Option<String> {
+    get_node_input_link(node, key)
+}
+
+fn get_node_by_id<'a>(nodes: &'a std::collections::HashMap<String, Value>, id: &str) -> Option<&'a Value> {
+    nodes.get(id)
 }
 
 #[cfg(test)]
@@ -1214,4 +1330,33 @@ mod tests {
         // Should find the actual KSampler model (novaAnimeXL), NOT SUPIR
         assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
     }
+
+    #[test]
+    fn test_extract_comfyui_flux_user_case() {
+        // Based on user report
+        let prompt = r#"{
+    "836": {"inputs": {"scheduler": "simple", "steps": 20, "denoise": 1.0, "model": ["847", 0]}, "class_type": "BasicScheduler", "_meta": {"title": "BasicScheduler"}}, 
+    "837": {"inputs": {"sampler_name": "euler"}, "class_type": "KSamplerSelect", "_meta": {"title": "KSamplerSelect"}}, 
+    "839": {"inputs": {"model": ["847", 0], "conditioning": ["838", 0]}, "class_type": "BasicGuider", "_meta": {"title": "BasicGuider"}}, 
+    "838": {"inputs": {"conditioning": ["855", 0], "guidance": 3.5}, "class_type": "FluxGuidance", "_meta": {"title": "FluxGuidance"}},
+    "855": {"inputs": {"text": ["865", 0], "clip": ["850", 0]}, "class_type": "CLIPTextEncode", "_meta": {"title": "CLIP Text Encode"}},
+    "840": {"inputs": {"noise": ["852", 0], "guider": ["839", 0], "sampler": ["837", 0], "sigmas": ["836", 0], "latent_image": ["842", 0]}, "class_type": "SamplerCustomAdvanced", "_meta": {"title": "SamplerCustomAdvanced"}}, 
+    "841": {"inputs": {"samples": ["840", 0], "vae": ["849", 0]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}}, 
+    "847": {"inputs": {"max_shift": 1.15, "base_shift": 0.5, "width": 832, "height": 1216, "model": ["854", 0]}, "class_type": "ModelSamplingFlux", "_meta": {"title": "ModelSamplingFlux"}}, 
+    "848": {"inputs": {"unet_name": "redcraftCADSUpdatedJan18_revealULTRAV35.safetensors", "weight_dtype": "fp8_e4m3fn_fast"}, "class_type": "UNETLoader", "_meta": {"title": "Load Diffusion Model"}}, 
+    "854": {"inputs": {"object_to_patch": "diffusion_model", "residual_diff_threshold": 0.12, "start": 0.0, "end": 1.0, "max_consecutive_cache_hits": -1, "model": ["848", 0]}, "class_type": "ApplyFBCacheOnModel", "_meta": {"title": "Apply First Block Cache"}}, 
+    "865": {"inputs": {"String": "charcoal drawing, dynamic reference pose of a young woman, lingerie, nativ-american indianer, \n\nshadow play, low key lighting, back lighting, natural lighting, "}, "class_type": "String", "_meta": {"title": "String"}}
+        }"#;
+
+        let mut chunks = HashMap::new();
+        chunks.insert("prompt".to_string(), prompt.to_string());
+        
+        let meta = extract_comfyui_metadata(&chunks);
+        
+        assert_eq!(meta.model, "redcraftCADSUpdatedJan18_revealULTRAV35");
+        assert_eq!(meta.steps, 20);
+        assert_eq!(meta.sampler, "euler (simple)"); // Scheduler is linked!
+        assert_eq!(meta.positive_prompt, "charcoal drawing, dynamic reference pose of a young woman, lingerie, nativ-american indianer, \n\nshadow play, low key lighting, back lighting, natural lighting, ");
+    }
 }
+
