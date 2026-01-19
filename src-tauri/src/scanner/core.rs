@@ -217,6 +217,23 @@ pub fn scan_image_internal(
         found_metadata = true;
     }
 
+    // 4. XMP Metadata (Subject: Favorite) - Common in older InvokeAI / other tools
+    if !parsed_metadata.is_favorite {
+        if let Some(xmp) = chunks.get("XML:com.adobe.xmp") {
+            // Optimization: First check if "favorite" exists at all to avoid Regex overhead
+            if xmp.contains("favorite") {
+                // Pattern matches <rdf:li>favorite</rdf:li> with optional whitespace handling
+                // This covers standard XMP Bag/Seq array items
+                if let Ok(re) = regex::Regex::new(r"<\s*rdf:li\s*>\s*favorite\s*<\s*/\s*rdf:li\s*>") {
+                    if re.is_match(xmp) {
+                        parsed_metadata.is_favorite = true;
+                        found_metadata = true;
+                    }
+                }
+            }
+        }
+    }
+
     // Check for Legacy Favorite tag in generic chunks (Subject, Keywords, Description)
     // Common in XMP/IPTC or standard PNG chunks used by older managers
     if !parsed_metadata.is_favorite {
@@ -408,5 +425,61 @@ mod tests {
         let metadata = result.metadata.expect("Metadata should exist");
         assert_eq!(metadata.steps, 20);
         assert_eq!(metadata.model, "test-model");
+    }
+
+    #[test]
+    fn test_scan_image_internal_xmp_favorite() {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
+        
+        // IHDR
+        let mut ihdr_data = Vec::new();
+        ihdr_data.extend_from_slice(b"IHDR");
+        ihdr_data.extend_from_slice(&1u32.to_be_bytes());
+        ihdr_data.extend_from_slice(&1u32.to_be_bytes());
+        ihdr_data.extend_from_slice(&[1, 0, 0, 0, 0]);
+        
+        png.extend_from_slice(&13u32.to_be_bytes());
+        let crc = crc32(&ihdr_data);
+        png.extend_from_slice(&ihdr_data);
+        png.extend_from_slice(&crc.to_be_bytes());
+
+        // iTXt chunk: XML:com.adobe.xmp
+        let keyword = b"XML:com.adobe.xmp";
+        let xmp_content = b"<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description rdf:about=''><dc:subject><rdf:Bag><rdf:li>favorite</rdf:li></rdf:Bag></dc:subject></rdf:Description></rdf:RDF></x:xmpmeta>";
+        
+        let mut text_data = Vec::new();
+        text_data.extend_from_slice(keyword);
+        text_data.push(0); // null sep
+        text_data.push(0); // compression flag
+        text_data.push(0); // compression method
+        text_data.push(0); // lang tag empty
+        text_data.push(0); // trans msg empty
+        text_data.extend_from_slice(xmp_content);
+        
+        png.extend_from_slice(&(text_data.len() as u32).to_be_bytes());
+        png.extend_from_slice(b"iTXt");
+        png.extend_from_slice(&text_data);
+        let text_crc = crc32(&text_data);
+        png.extend_from_slice(&text_crc.to_be_bytes());
+
+        // IDAT
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IDAT");
+        png.extend_from_slice(&crc32(b"IDAT").to_be_bytes());
+
+        // IEND
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&0xAE426082u32.to_be_bytes());
+
+        let test_path = "test_xmp_fav.png";
+        let mut f = File::create(test_path).unwrap();
+        f.write_all(&png).unwrap();
+
+        let result = scan_image_internal(test_path.to_string(), None, true, true, None).unwrap();
+        let _ = std::fs::remove_file(test_path);
+
+        let metadata = result.metadata.expect("Metadata should exist");
+        assert!(metadata.is_favorite);
     }
 }
