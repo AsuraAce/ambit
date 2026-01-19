@@ -38,3 +38,25 @@ export const repairAssetUrl = (url: string): string => {
     }
     return url;
 };
+
+/**
+ * Converts a Tauri asset URL back to a local file path.
+ * Strips protocol prefixes and decodes URI components.
+ */
+export const urlToPath = (url: string | undefined): string => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+    // Strip common Tauri asset prefixes
+    // Supports: https://asset.localhost/, http://asset.localhost/, tauri://localhost/
+    let path = url.replace(/^(https?:\/\/(?:asset|tauri)\.localhost(?::\d+)?\/|https?:\/\/localhost(?::\d+)?\/_up_\/)/i, '');
+
+    // Decode URI components (fixes %3A -> :, %20 -> space etc)
+    try {
+        path = decodeURIComponent(path);
+    } catch (e) {
+        // Fallback if malformed
+    }
+
+    return normalizePath(path);
+};

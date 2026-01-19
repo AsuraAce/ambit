@@ -3,7 +3,7 @@ import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
-import { normalizePath } from '../../utils/pathUtils';
+import { normalizePath, urlToPath } from '../../utils/pathUtils';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
@@ -16,7 +16,7 @@ export const insertImage = async (image: AIImage) => {
             fileSize: image.fileSize || 0,
             timestamp: image.timestamp,
             metadataJson: JSON.stringify(image.metadata),
-            thumbnailPath: normalizePath((image.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '')),
+            thumbnailPath: urlToPath(image.thumbnailUrl),
             isFavorite: !!image.isFavorite,
             isPinned: !!image.isPinned,
             isDeleted: !!image.isDeleted,
@@ -54,7 +54,7 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             fileSize: img.fileSize || 0,
             timestamp: img.timestamp,
             metadataJson: JSON.stringify(img.metadata),
-            thumbnailPath: normalizePath((img.thumbnailUrl || '').replace(/^https?:\/\/tauri\.localhost\/_up_\//i, '')),
+            thumbnailPath: urlToPath(img.thumbnailUrl),
             isFavorite: !!img.isFavorite,
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
