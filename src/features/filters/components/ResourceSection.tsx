@@ -212,6 +212,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 key={`${item.name}-${item.hash || 'no-hash'}`}
                 onClick={() => toggleItem(item.name)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
+                title={item.name}
                 className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
                     ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
                     : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
@@ -233,9 +234,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     )}
                 </div>
 
-                {/* Overlay Info */}
+                {/* Overlay Info - Single Line Truncated */}
                 <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-                    <p className="text-[10px] font-medium text-white line-clamp-2 leading-tight drop-shadow-sm">
+                    <p className="text-[10px] font-medium text-white truncate leading-tight drop-shadow-sm">
                         {item.name}
                     </p>
                 </div>
@@ -244,6 +245,15 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 {isSelected && (
                     <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center shadow-sm animate-in zoom-in-50 duration-200">
                         <Check className="w-2.5 h-2.5 text-white" />
+                    </div>
+                )}
+
+                {/* Count Badge - Hover Only for ALL items, always Top Right */}
+                {!isSelected && (
+                    <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90 shadow-sm">
+                            {formatCountCompact(item.count)}
+                        </div>
                     </div>
                 )}
 
