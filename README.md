@@ -1,20 +1,67 @@
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+
+# Ambit
+### High-Performance Local AI Image Manager
 </div>
 
-# Run and deploy your AI Studio app
+Ambit is a next-generation tool designed to catalog, search, and manage massive libraries of AI-generated content (Stable Diffusion, Midjourney, etc.) with a strictly **Local-First** philosophy. Built on the **Tauri v2** framework, it combines the speed of native applications with the flexibility of modern web technologies.
 
-This contains everything you need to run your app locally.
+## 🌟 Key Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1wDvbBTI0Ba2BTeoM571l5_U8y6YH9FMd
+*   **⚡ Hybrid Architecture**: Combines **SQLite** for high-performance querying of 100k+ images with **JSON** for portable configuration.
+*   **🔒 Local-First**: Your data stays on your machine. No cloud dependencies for core functionality.
+*   **🧠 Intelligent Analysis**: Leverage local AI to analyze, tag, and organize your collection efficiently.
+*   **🚀 Modern Stack**: Built with React 19, TypeScript, and Rust for a type-safe, robust experience.
 
-## Run Locally
+## 🛠️ Technology Stack
 
-**Prerequisites:**  Node.js
+*   **Frontend**: React 19, TypeScript, Tailwind CSS, Zustand, React Query
+*   **Backend**: Rust (Tauri v2), SQLite (`rusqlite`)
+*   **Performance**: Virtualized lists, minimized IPC overhead, dedicated search indexing.
 
+## 🚀 Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+
+*   [Node.js](https://nodejs.org/) (v20 or newer recommended)
+*   [Rust](https://www.rust-lang.org/tools/install) (latest stable)
+*   [VS Code](https://code.visualstudio.com/) (recommended) with:
+    *   Tauri Extension
+    *   ESLint / Prettier
+
+### Installation
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/your-username/ambit.git
+    cd ambit
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+
+3.  **Setup Environment**:
+    Rename `.env.example` to `.env` (if applicable) and configure any necessary API keys (e.g., for optional cloud features).
+
+4.  **Run the Application**:
+    ```bash
+    npm run app:dev
+    ```
+    This command will start the Vite dev server and launch the Tauri application window.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow our [Contribution Guidelines](CONTRIBUTING.md) (if available) and the standard GitHub workflow:
+
+1.  Fork the project.
+2.  Create your feature branch (`git checkout -b feat/amazing-feature`).
+3.  Commit your changes (`git commit -m 'feat: add some amazing feature'`).
+4.  Push to the branch (`git push origin feat/amazing-feature`).
+5.  Open a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
