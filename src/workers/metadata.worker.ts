@@ -409,9 +409,27 @@ export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool):
                         if (!metadata.embeddings) metadata.embeddings = [];
                         const parts = v.split(',');
                         for (const part of parts) {
-                            const [name] = part.split(':');
-                            const embName = name.trim().replace(/^"|"$/g, '');
-                            if (embName && !metadata.embeddings.includes(embName)) {
+                            const [name, hash] = part.split(':');
+                            const embName = name?.trim().replace(/^"|"$/g, '') || '';
+                            const hashVal = hash?.trim() || '';
+
+                            // Validate: Skip obvious false positives from malformed TI hashes
+                            // 1. Real embedding names don't contain prompt weighting syntax
+                            // 2. Real embedding names are reasonably short
+                            // 3. The hash should be alphanumeric (hex hash)
+                            const isValidName = embName
+                                && !embName.includes('(')
+                                && !embName.includes(')')
+                                && !embName.endsWith('+')
+                                && !embName.endsWith('-')
+                                && !embName.includes('  ')
+                                && embName.length < 100;
+
+                            const isValidHash = hashVal.length >= 8
+                                && hashVal.length <= 128
+                                && /^[a-zA-Z0-9]+$/.test(hashVal);
+
+                            if (isValidName && isValidHash && !metadata.embeddings.includes(embName)) {
                                 metadata.embeddings.push(embName);
                             }
                         }

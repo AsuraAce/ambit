@@ -185,9 +185,28 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     "TI hashes" => {
                         // Format: "name: hash, name: hash"
                         for part in val.split(',') {
-                            if let Some((name, _)) = part.split_once(':') {
+                            if let Some((name, hash)) = part.split_once(':') {
                                 let emb_name = name.trim().trim_matches('"');
-                                if !emb_name.is_empty() && !meta.embeddings.contains(&emb_name.to_string()) {
+                                let hash_val = hash.trim();
+
+                                // Validate: Skip obvious false positives from malformed TI hashes
+                                // 1. Real embedding names don't contain prompt weighting syntax
+                                // 2. Real embedding names are reasonably short
+                                // 3. The hash should be alphanumeric (hex hash)
+                                let is_valid_name = !emb_name.is_empty()
+                                    && !emb_name.contains('(')
+                                    && !emb_name.contains(')')
+                                    && !emb_name.ends_with('+')
+                                    && !emb_name.ends_with('-')
+                                    && !emb_name.contains("  ")  // double spaces
+                                    && emb_name.len() < 100;     // reasonable length
+
+                                // Hash should be alphanumeric and reasonable length (8-64 chars)
+                                let is_valid_hash = hash_val.len() >= 8
+                                    && hash_val.len() <= 128
+                                    && hash_val.chars().all(|c| c.is_ascii_alphanumeric());
+
+                                if is_valid_name && is_valid_hash && !meta.embeddings.contains(&emb_name.to_string()) {
                                     meta.embeddings.push(emb_name.to_string());
                                 }
                             }
@@ -334,11 +353,24 @@ mod tests {
 
     #[test]
     fn test_extract_embeddings_and_hypernets() {
-        let raw = "Prompt\nSteps: 20, Hypernet: cool_style(0.8), TI hashes: \"emb1: abc, emb2: def\"";
+        let raw = "Prompt\nSteps: 20, Hypernet: cool_style(0.8), TI hashes: \"emb1: abc12345, emb2: def67890\"";
         let meta = extract_a1111_metadata(raw, None);
         
         assert!(meta.hypernetworks.contains(&"cool_style".to_string()));
         assert!(meta.embeddings.contains(&"emb1".to_string()));
         assert!(meta.embeddings.contains(&"emb2".to_string()));
+    }
+
+    #[test]
+    fn test_ti_hashes_false_positives() {
+        // Malformed TI hashes containing prompt weighting syntax
+        let raw = r#"Prompt
+Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNegative: abc12345def""#;
+        let meta = extract_a1111_metadata(raw, None);
+        
+        // Should only contain the valid embedding, not the prompt weighting
+        assert!(!meta.embeddings.iter().any(|e| e.contains("oil on canvas")));
+        assert!(!meta.embeddings.iter().any(|e| e.contains("+++")));
+        assert!(meta.embeddings.contains(&"EasyNegative".to_string()));
     }
 }
