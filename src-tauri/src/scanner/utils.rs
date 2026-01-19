@@ -61,8 +61,8 @@ pub fn show_in_folder_impl(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let windows_path = path.replace("/", "\\");
-        std::process::Command::new("explorer")
-            .arg(format!("/select,{}", windows_path))
+        std::process::Command::new("cmd")
+            .args(["/c", "explorer", "/select,", &windows_path])
             .spawn()
             .map_err(|e| e.to_string())?;
     }

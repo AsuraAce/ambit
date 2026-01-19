@@ -128,7 +128,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           />
         </div>
         <ActionButton
-          icon={<Trash2 className="w-4 h-4 text-red-400/70" />}
+          icon={<Trash2 className="w-4 h-4 text-gray-400" />}
           onClick={onDelete}
           title="Delete Image"
           className="hover:!bg-red-500/20 hover:!text-red-400"
@@ -136,23 +136,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       </div>
 
       {/* Main Menu Groups */}
-      <SubMenu label="Copy Data" icon={<Share2 className="w-4 h-4 text-blue-400" />} side={side}>
+      <SubMenu label="Copy Data" icon={<Share2 className="w-4 h-4 text-gray-400" />} side={side}>
         <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Prompt" onClick={onCopyPrompt} />
-        {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-amethyst-400" />} label="Copy Seed" onClick={onCopySeed} />}
-        {onCopyGenerationInfo && <MenuItem icon={<Copy className="w-4 h-4 text-sage-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />}
+        {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Seed" onClick={onCopySeed} />}
+        {onCopyGenerationInfo && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />}
         <div className="h-px bg-white/5 my-1" />
         {onCopyImage && <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Copy Image" onClick={onCopyImage} />}
-        {onCopyFilePath && <MenuItem icon={<Copy className="w-4 h-4 text-zinc-500" />} label="Copy File Path" onClick={onCopyFilePath} />}
+        {onCopyFilePath && <MenuItem icon={<Copy className="w-4 h-4 text-gray-500" />} label="Copy File Path" onClick={onCopyFilePath} />}
       </SubMenu>
 
-      <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-amber-400" />} side={side}>
+      <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
         <MenuItem icon={<FolderPlus className="w-4 h-4 text-gray-400" />} label="Add to Collection..." onClick={onAddToCollection} />
         {onMoveToCollection && (
-          <MenuItem icon={<Layout className="w-4 h-4 text-sage-400" />} label="Move to Collection..." onClick={onMoveToCollection} />
+          <MenuItem icon={<Layout className="w-4 h-4 text-gray-400" />} label="Move to Collection..." onClick={onMoveToCollection} />
         )}
         {activeCollectionName && onRemoveFromCollection && (
           <MenuItem
-            icon={<FolderMinus className="w-4 h-4 text-red-500" />}
+            icon={<FolderMinus className="w-4 h-4 text-gray-400" />}
             label="Remove from Collection"
             onClick={onRemoveFromCollection}
             className="hover:!bg-red-500/10 hover:!text-red-200"
@@ -161,7 +161,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         <div className="h-px bg-white/5 my-1" />
         {/* Collection Thumbnail */}
         {onSetThumbnail && (
-          <MenuItem icon={<ImageIcon className="w-4 h-4 text-sage-400" />} label="Set as Collection Thumb" onClick={onSetThumbnail} />
+          <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Set as Collection Thumb" onClick={onSetThumbnail} />
         )}
         {onUnsetThumbnail && (
           <MenuItem icon={<ImageOff className="w-4 h-4 text-gray-500" />} label="Reset Collection Thumb" onClick={onUnsetThumbnail} />
@@ -175,7 +175,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             {modelsForThumbnail.map((m, i) => (
               <MenuItem
                 key={i}
-                icon={<ImageIcon className="w-3 h-3 text-blue-400" />}
+                icon={<ImageIcon className="w-3 h-3 text-gray-400" />}
                 label={m.name}
                 onClick={() => onSetModelThumbnail(m)}
               />
@@ -184,12 +184,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         )}
       </SubMenu>
 
-      <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-amethyst-400" />} side={side}>
+      <SubMenu label="Privacy & AI" icon={<Shield className="w-4 h-4 text-gray-400" />} side={side}>
         {onToggleMask && (
           <>
             {userMasked !== undefined && (
               <MenuItem
-                icon={<MinusCircle className="w-4 h-4 text-amethyst-400" />}
+                icon={<MinusCircle className="w-4 h-4 text-gray-400" />}
                 label="Reset Mask to Auto"
                 onClick={() => onToggleMask(null)}
               />
@@ -198,7 +198,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               <MenuItem icon={<EyeOff className="w-4 h-4 text-gray-400" />} label="Mask Content" onClick={() => onToggleMask(true)} />
             )}
             {isMasked && (
-              <MenuItem icon={<Eye className="w-4 h-4 text-sage-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
+              <MenuItem icon={<Eye className="w-4 h-4 text-gray-400" />} label="Unmask Content" onClick={() => onToggleMask(false)} />
             )}
           </>
         )}
@@ -206,7 +206,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <>
             <div className="h-px bg-white/5 my-1" />
             <MenuItem
-              icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-blue-400' : 'text-gray-400'}`} />}
+              icon={<ImageOff className={`w-4 h-4 ${isIntermediate ? 'text-gray-400' : 'text-gray-400'}`} />}
               label={isIntermediate ? "Unmark as Intermediate" : "Mark as Intermediate"}
               onClick={onToggleIntermediate}
             />
@@ -216,10 +216,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <>
             <div className="h-px bg-white/5 my-1" />
             <MenuItem
-              icon={<Wand2 className="w-4 h-4 text-amethyst-400" />}
+              icon={<Wand2 className="w-4 h-4 text-gray-400" />}
               label="Recover Metadata (AI)"
               onClick={onRecoverMetadata}
-              className="text-amethyst-200"
+              className="text-gray-400"
             />
           </>
         )}
@@ -230,7 +230,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       {
         onOpenInDefaultApp && (
           <MenuItem
-            icon={<ExternalLink className="w-4 h-4 text-sage-400" />}
+            icon={<ExternalLink className="w-4 h-4 text-gray-400" />}
             label="Open in Default App"
             onClick={onOpenInDefaultApp}
           />
