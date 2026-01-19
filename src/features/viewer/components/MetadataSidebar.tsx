@@ -791,11 +791,13 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
                                                         if (positive) {
                                                             setPromptValue(positive);
-                                                            setIsPromptDirty(true);
+                                                            // Trigger save immediately if pasting
+                                                            onUpdatePrompt && onUpdatePrompt(image.id, positive);
                                                         }
                                                         if (negative) {
                                                             setNegativePromptValue(negative);
-                                                            setIsNegativePromptDirty(true);
+                                                            // Trigger save immediately if pasting
+                                                            onUpdateNegativePrompt && onUpdateNegativePrompt(image.id, negative);
                                                         }
                                                     } catch (e) {
                                                         console.error("Failed to paste metadata", e);
@@ -807,7 +809,6 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                                 <ClipboardList className="w-3 h-3" /> Paste from SD WebUI
                                             </button>
                                         )}
-                                    {(isPromptDirty || isNegativePromptDirty) && <button onClick={savePrompt} className="text-xs flex items-center gap-1 bg-sage-500 text-white px-2 py-1 rounded shadow-md hover:bg-sage-600"><Save className="w-3 h-3" /> Save</button>}
                                 </div>
                             </div>
                             <div className="relative">
