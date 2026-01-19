@@ -266,7 +266,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                     const params: string[] = [];
                     params.push(`Steps: ${md.steps || 0}`);
                     params.push(`Sampler: ${md.sampler || 'Euler a'}`);
-                    params.push(`CFG scale: ${md.cfg || 7}`);
+                    if (md.cfg) params.push(`CFG scale: ${md.cfg}`);
                     params.push(`Seed: ${md.seed || -1}`);
                     params.push(`Size: ${image.width}x${image.height}`);
                     result += `\n${params.join(', ')}`;
@@ -283,7 +283,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
         const params: string[] = [];
         params.push(`Steps: ${md.steps || 0}`);
         params.push(`Sampler: ${md.sampler || 'Euler a'}`);
-        params.push(`CFG scale: ${md.cfg || 7}`);
+        if (md.cfg) params.push(`CFG scale: ${md.cfg}`);
         params.push(`Seed: ${md.seed || -1}`);
         params.push(`Size: ${image.width}x${image.height}`);
 
@@ -602,7 +602,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 
                                                 <ParamItem label="Sampler" value={image.metadata.sampler || 'Unknown'} isModified={isModified('sampler')} />
                                                 <ParamItem label="Steps" value={(image.metadata.steps ?? 0).toString()} isModified={isModified('steps')} />
-                                                <ParamItem label="CFG Scale" value={(image.metadata.cfg ?? 7).toString()} isModified={isModified('cfg')} />
+                                                <ParamItem label="CFG Scale" value={(image.metadata.cfg ?? 0).toString()} isModified={isModified('cfg')} />
                                                 <ParamItem label="Seed" value={(image.metadata.seed ?? 0).toString()} fullWidth isModified={isModified('seed')} />
 
                                                 {/* Advanced Fields */}
