@@ -586,11 +586,13 @@ mod tests {
     #[test]
     fn test_rebuild_facet_cache() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        println!("DEBUG: DB Opened");
 
         let migrations = init_db();
         for m in migrations {
             conn.execute_batch(&m.sql).unwrap();
         }
+        println!("DEBUG: Migrations applied");
 
         let metadata = r#"{
             "model": "SDXL Base",
@@ -605,6 +607,7 @@ mod tests {
             "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 100, 0, 'thumb1.png', 'SDXL Base', '12345')",
             params!["img1", "test.png", metadata],
         ).unwrap();
+        println!("DEBUG: Image 1 inserted");
 
         let metadata2 = r#"{
             "model": "SDXL Base",
@@ -620,6 +623,13 @@ mod tests {
             "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png', 'SDXL Base', '12345')",
             params!["img2", "test2.png", metadata2],
         ).unwrap();
+
+        // Populate Junction Tables (Simulating Scanner behavior)
+        conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'DetailedEyes:1.0'), ('img1', 'PixelArt')", []).unwrap();
+        conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img2', 'DetailedEyes:1.0')", []).unwrap();
+        conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img1', 'EasyNegative')", []).unwrap();
+        conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img2', 'EasyNegative:v2')", []).unwrap();
+        conn.execute("INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES ('img2', 'MyHyper:1.0')", []).unwrap();
 
         harvest_models(&conn).unwrap();
         
@@ -650,7 +660,8 @@ mod tests {
         // Set manual thumbnail for SDXL Base
         conn.execute("UPDATE models SET thumbnail_path = 'manual_override.png' WHERE hash = '12345'", []).unwrap();
         
-        // Rebuild Only Checkpoints
+        // Rebuild Only Checkpoints - MUST CLEAR CACHE FIRST or handle upsert
+        conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoint'", []).unwrap();
         build_checkpoint_facets(&conn).unwrap();
         
         let cp_thumb_manual: String = conn.query_row(
