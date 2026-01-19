@@ -1,6 +1,7 @@
 use super::ImageMetadata;
 use serde_json::Value;
 
+
 /// Extracts metadata from ComfyUI "prompt" or "workflow" chunks.
 ///
 /// ComfyUI images typically contain two JSON chunks:
@@ -41,10 +42,45 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     if nodes_map.is_empty() {
         if let Some(workflow_json) = chunks.get("workflow") {
             if let Ok(json) = serde_json::from_str::<Value>(workflow_json) {
+                // 1. Build a map of Link ID -> Source Node ID from the global "links" array
+                let mut link_source_map = std::collections::HashMap::new();
+                if let Some(links) = json.get("links").and_then(|v| v.as_array()) {
+                    for link in links {
+                        if let Some(arr) = link.as_array() {
+                            // Format: [id, source_id, source_slot, target_id, target_slot, type]
+                            if arr.len() >= 2 {
+                                if let (Some(link_id), Some(source_id)) = (arr[0].as_i64(), arr[1].as_i64()) {
+                                    link_source_map.insert(link_id, source_id);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if let Some(nodes_arr) = json.get("nodes").and_then(|v| v.as_array()) {
                     for node in nodes_arr {
                         if let Some(id) = node.get("id").and_then(|v| v.as_u64()).or_else(|| node.get("id").and_then(|v| v.as_i64()).map(|v| v as u64)) {
-                            nodes_map.insert(id.to_string(), node.clone());
+                            let mut node_obj = node.clone();
+                            
+                            // 2. Pre-resolve inputs: Look for links in "inputs" array and resolve to source node IDs
+                            if let Some(inputs) = node.get("inputs").and_then(|v| v.as_array()) {
+                                if let Some(obj) = node_obj.as_object_mut() {
+                                    let mut resolved = serde_json::Map::new();
+                                    for input in inputs {
+                                        if let Some(name) = input.get("name").and_then(|v| v.as_str()) {
+                                            if let Some(link_id) = input.get("link").and_then(|v| v.as_i64()) {
+                                                if let Some(source_node_id) = link_source_map.get(&link_id) {
+                                                    // Store as string to match standard API format behavior
+                                                    resolved.insert(name.to_string(), Value::String(source_node_id.to_string()));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    obj.insert("_resolved_inputs".to_string(), Value::Object(resolved));
+                                }
+                            }
+                            
+                            nodes_map.insert(id.to_string(), node_obj);
                         }
                     }
                 }
@@ -55,7 +91,7 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     if nodes_map.is_empty() {
         return meta;
     }
-
+    
     // 1. Find the "active" KSampler node
     let mut ksampler_id = "".to_string();
     
@@ -159,7 +195,7 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
                                 meta.steps = steps as u32;
                             }
                             // Sometimes scheduler is here
-                             if let Some(scheduler) = trace_node_param(&nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
+                             if let Some(_scheduler) = trace_node_param(&nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
                                  // We'll append this to sampler later if found
                                  // For now store or concat?
                                  // Let's store temporarily or check if sampler already has it.
@@ -197,8 +233,8 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
                             sampler_name.clone()
                         };
                         
-                        // Overwrite if current is Unknown/empty OR if we found a scheduler and current one likely doesn't have it
-                        if meta.sampler == "Unknown" || meta.sampler.is_empty() || (!scheduler_name.is_empty() && !meta.sampler.contains("(") && meta.sampler != full_name) {
+                        // Overwrite if current is Unknown/empty/_ OR if we found a scheduler and current one likely doesn't have it
+                        if meta.sampler == "Unknown" || meta.sampler.is_empty() || meta.sampler == "_" || (!scheduler_name.is_empty() && !meta.sampler.contains("(") && meta.sampler != full_name) {
                              meta.sampler = full_name;
                         }
                     }
@@ -318,7 +354,7 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     // Workflow format fallback: Extract sampler/scheduler from specialized nodes
     // In workflow format, KSamplerSelect has sampler in widgets_values[0]
     // BasicScheduler has scheduler in widgets_values[0], steps in widgets_values[1]
-    if meta.sampler == "Unknown" || meta.sampler.is_empty() {
+    if meta.sampler == "Unknown" || meta.sampler.is_empty() || meta.sampler == "_" {
         let mut sampler_name = String::new();
         let mut scheduler_name = String::new();
         
@@ -407,6 +443,29 @@ pub fn extract_comfyui_metadata(chunks: &std::collections::HashMap<String, Strin
     meta
 }
 
+fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
+    // 0. Check pre-resolved check inputs
+    if let Some(id) = node.get("_resolved_inputs").and_then(|m| m.get(key)).and_then(|v| v.as_str()) {
+        return Some(id.to_string());
+    }
+
+    if let Some(link) = node.get("inputs").and_then(|v| v.get(key)).and_then(|v| v.as_array()) {
+        if !link.is_empty() {
+             // Handle both string IDs ("123") and numeric IDs (123)
+            if let Some(s) = link[0].as_str() {
+                return Some(s.to_string());
+            }
+            if let Some(n) = link[0].as_i64() {
+                return Some(n.to_string());
+            }
+            if let Some(n) = link[0].as_u64() {
+                return Some(n.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn get_node_type(node: &Value) -> &str {
     node.get("class_type")
         .or_else(|| node.get("type"))
@@ -478,23 +537,7 @@ fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     None
 }
 
-fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
-    if let Some(link) = node.get("inputs").and_then(|v| v.get(key)).and_then(|v| v.as_array()) {
-        if !link.is_empty() {
-            // Handle both string IDs ("123") and numeric IDs (123)
-            if let Some(s) = link[0].as_str() {
-                return Some(s.to_string());
-            }
-            if let Some(n) = link[0].as_i64() {
-                return Some(n.to_string());
-            }
-            if let Some(n) = link[0].as_u64() {
-                return Some(n.to_string());
-            }
-        }
-    }
-    None
-}
+
 
 // -----------------------------------------------------------------------------
 // Helpers (updated for nodes_map usage)
