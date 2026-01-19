@@ -199,25 +199,32 @@ export const syncImages = async (
 
                     if (existing) {
                         // SMART SYNC: Check if user has modified from original state
-                        const userModifiedFavorite = existing.originalState?.isFavorite !== undefined &&
-                            existing.isFavorite !== existing.originalState.isFavorite;
-                        const userModifiedPinned = existing.originalState?.isPinned !== undefined &&
-                            existing.isPinned !== existing.originalState.isPinned;
-
-                        if (userModifiedFavorite) {
-                            // User explicitly changed it - preserve their choice
+                        // CRITICAL: For legacy images without originalState, preserve Ambit's current values
+                        // (we can't know if user modified them, so assume they did)
+                        if (!existing.originalState) {
+                            // Legacy image - preserve current Ambit values
                             isFavorite = existing.isFavorite;
-                        } else {
-                            // User hasn't touched it - apply InvokeAI's current value
-                            const mode = options.starredAs;
-                            if (isStarredInInvoke && (mode === 'favorite' || mode === 'both')) isFavorite = true;
-                        }
-
-                        if (userModifiedPinned) {
                             isPinned = existing.isPinned || false;
                         } else {
-                            const mode = options.starredAs;
-                            if (isStarredInInvoke && (mode === 'pin' || mode === 'both')) isPinned = true;
+                            // Has originalState - can check for modifications
+                            const userModifiedFavorite = existing.isFavorite !== existing.originalState.isFavorite;
+                            const userModifiedPinned = (existing.isPinned || false) !== (existing.originalState.isPinned || false);
+
+                            if (userModifiedFavorite) {
+                                // User explicitly changed it - preserve their choice
+                                isFavorite = existing.isFavorite;
+                            } else {
+                                // User hasn't touched it - apply InvokeAI's current value
+                                const mode = options.starredAs;
+                                if (isStarredInInvoke && (mode === 'favorite' || mode === 'both')) isFavorite = true;
+                            }
+
+                            if (userModifiedPinned) {
+                                isPinned = existing.isPinned || false;
+                            } else {
+                                const mode = options.starredAs;
+                                if (isStarredInInvoke && (mode === 'pin' || mode === 'both')) isPinned = true;
+                            }
                         }
                     } else {
                         // New image - apply InvokeAI's starred value directly
@@ -238,17 +245,22 @@ export const syncImages = async (
 
                 if (existing) {
                     // SMART SYNC: Check if user has modified board from original state
-                    const userModifiedBoard = existing.originalState?.boardId !== undefined &&
-                        existing.boardId !== existing.originalState.boardId;
-
-                    if (userModifiedBoard) {
-                        // User explicitly changed it - preserve their choice
+                    // CRITICAL: For legacy images without originalState, preserve Ambit's current board
+                    if (!existing.originalState) {
+                        // Legacy image - preserve current Ambit board
                         boardId = existing.boardId;
-                    } else if (options.syncBoards) {
-                        // User hasn't touched it - apply InvokeAI's current value
-                        boardId = invokeBoard;
                     } else {
-                        boardId = existing.boardId;
+                        const userModifiedBoard = existing.boardId !== existing.originalState.boardId;
+
+                        if (userModifiedBoard) {
+                            // User explicitly changed it - preserve their choice
+                            boardId = existing.boardId;
+                        } else if (options.syncBoards) {
+                            // User hasn't touched it - apply InvokeAI's current value
+                            boardId = invokeBoard;
+                        } else {
+                            boardId = existing.boardId;
+                        }
                     }
                 } else {
                     // New image
