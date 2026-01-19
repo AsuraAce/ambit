@@ -12,7 +12,7 @@
     "app:build": "tauri build",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:rust": "cross-env SKIP_TAURI_BUILD=1 cargo test --lib",
+    "test:rust": "cd src-tauri && cross-env SKIP_TAURI_BUILD=1 cargo test --lib",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {

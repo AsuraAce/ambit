@@ -602,7 +602,7 @@ mod tests {
 
         // Image 1: Old, Unpinned
         conn.execute(
-            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path) VALUES (?1, ?2, ?3, 100, 0, 'thumb1.png')",
+            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 100, 0, 'thumb1.png', 'SDXL Base', '12345')",
             params!["img1", "test.png", metadata],
         ).unwrap();
 
@@ -617,7 +617,7 @@ mod tests {
 
          // Image 2: New, Pinned (Should be preferred thumbnail for SDXL and DetailedEyes)
          conn.execute(
-            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png')",
+            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png', 'SDXL Base', '12345')",
             params!["img2", "test2.png", metadata2],
         ).unwrap();
 
