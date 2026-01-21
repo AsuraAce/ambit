@@ -1,0 +1,177 @@
+    Checking app v0.1.0 (D:\AI\WebDev\project-ambit-alpha\src-tauri)
+warning: unused import: `models::ScanResult as PublicScanResult`
+  --> src\scanner\mod.rs:12:9
+   |
+12 | pub use models::ScanResult as PublicScanResult; 
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `watcher::WatcherState`
+ --> src\lib.rs:6:5
+  |
+6 | use watcher::WatcherState;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `metadata::models::ModelResolutionState`
+ --> src\lib.rs:7:5
+  |
+7 | use metadata::models::ModelResolutionState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\db\backup.rs:151:24
+    |
+151 |              if let Ok(mut updated_backups) = list_backups_internal(&backup_dir) {
+    |                        ----^^^^^^^^^^^^^^^
+    |                        |
+    |                        help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:136:23
+    |
+136 |     for (id, node) in &nodes_map {
+    |                       ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+136 -     for (id, node) in &nodes_map {
+136 +     for (id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:148:27
+    |
+148 |         for (id, node) in &nodes_map {
+    |                           ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+148 -         for (id, node) in &nodes_map {
+148 +         for (id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:206:27
+    |
+206 |         for (id, node) in &nodes_map {
+    |                           ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+206 -         for (id, node) in &nodes_map {
+206 +         for (id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:308:24
+    |
+308 |     for (_id, node) in &nodes_map {
+    |                        ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+308 -     for (_id, node) in &nodes_map {
+308 +     for (_id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:353:28
+    |
+353 |         for (_id, node) in &nodes_map {
+    |                            ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+353 -         for (_id, node) in &nodes_map {
+353 +         for (_id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:366:28
+    |
+366 |         for (_id, node) in &nodes_map {
+    |                            ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+366 -         for (_id, node) in &nodes_map {
+366 +         for (_id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:398:28
+    |
+398 |         for (_id, node) in &nodes_map {
+    |                            ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+398 -         for (_id, node) in &nodes_map {
+398 +         for (_id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:448:27
+    |
+448 |         for (id, node) in &nodes_map {
+    |                           ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+448 -         for (id, node) in &nodes_map {
+448 +         for (id, node) in nodes_map {
+    |
+
+error[E0277]: `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+   --> src\metadata\comfyui.rs:466:27
+    |
+466 |         for (id, node) in &nodes_map {
+    |                           ^^^^^^^^^^ `&&HashMap<std::string::String, serde_json::Value>` is not an iterator
+    |
+    = help: the trait `Iterator` is not implemented for `&&HashMap<std::string::String, serde_json::Value>`
+    = note: required for `&&HashMap<std::string::String, serde_json::Value>` to implement `IntoIterator`
+help: consider removing the leading `&`-reference
+    |
+466 -         for (id, node) in &nodes_map {
+466 +         for (id, node) in nodes_map {
+    |
+
+warning: unused import: `tauri::Manager`
+ --> src\db\backup.rs:2:5
+  |
+2 | use tauri::Manager;
+  |     ^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `app` (lib) generated 3 warnings (1 duplicate)
+error: could not compile `app` (lib) due to 9 previous errors; 3 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: variable does not need to be mutable
+   --> src\db\facets.rs:588:13
+    |
+588 |         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: `app` (lib test) generated 6 warnings (2 duplicates)
+error: could not compile `app` (lib test) due to 9 previous errors; 6 warnings emitted

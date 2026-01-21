@@ -199,12 +199,6 @@ mod tests {
         assert_eq!(detect_generation_type(&PathBuf::from("D:\\SDNext\\outputs\\txt2img\\image.png")), "txt2img");
         assert_eq!(detect_generation_type(&PathBuf::from("/path/to/random/image.png")), "unknown");
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
     #[test]
     fn test_merge_metadata_override() {
         let mut base = ImageMetadata::default();

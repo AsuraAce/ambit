@@ -1,0 +1,108 @@
+warning: unused import: `models::ScanResult as PublicScanResult`
+  --> src\scanner\mod.rs:12:9
+   |
+12 | ...se models::ScanResult as PublicScanResult; 
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src\db\backup.rs:151:24
+    |
+151 | ...Ok(mut updated_backups) =...
+    |       ----^^^^^^^^^^^^^^^
+    |       |
+    |       help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tauri::Manager`
+ --> src\db\backup.rs:2:5
+  |
+2 | use tauri::Manager;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused variable: `id`
+   --> src\metadata\comfyui.rs:169:14
+    |
+169 | ...  for (id, node) in &n...
+    |           ^^ help: if this is intentional, prefix it with an underscore: `_id`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `get_input_node_id` is never used
+   --> src\metadata\comfyui.rs:817:4
+    |
+817 | fn get_input_node_id(node...
+    |    ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `get_node_by_id` is never used
+   --> src\metadata\comfyui.rs:821:4
+    |
+821 | fn get_node_by_id<'a>(nod...
+    |    ^^^^^^^^^^^^^^
+
+   Compiling app v0.1.0 (D:\AI\WebDev\project-ambit-alpha\src-tauri)
+warning: `app` (lib) generated 6 warnings (run `cargo fix --lib -p app` to apply 2 suggestions)
+error[E0428]: the name `tests` is defined multiple times
+   --> src\metadata\mod.rs:205:1
+    |
+188 | mod tests {
+    | --------- previous definition of the module `tests` here
+...
+205 | mod tests {
+    | ^^^^^^^^^ `tests` redefined here
+    |
+    = note: `tests` must be defined only once in the type namespace of this module
+
+warning: unused import: `models::ScanResult as PublicScanResult`
+  --> src\scanner\mod.rs:12:9
+   |
+12 | pub use models::ScanResult as PublicScanResult; 
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `watcher::WatcherState`
+ --> src\lib.rs:6:5
+  |
+6 | use watcher::WatcherState;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `metadata::models::ModelResolutionState`
+ --> src\lib.rs:7:5
+  |
+7 | use metadata::models::ModelResolutionState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\db\backup.rs:151:24
+    |
+151 |              if let Ok(mut updated_backups) = list_backups_internal(&backup_dir) {
+    |                        ----^^^^^^^^^^^^^^^
+    |                        |
+    |                        help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `id`
+   --> src\metadata\comfyui.rs:169:14
+    |
+169 |         for (id, node) in &nodes_map {
+    |              ^^ help: if this is intentional, prefix it with an underscore: `_id`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src\db\facets.rs:588:13
+    |
+588 |         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0428`.
+warning: `app` (lib test) generated 7 warnings (1 duplicate)
+error: could not compile `app` (lib test) due to 1 previous error; 7 warnings emitted
