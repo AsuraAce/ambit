@@ -15,6 +15,7 @@ import { MaintenanceTabs } from './MaintenanceTabs';
 import { ScanPlaceholder } from './ScanPlaceholder';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
+import { useLibraryContext } from '../../../contexts/LibraryContext';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -60,6 +61,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
     const intermediatesCount = useLibraryStore(s => s.maintenanceCounts.intermediates);
+    const { activeSqlWhere, activeSqlParams } = useLibraryContext();
 
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
@@ -84,6 +86,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         localUnoptimizedImages,
         localDuplicateCandidates,
         localIntermediateImages,
+        unoptimizedTotalCount,
         refreshData,
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
@@ -227,12 +230,36 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleRegenerate = async (ids?: string[]) => {
         if (!onRegenerateThumbnails) return;
 
-        // If specific IDs not passed, assume "Regenerate All" from the current unoptimized list
-        const targets = ids || localUnoptimizedImages.map(i => i.id);
-
-        await onRegenerateThumbnails(targets);
-        if (ids) {
+        if (ids && ids.length > 0) {
+            // Regenerate specific selected images - uses existing callback
+            await onRegenerateThumbnails(ids);
             clearSelection();
+        } else {
+            // Regenerate ALL unoptimized images using paginated background function
+            const { setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController } = useLibraryStore.getState();
+
+            const where = thumbnailsScope === 'filtered' ? activeSqlWhere : '';
+            const params = thumbnailsScope === 'filtered' ? [...activeSqlParams] : [];
+
+            const abortCtrl = new AbortController();
+            setThumbnailAbortController(abortCtrl);
+            setIsRegeneratingThumbnails(true);
+            setThumbnailProgress({ current: 0, total: unoptimizedTotalCount });
+
+            try {
+                const { regenerateAllUnoptimized } = await import('../../../services/thumbnailService');
+                await regenerateAllUnoptimized(
+                    (current, total) => setThumbnailProgress({ current, total }),
+                    abortCtrl.signal,
+                    where,
+                    params,
+                    includeUpgradeable
+                );
+            } finally {
+                setIsRegeneratingThumbnails(false);
+                setThumbnailProgress(null);
+                setThumbnailAbortController(null);
+            }
         }
         await refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable });
     };
@@ -315,6 +342,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         >
                             <ThumbnailsTab
                                 images={localUnoptimizedImages}
+                                totalCount={unoptimizedTotalCount}
                                 selectedIds={selectedIds}
                                 onItemClick={handleItemClickAdapter}
                                 onSelectAll={handleSelectAll}

@@ -7,9 +7,11 @@ import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
 import { MaintenanceHeader } from './MaintenanceHeader';
 import { useToast } from '../../../hooks/useToast';
+import { useLibraryStore } from '../../../stores/libraryStore';
 
 interface ThumbnailsTabProps {
     images: AIImage[];
+    totalCount: number;
     selectedIds: Set<string>;
     onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
     onSelectAll: () => void;
@@ -29,6 +31,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 
 export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     images,
+    totalCount,
     selectedIds,
     onItemClick,
     onSelectAll,
@@ -58,7 +61,8 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         );
     }, [selectedIds, onItemClick, maskedKeywords]);
 
-    const { isRegeneratingThumbnails } = useLibrary();
+    // Read directly from store for faster reactivity (context can lag)
+    const isRegeneratingThumbnails = useLibraryStore(s => s.isRegeneratingThumbnails);
     const { addToast } = useToast();
     const [isCleaningUp, setIsCleaningUp] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -149,7 +153,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 >
                     <RefreshCw className={`w-4 h-4 ${!isRegeneratingThumbnails && 'group-hover:rotate-180'} transition-transform duration-700`} />
                     {isRegeneratingThumbnails ? 'Optimizing Library...' : 'Regenerate All Unoptimized'}
-                    {images.length > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{images.length}</span>}
+                    {totalCount > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalCount.toLocaleString()}</span>}
                 </button>
             )}
 
@@ -173,9 +177,12 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col items-stretch">
             <MaintenanceHeader
                 title="Thumbnail Optimization"
-                description={`Found ${images.length} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that could benefit from thumbnail regeneration.`}
+                description={totalCount > images.length
+                    ? `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that need optimization. Showing first ${images.length}.`
+                    : `Found ${totalCount.toLocaleString()} images ${thumbnailsScope === 'filtered' ? 'in current filter' : ''} that could benefit from thumbnail regeneration.`
+                }
                 icon={<Image className="w-6 h-6" />}
-                count={images.length}
+                count={totalCount}
                 onSelectAll={onSelectAll}
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}

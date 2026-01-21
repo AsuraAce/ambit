@@ -184,9 +184,118 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         params = [];
     }
 
-    query += ' ORDER BY timestamp DESC LIMIT 2000';
+    query += ' ORDER BY timestamp DESC LIMIT 500';
     const rows = await db.select<any[]>(query, params);
     return rows.map(mapRowToImage);
+};
+
+/**
+ * Fast count-only query for unoptimized images.
+ * Used by the scan button to show total without loading all rows.
+ */
+export const getUnoptimizedImagesCount = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<number> => {
+    const db = await getDb();
+
+    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
+
+    if (includeUpgradeable) {
+        unoptimizedCondition = `
+            (
+                ${unoptimizedCondition}
+                OR 
+                (
+                    thumbnail_path IS NOT NULL 
+                    AND thumbnail_path != '' 
+                    AND path != thumbnail_path
+                    AND (
+                        thumbnail_path NOT LIKE '%.webp' OR 
+                        thumbnail_path NOT LIKE '%.thumbnails%'
+                    )
+                )
+            )
+        `;
+    }
+
+    let query = `
+        SELECT COUNT(*) as count FROM images 
+        WHERE ${unoptimizedCondition}
+        AND path NOT LIKE 'blob:%' 
+        AND path NOT LIKE 'data:%'
+        AND is_deleted = 0
+        AND is_intermediate_gen != 1
+    `;
+
+    if (whereClause && whereClause.trim().length > 0) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else {
+            query += ` AND ${cleanedWhere}`;
+        }
+    } else {
+        params = [];
+    }
+
+    const rows = await db.select<{ count: number }[]>(query, params);
+    return rows[0]?.count ?? 0;
+};
+
+/**
+ * Paginated ID-only fetcher for regeneration processing.
+ * Returns just the IDs (file paths) to minimize memory usage.
+ */
+export const getUnoptimizedImageIds = async (
+    offset: number,
+    limit: number,
+    whereClause: string = '',
+    params: any[] = [],
+    includeUpgradeable: boolean = false
+): Promise<string[]> => {
+    const db = await getDb();
+
+    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
+
+    if (includeUpgradeable) {
+        unoptimizedCondition = `
+            (
+                ${unoptimizedCondition}
+                OR 
+                (
+                    thumbnail_path IS NOT NULL 
+                    AND thumbnail_path != '' 
+                    AND path != thumbnail_path
+                    AND (
+                        thumbnail_path NOT LIKE '%.webp' OR 
+                        thumbnail_path NOT LIKE '%.thumbnails%'
+                    )
+                )
+            )
+        `;
+    }
+
+    let query = `
+        SELECT id FROM images 
+        WHERE ${unoptimizedCondition}
+        AND path NOT LIKE 'blob:%' 
+        AND path NOT LIKE 'data:%'
+        AND is_deleted = 0
+        AND is_intermediate_gen != 1
+    `;
+
+    if (whereClause && whereClause.trim().length > 0) {
+        const cleanedWhere = whereClause.trim();
+        if (cleanedWhere.toUpperCase().startsWith('WHERE')) {
+            query += ` AND ${cleanedWhere.substring(5)}`;
+        } else {
+            query += ` AND ${cleanedWhere}`;
+        }
+    } else {
+        params = [];
+    }
+
+    query += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;
+    const rows = await db.select<{ id: string }[]>(query, params);
+    return rows.map(r => r.id);
 };
 
 export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {

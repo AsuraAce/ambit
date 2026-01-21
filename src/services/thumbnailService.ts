@@ -72,7 +72,7 @@ export const regenerateThumbnailsForImages = async (
     const total = candidates.length;
     const updates: AIImage[] = [];
     const dbUpdates: { id: string; thumbnailPath: string }[] = [];
-    const BATCH_SIZE = 20;
+    const BATCH_SIZE = 100;
 
     // Process in batches
     for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -116,6 +116,81 @@ export const regenerateThumbnailsForImages = async (
     }
 
     return updates;
+};
+
+/**
+ * Regenerate thumbnails for ALL unoptimized images in the library.
+ * Uses paginated ID fetching to avoid loading all data into memory.
+ * This is the "Regenerate All" action that processes everything in background.
+ */
+export const regenerateAllUnoptimized = async (
+    onProgress?: (current: number, total: number) => void,
+    signal?: AbortSignal,
+    whereClause: string = '',
+    params: any[] = [],
+    includeUpgradeable: boolean = false
+): Promise<number> => {
+    const thumbDir = await getThumbnailDir();
+    if (!thumbDir) return 0;
+
+    const { getUnoptimizedImagesCount, getUnoptimizedImageIds } = await import('./db/maintenanceRepo');
+    const { updateThumbnailPathsBatch } = await import('./db/imageRepo');
+
+    // Get total count first
+    const total = await getUnoptimizedImagesCount(whereClause, params, includeUpgradeable);
+    if (total === 0) return 0;
+
+    let processed = 0;
+    let generated = 0;
+    const PAGE_SIZE = 500; // Fetch 500 IDs at a time from DB
+    const BATCH_SIZE = 100; // Process 100 at a time for thumbnail generation
+
+    // Process in pages
+    for (let offset = 0; offset < total; offset += PAGE_SIZE) {
+        if (signal?.aborted) {
+            console.log('[Thumb] Regeneration cancelled by user');
+            break;
+        }
+
+        // Fetch next page of IDs
+        const ids = await getUnoptimizedImageIds(offset, PAGE_SIZE, whereClause, params, includeUpgradeable);
+        if (ids.length === 0) break;
+
+        // Process this page in batches
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            if (signal?.aborted) break;
+
+            const batchIds = ids.slice(i, i + BATCH_SIZE);
+            const dbUpdates: { id: string; thumbnailPath: string }[] = [];
+
+            try {
+                const results = await scanImagesBulk(batchIds, thumbDir, false, false);
+                results.forEach((res, idx) => {
+                    if (res.thumbnail) {
+                        dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail });
+                        generated++;
+                    }
+                });
+            } catch (e) {
+                console.error(`[Thumb] Batch failed at offset ${offset + i}`, e);
+            }
+
+            // Persist batch to DB immediately (don't accumulate all in memory)
+            if (dbUpdates.length > 0) {
+                try {
+                    await updateThumbnailPathsBatch(dbUpdates);
+                } catch (e) {
+                    console.error('[Thumb] DB persist failed', e);
+                }
+            }
+
+            processed += batchIds.length;
+            onProgress?.(Math.min(processed, total), total);
+        }
+    }
+
+    console.log(`[Thumb] Regeneration complete: ${generated} thumbnails generated`);
+    return generated;
 };
 
 /**

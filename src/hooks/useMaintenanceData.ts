@@ -18,6 +18,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
     const [localDuplicateCandidates, setLocalDuplicateCandidates] = useState<AIImage[]>([]);
     const [localIntermediateImages, setLocalIntermediateImages] = useState<AIImage[]>([]);
+    const [unoptimizedTotalCount, setUnoptimizedTotalCount] = useState<number>(0);
 
     const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: { scope?: 'global' | 'filtered', includeUpgradeable?: boolean } = {}) => {
         if (showLoader) setIsLoading(true);
@@ -36,7 +37,12 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
             } else if (tab === 'thumbnails') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
-                const data = await db.getUnoptimizedImages(where, params, options.includeUpgradeable);
+                // Fetch count first (fast), then limited preview
+                const [count, data] = await Promise.all([
+                    db.getUnoptimizedImagesCount(where, params, options.includeUpgradeable),
+                    db.getUnoptimizedImages(where, params, options.includeUpgradeable)
+                ]);
+                setUnoptimizedTotalCount(count);
                 setLocalUnoptimizedImages(data);
             } else if (tab === 'duplicates') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
@@ -73,6 +79,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         localUnoptimizedImages,
         localDuplicateCandidates,
         localIntermediateImages,
+        unoptimizedTotalCount,
         refreshData,
         setLocalDeletedImages,
         setLocalUntaggedImages,
