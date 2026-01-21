@@ -184,7 +184,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         params = [];
     }
 
-    query += ' ORDER BY timestamp DESC';
+    query += ' ORDER BY timestamp DESC LIMIT 2000';
     const rows = await db.select<any[]>(query, params);
     return rows.map(mapRowToImage);
 };

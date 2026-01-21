@@ -17,10 +17,14 @@ pub fn walk_upstream<F>(
     nodes: &HashMap<String, Value>,
     start_id: &str,
     mut visitor: F,
+    depth: usize,
 ) -> Option<String>
 where
     F: FnMut(&Value) -> WalkResult,
 {
+    if depth > 100 {
+        return None;
+    }
     let mut current_id = start_id.to_string();
     let mut loop_safety = 0;
 
@@ -56,6 +60,7 @@ pub fn find_sampler_upstream(nodes: &HashMap<String, Value>, start_id: &str) -> 
     
     // VARIATION: Let's just implement specific walker for this one or adjust generic.
     // Adjusting generic is better.
+    // Adjusting generic is better.
     walk_upstream_with_id(nodes, start_id, |id, node| {
         let class_type = get_node_type(node).to_lowercase();
         if class_type.contains("ksampler") {
@@ -76,7 +81,7 @@ pub fn find_sampler_upstream(nodes: &HashMap<String, Value>, start_id: &str) -> 
             return WalkResult::Continue(next_id);
         }
         WalkResult::Stop
-    })
+    }, 0)
 }
 
 // Updated walker with ID
@@ -84,10 +89,14 @@ pub fn walk_upstream_with_id<F>(
     nodes: &HashMap<String, Value>,
     start_id: &str,
     mut visitor: F,
+    depth: usize,
 ) -> Option<String>
 where
     F: FnMut(&str, &Value) -> WalkResult,
 {
+    if depth > 100 {
+        return None;
+    }
     let mut current_id = start_id.to_string();
     let mut loop_safety = 0;
 
@@ -139,7 +148,7 @@ pub fn trace_model_source(nodes: &HashMap<String, Value>, start_id: &str) -> Opt
             return WalkResult::Continue(next_id);
         }
         WalkResult::Stop
-    })
+    }, 0)
 }
 
 pub fn trace_text_source(nodes: &HashMap<String, Value>, start_id: &str) -> Option<String> {
@@ -227,22 +236,23 @@ pub fn trace_text_source(nodes: &HashMap<String, Value>, start_id: &str) -> Opti
             return WalkResult::Continue(next_id);
         }
         WalkResult::Stop
-    })
+    }, 0)
 }
 
 // Helper to trace back a parameter value recursively (e.g. steps linked to an input node)
-pub fn trace_node_param<'a>(nodes: &'a HashMap<String, Value>, node: &'a Value, key: &str) -> Option<&'a Value> {
+pub fn trace_node_param<'a>(nodes: &'a HashMap<String, Value>, node: &'a Value, key: &str, depth: usize) -> Option<&'a Value> {
+    if depth > 50 { return None; }
     
     // 1. Try linked param FIRST (priority to upstream)
     if let Some(link_id) = get_node_input_link(node, key) {
         // Find the upstream node
         if let Some(upstream_node) = nodes.get(&link_id) {
             // Recursively check the same key (or specific logic for Input Parameters nodes)
-            if let Some(val) = trace_node_param(nodes, upstream_node, key) {
+            if let Some(val) = trace_node_param(nodes, upstream_node, key, depth + 1) {
                 return Some(val);
             }
             // If recursive trace with same key fails, check "value" (PrimitiveNode)
-            if let Some(val) = trace_node_param(nodes, upstream_node, "value") {
+            if let Some(val) = trace_node_param(nodes, upstream_node, "value", depth + 1) {
                  return Some(val);
             }
         }
@@ -256,11 +266,11 @@ pub fn trace_node_param<'a>(nodes: &'a HashMap<String, Value>, node: &'a Value, 
 /// Extracts the model filename from a node, supporting various loader types.
 pub fn extract_model_from_node(nodes: &HashMap<String, Value>, node: &Value) -> Option<String> {
     // 1. Try standard fields (prefer TRACED values)
-    let found = trace_node_param(nodes, node, "ckpt_name")
-        .or_else(|| trace_node_param(nodes, node, "checkpoint"))
-        .or_else(|| trace_node_param(nodes, node, "unet_name"))
-        .or_else(|| trace_node_param(nodes, node, "model_name"))
-        .or_else(|| trace_node_param(nodes, node, "0")) // Common in some UI formats
+    let found = trace_node_param(nodes, node, "ckpt_name", 0)
+        .or_else(|| trace_node_param(nodes, node, "checkpoint", 0))
+        .or_else(|| trace_node_param(nodes, node, "unet_name", 0))
+        .or_else(|| trace_node_param(nodes, node, "model_name", 0))
+        .or_else(|| trace_node_param(nodes, node, "0", 0)) // Common in some UI formats
         .and_then(|v| v.as_str());
 
     if let Some(name) = found {

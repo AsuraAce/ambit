@@ -11,6 +11,12 @@ use self::graph::{ComfyGraph, get_node_type, is_output_node, get_node_input_link
 use self::traversal::{find_sampler_upstream, trace_node_param, extract_model_from_node, trace_text_source, trace_model_source};
 
 pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetadata {
+    // Breadcrumb for ComfyUI parsing
+    // Note: We don't have the filename here easily unless we pass it down, 
+    // but confirming we ENTERED this function is useful.
+    // We can assume it corresponds to the last "Starting" log.
+    println!("[ComfyUI] Parsing metadata...");
+    
     let mut meta = ImageMetadata::default();
     meta.tool = "ComfyUI".to_string();
 
@@ -60,23 +66,23 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
         let ksampler_node = nodes_map.get(&ksampler_id).unwrap();
         
         // Extract direct KSampler properties with tracing
-        if let Some(seed) = trace_node_param(nodes_map, ksampler_node, "seed").and_then(|v| v.as_i64()) {
+        if let Some(seed) = trace_node_param(nodes_map, ksampler_node, "seed", 0).and_then(|v| v.as_i64()) {
             meta.seed = seed;
-        } else if let Some(seed) = trace_node_param(nodes_map, ksampler_node, "noise_seed").and_then(|v| v.as_i64()) {
+        } else if let Some(seed) = trace_node_param(nodes_map, ksampler_node, "noise_seed", 0).and_then(|v| v.as_i64()) {
             meta.seed = seed;
         }
 
-        if let Some(steps) = trace_node_param(nodes_map, ksampler_node, "steps").and_then(|v| v.as_u64()) {
+        if let Some(steps) = trace_node_param(nodes_map, ksampler_node, "steps", 0).and_then(|v| v.as_u64()) {
             meta.steps = steps as u32;
         }
 
-        if let Some(cfg) = trace_node_param(nodes_map, ksampler_node, "cfg").and_then(|v| v.as_f64()) {
+        if let Some(cfg) = trace_node_param(nodes_map, ksampler_node, "cfg", 0).and_then(|v| v.as_f64()) {
             meta.cfg = cfg as f32;
         }
 
-        if let Some(sampler) = trace_node_param(nodes_map, ksampler_node, "sampler_name").and_then(|s| s.as_str()) {
+        if let Some(sampler) = trace_node_param(nodes_map, ksampler_node, "sampler_name", 0).and_then(|s| s.as_str()) {
             meta.sampler = sampler.to_string();
-            if let Some(scheduler) = trace_node_param(nodes_map, ksampler_node, "scheduler").and_then(|s| s.as_str()) {
+            if let Some(scheduler) = trace_node_param(nodes_map, ksampler_node, "scheduler", 0).and_then(|s| s.as_str()) {
                 meta.sampler = format!("{} ({})", meta.sampler, scheduler);
             }
         }
@@ -105,7 +111,7 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
     // Handling for SamplerCustomAdvanced (Flux / SD3)
     // ---------------------------------------------------------
     if ksampler_id.is_empty() || meta.steps == 0 {
-        for (id, node) in nodes_map {
+        for (_id, node) in nodes_map {
             let class_type = get_node_type(node);
             if class_type == "SamplerCustomAdvanced" {
                 // This is likely a Flux or SD3 workflow using separated components
@@ -130,11 +136,11 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
                     if let Some(sigmas_id) = get_node_input_link(node, "sigmas") {
                         if let Some(sigmas_node) = nodes_map.get(&sigmas_id) {
                             // BasicScheduler -> steps, scheduler, denoise
-                            if let Some(steps) = trace_node_param(nodes_map, sigmas_node, "steps").and_then(|v| v.as_u64()) {
+                            if let Some(steps) = trace_node_param(nodes_map, sigmas_node, "steps", 0).and_then(|v| v.as_u64()) {
                                 meta.steps = steps as u32;
                             }
                             // Sometimes scheduler is here
-                             if let Some(_scheduler) = trace_node_param(nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
+                             if let Some(_scheduler) = trace_node_param(nodes_map, sigmas_node, "scheduler", 0).and_then(|v| v.as_str()) {
                                  // We'll append this to sampler later if found
                              }
                         }
@@ -148,7 +154,7 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
 
                     if let Some(sampler_id) = get_node_input_link(node, "sampler") {
                         if let Some(sampler_node) = nodes_map.get(&sampler_id) {
-                             if let Some(name) = trace_node_param(nodes_map, sampler_node, "sampler_name").and_then(|v| v.as_str()) {
+                             if let Some(name) = trace_node_param(nodes_map, sampler_node, "sampler_name", 0).and_then(|v| v.as_str()) {
                                  sampler_name = name.to_string();
                              }
                         }
@@ -157,7 +163,7 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
                     // Try to find scheduler from sigmas
                     if let Some(sigmas_id) = get_node_input_link(node, "sigmas") {
                         if let Some(sigmas_node) = nodes_map.get(&sigmas_id) {
-                             if let Some(sch) = trace_node_param(nodes_map, sigmas_node, "scheduler").and_then(|v| v.as_str()) {
+                             if let Some(sch) = trace_node_param(nodes_map, sigmas_node, "scheduler", 0).and_then(|v| v.as_str()) {
                                  scheduler_name = sch.to_string();
                              }
                         }
@@ -181,9 +187,9 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
                 if meta.seed == 0 {
                      if let Some(noise_id) = get_node_input_link(node, "noise") {
                          if let Some(noise_node) = nodes_map.get(&noise_id) {
-                             if let Some(seed) = trace_node_param(nodes_map, noise_node, "noise_seed").and_then(|v| v.as_i64()) {
+                             if let Some(seed) = trace_node_param(nodes_map, noise_node, "noise_seed", 0).and_then(|v| v.as_i64()) {
                                  meta.seed = seed;
-                             } else if let Some(seed) = trace_node_param(nodes_map, noise_node, "seed").and_then(|v| v.as_i64()) {
+                             } else if let Some(seed) = trace_node_param(nodes_map, noise_node, "seed", 0).and_then(|v| v.as_i64()) {
                                  meta.seed = seed;
                              }
                          }

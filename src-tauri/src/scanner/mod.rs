@@ -7,6 +7,17 @@ use crate::metadata;
 use models::{FolderStats, ScanResult};
 use rayon::prelude::*;
 use std::path::Path;
+use once_cell::sync::Lazy;
+
+// Custom Rayon pool with larger stack size (8MB) to prevent overflows in deep recursions
+// or deep JSON/PNG structures.
+static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4) // Conservative thread count
+        .stack_size(8 * 1024 * 1024) 
+        .build()
+        .unwrap()
+});
 
 // Re-export ScanResult so Specta can see it if needed via scanner::ScanResult
 pub use models::ScanResult as PublicScanResult; 
@@ -33,29 +44,32 @@ pub async fn scan_images_bulk(
     default_tool: Option<String>,
 ) -> Result<Vec<ScanResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let results: Vec<ScanResult> = paths
-            .par_iter()
-            .map(|path| {
-                core::scan_image_internal(
-                    path.clone(),
-                    thumbnail_dir.clone(),
-                    skip_thumbnail,
-                    extract_workflow,
-                    default_tool.clone(),
-                )
-                // Use a default error result if scan fails
-                .unwrap_or_else(|_| ScanResult {
-                    width: 0,
-                    height: 0,
-                    size: 0,
-                    modified: 0,
-                    thumbnail: String::new(),
-                    chunks: std::collections::HashMap::new(),
-                    metadata: None,
+        SCAN_POOL.install(|| {
+            let results: Vec<ScanResult> = paths
+                .par_iter()
+                .map(|path| {
+                    println!("[Bulk] About to scan: {}", path);
+                    core::scan_image_internal(
+                        path.clone(),
+                        thumbnail_dir.clone(),
+                        skip_thumbnail,
+                        extract_workflow,
+                        default_tool.clone(),
+                    )
+                    // Use a default error result if scan fails
+                    .unwrap_or_else(|_| ScanResult {
+                        width: 0,
+                        height: 0,
+                        size: 0,
+                        modified: 0,
+                        thumbnail: String::new(),
+                        chunks: std::collections::HashMap::new(),
+                        metadata: None,
+                    })
                 })
-            })
-            .collect();
-        Ok(results)
+                .collect();
+            Ok(results)
+        })
     }).await.map_err(|e| e.to_string())?
 }
 
