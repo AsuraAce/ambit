@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, X, Info } from 'lucide-react';
+import { Loader2, X, Info, Sparkles } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 
 export const ActivityDock: React.FC = () => {
@@ -11,16 +11,23 @@ export const ActivityDock: React.FC = () => {
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
         isPopulatingThumbnails,
+        isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
         cancelImport,
         cancelThumbnailRegeneration
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
-    const active = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails;
+
+    // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing
+    const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails;
+    const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
+
+    const active = isHighPriorityActive || isBackgroundActive;
 
     // Determine current task details
     let progress = null;
     let label = "";
+    let isLowPriority = false;
 
     if (isImporting) {
         progress = importProgress;
@@ -37,6 +44,10 @@ export const ActivityDock: React.FC = () => {
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: "Matching images to models..." };
         label = "Smart Fill";
+    } else if (isBackgroundActive) {
+        progress = backgroundHealingProgress;
+        label = "Auto-Optimizing";
+        isLowPriority = true;
     }
 
     const current = progress?.current || 0;
@@ -61,8 +72,8 @@ export const ActivityDock: React.FC = () => {
                         {/* Header */}
                         <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-sage-500/10 rounded-lg text-sage-600 dark:text-sage-400">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                <div className={`p-2 rounded-lg ${isLowPriority ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'bg-sage-500/10 text-sage-600 dark:text-sage-400'}`}>
+                                    {isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                 </div>
                                 <div>
                                     <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
@@ -88,7 +99,7 @@ export const ActivityDock: React.FC = () => {
                                     initial={{ width: 0 }}
                                     animate={{ width: `${percent}%` }}
                                     transition={{ duration: 0.5, ease: "easeOut" }}
-                                    className="h-full bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]"
+                                    className={`h-full ${isLowPriority ? 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]' : 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]'}`}
                                 />
                                 {total === 0 && active && (
                                     <motion.div
@@ -103,7 +114,7 @@ export const ActivityDock: React.FC = () => {
                                 <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4">
                                     {message || "Starting work..."}
                                 </p>
-                                <span className="text-[11px] font-black text-sage-600 dark:text-sage-400 font-mono italic">
+                                <span className={`text-[11px] font-black font-mono italic ${isLowPriority ? 'text-violet-600 dark:text-violet-400' : 'text-sage-600 dark:text-sage-400'}`}>
                                     {percent}%
                                 </span>
                             </div>

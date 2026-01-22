@@ -24,6 +24,12 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         addToast(newValue ? 'Delete confirmations enabled' : 'Delete confirmations disabled', 'success');
     };
 
+    const handleAutoThumbnailHealingToggle = () => {
+        const newValue = !settings.enableAutoThumbnailHealing;
+        setSettings(prev => ({ ...prev, enableAutoThumbnailHealing: newValue }));
+        addToast(newValue ? 'Smart optimization enabled' : 'Smart optimization disabled', 'success');
+    };
+
     return (
         <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
@@ -51,24 +57,45 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             </section>
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">File Operations</h4>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Library & Files</h4>
+
                 <div
-                    onClick={handleConfirmDeleteToggle}
-                    className="flex items-center justify-between cursor-pointer group"
+                    onClick={handleAutoThumbnailHealingToggle}
+                    className="flex items-center justify-between cursor-pointer group mb-6"
                 >
                     <div>
-                        <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Confirm Deletions</div>
-                        <div className="text-sm text-gray-500">Show a warning before moving files to Trash</div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Smart Thumbnail Optimization</div>
+                        </div>
+                        <div className="text-sm text-gray-500">Automatically optimize thumbnails in the background</div>
                     </div>
                     <button
                         type="button"
-                        className={`w-12 h-7 rounded-full relative transition-colors ${settings.confirmDelete ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                        className={`w-12 h-7 rounded-full relative transition-colors ${settings.enableAutoThumbnailHealing ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                     >
-                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.confirmDelete ? 'left-6' : 'left-1'}`} />
+                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAutoThumbnailHealing ? 'left-6' : 'left-1'}`} />
                     </button>
                 </div>
 
-                <div className="pt-6 border-t border-gray-100 dark:border-white/5">
+                <div className="border-t border-gray-100 dark:border-white/5 pt-6">
+                    <div
+                        onClick={handleConfirmDeleteToggle}
+                        className="flex items-center justify-between cursor-pointer group"
+                    >
+                        <div>
+                            <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Confirm Deletions</div>
+                            <div className="text-sm text-gray-500">Show a warning before moving files to Trash</div>
+                        </div>
+                        <button
+                            type="button"
+                            className={`w-12 h-7 rounded-full relative transition-colors ${settings.confirmDelete ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                        >
+                            <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.confirmDelete ? 'left-6' : 'left-1'}`} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="pt-6 border-t border-gray-100 dark:border-white/5 mt-6">
                     {settings.devMode && <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />}
                 </div>
             </section>

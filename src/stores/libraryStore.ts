@@ -39,6 +39,11 @@ interface LibraryState {
     isActivityDockDismissed: boolean;
     isPopulatingThumbnails: boolean;
 
+    // Background Auto-Healing State
+    isBackgroundHealingActive: boolean;
+    backgroundHealingProgress: SyncProgress | null;
+    backgroundHealingPaused: boolean;
+
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
 
@@ -63,6 +68,11 @@ interface LibraryState {
     setIsActivityDockDismissed: (val: boolean) => void;
     setIsPopulatingThumbnails: (val: boolean) => void;
     incrementFacetCacheVersion: () => void;
+
+    // Background Healing Actions
+    setBackgroundHealingActive: (val: boolean) => void;
+    setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
+    setBackgroundHealingPaused: (val: boolean) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -92,6 +102,11 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isActivityDockDismissed: false,
     isPopulatingThumbnails: false,
     facetCacheVersion: 0,
+
+    // Background Healing State
+    isBackgroundHealingActive: false,
+    backgroundHealingProgress: null,
+    backgroundHealingPaused: false,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -126,4 +141,9 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsActivityDockDismissed: (val) => set({ isActivityDockDismissed: val }),
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
+
+    // Background Healing Actions
+    setBackgroundHealingActive: (val) => set({ isBackgroundHealingActive: val }),
+    setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
+    setBackgroundHealingPaused: (val) => set({ backgroundHealingPaused: val }),
 }));

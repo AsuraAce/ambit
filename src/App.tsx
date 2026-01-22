@@ -32,6 +32,7 @@ import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
+import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -97,6 +98,10 @@ export default function App() {
     // const setRecentSearches = useSearchStore(s => s.setRecentSearches);
 
     const isLoaded = isSettingsLoaded && isCollectionsLoaded;
+
+    // --- Background Processes ---
+    // Initialize background thumbnail auto-healing (runs after app startup delay)
+    useThumbnailQueue();
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);

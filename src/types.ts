@@ -212,6 +212,7 @@ export interface AppSettings {
   hideImportModal?: boolean; // User dismissed the import education modal
   systemPrompts?: Record<string, string>; // Dev override for AI prompts
   devMode?: boolean; // Toggle for experimental/dev features
+  enableAutoThumbnailHealing?: boolean; // Auto-regenerate thumbnails in background
 }
 
 export interface ToastMessage {

@@ -30,7 +30,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     importOrphans: true,
     starredAs: 'favorite',
     resourceViewModes: {},
-    hideImportModal: false
+    hideImportModal: false,
+    enableAutoThumbnailHealing: true
 };
 
 // Debounce timer for auto-save
@@ -78,11 +79,12 @@ export const useSettingsStore = create<SettingsState>()(
                 try {
                     const state = await appRepository.load();
                     if (state.settings) {
+                        // Merge with defaults to ensure new settings have defined values
+                        // even if user's saved settings file is from an older version
+                        const mergedSettings = { ...DEFAULT_SETTINGS, ...state.settings };
+
                         // Ensure API key from env takes precedence if present
-                        // Note: process.env access might need specific Vite handling or standard node check
-                        // Assuming process is available or handled by build
                         const envKey = (process.env as any).API_KEY;
-                        const mergedSettings = { ...state.settings };
                         if (envKey) mergedSettings.googleGeminiApiKey = envKey;
 
                         set({ settings: mergedSettings, isLoaded: true });
