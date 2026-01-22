@@ -213,6 +213,7 @@ export interface AppSettings {
   systemPrompts?: Record<string, string>; // Dev override for AI prompts
   devMode?: boolean; // Toggle for experimental/dev features
   enableAutoThumbnailHealing?: boolean; // Auto-regenerate thumbnails in background
+  enforceHighQualityThumbnails?: boolean; // Upgrade existing low-res thumbnails
 }
 
 export interface ToastMessage {

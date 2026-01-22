@@ -60,14 +60,23 @@ export const AppHeader = React.memo(({
         isLiveWatching, setIsLiveWatching,
         isImporting, importProgress,
         isLiveSyncing, syncStatus, syncProgress,
-        isResolvingModels, modelResolutionProgress
+        isResolvingModels, modelResolutionProgress,
+        isBackgroundHealingActive, backgroundHealingProgress // Added
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
-    const active = isImporting || isSyncing || isResolvingModels;
+    const isHighPriority = isImporting || isSyncing || isResolvingModels;
+    const active = isHighPriority || isBackgroundHealingActive;
+
     const progress = (isImporting && importProgress)
         ? importProgress
-        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : null));
+        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null)));
+
+    // Determine color
+    const isBackgroundOnly = isBackgroundHealingActive && !isHighPriority;
+    const progressColorInfo = isBackgroundOnly
+        ? { bar: 'bg-violet-500', shadow: 'shadow-[0_0_10px_rgba(139,92,246,0.3)]', bg: 'bg-violet-500/10' }
+        : { bar: 'bg-sage-500', shadow: 'shadow-[0_0_10px_rgba(110,121,107,0.5)]', bg: 'bg-sage-500/10' };
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
@@ -79,9 +88,9 @@ export const AppHeader = React.memo(({
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-sage-500/10 overflow-hidden">
+                        <div className={`absolute top-0 left-0 right-0 h-1 ${progressColorInfo.bg} overflow-hidden`}>
                             <div
-                                className="h-full bg-sage-500 shadow-[0_0_10px_rgba(110,121,107,0.5)] transition-all duration-300 ease-out"
+                                className={`h-full ${progressColorInfo.bar} ${progressColorInfo.shadow} transition-all duration-300 ease-out`}
                                 style={{
                                     width: progress && progress.total > 0
                                         ? `${(progress.current / progress.total) * 100}%`

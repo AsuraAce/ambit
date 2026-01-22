@@ -39,6 +39,7 @@ export function useThumbnailQueue(): void {
     // Settings - check if auto-healing is enabled
     // Note: No fallback needed since settingsStore merges loaded values with DEFAULT_SETTINGS
     const enableAutoThumbnailHealing = useSettingsStore(s => s.settings.enableAutoThumbnailHealing);
+    const enforceHighQualityThumbnails = useSettingsStore(s => s.settings.enforceHighQualityThumbnails); // New
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
 
     // Check if any blocking activity is happening
@@ -84,15 +85,15 @@ export function useThumbnailQueue(): void {
         abortControllerRef.current = abortController;
 
         try {
-            // Check how many need processing
-            const total = await getUnoptimizedImagesCount('', [], false);
+            // Check how many need processing (passed includeUpgradeable = enforceHighQualityThumbnails)
+            const total = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
             if (total === 0) {
                 console.log('[ThumbnailQueue] No unoptimized images found');
                 isRunningRef.current = false;
                 return;
             }
 
-            console.log(`[ThumbnailQueue] Starting background healing: ${total} images`);
+            console.log(`[ThumbnailQueue] Starting background healing: ${total} images (High Quality: ${enforceHighQualityThumbnails})`);
             setBackgroundHealingActive(true);
             setBackgroundHealingProgress({ current: 0, total, message: 'Starting optimization...' });
 
@@ -119,8 +120,8 @@ export function useThumbnailQueue(): void {
                     break;
                 }
 
-                // Fetch next page of IDs
-                const ids = await getUnoptimizedImageIds(offset, PAGE_SIZE, '', [], false);
+                // Fetch next page of IDs (passed includeUpgradeable)
+                const ids = await getUnoptimizedImageIds(offset, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
                 if (ids.length === 0) break;
 
                 // Process in smaller batches
@@ -248,7 +249,8 @@ export function useThumbnailQueue(): void {
         scheduleIdleCallback,
         setBackgroundHealingActive,
         setBackgroundHealingPaused,
-        setBackgroundHealingProgress
+        setBackgroundHealingProgress,
+        enforceHighQualityThumbnails // Added trigger
     ]);
 
     /**

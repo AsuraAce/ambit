@@ -77,6 +77,33 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </button>
                 </div>
 
+                {
+                    settings.enableAutoThumbnailHealing && (
+                        <div
+                            onClick={() => {
+                                const newValue = !settings.enforceHighQualityThumbnails;
+                                setSettings(prev => ({ ...prev, enforceHighQualityThumbnails: newValue }));
+                                addToast(newValue ? 'High quality enforcement enabled' : 'High quality enforcement disabled', 'success');
+                            }}
+                            className="flex items-center justify-between cursor-pointer group mb-6 ml-4 pl-4 border-l-2 border-gray-100 dark:border-white/10 animate-in slide-in-from-left-2 fade-in duration-300"
+                        >
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-300 group-hover:text-sage-500 transition-colors">Upgrade Existing Thumbnails</div>
+                                    <span className="text-[10px] font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 px-1.5 py-0.5 rounded">Slow</span>
+                                </div>
+                                <div className="text-xs text-gray-400 mt-0.5">Re-generate "fast" or external thumbnails with high-quality versions</div>
+                            </div>
+                            <button
+                                type="button"
+                                className={`w-10 h-6 rounded-full relative transition-colors ${settings.enforceHighQualityThumbnails ? 'bg-violet-500' : 'bg-gray-200 dark:bg-white/10'}`}
+                            >
+                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.enforceHighQualityThumbnails ? 'left-5' : 'left-1'}`} />
+                            </button>
+                        </div>
+                    )
+                }
+
                 <div className="border-t border-gray-100 dark:border-white/5 pt-6">
                     <div
                         onClick={handleConfirmDeleteToggle}
@@ -98,7 +125,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 <div className="pt-6 border-t border-gray-100 dark:border-white/5 mt-6">
                     {settings.devMode && <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />}
                 </div>
-            </section>
-        </div>
+            </section >
+        </div >
     );
 });

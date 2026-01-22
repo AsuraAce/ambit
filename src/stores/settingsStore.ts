@@ -31,7 +31,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     starredAs: 'favorite',
     resourceViewModes: {},
     hideImportModal: false,
-    enableAutoThumbnailHealing: true
+    enableAutoThumbnailHealing: true,
+    enforceHighQualityThumbnails: false
 };
 
 // Debounce timer for auto-save
