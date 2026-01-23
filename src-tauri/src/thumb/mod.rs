@@ -32,8 +32,11 @@ pub fn generate_thumbnail(
     let mut original_dimensions: Option<(u32, u32)> = None;
 
     // Ensure directory exists
-    if let Err(e) = fs::create_dir_all(thumbnail_dir) {
-        return Err(format!("Failed to create thumbnail dir: {}", e));
+    // Optimization: Check if exists first to avoid syscall/locking on every file in parallel loop
+    if !Path::new(thumbnail_dir).exists() {
+        if let Err(e) = fs::create_dir_all(thumbnail_dir) {
+            return Err(format!("Failed to create thumbnail dir: {}", e));
+        }
     }
 
     if thumb_path.exists() {

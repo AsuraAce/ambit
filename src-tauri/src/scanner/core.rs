@@ -13,12 +13,12 @@ pub fn scan_image_internal(
     extract_workflow: bool,
     default_tool: Option<String>,
 ) -> Result<ScanResult, String> {
-    println!("[Scan] Starting: {}", path);
+    // println!("[Scan] Starting: {}", path);
     // Helper to log completion on return
     struct LogOnDrop(String);
     impl Drop for LogOnDrop {
         fn drop(&mut self) {
-            println!("[Scan] Finished: {}", self.0);
+            // println!("[Scan] Finished: {}", self.0);
         }
     }
     let _logger = LogOnDrop(path.clone());
