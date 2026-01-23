@@ -166,8 +166,6 @@ function buildUnoptimizedCondition(includeUpgradeable: boolean): string {
                 AND path != thumbnail_path
                 AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
             )
-            OR
-            micro_thumbnail IS NULL
         )
     `;
 }

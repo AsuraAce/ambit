@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -23,6 +24,7 @@ const RESUME_DELAY_MS = 2000;
  * - Progress tracking: Updates store for ActivityDock visibility
  */
 export function useThumbnailQueue(): void {
+    const queryClient = useQueryClient();
     const abortControllerRef = useRef<AbortController | null>(null);
     const isRunningRef = useRef(false);
 
@@ -155,6 +157,31 @@ export function useThumbnailQueue(): void {
 
                         if (dbUpdates.length > 0) {
                             await updateThumbnailPathsBatch(dbUpdates);
+
+                            // Sync with UI: Update React Query cache immediately
+                            // This ensures the UI reflects the new thumbnails without a refresh
+                            queryClient.setQueriesData({ queryKey: ['images'] }, (oldData: any) => {
+                                if (!oldData || !oldData.pages) return oldData;
+                                return {
+                                    ...oldData,
+                                    pages: oldData.pages.map((page: any) => ({
+                                        ...page,
+                                        images: page.images.map((img: any) => {
+                                            const update = dbUpdates.find(u => u.id === img.id);
+                                            if (update) {
+                                                return {
+                                                    ...img,
+                                                    thumbnailUrl: update.thumbnailPath,
+                                                    // microThumbnail is disabled conceptually but field remains on type
+                                                    microThumbnail: null
+                                                    // Start using thumbnail source 'ambit'
+                                                };
+                                            }
+                                            return img;
+                                        })
+                                    }))
+                                };
+                            });
                         }
                     } catch (e) {
                         console.error(`[ThumbnailQueue] Batch failed at offset ${offset + i}`, e);
