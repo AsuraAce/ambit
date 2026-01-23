@@ -70,24 +70,14 @@ pub fn generate_thumbnail(
             
         generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
 
-        // 2. Micro Thumbnail (32px)
-        let micro = img.resize(32, 32, FilterType::Triangle);
-        let micro_rgba = micro.to_rgba8();
-        let (micro_w, micro_h) = micro_rgba.dimensions();
-        
-        let micro_encoder = webp::Encoder::from_rgba(
-            micro_rgba.as_raw(),
-            micro_w,
-            micro_h
-        );
-        let micro_webp = micro_encoder.encode(70.0);
-        let micro_b64 = STANDARD.encode(&*micro_webp);
-        generated_micro_thumbnail = Some(format!("data:image/webp;base64,{}", micro_b64));
+        // 2. Micro Thumbnail (Disabled)
+        // We no longer generate base64 micro-thumbnails to save DB space (~200MB/100k images)
+        // generated_micro_thumbnail = Some(...);
     }
 
     Ok(ThumbnailResult {
         thumbnail_path: generated_thumbnail_path,
-        micro_thumbnail: generated_micro_thumbnail,
+        micro_thumbnail: None, // Always returning None now
         original_dimensions,
     })
 }

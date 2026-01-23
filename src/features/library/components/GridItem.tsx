@@ -48,11 +48,19 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
 
     // Retry tracking for error recovery (max 2 attempts)
+    // Retry tracking for error recovery (max 2 attempts)
     const MAX_THUMB_RETRIES = 2;
     const retryCountRef = useRef(0);
 
+    // Feature Flag: Scroll-triggered generation
+    // Disabled (2025-01-23) to prevent "scroll thrashing" and UI stutter.
+    // We rely on the background auto-healing queue instead.
+    const ENABLE_SCROLL_GENERATION = false;
+
     // Lazy Generation: If thumbnailUrl equals url (no real thumbnail), generate in background
     React.useEffect(() => {
+        if (!ENABLE_SCROLL_GENERATION) return;
+
         // Only trigger if: not missing, not already generating, and thumbnail == source
         if (!image.isMissing && image.thumbnailUrl === image.url && image.url) {
             // Generate thumbnail in background (fire-and-forget, updates state on success)

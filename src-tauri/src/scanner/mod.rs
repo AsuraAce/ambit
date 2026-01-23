@@ -45,10 +45,12 @@ pub async fn scan_images_bulk(
 ) -> Result<Vec<ScanResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         SCAN_POOL.install(|| {
+            // Use par_iter for parallel processing
+            // The SCAN_POOL is configured with 12 threads to handle I/O bound work
             let results: Vec<ScanResult> = paths
                 .par_iter()
                 .map(|path| {
-                    println!("[Bulk] About to scan: {}", path);
+                    // println!("[Bulk] About to scan: {}", path); // Comment out to reduce log spam
                     core::scan_image_internal(
                         path.clone(),
                         thumbnail_dir.clone(),
