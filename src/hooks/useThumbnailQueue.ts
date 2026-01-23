@@ -86,6 +86,9 @@ export function useThumbnailQueue(): void {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
 
+        // Track attempted IDs in this session to prevent infinite loops on failing images
+        const attemptedIds = new Set<string>();
+
         try {
             // Check how many need processing (passed includeUpgradeable = enforceHighQualityThumbnails)
             const total = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
@@ -110,7 +113,7 @@ export function useThumbnailQueue(): void {
             let processed = 0;
             let offset = 0;
             const PAGE_SIZE = 1000;
-            const BATCH_SIZE = 50; // Reduced from 300 for smoother UI progress updates
+            const BATCH_SIZE = 150; // Increased to 150 as requested
 
             // Process in pages
             while (!abortController.signal.aborted) {
@@ -123,11 +126,21 @@ export function useThumbnailQueue(): void {
                 }
 
                 // Fetch next page of IDs (passed includeUpgradeable)
-                const ids = await getUnoptimizedImageIds(offset, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
+                // We always fetch from offset 0 because successful processing removes items from the "unoptimized" set
+                const ids = await getUnoptimizedImageIds(0, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
+
                 if (ids.length === 0) break;
 
+                // Infinite loop protection: Filter out images we've already tried and failed to fix in this session
+                const freshIds = ids.filter(id => !attemptedIds.has(id));
+
+                if (freshIds.length === 0) {
+                    console.warn('[ThumbnailQueue] Aborting: All remaining unoptimized images have failed processing in this session.');
+                    break;
+                }
+
                 // Process in smaller batches
-                for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                for (let i = 0; i < freshIds.length; i += BATCH_SIZE) {
                     if (abortController.signal.aborted) break;
 
                     // Double-check for blocking activity between batches
@@ -139,7 +152,11 @@ export function useThumbnailQueue(): void {
                         return;
                     }
 
-                    const batchIds = ids.slice(i, i + BATCH_SIZE);
+                    const batchIds = freshIds.slice(i, i + BATCH_SIZE);
+
+                    // Register attempts immediately
+                    batchIds.forEach(id => attemptedIds.add(id));
+
                     const dbUpdates: { id: string; thumbnailPath: string; microThumbnail?: string | null; thumbnailSource?: string | null }[] = [];
 
                     try {
@@ -189,9 +206,14 @@ export function useThumbnailQueue(): void {
                         console.error(`[ThumbnailQueue] Batch failed at offset ${offset + i}`, e);
                     }
 
+                    // Only increment processed count for what we actually attempted
                     processed += batchIds.length;
+
+                    // Clamp current to total to avoid > 100% visual glitch
+                    const displayCurrent = Math.min(processed, total);
+
                     setBackgroundHealingProgress({
-                        current: processed,
+                        current: displayCurrent,
                         total,
                         message: `Optimizing thumbnails...`
                     });
@@ -199,17 +221,12 @@ export function useThumbnailQueue(): void {
                     // Small delay between batches for UI responsiveness
                     await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
                 }
-
-                // Since we process and effectively "remove" items from the unoptimized list (by optimizing them),
-                // we should NOT increment the offset. The next batch will naturally slide into position 0.
-                // Keeping offset at 0 ensures we don't skip every other batch.
-                // offset += PAGE_SIZE; // REMOVED: Caused 50% skip bug
             }
 
             // Complete
             if (!abortController.signal.aborted) {
                 console.log(`[ThumbnailQueue] Complete: processed ${processed} images`);
-                setBackgroundHealingProgress({ current: processed, total: processed, message: 'Optimization complete' });
+                setBackgroundHealingProgress({ current: processed, total: Math.max(processed, total), message: 'Optimization complete' });
 
                 // Brief delay before hiding
                 await new Promise(resolve => setTimeout(resolve, 1500));

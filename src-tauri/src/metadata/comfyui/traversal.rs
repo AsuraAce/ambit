@@ -13,6 +13,7 @@ pub enum WalkResult {
 /// - If `visitor` returns `Found(val)`, returns `Some(val)`.
 /// - If `visitor` returns `Continue(next_id)`, moves to `next_id`.
 /// - If `visitor` returns `Stop`, breaks and returns `None`.
+#[allow(dead_code)]
 pub fn walk_upstream<F>(
     nodes: &HashMap<String, Value>,
     start_id: &str,

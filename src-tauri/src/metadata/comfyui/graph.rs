@@ -75,10 +75,12 @@ impl ComfyGraph {
         Self { nodes: nodes_map }
     }
 
+    #[allow(dead_code)]
     pub fn get_node(&self, id: &str) -> Option<&Value> {
         self.nodes.get(id)
     }
 
+    #[allow(dead_code)]
     pub fn nodes(&self) -> &HashMap<String, Value> {
         &self.nodes
     }

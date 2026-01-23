@@ -14,14 +14,8 @@ pub fn scan_image_internal(
     default_tool: Option<String>,
 ) -> Result<ScanResult, String> {
     // println!("[Scan] Starting: {}", path);
-    // Helper to log completion on return
-    struct LogOnDrop(String);
-    impl Drop for LogOnDrop {
-        fn drop(&mut self) {
-            // println!("[Scan] Finished: {}", self.0);
-        }
-    }
-    let _logger = LogOnDrop(path.clone());
+    // println!("[Scan] Starting: {}", path);
+
 
     let path_buf = PathBuf::from(&path);
     if path_buf.is_dir() {

@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use tauri::Manager;
+
 use crate::db::{resolve_db_path, configure_connection};
 use std::fs;
 use chrono::{DateTime, Local};
@@ -148,7 +148,7 @@ pub async fn check_and_run_autobackup(app: tauri::AppHandle) -> Result<Option<Ba
              
              // Prune
              // Re-list to include new one and sort
-             if let Ok(mut updated_backups) = list_backups_internal(&backup_dir) {
+             if let Ok(updated_backups) = list_backups_internal(&backup_dir) {
                  if updated_backups.len() > BACKUP_RETENTION_COUNT {
                     for backup in &updated_backups[BACKUP_RETENTION_COUNT..] {
                         let _ = fs::remove_file(&backup.path);

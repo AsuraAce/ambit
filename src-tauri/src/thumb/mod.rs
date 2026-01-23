@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailResult {
@@ -28,7 +28,8 @@ pub fn generate_thumbnail(
 ) -> Result<ThumbnailResult, String> {
     let thumb_path = get_thumbnail_path(path, thumbnail_dir);
     let mut generated_thumbnail_path = String::new();
-    let mut generated_micro_thumbnail: Option<String> = None;
+
+
     let mut original_dimensions: Option<(u32, u32)> = None;
 
     // Ensure directory exists
@@ -87,27 +88,3 @@ pub fn generate_thumbnail(
     })
 }
 
-// Special function to generate ONLY micro-thumbnail if needed (e.g. for backfilling)
-pub fn generate_micro_thumbnail_only(path: &str) -> Result<String, String> {
-    let reader = Reader::open(path)
-        .map_err(|e| format!("Failed to open image: {}", e))?
-        .with_guessed_format()
-        .map_err(|e| format!("Failed to guess format: {}", e))?;
-
-    let img = reader.decode()
-        .map_err(|e| format!("Failed to decode image: {}", e))?;
-
-    let micro = img.resize(32, 32, FilterType::Triangle);
-    let micro_rgba = micro.to_rgba8();
-    let (micro_w, micro_h) = micro_rgba.dimensions();
-    
-    let micro_encoder = webp::Encoder::from_rgba(
-        micro_rgba.as_raw(),
-        micro_w,
-        micro_h
-    );
-    let micro_webp = micro_encoder.encode(70.0);
-    let micro_b64 = STANDARD.encode(&*micro_webp);
-    
-    Ok(format!("data:image/webp;base64,{}", micro_b64))
-}

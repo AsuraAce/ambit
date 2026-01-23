@@ -20,7 +20,7 @@ static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
 });
 
 // Re-export ScanResult so Specta can see it if needed via scanner::ScanResult
-pub use models::ScanResult as PublicScanResult; 
+ 
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
