@@ -8,7 +8,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 const STARTUP_DELAY_MS = 5000;
 
 // Delay between batches to give UI breathing room (ms)
-const BATCH_DELAY_MS = 500;
+const BATCH_DELAY_MS = 100;
 
 // Delay before resuming after import completes (ms)
 const RESUME_DELAY_MS = 2000;
@@ -109,8 +109,8 @@ export function useThumbnailQueue(): void {
 
             let processed = 0;
             let offset = 0;
-            const PAGE_SIZE = 500;
-            const BATCH_SIZE = 100;
+            const PAGE_SIZE = 1000;
+            const BATCH_SIZE = 300;
 
             // Process in pages
             while (!abortController.signal.aborted) {
