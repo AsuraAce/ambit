@@ -54,7 +54,9 @@ pub fn generate_thumbnail(
         original_dimensions = Some((img.width(), img.height()));
 
         // 1. Main Thumbnail (512px)
-        let thumb = img.resize(512, 512, FilterType::CatmullRom);
+        // Optimization: Use Triangle (Bilinear) instead of CatmullRom (Bicubic/Lanczos) for speed.
+        // For downscaling 4K -> 512px, the visual difference is minimal but performance difference is large.
+        let thumb = img.resize(512, 512, FilterType::Triangle);
         let rgba = thumb.to_rgba8();
         let (width, height) = rgba.dimensions();
         

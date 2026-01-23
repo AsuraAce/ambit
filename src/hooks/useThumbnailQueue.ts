@@ -255,7 +255,8 @@ export function useThumbnailQueue(): void {
         setBackgroundHealingActive,
         setBackgroundHealingPaused,
         setBackgroundHealingProgress,
-        enforceHighQualityThumbnails // Added trigger
+        enforceHighQualityThumbnails, // Added trigger
+        isBlocked // Added: Restart when no longer blocked
     ]);
 
     /**

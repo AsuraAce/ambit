@@ -70,7 +70,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         microSrc={image.microThumbnail}
         alt={image.filename}
         onImageError={onImageError}
-        loading="eager"
+        loading="lazy"
         className={`w-full h-full transition-all duration-700 ease-spring 
             ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'} 
             ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
