@@ -136,31 +136,46 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
     return rows.map(mapRowToImage);
 };
 
+/**
+ * Build the SQL condition for identifying unoptimized images.
+ * This is the single source of truth for what constitutes an "unoptimized" image.
+ * 
+ * An image is considered unoptimized if:
+ * - It has no thumbnail (path = thumbnail_path, NULL, or empty)
+ * 
+ * With includeUpgradeable=true, also includes:
+ * - Images with non-Ambit thumbnails (imported from InvokeAI, legacy, etc.)
+ * - Images missing micro-thumbnails (need instant preview)
+ */
+function buildUnoptimizedCondition(includeUpgradeable: boolean): string {
+    // Base condition: No thumbnail at all
+    const noThumbnail = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
+
+    if (!includeUpgradeable) {
+        return noThumbnail;
+    }
+
+    // Extended condition: Include upgradeable thumbnails
+    return `
+        (
+            ${noThumbnail}
+            OR 
+            (
+                thumbnail_path IS NOT NULL 
+                AND thumbnail_path != '' 
+                AND path != thumbnail_path
+                AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
+            )
+            OR
+            micro_thumbnail IS NULL
+        )
+    `;
+}
+
 export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
     const db = await getDb();
 
-    // Base condition: No thumbnail at all
-    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
-
-    if (includeUpgradeable) {
-        // Include images that have a thumbnail but:
-        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
-        // 2. micro_thumbnail is missing (need to generate instant preview)
-        unoptimizedCondition = `
-            (
-                ${unoptimizedCondition}
-                OR 
-                (
-                    thumbnail_path IS NOT NULL 
-                    AND thumbnail_path != '' 
-                    AND path != thumbnail_path
-                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
-                )
-                OR
-                micro_thumbnail IS NULL
-            )
-        `;
-    }
+    const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
@@ -195,27 +210,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
 export const getUnoptimizedImagesCount = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<number> => {
     const db = await getDb();
 
-    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
-
-    if (includeUpgradeable) {
-        // Include images that have a thumbnail but:
-        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
-        // 2. micro_thumbnail is missing (need to generate instant preview)
-        unoptimizedCondition = `
-            (
-                ${unoptimizedCondition}
-                OR 
-                (
-                    thumbnail_path IS NOT NULL 
-                    AND thumbnail_path != '' 
-                    AND path != thumbnail_path
-                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
-                )
-                OR
-                micro_thumbnail IS NULL
-            )
-        `;
-    }
+    const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
         SELECT COUNT(*) as count FROM images 
@@ -254,27 +249,7 @@ export const getUnoptimizedImageIds = async (
 ): Promise<string[]> => {
     const db = await getDb();
 
-    let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
-
-    if (includeUpgradeable) {
-        // Include images that have a thumbnail but:
-        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
-        // 2. micro_thumbnail is missing (need to generate instant preview)
-        unoptimizedCondition = `
-            (
-                ${unoptimizedCondition}
-                OR 
-                (
-                    thumbnail_path IS NOT NULL 
-                    AND thumbnail_path != '' 
-                    AND path != thumbnail_path
-                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
-                )
-                OR
-                micro_thumbnail IS NULL
-            )
-        `;
-    }
+    const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
         SELECT id FROM images 

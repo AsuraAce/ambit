@@ -40,8 +40,8 @@ pub fn scan_image_internal(
         .unwrap_or(0);
 
     // Try to read dimensions - if this fails, we may still be able to return a cached thumbnail
-    // Optimization: If we need to generate a thumbnail, we can get dimensions from that process
-    // instead of opening the file twice.
+    // Optimization: When generating a thumbnail, we capture dimensions from that decode,
+    // avoiding a second file open.
     
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
@@ -55,18 +55,18 @@ pub fn scan_image_internal(
             
             if thumb_path.exists() {
                  generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+                 // Thumbnail cached - will need to read dimensions separately below
             } else {
-                // Need to generate
+                // Need to generate - dimensions will come from the decode
                 match crate::thumb::generate_thumbnail(&path, dir) {
                     Ok(result) => {
                         generated_thumbnail_path = result.thumbnail_path;
                         generated_micro_thumbnail = result.micro_thumbnail;
                         
-                        // Optimization: We could get dimensions here if generate_thumbnail returned them,
-                         // but currently it doesn't return original dimensions. 
-                         // For now, we rely on the standard dimension check below unless we change the signature.
-                         // To avoid changing signature of `ScanResult` or `thumb` module too much right now,
-                         // we will stick to code cleanup first.
+                        // Use dimensions from thumbnail generation (avoids second file open)
+                        if let Some(dims) = result.original_dimensions {
+                            dimensions = dims;
+                        }
                     },
                     Err(e) => {
                         // Log failure but don't fail the scan
@@ -77,33 +77,35 @@ pub fn scan_image_internal(
         }
     }
 
-    // Get dimensions if we haven't yet (we haven't, as I didn't change the signature)
-    let dimensions_result = image::io::Reader::open(&path)
-        .and_then(|r| r.with_guessed_format())
-        .map_err(|e| e.to_string())
-        .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
+    // Only read dimensions if we didn't get them from thumbnail generation
+    if dimensions == (0, 0) {
+        let dimensions_result = image::io::Reader::open(&path)
+            .and_then(|r| r.with_guessed_format())
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
 
-    let dimensions = match dimensions_result {
-        Ok(dims) => dims,
-        Err(e) => {
-            // If we have a thumbnail, return a partial result instead of failing completely
-            if !generated_thumbnail_path.is_empty() {
-                return Ok(ScanResult {
-                    width: 0,
-                    height: 0,
-                    size,
-                    modified,
-                    thumbnail: generated_thumbnail_path,
-                    micro_thumbnail: generated_micro_thumbnail,
-                    thumbnail_source: Some("ambit".to_string()),
-                    chunks: HashMap::new(),
-                    metadata: None,
-                });
+        dimensions = match dimensions_result {
+            Ok(dims) => dims,
+            Err(e) => {
+                // If we have a thumbnail, return a partial result instead of failing completely
+                if !generated_thumbnail_path.is_empty() {
+                    return Ok(ScanResult {
+                        width: 0,
+                        height: 0,
+                        size,
+                        modified,
+                        thumbnail: generated_thumbnail_path,
+                        micro_thumbnail: generated_micro_thumbnail,
+                        thumbnail_source: Some("ambit".to_string()),
+                        chunks: HashMap::new(),
+                        metadata: None,
+                    });
+                }
+                // No thumbnail and no dimensions - this is a real failure
+                 return Err(format!("Failed to read image dimensions: {}", e));
             }
-            // No thumbnail and no dimensions - this is a real failure
-             return Err(format!("Failed to read image dimensions: {}", e));
-        }
-    };
+        };
+    }
 
 
     let mut file = File::open(&path).map_err(|e| e.to_string())?;

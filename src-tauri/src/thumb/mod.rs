@@ -10,6 +10,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 pub struct ThumbnailResult {
     pub thumbnail_path: String,
     pub micro_thumbnail: Option<String>,
+    /// Original image dimensions (width, height).
+    /// Only available when thumbnail was freshly generated (not cached).
+    pub original_dimensions: Option<(u32, u32)>,
 }
 
 pub fn get_thumbnail_path(path: &str, thumbnail_dir: &str) -> PathBuf {
@@ -26,6 +29,7 @@ pub fn generate_thumbnail(
     let thumb_path = get_thumbnail_path(path, thumbnail_dir);
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
+    let mut original_dimensions: Option<(u32, u32)> = None;
 
     // Ensure directory exists
     if let Err(e) = fs::create_dir_all(thumbnail_dir) {
@@ -34,15 +38,10 @@ pub fn generate_thumbnail(
 
     if thumb_path.exists() {
         generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
-        
-        // If thumbnail exists, we might still want to generate micro-thumbnail if cheap?
-        // For now, let's assume if thumb exists we skip generation unless called specifically.
-        // But wait, the original logic didn't generate micro-thumbnail if thumb existed? 
-        // Let's check original logic... 
-        // Original: if thumb_path.exists() { set path } else { generate both }
-        // So we mimic that. If we need micro-thumbnail for existing items, that's a separate migration task.
+        // Thumbnail cached - dimensions not available without reading original file
+        // Scanner will handle this case with a separate dimension read
     } else {
-        // Need to generate
+        // Need to generate - we'll capture dimensions from the decoded image
         let reader = Reader::open(path)
             .map_err(|e| format!("Failed to open image: {}", e))?
             .with_guessed_format()
@@ -50,6 +49,9 @@ pub fn generate_thumbnail(
 
         let img = reader.decode()
             .map_err(|e| format!("Failed to decode image: {}", e))?;
+
+        // Capture original dimensions before resizing
+        original_dimensions = Some((img.width(), img.height()));
 
         // 1. Main Thumbnail (512px)
         let thumb = img.resize(512, 512, FilterType::CatmullRom);
@@ -86,6 +88,7 @@ pub fn generate_thumbnail(
     Ok(ThumbnailResult {
         thumbnail_path: generated_thumbnail_path,
         micro_thumbnail: generated_micro_thumbnail,
+        original_dimensions,
     })
 }
 
