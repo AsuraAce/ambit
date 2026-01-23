@@ -110,7 +110,7 @@ export function useThumbnailQueue(): void {
             let processed = 0;
             let offset = 0;
             const PAGE_SIZE = 1000;
-            const BATCH_SIZE = 300;
+            const BATCH_SIZE = 50; // Reduced from 300 for smoother UI progress updates
 
             // Process in pages
             while (!abortController.signal.aborted) {
