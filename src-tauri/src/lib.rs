@@ -2,6 +2,8 @@ mod metadata;
 mod db;
 mod scanner;
 mod watcher;
+mod thumb;
+
 
 use watcher::WatcherState;
 use metadata::models::ModelResolutionState;

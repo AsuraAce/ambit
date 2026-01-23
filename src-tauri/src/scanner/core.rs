@@ -40,104 +40,49 @@ pub fn scan_image_internal(
         .unwrap_or(0);
 
     // Try to read dimensions - if this fails, we may still be able to return a cached thumbnail
-    let dimensions_result = image::io::Reader::open(&path)
-        .and_then(|r| r.with_guessed_format())
-        .map_err(|e| e.to_string())
-        .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
-
+    // Optimization: If we need to generate a thumbnail, we can get dimensions from that process
+    // instead of opening the file twice.
+    
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
+    let mut dimensions: (u32, u32) = (0, 0);
 
-    // Handle thumbnail generation/lookup BEFORE we fail on dimensions
-    // This allows us to return cached thumbnails even for images with format issues
+    // Handle thumbnail generation/lookup
     if let Some(dir) = &thumbnail_dir {
         if !skip_thumbnail {
-            use std::hash::{Hash, Hasher};
-            use std::collections::hash_map::DefaultHasher;
+             // Check if thumbnail already exists
+            let thumb_path = crate::thumb::get_thumbnail_path(&path, dir);
             
-            // Generate a deterministic 16-char hex hash of the path
-            let mut hasher = DefaultHasher::new();
-            path.hash(&mut hasher);
-            let thumb_filename = format!("{:016x}.webp", hasher.finish());
-            let thumb_path = PathBuf::from(dir).join(&thumb_filename);
-            
-            // Ensure directory exists FIRST
-            if let Err(e) = std::fs::create_dir_all(dir) {
-                println!("[Thumb] Failed to create thumbnail dir: {}", e);
-            }
-
             if thumb_path.exists() {
-                // Thumbnail already exists, use it
-                generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+                 generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
             } else {
-                // Need to generate - this requires image::open which may also fail
-                // Use Reader with guessed format for better format detection
-                let open_result = image::io::Reader::open(&path)
-                    .and_then(|r| r.with_guessed_format());
-                
-                match open_result {
-                    Ok(reader) => {
-                        match reader.decode() {
-                            Ok(img) => {
-                                let thumb = img.resize(512, 512, image::imageops::FilterType::CatmullRom);
-                                
-                                // Use webp crate for lossy encoding at 85% quality
-                                // This is 2x faster and produces 50% smaller files than lossless
-                                // Use raw bytes to avoid image crate version mismatch
-                                let rgba = thumb.to_rgba8();
-                                let (width, height) = rgba.dimensions();
-                                let encoder = webp::Encoder::from_rgba(
-                                    rgba.as_raw(),
-                                    width,
-                                    height
-                                );
-                                let webp_data = encoder.encode(85.0);
-                                if let Err(e) = std::fs::write(&thumb_path, &*webp_data) {
-                                    println!("[Thumb] Failed to save thumbnail: {}", e);
-                                } else {
-                                    generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
-                                }
-                                
-                                // Generate micro-thumbnail (32px) for instant previews
-                                let micro = img.resize(32, 32, image::imageops::FilterType::Triangle);
-                                let micro_rgba = micro.to_rgba8();
-                                let (micro_w, micro_h) = micro_rgba.dimensions();
-                                let micro_encoder = webp::Encoder::from_rgba(
-                                    micro_rgba.as_raw(),
-                                    micro_w,
-                                    micro_h
-                                );
-                                let micro_webp = micro_encoder.encode(70.0);
-                                // Encode as data URI for direct use in <img src>
-                                use base64::{Engine as _, engine::general_purpose::STANDARD};
-                                let micro_b64 = STANDARD.encode(&*micro_webp);
-                                generated_micro_thumbnail = Some(format!("data:image/webp;base64,{}", micro_b64));
-                            }
-                            Err(e) => {
-                                // Log first failure in detail, then just count
-                                static LOGGED_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                                let count = LOGGED_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                if count < 3 {
-                                    println!("[Thumb] Failed to decode image ({}): {} - path: {}", count + 1, e, &path);
-                                }
-                            }
-                        }
-                    }
+                // Need to generate
+                match crate::thumb::generate_thumbnail(&path, dir) {
+                    Ok(result) => {
+                        generated_thumbnail_path = result.thumbnail_path;
+                        generated_micro_thumbnail = result.micro_thumbnail;
+                        
+                        // Optimization: We could get dimensions here if generate_thumbnail returned them,
+                         // but currently it doesn't return original dimensions. 
+                         // For now, we rely on the standard dimension check below unless we change the signature.
+                         // To avoid changing signature of `ScanResult` or `thumb` module too much right now,
+                         // we will stick to code cleanup first.
+                    },
                     Err(e) => {
-                        static OPEN_ERR_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                        let count = OPEN_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if count < 3 {
-                            // Check if file exists
-                            let exists = std::path::Path::new(&path).exists();
-                            println!("[Thumb] Failed to open image ({}): {} - exists: {} - path: {}", count + 1, e, exists, &path);
-                        }
+                        // Log failure but don't fail the scan
+                         println!("[Thumb] Failed to generate thumbnail: {}", e);
                     }
                 }
             }
         }
     }
 
-    // Now check dimensions - if we got a thumbnail, we can still return a partial result
+    // Get dimensions if we haven't yet (we haven't, as I didn't change the signature)
+    let dimensions_result = image::io::Reader::open(&path)
+        .and_then(|r| r.with_guessed_format())
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
+
     let dimensions = match dimensions_result {
         Ok(dims) => dims,
         Err(e) => {
@@ -156,9 +101,10 @@ pub fn scan_image_internal(
                 });
             }
             // No thumbnail and no dimensions - this is a real failure
-            return Err(format!("Failed to read image dimensions: {}", e));
+             return Err(format!("Failed to read image dimensions: {}", e));
         }
     };
+
 
     let mut file = File::open(&path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 8];
