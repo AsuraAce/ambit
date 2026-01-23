@@ -198,7 +198,10 @@ export function useThumbnailQueue(): void {
                     await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
                 }
 
-                offset += PAGE_SIZE;
+                // Since we process and effectively "remove" items from the unoptimized list (by optimizing them),
+                // we should NOT increment the offset. The next batch will naturally slide into position 0.
+                // Keeping offset at 0 ensures we don't skip every other batch.
+                // offset += PAGE_SIZE; // REMOVED: Caused 50% skip bug
             }
 
             // Complete

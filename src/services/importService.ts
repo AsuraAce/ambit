@@ -203,8 +203,13 @@ export const processNativePaths = async (
         const chunk = newPaths.slice(i, i + BATCH_SIZE);
 
         // Generate thumbnails for first batch, skip rest for speed (lazy generation later)
-        const isFirstBatch = i < FIRST_BATCH_WITH_THUMBS;
-        const skipThumbnail = !isFirstBatch;
+        // const isFirstBatch = i < FIRST_BATCH_WITH_THUMBS; // REMOVED: Inconsistent behavior
+        // const skipThumbnail = !isFirstBatch;
+
+        // STREAMLINED: Always skip valid thumbnail generation during import. 
+        // We rely 100% on the background queue which starts immediately after import.
+        // This ensures the import process is consistently fast (metadata only).
+        const skipThumbnail = true;
 
         try {
             const results = await scanImagesBulk(chunk, thumbnailDir || '', skipThumbnail, true, defaultTool);
