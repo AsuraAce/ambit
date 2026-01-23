@@ -91,7 +91,7 @@ export function useThumbnailQueue(): void {
 
         try {
             // Check how many need processing (passed includeUpgradeable = enforceHighQualityThumbnails)
-            const total = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
+            let total = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
             if (total === 0) {
                 console.log('[ThumbnailQueue] No unoptimized images found');
                 isRunningRef.current = false;
@@ -137,6 +137,23 @@ export function useThumbnailQueue(): void {
                 if (freshIds.length === 0) {
                     console.warn('[ThumbnailQueue] Aborting: All remaining unoptimized images have failed processing in this session.');
                     break;
+                }
+
+                // Dynamic Total Update: If we find more images than our initial 'total' snapshot 
+                // (e.g., import added images while we were running), refresh the total to correct the progress bar.
+                if (processed + freshIds.length > total) {
+                    // Quickly peek at the new real total
+                    const newTotal = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
+                    if (newTotal > total) {
+                        console.log(`[ThumbnailQueue] Detected new images, updating total from ${total} to ${newTotal}`);
+                        total = newTotal;
+                        // Immediate UI update to prevent "150 / 1" confusion
+                        setBackgroundHealingProgress({
+                            current: Math.min(processed, total),
+                            total,
+                            message: 'Optimizing thumbnails...'
+                        });
+                    }
                 }
 
                 // Process in smaller batches
