@@ -159,12 +159,15 @@ export function useThumbnailQueue(): void {
                             await updateThumbnailPathsBatch(dbUpdates);
 
                             // Sync with UI: Update React Query cache immediately
-                            // This ensures the UI reflects the new thumbnails without a refresh
-                            queryClient.setQueriesData({ queryKey: ['images'] }, (oldData: any) => {
-                                if (!oldData || !oldData.pages) return oldData;
-                                return {
-                                    ...oldData,
-                                    pages: oldData.pages.map((page: any) => ({
+                            // We must update ALL queries starting with 'images' to catch various filter states
+                            const queries = queryClient.getQueriesData({ queryKey: ['images'] });
+
+                            queries.forEach(([queryKey, oldData]: [any, any]) => {
+                                if (!oldData || !oldData.pages) return;
+
+                                queryClient.setQueryData(queryKey, (old: any) => ({
+                                    ...old,
+                                    pages: old.pages.map((page: any) => ({
                                         ...page,
                                         images: page.images.map((img: any) => {
                                             const update = dbUpdates.find(u => u.id === img.id);
@@ -172,7 +175,6 @@ export function useThumbnailQueue(): void {
                                                 return {
                                                     ...img,
                                                     thumbnailUrl: update.thumbnailPath,
-                                                    // microThumbnail is disabled conceptually but field remains on type
                                                     microThumbnail: null
                                                     // Start using thumbnail source 'ambit'
                                                 };
@@ -180,7 +182,7 @@ export function useThumbnailQueue(): void {
                                             return img;
                                         })
                                     }))
-                                };
+                                }));
                             });
                         }
                     } catch (e) {
