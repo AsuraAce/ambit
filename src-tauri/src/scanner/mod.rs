@@ -13,7 +13,7 @@ use once_cell::sync::Lazy;
 // or deep JSON/PNG structures.
 static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(12) // Higher thread count for I/O-bound thumbnail work
+        //.num_threads(12) // REMOVED: limit to allow full CPU utilization
         .stack_size(8 * 1024 * 1024) 
         .build()
         .unwrap()
