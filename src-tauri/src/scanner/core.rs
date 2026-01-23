@@ -46,6 +46,7 @@ pub fn scan_image_internal(
         .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
 
     let mut generated_thumbnail_path = String::new();
+    let mut generated_micro_thumbnail: Option<String> = None;
 
     // Handle thumbnail generation/lookup BEFORE we fail on dimensions
     // This allows us to return cached thumbnails even for images with format issues
@@ -96,6 +97,21 @@ pub fn scan_image_internal(
                                 } else {
                                     generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
                                 }
+                                
+                                // Generate micro-thumbnail (32px) for instant previews
+                                let micro = img.resize(32, 32, image::imageops::FilterType::Triangle);
+                                let micro_rgba = micro.to_rgba8();
+                                let (micro_w, micro_h) = micro_rgba.dimensions();
+                                let micro_encoder = webp::Encoder::from_rgba(
+                                    micro_rgba.as_raw(),
+                                    micro_w,
+                                    micro_h
+                                );
+                                let micro_webp = micro_encoder.encode(70.0);
+                                // Encode as data URI for direct use in <img src>
+                                use base64::{Engine as _, engine::general_purpose::STANDARD};
+                                let micro_b64 = STANDARD.encode(&*micro_webp);
+                                generated_micro_thumbnail = Some(format!("data:image/webp;base64,{}", micro_b64));
                             }
                             Err(e) => {
                                 // Log first failure in detail, then just count
@@ -133,6 +149,8 @@ pub fn scan_image_internal(
                     size,
                     modified,
                     thumbnail: generated_thumbnail_path,
+                    micro_thumbnail: generated_micro_thumbnail,
+                    thumbnail_source: Some("ambit".to_string()),
                     chunks: HashMap::new(),
                     metadata: None,
                 });
@@ -273,12 +291,16 @@ pub fn scan_image_internal(
         None
     };
 
+    let has_thumbnail = !generated_thumbnail_path.is_empty();
+
     Ok(ScanResult {
         width: dimensions.0,
         height: dimensions.1,
         size,
         modified,
-        thumbnail: if generated_thumbnail_path.is_empty() { String::new() } else { generated_thumbnail_path },
+        thumbnail: if has_thumbnail { generated_thumbnail_path } else { String::new() },
+        micro_thumbnail: generated_micro_thumbnail,
+        thumbnail_source: if has_thumbnail { Some("ambit".to_string()) } else { None },
         chunks: chunks_to_return,
         metadata: metadata_obj
     })

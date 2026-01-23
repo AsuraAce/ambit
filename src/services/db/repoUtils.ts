@@ -5,7 +5,7 @@ import { AIImage } from '../../types';
 // Lightweight column set for grid/listing views
 // NOTE: We fetch full metadata_json and strip heavy fields in JS (faster than SQLite's json_remove)
 export const IMAGE_FIELDS_LIGHT = `
-    images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, 
+    images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source,
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
     images.metadata_json, images.original_metadata_json, images.original_state_json
 `;
@@ -29,6 +29,8 @@ export function mapRowToImage(row: any): AIImage {
         id: row.id,
         url: convertFileSrc(normalizedPath),
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
+        microThumbnail: row.micro_thumbnail || undefined,
+        thumbnailSource: row.thumbnail_source || undefined,
         filename: getFilename(normalizedPath),
         fileSize: row.file_size,
         timestamp: row.timestamp,

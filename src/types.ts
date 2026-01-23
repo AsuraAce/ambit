@@ -78,6 +78,10 @@ export interface ParseResult {
   fileSize?: number;
   timestamp?: number;
   thumbnail?: string;
+  /** Base64 data URI for instant 32px preview */
+  microThumbnail?: string;
+  /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
+  thumbnailSource?: string;
   error?: boolean;
 }
 
@@ -92,6 +96,10 @@ export interface AIImage {
   id: string;
   url: string;
   thumbnailUrl: string;
+  /** Base64 data URI for instant 32px preview (progressive loading) */
+  microThumbnail?: string;
+  /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
+  thumbnailSource?: string;
   filename: string;
   fileSize?: number; // Size in bytes, used for duplicate detection
   timestamp: number; // Unix timestamp

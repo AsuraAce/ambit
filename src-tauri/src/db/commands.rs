@@ -80,8 +80,8 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
 
                 {
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
                              json_extract(?7, '$.tool'),
@@ -97,6 +97,8 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             file_size=excluded.file_size,
                             metadata_json=excluded.metadata_json,
                             thumbnail_path=excluded.thumbnail_path,
+                            micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
+                            thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
                             is_favorite=excluded.is_favorite,
                             is_pinned=excluded.is_pinned,
                             group_id=excluded.group_id,
@@ -161,6 +163,8 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             img.timestamp as i64,
                             img.metadata_json,
                             img.thumbnail_path,
+                            img.micro_thumbnail,
+                            img.thumbnail_source,
                             img.is_favorite,
                             img.is_pinned,
                             img.is_deleted,

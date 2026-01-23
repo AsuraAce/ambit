@@ -78,7 +78,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail
+            thumbnail: info.thumbnail,
+            microThumbnail: info.microThumbnail,
+            thumbnailSource: info.thumbnailSource
         };
     }
 
@@ -104,7 +106,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail
+            thumbnail: info.thumbnail,
+            microThumbnail: info.microThumbnail,
+            thumbnailSource: info.thumbnailSource
         };
     } catch (workerError) {
         console.error(`Worker parse failed/timed out for ${path}:`, workerError);
@@ -115,7 +119,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail
+            thumbnail: info.thumbnail,
+            microThumbnail: info.microThumbnail,
+            thumbnailSource: info.thumbnailSource
         };
     }
 };

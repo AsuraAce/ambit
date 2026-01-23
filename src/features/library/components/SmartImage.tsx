@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { ImageOff, ImageIcon, AlertCircle } from 'lucide-react';
+import { ImageOff, AlertCircle } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { repairAssetUrl } from '../../../utils/pathUtils';
 
@@ -11,6 +11,8 @@ interface SmartImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   wrapperClassName?: string; // Explicit wrapper class control
   imgClassName?: string; // Explicit img class control
   fallbackSrc?: string;
+  /** Base64 data URI for instant micro-preview (32px) */
+  microSrc?: string;
   onImageError?: () => void;
   objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
 }
@@ -25,6 +27,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   draggable = false,
   onImageError,
   fallbackSrc,
+  microSrc,
   objectFit = 'cover',
   ...props
 }) => {
@@ -51,13 +54,13 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     setShowShimmer(false);
   }
 
-  // Only show shimmer if loading takes more than 50ms to prevent flicker on cached images
+  // Only show shimmer if loading takes more than 50ms AND no microSrc is available
   useEffect(() => {
-    if (status === 'loading') {
+    if (status === 'loading' && !microSrc) {
       const timer = setTimeout(() => setShowShimmer(true), 50);
       return () => clearTimeout(timer);
     }
-  }, [status, currentSrc]);
+  }, [status, currentSrc, microSrc]);
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     setStatus('loaded');
@@ -144,7 +147,19 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   return (
     <div className={`relative overflow-hidden ${finalWrapperClass}`}>
-      {status === 'loading' && showShimmer && (
+      {/* Micro-thumbnail: Instant blurred preview while main image loads */}
+      {microSrc && status === 'loading' && (
+        <img
+          src={microSrc}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full blur-sm scale-110"
+          style={{ objectFit }}
+        />
+      )}
+
+      {/* Shimmer fallback: Only show if no microSrc and loading takes time */}
+      {status === 'loading' && showShimmer && !microSrc && (
         <div className="absolute inset-0 bg-gray-200 dark:bg-white/5 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer" />
         </div>

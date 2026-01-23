@@ -63,6 +63,8 @@ pub async fn scan_images_bulk(
                         size: 0,
                         modified: 0,
                         thumbnail: String::new(),
+                        micro_thumbnail: None,
+                        thumbnail_source: None,
                         chunks: std::collections::HashMap::new(),
                         metadata: None,
                     })

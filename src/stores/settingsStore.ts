@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     resourceViewModes: {},
     hideImportModal: false,
     enableAutoThumbnailHealing: true,
-    enforceHighQualityThumbnails: false
+    enforceHighQualityThumbnails: true
 };
 
 // Debounce timer for auto-save

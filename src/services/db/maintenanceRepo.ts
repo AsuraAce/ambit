@@ -139,13 +139,13 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
 export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
     const db = await getDb();
 
+    // Base condition: No thumbnail at all
     let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
 
     if (includeUpgradeable) {
-        // Include images that HAVE a thumbnail but it's not our standard high-quality one
-        // Standard = in .thumbnails folder AND is .webp
-        // So we want: NOT (standard) AND NOT (unoptimized case above, processed implicitly by OR)
-        // Logic: (Unoptimized) OR (HasThumb AND (NotWebP OR NotInThumbnails))
+        // Include images that have a thumbnail but:
+        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
+        // 2. micro_thumbnail is missing (need to generate instant preview)
         unoptimizedCondition = `
             (
                 ${unoptimizedCondition}
@@ -154,11 +154,10 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
                     thumbnail_path IS NOT NULL 
                     AND thumbnail_path != '' 
                     AND path != thumbnail_path
-                    AND (
-                        thumbnail_path NOT LIKE '%.webp' OR 
-                        thumbnail_path NOT LIKE '%.thumbnails%'
-                    )
+                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
                 )
+                OR
+                micro_thumbnail IS NULL
             )
         `;
     }
@@ -199,6 +198,9 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
     let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
 
     if (includeUpgradeable) {
+        // Include images that have a thumbnail but:
+        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
+        // 2. micro_thumbnail is missing (need to generate instant preview)
         unoptimizedCondition = `
             (
                 ${unoptimizedCondition}
@@ -207,11 +209,10 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
                     thumbnail_path IS NOT NULL 
                     AND thumbnail_path != '' 
                     AND path != thumbnail_path
-                    AND (
-                        thumbnail_path NOT LIKE '%.webp' OR 
-                        thumbnail_path NOT LIKE '%.thumbnails%'
-                    )
+                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
                 )
+                OR
+                micro_thumbnail IS NULL
             )
         `;
     }
@@ -256,6 +257,9 @@ export const getUnoptimizedImageIds = async (
     let unoptimizedCondition = `(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')`;
 
     if (includeUpgradeable) {
+        // Include images that have a thumbnail but:
+        // 1. thumbnail_source is not 'ambit' (imported from InvokeAI, legacy, etc.)
+        // 2. micro_thumbnail is missing (need to generate instant preview)
         unoptimizedCondition = `
             (
                 ${unoptimizedCondition}
@@ -264,11 +268,10 @@ export const getUnoptimizedImageIds = async (
                     thumbnail_path IS NOT NULL 
                     AND thumbnail_path != '' 
                     AND path != thumbnail_path
-                    AND (
-                        thumbnail_path NOT LIKE '%.webp' OR 
-                        thumbnail_path NOT LIKE '%.thumbnails%'
-                    )
+                    AND (thumbnail_source IS NULL OR thumbnail_source != 'ambit')
                 )
+                OR
+                micro_thumbnail IS NULL
             )
         `;
     }

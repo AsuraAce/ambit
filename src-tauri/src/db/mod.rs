@@ -46,6 +46,12 @@ pub struct ImageRecord {
     pub metadata_json: String,
     #[serde(rename = "thumbnailPath")]
     pub thumbnail_path: String,
+    /// Base64 encoded 32px WebP micro-thumbnail for instant previews
+    #[serde(rename = "microThumbnail")]
+    pub micro_thumbnail: Option<String>,
+    /// Source of the thumbnail: 'ambit', 'invokeai', etc.
+    #[serde(rename = "thumbnailSource")]
+    pub thumbnail_source: Option<String>,
     #[serde(rename = "isFavorite")]
     pub is_favorite: bool,
     #[serde(rename = "isPinned")]

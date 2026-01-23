@@ -216,6 +216,8 @@ export const processNativePaths = async (
                     id: normPath,
                     url: assetUrl,
                     thumbnailUrl: thumbPath,
+                    microThumbnail: result.microThumbnail || undefined,
+                    thumbnailSource: result.thumbnailSource || undefined,
                     filename: filename,
                     fileSize: result.fileSize || 0,
                     timestamp: result.timestamp || Date.now(),

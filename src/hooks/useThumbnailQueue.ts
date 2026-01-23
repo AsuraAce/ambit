@@ -138,13 +138,18 @@ export function useThumbnailQueue(): void {
                     }
 
                     const batchIds = ids.slice(i, i + BATCH_SIZE);
-                    const dbUpdates: { id: string; thumbnailPath: string }[] = [];
+                    const dbUpdates: { id: string; thumbnailPath: string; microThumbnail?: string | null; thumbnailSource?: string | null }[] = [];
 
                     try {
                         const results = await scanImagesBulk(batchIds, thumbDir, false, false);
                         results.forEach((res, idx) => {
                             if (res.thumbnail) {
-                                dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail });
+                                dbUpdates.push({
+                                    id: batchIds[idx],
+                                    thumbnailPath: res.thumbnail,
+                                    microThumbnail: res.microThumbnail || null,
+                                    thumbnailSource: res.thumbnailSource || 'ambit'
+                                });
                             }
                         });
 

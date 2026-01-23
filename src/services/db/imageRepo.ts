@@ -17,6 +17,8 @@ export const insertImage = async (image: AIImage) => {
             timestamp: image.timestamp,
             metadataJson: JSON.stringify(image.metadata),
             thumbnailPath: urlToPath(image.thumbnailUrl),
+            microThumbnail: image.microThumbnail || null,
+            thumbnailSource: image.thumbnailSource || null,
             isFavorite: !!image.isFavorite,
             isPinned: !!image.isPinned,
             isDeleted: !!image.isDeleted,
@@ -55,6 +57,8 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             timestamp: img.timestamp,
             metadataJson: JSON.stringify(img.metadata),
             thumbnailPath: urlToPath(img.thumbnailUrl),
+            microThumbnail: img.microThumbnail || null,
+            thumbnailSource: img.thumbnailSource || null,
             isFavorite: !!img.isFavorite,
             isPinned: !!img.isPinned,
             isDeleted: !!img.isDeleted,
@@ -386,17 +390,23 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
 };
 
 /**
- * Batch update thumbnail paths for multiple images.
+ * Batch update thumbnail data for multiple images.
+ * Includes path, micro-thumbnail (base64), and source for complete regeneration.
  * Uses individual updates with retry to avoid database lock issues.
  */
-export const updateThumbnailPathsBatch = async (updates: { id: string; thumbnailPath: string }[]): Promise<void> => {
+export const updateThumbnailPathsBatch = async (updates: {
+    id: string;
+    thumbnailPath: string;
+    microThumbnail?: string | null;
+    thumbnailSource?: string | null;
+}[]): Promise<void> => {
     if (updates.length === 0) return;
 
     const db = await getDb();
     let failCount = 0;
 
     // Individual updates with retry - avoids holding a transaction lock
-    for (const { id, thumbnailPath } of updates) {
+    for (const { id, thumbnailPath, microThumbnail, thumbnailSource } of updates) {
         const normalizedId = normalizePath(id);
         const normalizedThumb = normalizePath(thumbnailPath);
 
@@ -404,8 +414,8 @@ export const updateThumbnailPathsBatch = async (updates: { id: string; thumbnail
         while (retries > 0) {
             try {
                 await db.execute(
-                    'UPDATE images SET thumbnail_path = ? WHERE id = ?',
-                    [normalizedThumb, normalizedId]
+                    'UPDATE images SET thumbnail_path = ?, micro_thumbnail = COALESCE(?, micro_thumbnail), thumbnail_source = COALESCE(?, thumbnail_source) WHERE id = ?',
+                    [normalizedThumb, microThumbnail || null, thumbnailSource || null, normalizedId]
                 );
                 break;
             } catch (e: unknown) {

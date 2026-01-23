@@ -921,8 +921,30 @@ pub fn init_db() -> Vec<Migration> {
     };
 
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(), migration34(),
+        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(), migration34(), migration35(),
     ]
+}
+
+/// Migration 35: Add thumbnail source tracking and micro-thumbnails for progressive loading
+/// - thumbnail_source: Track where the thumbnail came from ('ambit', 'invokeai', etc.)
+/// - micro_thumbnail: Base64 encoded 32px WebP for instant previews
+fn migration35() -> Migration {
+    Migration {
+        version: 35,
+        description: "add_thumbnail_source_and_micro_thumbnail",
+        sql: "
+            -- Track thumbnail origin for intelligent upgrades
+            ALTER TABLE images ADD COLUMN thumbnail_source TEXT;
+            
+            -- Base64 encoded micro-thumbnail (32px WebP) for instant previews
+            -- Stored in DB to eliminate HTTP round-trip latency
+            ALTER TABLE images ADD COLUMN micro_thumbnail TEXT;
+            
+            -- Index for finding images that need thumbnail upgrades
+            CREATE INDEX IF NOT EXISTS idx_images_thumbnail_source ON images(thumbnail_source);
+        ",
+        kind: MigrationKind::Up,
+    }
 }
 
 /// Migration 33: Denormalize parameter columns for faster filtering

@@ -307,7 +307,15 @@ export type BackupInfo = { name: string; path: string; createdAt: string; sizeBy
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean }
-export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; 
+/**
+ * Base64 encoded 32px WebP micro-thumbnail for instant previews
+ */
+microThumbnail: string | null; 
+/**
+ * Source of the thumbnail: 'ambit', 'invokeai', etc.
+ */
+thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
 export type ImportResult = { added: number; totalFound: number; message: string }
 /**
  * Numeric range for a parameter
@@ -318,7 +326,15 @@ export type NumericRange = { min: number; max: number }
  */
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[] }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
-export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
+export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
+/**
+ * Base64 encoded 32px WebP micro-thumbnail for instant previews
+ */
+microThumbnail: string | null; 
+/**
+ * Source of the thumbnail: 'ambit', 'invokeai', etc.
+ */
+thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
 export type ThumbnailScanResult = { found: number; updated: number }
 /**
  * Valid facet names result - used for drill-down filtering
