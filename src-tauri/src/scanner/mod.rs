@@ -153,3 +153,16 @@ pub async fn open_file(path: String) -> Result<(), String> {
 pub async fn show_in_folder(path: String) -> Result<(), String> {
     utils::show_in_folder_impl(path)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn scan_directory_with_stats(path: String) -> Result<Vec<models::FileEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut files = Vec::new();
+        let root = Path::new(&path);
+        if root.exists() {
+            traversal::collect_images_with_stats_recursive(&root, &mut files);
+        }
+        Ok(files)
+    }).await.map_err(|e| e.to_string())?
+}

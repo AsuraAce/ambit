@@ -89,6 +89,11 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         }
 
         // If we have a thumbnail URL that differs from source, try to regenerate
+        // If we have a thumbnail URL that differs from source, try to regenerate?
+        // NO: This causes infinite loops if the generated thumbnail is invalid or browser rejects it.
+        // VirtualGrid remounting means we lose retry history, causing CPU burn on scroll.
+        // Fallback to source is safer. Background healing can fix broken thumbs later.
+        /*
         if (image.thumbnailUrl && image.thumbnailUrl !== image.url && !image.isMissing) {
             retryCountRef.current++;
             import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
@@ -113,6 +118,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
             });
             return;
         }
+        */
 
         // Source image failed: mark as missing
         if (!image.isMissing) {

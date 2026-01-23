@@ -44,6 +44,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::scan_directory_recursive,
             scanner::open_file,
             scanner::show_in_folder,
+            scanner::scan_directory_with_stats,
             // watcher commands
             watcher::start_native_folder_watcher,
             // metadata commands

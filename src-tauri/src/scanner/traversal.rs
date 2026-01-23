@@ -129,3 +129,57 @@ pub fn collect_images_recursive_absolute(
         }
     }
 }
+
+pub fn collect_images_with_stats_recursive(
+    current: &Path,
+    files: &mut Vec<super::models::FileEntry>,
+) {
+    if files.len() > 300_000 {
+        return;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(current) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if !p.ends_with("thumbnails") {
+                    collect_images_with_stats_recursive(&p, files);
+                }
+            } else if p.is_file() {
+                let ext = p
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
+                    let is_thumbnail = p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
+                        .unwrap_or(false);
+
+                    if !is_thumbnail {
+                        let (size, modified) = match entry.metadata() {
+                            Ok(m) => (
+                                m.len(),
+                                m.modified()
+                                    .ok()
+                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|d| d.as_millis() as u64)
+                                    .unwrap_or(0),
+                            ),
+                            Err(_) => (0, 0),
+                        };
+
+                        files.push(super::models::FileEntry {
+                            path: p.to_string_lossy().replace("\\", "/"),
+                            size,
+                            modified,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+

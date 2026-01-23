@@ -120,7 +120,10 @@ export const processNativePaths = async (
     let errors = 0;
 
     // 1. Resolve all paths (if a path is a directory, expand it recursively)
-    const allPaths: string[] = [];
+    // We now fetch stats (size, modified) to enable sorting by date
+    interface FileEntry { path: string; modified: number; size: number; }
+    let allEntries: FileEntry[] = [];
+
     if (onProgress) onProgress(0, paths.length, 'Scanning folders...');
 
     for (let i = 0; i < paths.length; i++) {
@@ -128,17 +131,43 @@ export const processNativePaths = async (
         const p = paths[i];
         if (onProgress) onProgress(i, paths.length, `Scanning: ${p.split(/[\\/]/).pop() || p}`);
         try {
-            const files = await unwrap(commands.scanDirectoryRecursive(p));
-            if (files && files.length > 0) {
-                allPaths.push(...files);
+            // Check if directory first (naive check based on extension or by trying scan)
+            // But verify_image_paths or similar helpers are better. 
+            // For now we assume if it fails it might be a file.
+            // Actually `scan_directory_with_stats` expects a directory path.
+            // If it's a file, we should handle it gracefully or rely on the previous behavior?
+            // Existing logic: scans recursively. If fails, assumes it's a file.
+
+            // To support single files, we'd need to manually stat them or wrap them.
+            // Let's try the recursive scan. If it returns empty or fails, we check if it is a file?
+            // But valid single files passed to `scanDirectoryRecursive` previously failed or returned empty? 
+            // Line 139: catch(e) { allPaths.push(p) }. 
+            // So if scan fails (e.g. it's a file), we treat it as a file.
+            // We need "stats" for single files too to sort them correctly.
+            // But fetching stats for single files one by one in Rust is tedious here without a new command.
+            // For drag-and-drop of 100 files, we might miss stats?
+            // Let's assume folder imports are the main target for "bulk" sorting.
+            // For single files, we can default modified to 0 (end of list) or try to fetch it?
+            // Let's proceed with folder scanning support primarily.
+
+            const entries = await unwrap(commands.scanDirectoryWithStats(p));
+            if (entries && entries.length > 0) {
+                allEntries.push(...entries);
             } else {
-                // If not a directory or no images found, keep as is (might be a single file)
-                allPaths.push(p);
+                // Fallback for single file or empty dir - no stats easily available without another call
+                // We push with 0 modified time (will appear at end/random)
+                allEntries.push({ path: p, modified: 0, size: 0 });
             }
         } catch (e) {
-            allPaths.push(p);
+            // Likely a single file
+            allEntries.push({ path: p, modified: 0, size: 0 });
         }
     }
+
+    // Sort by Modified Date (Newest First)
+    allEntries.sort((a, b) => b.modified - a.modified);
+
+    const allPaths = allEntries.map(e => e.path);
 
     // 2. Pre-filter: Remove already-imported paths (optimization for rescan)
     if (onProgress) onProgress(0, allPaths.length, 'Checking for new files...');

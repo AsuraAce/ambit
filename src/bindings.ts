@@ -221,6 +221,14 @@ async showInFolder(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async scanDirectoryWithStats(path: string) : Promise<Result<FileEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_directory_with_stats", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startNativeFolderWatcher(paths: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
@@ -305,6 +313,7 @@ async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<
 
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
+export type FileEntry = { path: string; modified: number; size: number }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean }
 export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; 

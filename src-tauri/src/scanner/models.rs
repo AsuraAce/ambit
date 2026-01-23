@@ -35,3 +35,10 @@ pub struct ScanResult {
     pub chunks: HashMap<String, String>,
     pub metadata: Option<metadata::ImageMetadata>,
 }
+
+#[derive(Serialize, Type)]
+pub struct FileEntry {
+    pub path: String,
+    pub modified: u64,
+    pub size: u64,
+}
