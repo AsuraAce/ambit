@@ -90,6 +90,14 @@ async rebuildFacetCache() : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async rebuildFacetCache() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Get distinct facet names that exist in the current filtered result set.
  * This is used for drill-down filtering - hiding facets that have no images
@@ -101,6 +109,31 @@ async rebuildFacetCache() : Promise<Result<number, string>> {
 async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null) : Promise<Result<ValidFacetNames, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { whereClause, paramsJson, collectionId, loraName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Mark a batch of images as corrupt to prevent further processing attempts.
+ * This clears any partial thumbnail data and sets is_corrupt = 1.
+ */
+async markImagesCorrupt(ids: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_images_corrupt", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Verify that all thumbnail files referenced in the database actually exist on disk.
+ * Limits the check to images that CLAIM to have a thumbnail.
+ * Returns the number of images found to be missing thumbnails (and thus cleared).
+ */
+async verifyThumbnailFiles() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("verify_thumbnail_files") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -324,7 +357,7 @@ microThumbnail: string | null;
 /**
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
-thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
 export type ImportResult = { added: number; totalFound: number; message: string }
 /**
  * Numeric range for a parameter
@@ -343,7 +376,11 @@ microThumbnail: string | null;
 /**
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
-thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null }
+thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; metadata: ImageMetadata | null; 
+/**
+ * Error message if scan failed or resulted in a partial result
+ */
+error: string | null }
 export type ThumbnailScanResult = { found: number; updated: number }
 /**
  * Valid facet names result - used for drill-down filtering

@@ -639,3 +639,74 @@ pub async fn mark_images_corrupt(app: tauri::AppHandle, ids: Vec<String>) -> Res
         Ok(updated_count)
     }).await.map_err(|e| e.to_string())?
 }
+
+/// Verify that all thumbnail files referenced in the database actually exist on disk.
+/// Limits the check to images that CLAIM to have a thumbnail.
+/// Returns the number of images found to be missing thumbnails (and thus cleared).
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn verify_thumbnail_files(app: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        // 1. Get List of (ID, ThumbnailPath) for all images claiming to have one
+        // We use a block to ensure statements are dropped before validation loop
+        let candidates: Vec<(String, String)> = {
+            let mut stmt = conn.prepare("SELECT id, thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''")
+                .map_err(|e| e.to_string())?;
+            
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }).map_err(|e| e.to_string())?;
+
+            let mut res = Vec::new();
+            for r in rows {
+                if let Ok(item) = r {
+                    res.push(item);
+                }
+            }
+            res
+        };
+
+        if candidates.is_empty() {
+             return Ok(0);
+        }
+
+        let mut missing_ids = Vec::new();
+        
+        // 2. Check existence 
+        for (id, path) in candidates {
+             if !std::path::Path::new(&path).exists() {
+                 missing_ids.push(id);
+             }
+        }
+
+        if missing_ids.is_empty() {
+            return Ok(0);
+        }
+
+        // 3. Update DB to clear missing thumbnails
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let mut updated = 0;
+        
+        {
+            let mut stmt = tx.prepare("
+                UPDATE images 
+                SET thumbnail_path = '', micro_thumbnail = NULL 
+                WHERE id = ?1
+            ").map_err(|e| e.to_string())?;
+
+            for id in missing_ids {
+                updated += stmt.execute(params![id]).map_err(|e| e.to_string())?;
+            }
+        }
+        
+        tx.commit().map_err(|e| e.to_string())?;
+        
+        println!("[Verify] Found and cleared {} missing thumbnails.", updated);
+        Ok(updated)
+
+    }).await.map_err(|e| e.to_string())?
+}

@@ -4,6 +4,7 @@ import { Shield, Trash2, History as HistoryIcon, ImageOff, Loader2, Database, Al
 import { AppSettings } from '../../../types';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
+import { useLibraryStore } from '../../../stores/libraryStore';
 import { clearAllThumbnailPaths, rebuildFacetCache } from '../../../services/db/imageRepo';
 import { BackupSettings } from './BackupSettings';
 import { commands } from '../../../bindings';
@@ -23,6 +24,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
     const [isClearing, setIsClearing] = useState(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [isRebuilding, setIsRebuilding] = useState(false);
+    const [isVerifying, setIsVerifying] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'database' | 'interface' | 'troubleshooting'>('database');
 
@@ -32,6 +34,9 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
 
     const handlePurge = async () => {
         setIsPurging(true);
+        // Pause background thumbnail generation to prevent DB locks
+        useLibraryStore.getState().setBackgroundHealingPaused(true);
+
         try {
             await cleanLibrary();
             addToast('Database purged successfully', 'success');
@@ -40,6 +45,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
             addToast('Failed to purge database', 'error');
         } finally {
             setIsPurging(false);
+            useLibraryStore.getState().setBackgroundHealingPaused(false);
             closeConfirm();
         }
     };
@@ -242,6 +248,39 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                             >
                                 {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
                                 {isClearing ? 'Clearing...' : 'Clear Thumbnails'}
+                            </button>
+                        </div>
+
+                        {/* Verify Thumbnails */}
+                        <div className="p-6 flex items-center justify-between">
+                            <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Verify Thumbnails</div>
+                                <div className="text-xs text-gray-500 mt-1">Scan all images to check if thumbnail files actually exist. Regenerates missing ones.</div>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={isVerifying}
+                                onClick={async () => {
+                                    setIsVerifying(true);
+                                    try {
+                                        // Cast to any because bindings.ts isn't regenerated yet
+                                        const count = await (commands as any).verifyThumbnailFiles();
+                                        if (count > 0) {
+                                            addToast(`Found ${count} missing thumbnails. Regeneration queued.`, 'success');
+                                        } else {
+                                            addToast('All thumbnails verified. None missing.', 'success');
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                        addToast('Failed to verify thumbnails', 'error');
+                                    } finally {
+                                        setIsVerifying(false);
+                                    }
+                                }}
+                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+                                {isVerifying ? 'Verifying...' : 'Verify Files'}
                             </button>
                         </div>
                     </div>
