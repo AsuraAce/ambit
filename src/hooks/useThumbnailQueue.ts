@@ -117,7 +117,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
             let processed = 0;
             let offset = 0;
             const PAGE_SIZE = 1000;
-            const BATCH_SIZE = 50; // Reverted to 50 for testing
+            const BATCH_SIZE = 150; // Increased to 150 for better throughput
 
             // Process in pages
             while (!abortController.signal.aborted) {
@@ -202,29 +202,42 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
                             // Sync with UI: Update React Query cache immediately
                             // We must update ALL queries starting with 'images' to catch various filter states
                             const queries = queryClient.getQueriesData({ queryKey: ['images'] });
+                            const { convertFileSrc } = await import('@tauri-apps/api/core');
+
+                            let updateCount = 0;
 
                             queries.forEach(([queryKey, oldData]: [any, any]) => {
                                 if (!oldData || !oldData.pages) return;
 
-                                queryClient.setQueryData(queryKey, (old: any) => ({
-                                    ...old,
-                                    pages: old.pages.map((page: any) => ({
-                                        ...page,
-                                        images: page.images.map((img: any) => {
-                                            const update = dbUpdates.find(u => u.id === img.id);
-                                            if (update) {
-                                                return {
-                                                    ...img,
-                                                    thumbnailUrl: update.thumbnailPath,
-                                                    microThumbnail: null
-                                                    // Start using thumbnail source 'ambit'
-                                                };
-                                            }
-                                            return img;
-                                        })
-                                    }))
-                                }));
+                                queryClient.setQueryData(queryKey, (old: any) => {
+                                    if (!old || !old.pages) return old;
+
+                                    return {
+                                        ...old,
+                                        pages: old.pages.map((page: any) => ({
+                                            ...page,
+                                            images: page.images.map((img: any) => {
+                                                const update = dbUpdates.find(u => u.id === img.id);
+                                                if (update) {
+                                                    updateCount++;
+                                                    return {
+                                                        ...img,
+                                                        // CRITICAL FIX: Ensure protocol is correct for SmartImage detection
+                                                        thumbnailUrl: convertFileSrc(update.thumbnailPath),
+                                                        microThumbnail: null,
+                                                        thumbnailSource: 'ambit'
+                                                    };
+                                                }
+                                                return img;
+                                            })
+                                        }))
+                                    };
+                                });
                             });
+
+                            if (updateCount > 0) {
+                                console.log(`[ThumbnailQueue] Silently updated ${updateCount} images in query cache`);
+                            }
                         }
 
                         // Check for failures in this batch

@@ -371,10 +371,28 @@ export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediat
  * Use when thumbnails are broken/missing.
  */
 export const clearAllThumbnailPaths = async (): Promise<number> => {
-    const db = await getDb();
-    const result = await db.execute('UPDATE images SET thumbnail_path = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""');
-    console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
-    return result.rowsAffected;
+    return await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                const result = await db.execute('UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""');
+                console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
+                return result.rowsAffected;
+            } catch (e: unknown) {
+                const errorMsg = e instanceof Error ? e.message : String(e);
+                if (errorMsg.includes('database is locked') && retries > 1) {
+                    console.log(`[DB] Locked during clear, retrying... (${retries})`);
+                    await new Promise(r => setTimeout(r, 200));
+                    retries--;
+                } else {
+                    console.error('[DB] Failed to clear thumbnails', e);
+                    throw e;
+                }
+            }
+        }
+        return 0;
+    });
 };
 
 /**

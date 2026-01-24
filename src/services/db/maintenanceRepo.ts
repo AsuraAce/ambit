@@ -217,6 +217,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
+        AND is_missing = 0
         AND is_intermediate_gen != 1
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
@@ -257,6 +258,7 @@ export const getUnoptimizedImageEntries = async (
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
+        AND is_missing = 0
         AND is_intermediate_gen != 1
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;

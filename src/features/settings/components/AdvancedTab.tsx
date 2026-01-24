@@ -229,26 +229,75 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                         <div className="p-6 flex items-center justify-between">
                             <div>
                                 <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Clear Broken Thumbnails</div>
-                                <div className="text-xs text-gray-500 mt-1">Fix 500 errors by clearing stale thumbnail paths. Images will use source files.</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    {(isVerifying || isClearing) ? (
+                                        <span className="text-amber-500 font-medium animate-pulse">Operation in progress... Background healing paused.</span>
+                                    ) : (
+                                        "Fix 500 errors by clearing stale thumbnail paths. Images will use source files."
+                                    )}
+                                </div>
                             </div>
-                            <button
-                                type="button"
-                                disabled={isClearing}
-                                onClick={async () => {
-                                    setIsClearing(true);
-                                    try {
-                                        const count = await clearAllThumbnailPaths();
-                                        addToast(`Cleared ${count} thumbnail paths.`, 'success');
-                                        await fetchData(false);
-                                    } finally {
-                                        setIsClearing(false);
-                                    }
-                                }}
-                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
-                            >
-                                {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
-                                {isClearing ? 'Clearing...' : 'Clear Thumbnails'}
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isVerifying || isClearing}
+                                    onClick={async () => {
+                                        setIsVerifying(true);
+                                        useLibraryStore.getState().setBackgroundHealingPaused(true);
+                                        try {
+                                            addToast('Starting file verification... this may take a moment.', 'info');
+                                            const { pruneBrokenThumbnails } = await import('../../../services/thumbnailService');
+                                            const count = await pruneBrokenThumbnails();
+
+                                            // Debug: check breakdown
+                                            const db = await import('../../../services/db/connection').then(m => m.getDb());
+                                            const total = await db.select<{ c: number }[]>('SELECT count(*) as c FROM images WHERE thumbnail_path IS NOT NULL');
+                                            console.log(`[Verify] Checked ${total[0].c} thumbnails, fixed ${count}`);
+
+                                            if (count > 0) {
+                                                addToast(`Found and reset ${count} missing thumbnails. Auto-optimization will pick them up shortly.`, 'success');
+                                            } else {
+                                                addToast(`Verification Complete. Scanned ${total[0].c} images, all files exist.`, 'success');
+                                            }
+                                            await fetchData(false);
+                                        } catch (e) {
+                                            console.error(e);
+                                            addToast('Failed to verify thumbnails', 'error');
+                                        } finally {
+                                            setIsVerifying(false);
+                                            useLibraryStore.getState().setBackgroundHealingPaused(false);
+                                        }
+                                    }}
+                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+                                    {isVerifying ? 'Checking...' : 'Verify Files'}
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isClearing || isVerifying}
+                                    onClick={async () => {
+                                        setIsClearing(true);
+                                        useLibraryStore.getState().setBackgroundHealingPaused(true);
+                                        try {
+                                            addToast('Resetting all thumbnail paths...', 'info');
+                                            const count = await clearAllThumbnailPaths();
+                                            addToast(`Reset ${count} images to source. Auto-optimization will start.`, 'success');
+                                            await fetchData(false);
+                                        } catch (e) {
+                                            console.error(e);
+                                            addToast('Failed to clear thumbnails', 'error');
+                                        } finally {
+                                            setIsClearing(false);
+                                            useLibraryStore.getState().setBackgroundHealingPaused(false);
+                                        }
+                                    }}
+                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
+                                    {isClearing ? 'Clearing...' : 'Reset All'}
+                                </button>
+                            </div>
                         </div>
 
                         {/* Verify Thumbnails */}

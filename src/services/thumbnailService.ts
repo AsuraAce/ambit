@@ -133,7 +133,7 @@ export const regenerateAllUnoptimized = async (
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
-    const { getUnoptimizedImagesCount, getUnoptimizedImageIds } = await import('./db/maintenanceRepo');
+    const { getUnoptimizedImagesCount, getUnoptimizedImageEntries } = await import('./db/maintenanceRepo');
     const { updateThumbnailPathsBatch } = await import('./db/imageRepo');
 
     // Get total count first
@@ -143,7 +143,7 @@ export const regenerateAllUnoptimized = async (
     let processed = 0;
     let generated = 0;
     const PAGE_SIZE = 500; // Fetch 500 IDs at a time from DB
-    const BATCH_SIZE = 100; // Process 100 at a time for thumbnail generation
+    const BATCH_SIZE = 150; // Process 150 at a time for thumbnail generation
 
     // Process in pages
     for (let offset = 0; offset < total; offset += PAGE_SIZE) {
@@ -153,18 +153,20 @@ export const regenerateAllUnoptimized = async (
         }
 
         // Fetch next page of IDs
-        const ids = await getUnoptimizedImageIds(offset, PAGE_SIZE, whereClause, params, includeUpgradeable);
-        if (ids.length === 0) break;
+        const entries = await getUnoptimizedImageEntries(offset, PAGE_SIZE, whereClause, params, includeUpgradeable);
+        if (entries.length === 0) break;
 
         // Process this page in batches
-        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        for (let i = 0; i < entries.length; i += BATCH_SIZE) {
             if (signal?.aborted) break;
 
-            const batchIds = ids.slice(i, i + BATCH_SIZE);
+            const batchEntries = entries.slice(i, i + BATCH_SIZE);
+            const batchIds = batchEntries.map(e => e.id);
+            const batchPaths = batchEntries.map(e => e.path);
             const dbUpdates: { id: string; thumbnailPath: string }[] = [];
 
             try {
-                const results = await scanImagesBulk(batchIds, thumbDir, false, false);
+                const results = await scanImagesBulk(batchPaths, thumbDir, false, false);
                 results.forEach((res, idx) => {
                     if (res.thumbnail) {
                         dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail });
@@ -328,4 +330,85 @@ export const syncExistingThumbnailsToDB = async (
     }
 
     return synced;
+};
+
+/**
+ * Scan all images with thumbnails and check if the file actually exists.
+ * If not, set the thumbnail_path to NULL so it can be regenerated.
+ * Returns the number of images fixed.
+ */
+export const pruneBrokenThumbnails = async (): Promise<number> => {
+    const thumbDir = await getThumbnailDir();
+    if (!thumbDir) return 0;
+
+    const { getDb } = await import('./db/connection');
+    const { exists } = await import('@tauri-apps/plugin-fs');
+    const { normalizePath } = await import('../utils/pathUtils');
+    const { join } = await import('@tauri-apps/api/path');
+
+    console.log('[Thumb] Pruning broken thumbnails...');
+
+    // Get all images with thumbnails
+    const db = await getDb();
+    const rows = await db.select<{ id: string; thumbnail_path: string }[]>(
+        'SELECT id, thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+    );
+
+    let brokenCount = 0;
+    const brokenIds: string[] = [];
+
+    // Check availability
+    // Optimization: We could use Rust for bulk verify if this is too slow,
+    // but for <100k items checking file existence is reasonably fast in parallel chunks or even sequentially.
+    // Let's do parallel chunks of 50.
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map(async (row) => {
+            // If it's a web URL, skip check
+            if (row.thumbnail_path.startsWith('http')) return;
+
+            // If it's a full absolute path, check it.
+            // If it's a filename only (legacy), join with thumbDir
+            // Newer entries store full absolute path.
+            let checkPath = normalizePath(row.thumbnail_path);
+
+            // Heuristic for old relative paths (unlikely in new versions but safe to keep)
+            if (!checkPath.includes('/') && !checkPath.includes('\\')) {
+                checkPath = await join(thumbDir, checkPath);
+            }
+
+            try {
+                const doesExist = await exists(checkPath);
+                if (!doesExist) {
+                    brokenIds.push(row.id);
+                    brokenCount++;
+                }
+            } catch (e) {
+                // If checking fails, assume available or transient error?
+                // Safest to assume NOT available if 'exists' throws for file system errors
+                console.warn(`[Thumb] Failed to check existence of ${checkPath}`, e);
+            }
+        }));
+    }
+
+    if (brokenCount > 0) {
+        console.log(`[Thumb] Found ${brokenCount} broken thumbnails. Resetting to NULL...`);
+
+        // Batch update to NULL
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < brokenIds.length; i += BATCH_SIZE) {
+            const batch = brokenIds.slice(i, i + BATCH_SIZE);
+            const placeholders = batch.map(() => '?').join(',');
+            await db.execute(
+                `UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (${placeholders})`,
+                batch
+            );
+        }
+    } else {
+        console.log('[Thumb] No broken thumbnails found.');
+    }
+
+    return brokenCount;
 };
