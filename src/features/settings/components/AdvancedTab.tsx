@@ -373,8 +373,9 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
             <ConfirmDialog
                 isOpen={confirmAction.isOpen && confirmAction.type === 'clear_thumbnails'}
                 title="Reset All Thumbnails?"
-                message="This will force a re-check of every image in your library. While fast for existing thumbnails, it will cause high disk usage as the system verifies each file. Only do this if your thumbnails are broken."
-                confirmLabel="Reset & Verify"
+                message="This action will DELETE all thumbnail references from the database. The system will be forced to re-scan your entire library to discover or regenerate thumbnails. faster than a full regeneration, but will cause high disk usage."
+                confirmLabel="Reset Thumbnails"
+                isDangerous={true}
                 onConfirm={handleClearThumbnails}
                 isLoading={isClearing}
                 onCancel={closeConfirm}
