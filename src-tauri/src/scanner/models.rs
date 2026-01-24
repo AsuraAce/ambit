@@ -34,6 +34,8 @@ pub struct ScanResult {
     pub thumbnail_source: Option<String>,
     pub chunks: HashMap<String, String>,
     pub metadata: Option<metadata::ImageMetadata>,
+    /// Error message if scan failed or resulted in a partial result
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Type)]

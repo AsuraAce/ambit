@@ -182,6 +182,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
         AND is_intermediate_gen != 1
+        AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
     if (whereClause && whereClause.trim().length > 0) {
@@ -217,6 +218,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
         AND is_intermediate_gen != 1
+        AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
     if (whereClause && whereClause.trim().length > 0) {
@@ -235,27 +237,28 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
 };
 
 /**
- * Paginated ID-only fetcher for regeneration processing.
- * Returns just the IDs (file paths) to minimize memory usage.
+ * Paginated ID and Path fetcher for regeneration processing.
+ * Returns IDs and Paths to allow scanning by path and updating by ID.
  */
-export const getUnoptimizedImageIds = async (
+export const getUnoptimizedImageEntries = async (
     offset: number,
     limit: number,
     whereClause: string = '',
     params: any[] = [],
     includeUpgradeable: boolean = false
-): Promise<string[]> => {
+): Promise<{ id: string; path: string }[]> => {
     const db = await getDb();
 
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT id FROM images 
+        SELECT id, path FROM images 
         WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
         AND is_intermediate_gen != 1
+        AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
     if (whereClause && whereClause.trim().length > 0) {
@@ -270,8 +273,8 @@ export const getUnoptimizedImageIds = async (
     }
 
     query += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;
-    const rows = await db.select<{ id: string }[]>(query, params);
-    return rows.map(r => r.id);
+    const rows = await db.select<{ id: string; path: string }[]>(query, params);
+    return rows;
 };
 
 export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {

@@ -64,7 +64,8 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: 0,
             fileSize: 0,
             timestamp: Date.now(),
-            error: true
+            error: true,
+            errorReason: (info as any).error
         };
     }
 
@@ -108,7 +109,8 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             timestamp: info.modified,
             thumbnail: info.thumbnail,
             microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource
+            thumbnailSource: info.thumbnailSource,
+            errorReason: (info as any).error
         };
     } catch (workerError) {
         console.error(`Worker parse failed/timed out for ${path}:`, workerError);
@@ -121,7 +123,8 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             timestamp: info.modified,
             thumbnail: info.thumbnail,
             microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource
+            thumbnailSource: info.thumbnailSource,
+            errorReason: workerError instanceof Error ? workerError.message : String(workerError)
         };
     }
 };

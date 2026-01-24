@@ -604,3 +604,37 @@ pub async fn get_parameter_ranges(
         })
     }).await.map_err(|e| e.to_string())?
 }
+
+/// Mark a batch of images as corrupt to prevent further processing attempts.
+/// This clears any partial thumbnail data and sets is_corrupt = 1.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn mark_images_corrupt(app: tauri::AppHandle, ids: Vec<String>) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        let mut updated_count = 0;
+        {
+            // We use a prepared statement for safety
+            let mut stmt = tx.prepare_cached("
+                UPDATE images 
+                SET is_corrupt = 1, 
+                    thumbnail_path = '', 
+                    micro_thumbnail = NULL 
+                WHERE id = ?1
+            ").map_err(|e| e.to_string())?;
+
+            for id in ids {
+                updated_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
+            }
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+        log::info!("[DB] Marked {} images as corrupt", updated_count);
+        Ok(updated_count)
+    }).await.map_err(|e| e.to_string())?
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invoke } from '@tauri-apps/api/core';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -23,7 +24,7 @@ const RESUME_DELAY_MS = 2000;
  * - Low priority: Uses requestIdleCallback (with fallback) for scheduling
  * - Progress tracking: Updates store for ActivityDock visibility
  */
-export function useThumbnailQueue(): void {
+export function useThumbnailQueue(addToast?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void): void {
     const queryClient = useQueryClient();
     const abortControllerRef = useRef<AbortController | null>(null);
     const isRunningRef = useRef(false);
@@ -78,10 +79,13 @@ export function useThumbnailQueue(): void {
         if (isRunningRef.current) return;
         isRunningRef.current = true;
 
-        const { getUnoptimizedImagesCount, getUnoptimizedImageIds } = await import('../services/db/maintenanceRepo');
+        const { getUnoptimizedImagesCount, getUnoptimizedImageEntries } = await import('../services/db/maintenanceRepo');
         const { getThumbnailDir } = await import('../services/thumbnailService');
         const { scanImagesBulk } = await import('../services/metadataParser');
         const { updateThumbnailPathsBatch } = await import('../services/db/imageRepo');
+
+        // Removed commands import to use raw invoke
+
 
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
@@ -125,23 +129,23 @@ export function useThumbnailQueue(): void {
                     break;
                 }
 
-                // Fetch next page of IDs (passed includeUpgradeable)
+                // Fetch next page of entries (passed includeUpgradeable)
                 // We always fetch from offset 0 because successful processing removes items from the "unoptimized" set
-                const ids = await getUnoptimizedImageIds(0, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
+                const entries = await getUnoptimizedImageEntries(0, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
 
-                if (ids.length === 0) break;
+                if (entries.length === 0) break;
 
                 // Infinite loop protection: Filter out images we've already tried and failed to fix in this session
-                const freshIds = ids.filter(id => !attemptedIds.has(id));
+                const freshEntries = entries.filter(e => !attemptedIds.has(e.id));
 
-                if (freshIds.length === 0) {
+                if (freshEntries.length === 0) {
                     console.warn('[ThumbnailQueue] Aborting: All remaining unoptimized images have failed processing in this session.');
                     break;
                 }
 
                 // Dynamic Total Update: If we find more images than our initial 'total' snapshot 
                 // (e.g., import added images while we were running), refresh the total to correct the progress bar.
-                if (processed + freshIds.length > total) {
+                if (processed + freshEntries.length > total) {
                     // Quickly peek at the new real total
                     const newTotal = await getUnoptimizedImagesCount('', [], enforceHighQualityThumbnails);
                     if (newTotal > total) {
@@ -157,7 +161,7 @@ export function useThumbnailQueue(): void {
                 }
 
                 // Process in smaller batches
-                for (let i = 0; i < freshIds.length; i += BATCH_SIZE) {
+                for (let i = 0; i < freshEntries.length; i += BATCH_SIZE) {
                     if (abortController.signal.aborted) break;
 
                     // Double-check for blocking activity between batches
@@ -169,7 +173,9 @@ export function useThumbnailQueue(): void {
                         return;
                     }
 
-                    const batchIds = freshIds.slice(i, i + BATCH_SIZE);
+                    const batchEntries = freshEntries.slice(i, i + BATCH_SIZE);
+                    const batchIds = batchEntries.map(e => e.id);
+                    const batchPaths = batchEntries.map(e => e.path);
 
                     // Register attempts immediately
                     batchIds.forEach(id => attemptedIds.add(id));
@@ -177,7 +183,8 @@ export function useThumbnailQueue(): void {
                     const dbUpdates: { id: string; thumbnailPath: string; microThumbnail?: string | null; thumbnailSource?: string | null }[] = [];
 
                     try {
-                        const results = await scanImagesBulk(batchIds, thumbDir, false, false);
+                        // FIX: Pass actual file paths to scanner, NOT IDs
+                        const results = await scanImagesBulk(batchPaths, thumbDir, false, false);
                         results.forEach((res, idx) => {
                             if (res.thumbnail) {
                                 dbUpdates.push({
@@ -219,12 +226,43 @@ export function useThumbnailQueue(): void {
                                 }));
                             });
                         }
+
+                        // Check for failures in this batch
+                        const failedIds: string[] = [];
+
+                        results.forEach((res, idx) => {
+                            // Check for error field OR missing thumbnail
+                            if (res.error || res.errorReason || (!res.thumbnail && !res.microThumbnail)) {
+                                const failedId = batchIds[idx];
+                                const failedPath = batchPaths[idx];
+                                const errorReason = res.errorReason || (res as any).error || "Unknown Failure";
+
+                                failedIds.push(failedId);
+
+                                console.error(`[ThumbnailQueue] Failed to generate thumbnail for ID: ${failedId}`, errorReason);
+
+                                if (addToast) {
+                                    // Use the error message from backend if available
+                                    addToast(`Thumbnail failed for ${failedPath.split(/[\\/]/).pop()}: ${errorReason}`, 'error');
+                                }
+                            }
+                        });
+
+                        // Quarantine corrupt images
+                        if (failedIds.length > 0) {
+                            try {
+                                await invoke('mark_images_corrupt', { ids: failedIds });
+                                console.log(`[ThumbnailQueue] Quarantined ${failedIds.length} corrupt images`);
+                            } catch (e) {
+                                console.error('[ThumbnailQueue] Failed to mark images as corrupt', e);
+                            }
+                        }
                     } catch (e) {
                         console.error(`[ThumbnailQueue] Batch failed at offset ${offset + i}`, e);
                     }
 
                     // Only increment processed count for what we actually attempted
-                    processed += batchIds.length;
+                    processed += batchEntries.length;
 
                     // Clamp current to total to avoid > 100% visual glitch
                     const displayCurrent = Math.min(processed, total);

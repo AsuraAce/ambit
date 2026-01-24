@@ -58,8 +58,8 @@ pub async fn scan_images_bulk(
                         extract_workflow,
                         default_tool.clone(),
                     )
-                    // Use a default error result if scan fails
-                    .unwrap_or_else(|_| ScanResult {
+                    // Capture the error in the result instead of swallowing it
+                    .unwrap_or_else(|e| ScanResult {
                         width: 0,
                         height: 0,
                         size: 0,
@@ -69,6 +69,7 @@ pub async fn scan_images_bulk(
                         thumbnail_source: None,
                         chunks: std::collections::HashMap::new(),
                         metadata: None,
+                        error: Some(e),
                     })
                 })
                 .collect();

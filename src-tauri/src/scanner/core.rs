@@ -40,6 +40,7 @@ pub fn scan_image_internal(
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
     let mut dimensions: (u32, u32) = (0, 0);
+    let mut thumbnail_error: Option<String> = None;
 
     // Handle thumbnail generation/lookup
     if let Some(dir) = &thumbnail_dir {
@@ -65,6 +66,7 @@ pub fn scan_image_internal(
                     Err(e) => {
                         // Log failure but don't fail the scan
                          println!("[Thumb] Failed to generate thumbnail: {}", e);
+                         thumbnail_error = Some(e.to_string());
                     }
                 }
             }
@@ -93,6 +95,7 @@ pub fn scan_image_internal(
                         thumbnail_source: Some("ambit".to_string()),
                         chunks: HashMap::new(),
                         metadata: None,
+                        error: Some(format!("Failed to read image dimensions: {}", e)),
                     });
                 }
                 // No thumbnail and no dimensions - this is a real failure
@@ -244,7 +247,8 @@ pub fn scan_image_internal(
         micro_thumbnail: generated_micro_thumbnail,
         thumbnail_source: if has_thumbnail { Some("ambit".to_string()) } else { None },
         chunks: chunks_to_return,
-        metadata: metadata_obj
+        metadata: metadata_obj,
+        error: thumbnail_error
     })
 }
 

@@ -922,6 +922,16 @@ pub fn init_db() -> Vec<Migration> {
 
     vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
         migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(), migration34(), migration35(),
+        // Migration 37 (Retry of 36): Add is_corrupt column
+        // We bump version to ensure it runs even if 36 failed/partial
+        Migration {
+            version: 37,
+            description: "add_is_corrupt_column_v2",
+            // We use safe check (just ADD) - if it implies failure, user might need to purge DB
+            // But realistically 36 failed due to Strict Mode, so column shouldn't exist.
+            sql: "ALTER TABLE images ADD COLUMN is_corrupt INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

@@ -60,6 +60,8 @@ pub struct ImageRecord {
     pub is_deleted: bool,
     #[serde(rename = "isMissing")]
     pub is_missing: bool,
+    #[serde(rename = "isCorrupt")]
+    pub is_corrupt: bool,
     #[serde(rename = "userMasked")]
     pub user_masked: Option<bool>,
     #[serde(rename = "groupId")]

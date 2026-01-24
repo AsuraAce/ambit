@@ -83,6 +83,7 @@ export interface ParseResult {
   /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
   thumbnailSource?: string;
   error?: boolean;
+  errorReason?: string;
 }
 
 // Snapshot of image-level state at import time (for sync conflict resolution)
@@ -109,6 +110,7 @@ export interface AIImage {
   isPinned?: boolean;
   isDeleted?: boolean; // Soft delete flag
   isMissing?: boolean; // File system link broken
+  isCorrupt?: boolean; // File scan failed permanently
   userMasked?: boolean; // Explicit manual mask
   groupId?: string; // ID linking multiple versions/upscales
   boardId?: string; // ID linking to external board/collection

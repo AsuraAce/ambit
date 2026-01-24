@@ -101,7 +101,7 @@ export default function App() {
 
     // --- Background Processes ---
     // Initialize background thumbnail auto-healing (runs after app startup delay)
-    useThumbnailQueue();
+    useThumbnailQueue(addToast);
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
