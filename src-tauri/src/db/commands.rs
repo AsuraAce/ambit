@@ -80,8 +80,8 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
 
                 {
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
                              json_extract(?7, '$.tool'),
@@ -106,6 +106,7 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             notes=excluded.notes,
                             original_metadata_json=excluded.original_metadata_json,
                             original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
+                            is_corrupt=excluded.is_corrupt,
                             model_hash=excluded.model_hash,
                             model_name=excluded.model_name,
                             tool=excluded.tool,
@@ -174,7 +175,8 @@ pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) 
                             img.board_id,
                             img.notes,
                             img.original_metadata_json,
-                            img.original_state_json
+                            img.original_state_json,
+                            img.is_corrupt
                         ])
                         .map_err(|e| e.to_string())?;
 

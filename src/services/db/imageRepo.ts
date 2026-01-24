@@ -28,7 +28,8 @@ export const insertImage = async (image: AIImage) => {
             boardId: image.boardId || null,
             notes: image.notes || null,
             originalMetadataJson: image.originalMetadata ? JSON.stringify(image.originalMetadata) : null,
-            originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null
+            originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
+            isCorrupt: !!image.isCorrupt
         };
 
         await commands.saveImagesBatch([record]);
@@ -68,7 +69,8 @@ export const insertImagesBatch = async (images: AIImage[]) => {
             boardId: img.boardId || null,
             notes: img.notes || null,
             originalMetadataJson: img.originalMetadata ? JSON.stringify(img.originalMetadata) : null,
-            originalStateJson: img.originalState ? JSON.stringify(img.originalState) : null
+            originalStateJson: img.originalState ? JSON.stringify(img.originalState) : null,
+            isCorrupt: !!img.isCorrupt
         }));
 
         const CHUNK_SIZE = 5000;
