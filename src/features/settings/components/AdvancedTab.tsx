@@ -123,7 +123,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                 <button
                                     onClick={handleOptimize}
                                     disabled={isOptimizing}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                                 >
                                     {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
                                     {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
@@ -143,7 +143,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                 <button
                                     onClick={handleRebuildCache}
                                     disabled={isRebuilding}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                                 >
                                     {isRebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                     {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
@@ -160,7 +160,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                             <button
                                 type="button"
                                 onClick={() => setConfirmAction({ type: 'purge', isOpen: true })}
-                                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm"
+                                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm whitespace-nowrap"
                             >
                                 <Trash2 className="w-3.5 h-3.5" /> Purge Database
                             </button>
@@ -193,7 +193,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                     }));
                                     addToast('Onboarding reset. Reload to see wizard.', 'info');
                                 }}
-                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
                             >
                                 <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
                             </button>
@@ -219,7 +219,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                             <button
                                 type="button"
                                 onClick={() => setConfirmAction({ type: 'reset', isOpen: true })}
-                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
                             >
                                 <HistoryIcon className="w-3.5 h-3.5" /> Reset Cursor
                             </button>
@@ -268,7 +268,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                             useLibraryStore.getState().setBackgroundHealingPaused(false);
                                         }
                                     }}
-                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                     {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
                                     {isVerifying ? 'Checking...' : 'Verify Files'}
@@ -292,7 +292,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                             useLibraryStore.getState().setBackgroundHealingPaused(false);
                                         }
                                     }}
-                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                     {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
                                     {isClearing ? 'Clearing...' : 'Reset All'}
@@ -331,7 +331,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                         setIsVerifying(false);
                                     }
                                 }}
-                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                             >
                                 {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
                                 {isVerifying ? 'Verifying...' : 'Verify Library'}
