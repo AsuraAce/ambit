@@ -28,7 +28,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::facets::rebuild_facet_cache,
             db::facets::get_valid_facet_names,
             db::commands::mark_images_corrupt,
-            db::commands::verify_thumbnail_files,
+            db::commands::verify_library_integrity,
 
             // db backup commands
             db::backup::get_backups,
@@ -48,6 +48,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::open_file,
             scanner::show_in_folder,
             scanner::scan_directory_with_stats,
+            scanner::scan_directory_since,
             // watcher commands
             watcher::start_native_folder_watcher,
             // metadata commands

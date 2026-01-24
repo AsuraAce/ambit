@@ -640,25 +640,36 @@ pub async fn mark_images_corrupt(app: tauri::AppHandle, ids: Vec<String>) -> Res
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Verify that all thumbnail files referenced in the database actually exist on disk.
-/// Limits the check to images that CLAIM to have a thumbnail.
-/// Returns the number of images found to be missing thumbnails (and thus cleared).
+/// Verify integrity of the entire library.
+/// 1. Checks if source file exists -> Updates is_missing
+/// 2. If source exists, checks if thumbnail exists -> Clears thumbnail_path if missing (triggers regen)
+/// Returns (missing_files_count, recovered_files_count, broken_thumbs_count)
+#[derive(serde::Serialize, specta::Type)]
+pub struct IntegrityResult {
+    pub missing: usize,
+    pub recovered: usize,
+    pub broken_thumbs: usize,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn verify_thumbnail_files(app: tauri::AppHandle) -> Result<usize, String> {
+pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<IntegrityResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
-        // 1. Get List of (ID, ThumbnailPath) for all images claiming to have one
-        // We use a block to ensure statements are dropped before validation loop
-        let candidates: Vec<(String, String)> = {
-            let mut stmt = conn.prepare("SELECT id, thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ''")
+        // 1. Get all images
+        let images: Vec<(String, String, Option<String>)> = {
+            let mut stmt = conn.prepare("SELECT id, path, thumbnail_path FROM images")
                 .map_err(|e| e.to_string())?;
             
             let rows = stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?, 
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?
+                ))
             }).map_err(|e| e.to_string())?;
 
             let mut res = Vec::new();
@@ -670,43 +681,71 @@ pub async fn verify_thumbnail_files(app: tauri::AppHandle) -> Result<usize, Stri
             res
         };
 
-        if candidates.is_empty() {
-             return Ok(0);
+        if images.is_empty() {
+             return Ok(IntegrityResult { missing: 0, recovered: 0, broken_thumbs: 0 });
         }
 
-        let mut missing_ids = Vec::new();
-        
-        // 2. Check existence 
-        for (id, path) in candidates {
-             if !std::path::Path::new(&path).exists() {
-                 missing_ids.push(id);
-             }
+        let mut ids_to_mark_missing = Vec::new();
+        let mut ids_to_mark_found = Vec::new(); // Recovered (was missing, now found)
+        let mut ids_to_clear_thumb = Vec::new();
+
+        for (id, path, thumb_path) in images {
+            let path_exists = std::path::Path::new(&path).exists();
+
+            if !path_exists {
+                ids_to_mark_missing.push(id.clone());
+            } else {
+                ids_to_mark_found.push(id.clone());
+
+                if let Some(t_path) = thumb_path {
+                    if !t_path.is_empty() && !std::path::Path::new(&t_path).exists() {
+                        ids_to_clear_thumb.push(id);
+                    }
+                }
+            }
         }
 
-        if missing_ids.is_empty() {
-            return Ok(0);
-        }
-
-        // 3. Update DB to clear missing thumbnails
+        // Apply updates
         let tx = conn.transaction().map_err(|e| e.to_string())?;
-        let mut updated = 0;
         
-        {
-            let mut stmt = tx.prepare("
-                UPDATE images 
-                SET thumbnail_path = '', micro_thumbnail = NULL 
-                WHERE id = ?1
-            ").map_err(|e| e.to_string())?;
+        let mut missing_count = 0;
+        let mut recovered_count = 0; // Not explicitly tracking previously-missing
+        let mut thumb_count = 0;
 
-            for id in missing_ids {
-                updated += stmt.execute(params![id]).map_err(|e| e.to_string())?;
+        {
+             // 1. Mark Missing
+            let mut stmt = tx.prepare_cached("UPDATE images SET is_missing = 1 WHERE id = ?").map_err(|e| e.to_string())?;
+            for id in &ids_to_mark_missing {
+                missing_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
+            }
+        }
+
+        {
+            // 2. Mark Found (Recovered)
+             let mut stmt = tx.prepare_cached("UPDATE images SET is_missing = 0 WHERE id = ?").map_err(|e| e.to_string())?;
+             for id in &ids_to_mark_found {
+                 stmt.execute(params![id]).map_err(|e| e.to_string())?;
+             }
+             recovered_count = ids_to_mark_found.len(); 
+        }
+
+        {
+            // 3. Clear Thumbs
+            let mut stmt = tx.prepare_cached("UPDATE images SET thumbnail_path = '', micro_thumbnail = NULL WHERE id = ?").map_err(|e| e.to_string())?;
+            for id in ids_to_clear_thumb {
+               thumb_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
             }
         }
         
         tx.commit().map_err(|e| e.to_string())?;
         
-        println!("[Verify] Found and cleared {} missing thumbnails.", updated);
-        Ok(updated)
+        println!("[Verify] Integrity check complete. Missing: {}, Found: {}, Broken Thumbs: {}", missing_count, recovered_count, thumb_count);
+        
+        Ok(IntegrityResult {
+            missing: missing_count,
+            recovered: recovered_count,
+            broken_thumbs: thumb_count
+        })
 
     }).await.map_err(|e| e.to_string())?
 }

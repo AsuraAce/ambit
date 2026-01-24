@@ -190,6 +190,7 @@ export interface MonitoredFolder {
   path: string;
   isActive: boolean;
   imageCount: number;
+  lastScanned?: number; // Timestamp of last successful full/partial scan
   variant?: GeneratorTool; // Store the detected/assigned variant
 }
 

@@ -60,7 +60,13 @@ export const useFileOperations = ({
             if (stats.skipped > 0) msg += ` Ignored ${stats.skipped} intermediate files.`;
             if (stats.errors > 0) msg += ` ${stats.errors} failed.`;
 
-            if (!silent) addToast(msg, stats.errors > 0 ? 'info' : 'success');
+            if (!silent) {
+                addToast(msg, stats.errors > 0 ? 'info' : 'success');
+            } else {
+                // In silent mode (startup), only toast if we actually found something meaningful.
+                // We suppress specific stats to keep it clean.
+                addToast(`Imported ${uniqueNewImages.length} new images`, 'success');
+            }
 
             // Refresh View Options availability
             refreshHiddenAvailability();
@@ -101,7 +107,7 @@ export const useFileOperations = ({
         }
     };
 
-    const handleImportFolders = async (folders: { path: string, variant?: string }[]) => {
+    const handleImportFolders = async (folders: { path: string, variant?: string }[], isStartup = false) => {
         // Group by variant to optimize bulk processing
         const byVariant: Record<string, string[]> = {};
         for (const { path, variant } of folders) {
@@ -112,26 +118,34 @@ export const useFileOperations = ({
 
         for (const [variant, paths] of Object.entries(byVariant)) {
             const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
-            await handleImportPaths(paths, v);
+            await handleImportPaths(paths, v, isStartup);
         }
     };
 
-    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool) => {
+    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool, isStartup = false) => {
+        // Silent Startup Mode: If no paths to import, simply return without triggering UI.
+        if (paths.length === 0 && isStartup) return;
+
         setIsImporting(true);
         const abortCtrl = new AbortController();
         setImportAbortController(abortCtrl);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
-            const result = await processNativePaths(paths, thumbDir, (current, total, message) => {
+
+            // If startup, don't show progress toast for every file unless it's a significant batch?
+            // User requested "Silent".
+            const onProgress = isStartup ? undefined : (current: number, total: number, message?: string) => {
                 setImportProgress({ current, total, message });
-            }, defaultTool, abortCtrl.signal);
+            };
+
+            const result = await processNativePaths(paths, thumbDir, onProgress, defaultTool, abortCtrl.signal);
 
             // If aborted, result might be partial. That's fine.
-            await commitImportResult(result);
+            await commitImportResult(result, isStartup); // Pass silent=true if isStartup
         } catch (error) {
             console.error("Import error", error);
-            addToast("Import failed or cancelled", "error");
+            if (!isStartup) addToast("Import failed or cancelled", "error");
         } finally {
             setIsImporting(false);
             setImportProgress(null);

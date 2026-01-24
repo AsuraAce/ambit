@@ -56,7 +56,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         }
         ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
       `}
-      onClick={!isMissing ? onClick : undefined}
+      onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
@@ -77,15 +77,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         `}
       />
 
-      {/* Missing File Overlay */}
-      {isMissing && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gray-100/10 dark:bg-black/40 backdrop-grayscale">
-          <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-full mb-2 backdrop-blur-sm border border-red-200 dark:border-red-500/30">
-            <Unlink className="w-6 h-6 text-red-500 dark:text-red-400" />
-          </div>
-          <span className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded">File Not Found</span>
-        </div>
-      )}
+
 
       {/* Deleted (Trash) Overlay */}
       {image.isDeleted && !isMissing && (
@@ -113,31 +105,37 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
       )}
 
-      {/* Top Right Indicators Container */}
-      {!isMissing && !shouldBlur && (
-        <div className="absolute top-2 right-2 z-20 flex flex-row gap-1.5 items-start justify-end pointer-events-none">
-          {/* Pin Icon - Pointer events auto to allow interaction/tooltip */}
-          {image.isPinned && (
-            <div className="p-1.5 bg-sage-500 text-white rounded-full shadow-lg shadow-sage-500/50 animate-in zoom-in duration-300 pointer-events-auto" title="Pinned">
-              <Pin className="w-3 h-3 fill-current" />
-            </div>
-          )}
+      {/* Status Indicators (Top Right) */}
+      <div className="absolute top-2 right-2 z-20 flex flex-row gap-1.5 items-start justify-end pointer-events-none">
 
-          {/* Favorite Icon */}
-          {image.isFavorite && (
-            <div
-              className="transition-all duration-300 animate-in zoom-in pointer-events-auto cursor-pointer active:scale-95"
-              title="Unfavorite"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFavorite(e);
-              }}
-            >
-              <Heart className="w-5 h-5 fill-red-500 text-red-500 drop-shadow-md" />
-            </div>
-          )}
-        </div>
-      )}
+        {/* Missing Indicator */}
+        {isMissing && (
+          <div className="p-1.5 bg-red-500/90 text-white rounded-full shadow-lg shadow-red-500/20 backdrop-blur-md pointer-events-auto" title="Source file not found">
+            <Unlink className="w-3 h-3" />
+          </div>
+        )}
+
+        {/* Pin Icon */}
+        {image.isPinned && !isMissing && (
+          <div className="p-1.5 bg-sage-500 text-white rounded-full shadow-lg shadow-sage-500/50 animate-in zoom-in duration-300 pointer-events-auto" title="Pinned">
+            <Pin className="w-3 h-3 fill-current" />
+          </div>
+        )}
+
+        {/* Favorite Icon */}
+        {image.isFavorite && !isMissing && (
+          <div
+            className="transition-all duration-300 animate-in zoom-in pointer-events-auto cursor-pointer active:scale-95"
+            title="Unfavorite"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(e);
+            }}
+          >
+            <Heart className="w-5 h-5 fill-red-500 text-red-500 drop-shadow-md" />
+          </div>
+        )}
+      </div>
 
       {/* Collection Thumbnail Indicator */}
       {isThumbnail && !isMissing && (

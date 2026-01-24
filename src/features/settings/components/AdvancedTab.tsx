@@ -254,8 +254,8 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                         {/* Verify Thumbnails */}
                         <div className="p-6 flex items-center justify-between">
                             <div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Verify Thumbnails</div>
-                                <div className="text-xs text-gray-500 mt-1">Scan all images to check if thumbnail files actually exist. Regenerates missing ones.</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Verify Library Integrity</div>
+                                <div className="text-xs text-gray-500 mt-1">Scan all images to check if source files and thumbnails actually exist. Resets missing status and triggers regeneration.</div>
                             </div>
                             <button
                                 type="button"
@@ -264,15 +264,20 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                     setIsVerifying(true);
                                     try {
                                         // Cast to any because bindings.ts isn't regenerated yet
-                                        const count = await (commands as any).verifyThumbnailFiles();
-                                        if (count > 0) {
-                                            addToast(`Found ${count} missing thumbnails. Regeneration queued.`, 'success');
+                                        const res = await (commands as any).verifyLibraryIntegrity();
+                                        // res = { missing, recovered, broken_thumbs }
+                                        if (res.broken_thumbs > 0 || res.missing > 0 || res.recovered > 0) {
+                                            addToast(`Integrity check complete: ${res.recovered} found, ${res.missing} missing, ${res.broken_thumbs} broken thumbs cleared.`, 'success');
                                         } else {
-                                            addToast('All thumbnails verified. None missing.', 'success');
+                                            addToast('Library verification complete. No issues found.', 'success');
                                         }
+                                        // Trigger a reload of data to reflect changes
+                                        // We can't easily trigger fetchData from here without passing it down or context, 
+                                        // but useLibraryContext is available in this component.
+                                        fetchData(false);
                                     } catch (e) {
                                         console.error(e);
-                                        addToast('Failed to verify thumbnails', 'error');
+                                        addToast('Failed to verify library', 'error');
                                     } finally {
                                         setIsVerifying(false);
                                     }
@@ -280,7 +285,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                 className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50"
                             >
                                 {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
-                                {isVerifying ? 'Verifying...' : 'Verify Files'}
+                                {isVerifying ? 'Verifying...' : 'Verify Library'}
                             </button>
                         </div>
                     </div>

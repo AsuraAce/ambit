@@ -126,14 +126,9 @@ async markImagesCorrupt(ids: string[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Verify that all thumbnail files referenced in the database actually exist on disk.
- * Limits the check to images that CLAIM to have a thumbnail.
- * Returns the number of images found to be missing thumbnails (and thus cleared).
- */
-async verifyThumbnailFiles() : Promise<Result<number, string>> {
+async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("verify_thumbnail_files") };
+    return { status: "ok", data: await TAURI_INVOKE("verify_library_integrity") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -262,6 +257,14 @@ async scanDirectoryWithStats(path: string) : Promise<Result<FileEntry[], string>
     else return { status: "error", error: e  as any };
 }
 },
+async scanDirectorySince(path: string, since: number) : Promise<Result<FileEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scan_directory_since", { path, since }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startNativeFolderWatcher(paths: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
@@ -359,6 +362,13 @@ microThumbnail: string | null;
  */
 thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
 export type ImportResult = { added: number; totalFound: number; message: string }
+/**
+ * Verify integrity of the entire library.
+ * 1. Checks if source file exists -> Updates is_missing
+ * 2. If source exists, checks if thumbnail exists -> Clears thumbnail_path if missing (triggers regen)
+ * Returns (missing_files_count, recovered_files_count, broken_thumbs_count)
+ */
+export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 /**
  * Numeric range for a parameter
  */

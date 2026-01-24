@@ -12,6 +12,7 @@ interface SettingsState {
     // Actions
     setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
     setPrivacyEnabled: (enabled: boolean) => void;
+    updateFolderLastScanned: (id: string, timestamp: number) => void;
     toggleDevMode: () => void;
     initialize: () => Promise<void>;
 }
@@ -74,6 +75,14 @@ export const useSettingsStore = create<SettingsState>()(
             },
 
             setPrivacyEnabled: (enabled) => set({ privacyEnabled: enabled }),
+
+            updateFolderLastScanned: (id: string, timestamp: number) => {
+                get().setSettings((prev) => ({
+                    monitoredFolders: prev.monitoredFolders.map(f =>
+                        f.id === id ? { ...f, lastScanned: timestamp } : f
+                    )
+                }));
+            },
 
             initialize: async () => {
                 if (get().isLoaded) return;

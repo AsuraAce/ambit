@@ -163,6 +163,7 @@ export default function App() {
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
         onScan: (folders) => fileOps.handleImportFolders(folders),
+        handleImportPaths: fileOps.handleImportPaths,
         addToast
     });
 
