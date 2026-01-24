@@ -321,7 +321,6 @@ pub async fn purge_database(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(not(debug_assertions))]
     {
         app.restart();
-        Ok("Database purge scheduled. Restarting...".to_string())
     }
 
     #[cfg(debug_assertions)]

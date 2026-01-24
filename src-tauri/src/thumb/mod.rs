@@ -27,9 +27,6 @@ pub fn generate_thumbnail(
     thumbnail_dir: &str,
 ) -> Result<ThumbnailResult, String> {
     let thumb_path = get_thumbnail_path(path, thumbnail_dir);
-    let mut generated_thumbnail_path = String::new();
-
-
     let mut original_dimensions: Option<(u32, u32)> = None;
 
     // Ensure directory exists
@@ -40,10 +37,10 @@ pub fn generate_thumbnail(
         }
     }
 
-    if thumb_path.exists() {
-        generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+    let generated_thumbnail_path = if thumb_path.exists() {
         // Thumbnail cached - dimensions not available without reading original file
         // Scanner will handle this case with a separate dimension read
+        thumb_path.to_string_lossy().to_string()
     } else {
         // Need to generate - we'll capture dimensions from the decoded image
         let reader = Reader::open(path)
@@ -74,12 +71,12 @@ pub fn generate_thumbnail(
         fs::write(&thumb_path, &*webp_data)
             .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
             
-        generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+        thumb_path.to_string_lossy().to_string()
+    };
 
-        // 2. Micro Thumbnail (Disabled)
-        // We no longer generate base64 micro-thumbnails to save DB space (~200MB/100k images)
-        // generated_micro_thumbnail = Some(...);
-    }
+    // 2. Micro Thumbnail (Disabled)
+    // We no longer generate base64 micro-thumbnails to save DB space (~200MB/100k images)
+    // generated_micro_thumbnail = Some(...);
 
     Ok(ThumbnailResult {
         thumbnail_path: generated_thumbnail_path,
