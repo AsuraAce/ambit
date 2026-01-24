@@ -29,7 +29,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
     const [activeTab, setActiveTab] = useState<'database' | 'interface' | 'troubleshooting'>('database');
 
     // Danger Zone State
-    const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | null, isOpen: boolean }>({ type: null, isOpen: false });
+    const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | 'clear_thumbnails' | null, isOpen: boolean }>({ type: null, isOpen: false });
     const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
 
     const handlePurge = async () => {
@@ -77,6 +77,24 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
             addToast('Failed to rebuild facet cache', 'error');
         } finally {
             setIsRebuilding(false);
+        }
+    };
+
+    const handleClearThumbnails = async () => {
+        setIsClearing(true);
+        useLibraryStore.getState().setBackgroundHealingPaused(true);
+        try {
+            addToast('Resetting all thumbnail paths...', 'info');
+            const count = await clearAllThumbnailPaths();
+            addToast(`Reset ${count} images to source. Auto-optimization will start.`, 'success');
+            await fetchData(false);
+        } catch (e) {
+            console.error(e);
+            addToast('Failed to clear thumbnails', 'error');
+        } finally {
+            setIsClearing(false);
+            useLibraryStore.getState().setBackgroundHealingPaused(false);
+            closeConfirm();
         }
     };
 
@@ -276,22 +294,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                 <button
                                     type="button"
                                     disabled={isClearing || isVerifying}
-                                    onClick={async () => {
-                                        setIsClearing(true);
-                                        useLibraryStore.getState().setBackgroundHealingPaused(true);
-                                        try {
-                                            addToast('Resetting all thumbnail paths...', 'info');
-                                            const count = await clearAllThumbnailPaths();
-                                            addToast(`Reset ${count} images to source. Auto-optimization will start.`, 'success');
-                                            await fetchData(false);
-                                        } catch (e) {
-                                            console.error(e);
-                                            addToast('Failed to clear thumbnails', 'error');
-                                        } finally {
-                                            setIsClearing(false);
-                                            useLibraryStore.getState().setBackgroundHealingPaused(false);
-                                        }
-                                    }}
+                                    onClick={() => setConfirmAction({ type: 'clear_thumbnails', isOpen: true })}
                                     className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                     {isClearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
@@ -363,6 +366,17 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                 isDangerous={true}
                 onConfirm={handlePurge}
                 isLoading={isPurging}
+                onCancel={closeConfirm}
+                zIndex={220}
+            />
+
+            <ConfirmDialog
+                isOpen={confirmAction.isOpen && confirmAction.type === 'clear_thumbnails'}
+                title="Reset All Thumbnails?"
+                message="This will force a re-check of every image in your library. While fast for existing thumbnails, it will cause high disk usage as the system verifies each file. Only do this if your thumbnails are broken."
+                confirmLabel="Reset & Verify"
+                onConfirm={handleClearThumbnails}
+                isLoading={isClearing}
                 onCancel={closeConfirm}
                 zIndex={220}
             />
