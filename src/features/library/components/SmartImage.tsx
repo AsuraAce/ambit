@@ -81,7 +81,6 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       }, Math.pow(2, retryCount) * 500);
     } else if (fallbackSrc && currentSrc !== fallbackSrc) {
       // Notify parent that thumbnail failed (triggers lazy generation)
-      if (onImageError) onImageError();
       setCurrentSrc(fallbackSrc);
       setRetryCount(0);
       setStatus('loading');
