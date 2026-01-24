@@ -133,9 +133,10 @@ export const useFileOperations = ({
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
 
-            // If startup, don't show progress toast for every file unless it's a significant batch?
-            // User requested "Silent".
-            const onProgress = isStartup ? undefined : (current: number, total: number, message?: string) => {
+            // Even in "Silent Startup" (isStartup=true), we want to show progress if we are actually importing files.
+            // Since smart scan filters efficiently, if we are here, we have new files to process.
+            // The "Silent" part mainly refers to NOT showing "0 imported" or "Intermediates" toasts at the end.
+            const onProgress = (current: number, total: number, message?: string) => {
                 setImportProgress({ current, total, message });
             };
 
