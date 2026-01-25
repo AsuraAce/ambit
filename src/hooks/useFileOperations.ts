@@ -88,7 +88,7 @@ export const useFileOperations = ({
     }, [images, setImages, addToast, refreshCollectionThumbnails]);
 
     // --- Actions ---
-    const importImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
         setIsImporting(true);
         try {
@@ -100,9 +100,9 @@ export const useFileOperations = ({
             setIsImporting(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
         }
-    };
+    }, [setIsImporting, commitImportResult, addToast]);
 
-    const handleWebFiles = async (files: File[]) => {
+    const handleWebFiles = useCallback(async (files: File[]) => {
         setIsImporting(true);
         try {
             const result = await processWebFiles(files);
@@ -112,24 +112,9 @@ export const useFileOperations = ({
         } finally {
             setIsImporting(false);
         }
-    };
+    }, [setIsImporting, commitImportResult, addToast]);
 
-    const handleImportFolders = async (folders: { path: string, variant?: string }[], isStartup = false) => {
-        // Group by variant to optimize bulk processing
-        const byVariant: Record<string, string[]> = {};
-        for (const { path, variant } of folders) {
-            const v = variant || 'Unknown';
-            if (!byVariant[v]) byVariant[v] = [];
-            byVariant[v].push(path);
-        }
-
-        for (const [variant, paths] of Object.entries(byVariant)) {
-            const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
-            await handleImportPaths(paths, v, { isStartup });
-        }
-    };
-
-    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
+    const handleImportPaths = useCallback(async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
         const { isStartup = false, skipStateManagement = false, onProgress: externalOnProgress } = options;
 
         // Silent Startup Mode: If no paths to import, simply return without triggering UI.
@@ -167,9 +152,24 @@ export const useFileOperations = ({
                 setImportAbortController(null);
             }
         }
-    };
+    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult, addToast]);
 
-    const scanDirectory = async (dirPath: string) => {
+    const handleImportFolders = useCallback(async (folders: { path: string, variant?: string }[], isStartup = false) => {
+        // Group by variant to optimize bulk processing
+        const byVariant: Record<string, string[]> = {};
+        for (const { path, variant } of folders) {
+            const v = variant || 'Unknown';
+            if (!byVariant[v]) byVariant[v] = [];
+            byVariant[v].push(path);
+        }
+
+        for (const [variant, paths] of Object.entries(byVariant)) {
+            const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
+            await handleImportPaths(paths, v, { isStartup });
+        }
+    }, [handleImportPaths]);
+
+    const scanDirectory = useCallback(async (dirPath: string) => {
         setIsImporting(true);
         const abortCtrl = new AbortController();
         setImportAbortController(abortCtrl);
@@ -189,7 +189,7 @@ export const useFileOperations = ({
             setImportProgress(null);
             setImportAbortController(null);
         }
-    };
+    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult]);
 
     // Trigger InvokeAI database sync (for managed integration rescan)
     const handleInvokeSync = useCallback(async () => {
@@ -237,7 +237,7 @@ export const useFileOperations = ({
         }
     }, [settings.invokeAiPath, settings.importIntermediates, addToast, setIsImporting, setImportProgress, setImportAbortController, refreshCollectionThumbnails]);
 
-    const exportImages = async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
+    const exportImages = useCallback(async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
         const idArray = Array.from(ids);
         if (idArray.length === 0 || !destinationFolder) return;
 
@@ -265,9 +265,9 @@ export const useFileOperations = ({
         } finally {
             setIsExporting(false);
         }
-    };
+    }, [images, addToast]);
 
-    const deleteImages = async (ids: string[], permanent = false) => {
+    const deleteImages = useCallback(async (ids: string[], permanent = false) => {
         try {
             const { markAsDeleted, deleteImage } = await import('../services/db/imageRepo');
             if (permanent) {
@@ -286,9 +286,9 @@ export const useFileOperations = ({
             console.error("Failed to delete images", e);
             addToast("Failed to delete from database", "error");
         }
-    };
+    }, [setImages, addToast, refreshCollectionThumbnails]);
 
-    const recoverMetadata = async (targetId: string, style: RecoveryStyle, onComplete: () => void) => {
+    const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle, onComplete: () => void) => {
         const img = images.find(i => i.id === targetId);
         if (!img) return;
 
@@ -326,7 +326,7 @@ export const useFileOperations = ({
         } finally {
             setIsRecoveringMetadata(false);
         }
-    };
+    }, [images, settings.googleGeminiApiKey, settings.systemPrompts, setImages, addToast]);
 
     const regenerateThumbnails = useCallback(async (arg?: string[] | ((current: number, total: number) => void)) => {
         const targetIds = Array.isArray(arg) ? arg : undefined;

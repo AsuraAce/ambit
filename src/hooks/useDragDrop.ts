@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
  * Hook to handle drag and drop of files/folders from external sources.
@@ -20,6 +20,15 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
     const [isDraggingExternal, setIsDraggingExternal] = useState(false);
     const [isTauri, setIsTauri] = useState(false);
 
+    // Stable references to callbacks to prevent listener re-attachment
+    const onImportPathsRef = useRef(onImportPaths);
+    const onImportFilesRef = useRef(onImportFiles);
+
+    useEffect(() => {
+        onImportPathsRef.current = onImportPaths;
+        onImportFilesRef.current = onImportFiles;
+    }, [onImportPaths, onImportFiles]);
+
     useEffect(() => {
         let unlistenDrop: (() => void) | null = null;
         let unlistenHover: (() => void) | null = null;
@@ -28,40 +37,68 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
         // Check if we are in Tauri environment
         // @ts-ignore
         const isTauriEnv = !!window.__TAURI_INTERNALS__;
+        console.log('[DragDrop] isTauriEnv detected:', isTauriEnv);
         setIsTauri(isTauriEnv);
 
         if (isTauriEnv) {
             // Tauri Logic
             import('@tauri-apps/api/event').then(async ({ listen }) => {
-                unlistenDrop = await listen('tauri://file-drop', (event) => {
-                    setIsDraggingExternal(false);
-                    const files = event.payload as string[];
-                    if (files && files.length > 0) {
-                        onImportPaths(files);
-                    }
-                });
+                console.log('[DragDrop] Setting up Tauri listeners (ONCE)');
 
-                unlistenHover = await listen('tauri://file-drop-hover', () => {
+                // Helper to handle any drop event
+                const handleTauriDrop = (event: any, source: string) => {
+                    setIsDraggingExternal(false);
+                    // Payload can be string[] (file-drop) or object (drag-drop)
+                    let files: string[] = [];
+
+                    if (Array.isArray(event.payload)) {
+                        files = event.payload;
+                    } else if (event.payload?.paths && Array.isArray(event.payload.paths)) {
+                        // V2 drag-drop event payload often has { paths: [], position: ... }
+                        files = event.payload.paths;
+                    }
+
+                    if (files && files.length > 0) {
+                        onImportPathsRef.current(files);
+                    }
+                };
+
+                // Listen to ALL potential event names
+                const unlistenFileDrop = await listen('tauri://file-drop', (e) => handleTauriDrop(e, 'tauri://file-drop'));
+                const unlistenDragDrop = await listen('tauri://drag-drop', (e) => handleTauriDrop(e, 'tauri://drag-drop'));
+                const unlistenSpeculativeDrop = await listen('tauri://drop', (e) => handleTauriDrop(e, 'tauri://drop'));
+
+                // Assign the cleanup function to the outer let variable "unlistenDrop"
+                unlistenDrop = () => {
+                    unlistenFileDrop();
+                    unlistenDragDrop();
+                    unlistenSpeculativeDrop();
+                };
+
+                unlistenHover = await listen('tauri://file-drop-hover', (event) => {
+                    console.log('[DragDrop] tauri://file-drop-hover fired', event);
                     setIsDraggingExternal(true);
                 });
 
-                unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
+                // Also listen for drag-enter/over for V2 consistency?
+                const unlistenDragEnter = await listen('tauri://drag-enter', (event) => {
+                    console.log('[DragDrop] tauri://drag-enter fired', event);
+                    setIsDraggingExternal(true);
+                });
+
+                unlistenCancel = await listen('tauri://file-drop-cancelled', (event) => {
+                    console.log('[DragDrop] tauri://file-drop-cancelled fired');
                     setIsDraggingExternal(false);
                 });
             });
         }
 
         // Web Logic
-        // We always listen to dragenter/over/leave to show the UI overlay in all envs (if needed)
-        // OR we can rely on Tauri hover for UI.
-        // Actually, Tauri hover is only for the OS drag operation. 
-        // The Web dragenter/leave might still fire?
-        // Let's keep the Web UI logic for now, but BLOCK the actual 'drop' action if in Tauri.
-
         const handleDragEnter = (e: DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
             if (e.dataTransfer?.types.includes('Files')) {
+                console.log('[DragDrop] Web dragenter fired');
                 setIsDraggingExternal(true);
             }
         };
@@ -74,23 +111,40 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
         const handleDragLeave = (e: DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            if (e.clientX === 0 && e.clientY === 0) setIsDraggingExternal(false);
+            if (e.clientX === 0 && e.clientY === 0) {
+                console.log('[DragDrop] Web dragleave fired');
+                setIsDraggingExternal(false);
+            }
         };
 
         const handleDrop = (e: DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
             setIsDraggingExternal(false);
+            console.log('[DragDrop] Web drop fired');
 
-            // CRITICAL: If in Tauri, ignore web drops. Tauri native event handles it.
-            // This prevents "folders failing" (because Web drop sees them as 0-byte files or fails)
-            // and prevents double-importing single files.
             if (isTauriEnv) {
+                if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+                    const files = Array.from(e.dataTransfer.files);
+                    // @ts-ignore
+                    const paths = files.map(f => f.path || f.name).filter(p => !!p);
+                    // @ts-ignore
+                    const hasPaths = files.every(f => !!f.path);
+
+                    if (hasPaths) {
+                        console.log('[DragDrop] Detected paths in Web drop (Tauri Context):', paths);
+                        onImportPathsRef.current(paths);
+                        return;
+                    }
+                }
+
+                console.log('[DragDrop] Ignoring Web drop (Tauri mode active, no paths found)');
                 return;
             }
 
             if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-                onImportFiles(e.dataTransfer.files);
+                console.log('[DragDrop] Processing Web files:', e.dataTransfer.files);
+                onImportFilesRef.current(e.dataTransfer.files);
             }
         };
 
@@ -99,6 +153,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
         window.addEventListener('dragleave', handleDragLeave);
         window.addEventListener('drop', handleDrop);
 
+        // Return cleanup function
         return () => {
             if (unlistenDrop) unlistenDrop();
             if (unlistenHover) unlistenHover();
@@ -108,7 +163,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
             window.removeEventListener('dragleave', handleDragLeave);
             window.removeEventListener('drop', handleDrop);
         };
-    }, [onImportPaths, onImportFiles]);
+    }, []); // Empty dependency array = Setup ONCE.
 
     return { isDraggingExternal };
 }
