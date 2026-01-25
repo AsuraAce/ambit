@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Plus, Save } from 'lucide-react';
+import { Plus, Save, FolderOpen } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SectionHeader } from './FilterPrimitives';
 import { CollectionList } from './CollectionList';
@@ -87,7 +87,26 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                     onExportCollection={onExportCollection}
                     onResetCollectionThumbnail={onResetCollectionThumbnail}
                     onEditCollection={onEditCollection}
-                    emptyMessage="No collections found."
+                    emptyMessage={
+                        <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3">
+                            <div className="w-10 h-10 rounded-full bg-sage-50 dark:bg-white/5 flex items-center justify-center">
+                                <FolderOpen className="w-5 h-5 text-sage-400 dark:text-zinc-500" />
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">No collections yet</p>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500 max-w-[180px]">
+                                    Organize your generations into collections for easy access.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => startCreation(false)}
+                                className="text-xs bg-sage-500 hover:bg-sage-600 text-white px-3 py-1.5 rounded-lg shadow-sm shadow-sage-500/20 transition-all flex items-center gap-1.5"
+                            >
+                                <Plus className="w-3 h-3" />
+                                <span>Create Collection</span>
+                            </button>
+                        </div>
+                    }
                     renderToolbarExtras={() => (
                         <div className="ml-auto flex items-center gap-1">
                             {isDirty && !isCreating && (

@@ -25,7 +25,7 @@ interface CollectionListProps<T extends Collection> {
     onEditCollection?: (colId: string) => void;
     renderToolbarExtras?: () => React.ReactNode;
     renderCreationForm?: () => React.ReactNode;
-    emptyMessage?: string;
+    emptyMessage?: React.ReactNode;
 }
 
 export type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc' | 'recent_desc' | 'recent_asc';

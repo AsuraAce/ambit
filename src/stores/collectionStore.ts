@@ -119,6 +119,28 @@ export const useCollectionStore = create<CollectionState>()(
                         }
                     }
 
+                    // 3. Cleanup Legacy Mock Collections (for existing users who might have them)
+                    // If they are empty/unmodified, remove them.
+                    const legacyIds = ['c1', 'c2', 'c3'];
+                    const { deleteCollectionFromDb, getCollectionImageIds } = await import('../services/db/collectionRepo');
+
+                    // Reload from DB first
+                    dbCols = await getAllCollectionsWithStats();
+
+                    for (const col of dbCols) {
+                        if (legacyIds.includes(col.id)) {
+                            // Check if it really is empty
+                            const imageIds = await getCollectionImageIds(col.id);
+                            if (imageIds.length === 0) {
+                                console.log(`[CollectionStore] Removing legacy empty collection: ${col.name} (${col.id})`);
+                                await deleteCollectionFromDb(col.id);
+                            }
+                        }
+                    }
+
+                    // Final reload
+                    dbCols = await getAllCollectionsWithStats();
+
                     set({ collections: dbCols, isLoaded: true });
 
                     // Lazily fetch smart collection counts after initial render

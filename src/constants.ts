@@ -27,22 +27,22 @@ const NEGATIVE_PROMPTS = [
 ];
 
 const LORAS = [
-    'detail_tweaker_v1.safetensors',
-    'add_brightness.safetensors',
-    'cinematic_lighting.safetensors',
-    'more_details.safetensors',
-    'epi_noiseoffset.safetensors'
+  'detail_tweaker_v1.safetensors',
+  'add_brightness.safetensors',
+  'cinematic_lighting.safetensors',
+  'more_details.safetensors',
+  'epi_noiseoffset.safetensors'
 ];
 
 const CONTROL_NETS = [
-    'control_v11p_sd15_canny.pth',
-    'control_v11f1p_sd15_depth.pth',
-    'control_v11p_sd15_openpose.pth'
+  'control_v11p_sd15_canny.pth',
+  'control_v11f1p_sd15_depth.pth',
+  'control_v11p_sd15_openpose.pth'
 ];
 
 const IP_ADAPTERS = [
-    'ip-adapter-plus_sd15.safetensors',
-    'ip-adapter-faceid_sd15.bin'
+  'ip-adapter-plus_sd15.safetensors',
+  'ip-adapter-faceid_sd15.bin'
 ];
 
 export const generateMockImages = (count: number): AIImage[] => {
@@ -52,7 +52,7 @@ export const generateMockImages = (count: number): AIImage[] => {
     const height = isPortrait ? 1216 : 832;
     const toolValues = Object.values(GeneratorTool);
     const modelValues = Object.values(ModelType);
-    
+
     const tool = toolValues[Math.floor(Math.random() * toolValues.length)];
     const model = modelValues[Math.floor(Math.random() * modelValues.length)];
     const prompt = SAMPLE_PROMPTS[Math.floor(Math.random() * SAMPLE_PROMPTS.length)];
@@ -101,26 +101,4 @@ export const generateMockImages = (count: number): AIImage[] => {
   return [...images, ...duplicates];
 };
 
-export const INITIAL_COLLECTIONS: Collection[] = [
-  { 
-    id: 'c1', 
-    name: 'Cyberpunk Project', 
-    imageIds: ['img_0', 'img_1', 'img_2'], 
-    thumbnail: 'https://picsum.photos/300/300?random=101',
-    createdAt: Date.now() - 10000000
-  },
-  { 
-    id: 'c2', 
-    name: 'Flora & Fauna', 
-    imageIds: ['img_5', 'img_8'], 
-    thumbnail: 'https://picsum.photos/300/300?random=102',
-    createdAt: Date.now() - 5000000
-  },
-  { 
-    id: 'c3', 
-    name: 'Character Sheets', 
-    imageIds: [], 
-    thumbnail: 'https://picsum.photos/300/300?random=103',
-    createdAt: Date.now() - 2000000
-  },
-];
+export const INITIAL_COLLECTIONS: Collection[] = [];
