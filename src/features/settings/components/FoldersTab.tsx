@@ -229,6 +229,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             resourceFolders: [...(prev.resourceFolders || []), pathToAdd]
         }));
         setNewResourcePath('');
+        addToast(`Added resource folder: ${pathToAdd}`, 'success');
 
         // Trigger scan immediately for the new list
         setIsScanningResources(true);
@@ -243,9 +244,14 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const handleScanNow = async () => {
         if (!settings.resourceFolders || settings.resourceFolders.length === 0) return;
         setIsScanningResources(true);
+        addToast('Scanning resource folders...', 'info');
         try {
             const res = await scanResourceThumbnails(settings.resourceFolders);
             console.log("Scan complete", res);
+            addToast('Resource scan complete', 'success');
+        } catch (e) {
+            console.error(e);
+            addToast('Resource scan failed', 'error');
         } finally {
             setIsScanningResources(false);
         }

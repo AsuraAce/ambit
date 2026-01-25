@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { Workflow, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, FolderOpen } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
+import { useToast } from '../../../hooks/useToast';
 
 interface TabProps {
     settings: AppSettings;
@@ -11,6 +12,7 @@ interface TabProps {
 export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isScanning, setIsScanning] = useState(false);
+    const { addToast } = useToast();
 
     const handleLinkFolder = async () => {
         if (!settings.comfyUiPath) return;
@@ -21,6 +23,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
         if (exists) {
             setTestResult({ success: true, message: "Folder is already being monitored!" });
+            addToast("Folder is already being monitored", "info");
             return;
         }
 
@@ -45,9 +48,11 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
             }));
 
             setTestResult({ success: true, message: "Successfully linked ComfyUI output folder!" });
+            addToast("Successfully linked ComfyUI output folder", "success");
         } catch (e) {
             console.error(e);
             setTestResult({ success: false, message: "Failed to link folder." });
+            addToast("Failed to link folder", "error");
         } finally {
             setIsScanning(false);
         }
