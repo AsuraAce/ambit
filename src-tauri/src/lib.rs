@@ -145,18 +145,38 @@ fn check_and_execute_deferred_purge() {
             // Delete the marker first
             let _ = std::fs::remove_file(&marker_path);
             
-            // Delete database files
+            // Delete database files with retry loop for Windows file locking
             let db_path = app_dir.join("images.db");
             let wal_path = app_dir.join("images.db-wal");
             let shm_path = app_dir.join("images.db-shm");
             
             if db_path.exists() {
-                match std::fs::remove_file(&db_path) {
-                    Ok(_) => println!("[Purge] SUCCESS: Database deleted. Fresh DB will be created."),
-                    Err(e) => eprintln!("[Purge] FAILED to delete database: {}", e),
+                let mut attempts = 0;
+                let max_attempts = 5;
+                let mut success = false;
+                
+                while attempts < max_attempts && !success {
+                    match std::fs::remove_file(&db_path) {
+                        Ok(_) => {
+                            println!("[Purge] SUCCESS: Database deleted. Fresh DB will be created.");
+                            success = true;
+                        },
+                        Err(e) => {
+                            attempts += 1;
+                            eprintln!("[Purge] Attempt {}/{} failed to delete database: {}", attempts, max_attempts, e);
+                            if attempts < max_attempts {
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                            }
+                        }
+                    }
+                }
+                
+                if !success {
+                    eprintln!("[Purge] FATAL: Could not delete database after {} attempts. Manual intervention may be required.", max_attempts);
                 }
             }
             
+            // Best effort cleanup for WAL/SHM files
             if wal_path.exists() { let _ = std::fs::remove_file(&wal_path); }
             if shm_path.exists() { let _ = std::fs::remove_file(&shm_path); }
         }

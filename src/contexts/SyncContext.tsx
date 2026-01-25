@@ -180,27 +180,57 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             console.log('[Purge] Starting library purge...');
             const { purgeLibrary } = await import('../services/db/imageRepo');
             const { appRepository } = await import('../services/repository');
+            const { watcherService } = await import('../services/WatcherService');
 
-            console.log('[Purge] Purging main library, FTS index, and all collections...');
-            const backendMessage = await purgeLibrary();
+            // 1. Graceful Shutdown & Auto-Healing Disable
+            console.log('[Purge] Stopping background services...');
+            setSettings(s => ({ ...s, enableAutoThumbnailHealing: false })); // Disable first to stop CPU usage
 
-            console.log('[Purge] Clearing legacy storage file...');
+            await watcherService.stopWatching();
+            useLibraryStore.getState().cancelThumbnailRegeneration();
+            useLibraryStore.getState().cancelImport();
+            useLibraryStore.getState().setBackgroundHealingPaused(true);
+
+            // 2. Prepare Clean State (Settings & Legacy Data)
+            console.log('[Purge] Resetting settings and legacy storage...');
+
             const legacyState = await appRepository.load();
+
+            // Define clean settings
+            const cleanSettings = {
+                ...legacyState.settings,
+                lastSyncedAt: null,
+                monitoredFolders: [],
+                invokeAiPath: undefined,
+                a1111Path: undefined,
+                comfyUiPath: undefined,
+                resourceFolders: [], // Clear added model/lora folders
+                importIntermediates: false,
+                enableAutoThumbnailHealing: true, // Reset to default (True) so next run is fresh
+                hasCompletedOnboarding: false // Optional: Reset onboarding for factory reset feel
+            };
+
+            // Force immediate save to disk BEFORE invoking the backend restart
             await appRepository.save({
                 ...legacyState,
                 images: [],
                 collections: [],
-                smartCollections: []
+                smartCollections: [],
+                settings: cleanSettings
             });
 
-            console.log('[Purge] Resetting settings...');
-            setSettings(prev => ({ ...prev, lastSyncedAt: null, monitoredFolders: [] }));
+            // Update local state (for Dev mode or if restart has delay)
+            setSettings(cleanSettings);
 
-            // Reset React Query cache and Zustand store to prevent stale state
+            // 3. Reset React Query cache and Zustand store
             console.log('[Purge] Clearing React Query cache and store...');
             await queryClient.resetQueries();
             useSearchStore.getState().clearAllFilters();
             useSearchStore.getState().setImages([]);
+
+            // 4. THE POINT OF NO RETURN: Trigger Backend Purge (Restarts App)
+            console.log('[Purge] Purging backend database...');
+            const backendMessage = await purgeLibrary();
 
             // Show the backend's message (e.g., "Purge scheduled. Please restart...")
             addToast(backendMessage, 'success');

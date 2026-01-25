@@ -39,11 +39,15 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
 
         try {
             await cleanLibrary();
-            addToast('Database purged successfully', 'success');
+            // In production, the app restarts automatically, so this might not be seen.
+            // But in case of delay or dev mode:
+            addToast('Purge scheduled. Please restart application manually.', 'success');
+            setIsPurging(false);
+            useLibraryStore.getState().setBackgroundHealingPaused(false);
+            closeConfirm();
         } catch (e) {
             console.error('[Purge] Failed:', e);
             addToast('Failed to purge database', 'error');
-        } finally {
             setIsPurging(false);
             useLibraryStore.getState().setBackgroundHealingPaused(false);
             closeConfirm();
@@ -361,8 +365,8 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
             <ConfirmDialog
                 isOpen={confirmAction.isOpen && confirmAction.type === 'purge'}
                 title="Purge Application Database?"
-                message={`DANGER: This will delete ALL images and metadata from your ${APP_NAME} library. Your actual image files on disk will NOT be touched, but you will lose all ${APP_NAME}-specific data (collections, tags, favorites). Are you sure?`}
-                confirmLabel="Purge Database"
+                message={`DANGER: This will delete ALL images and metadata, AND disconnect all Linked Folders. Your actual image files on disk will NOT be touched, but the application will be reset to a factory-fresh state. Are you sure?`}
+                confirmLabel="Purge & Reset"
                 isDangerous={true}
                 onConfirm={handlePurge}
                 isLoading={isPurging}
