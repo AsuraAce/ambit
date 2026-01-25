@@ -60,7 +60,10 @@ export default function App() {
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [exportIds, setExportIds] = useState<Set<string>>(new Set());
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
+
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    // Track if user has finished onboarding in this session (even if they chose "Show on Startup")
+    const [hasDismissedOnboarding, setHasDismissedOnboarding] = useState(false);
 
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
@@ -382,8 +385,12 @@ export default function App() {
 
                 {/* Overlays & Portals */}
                 <OnboardingWizard
-                    isOpen={!settings.hasCompletedOnboarding}
-                    onComplete={(s) => { setSettings(p => ({ ...p, ...s })); addToast("Setup complete!", "success"); }}
+                    isOpen={!settings.hasCompletedOnboarding && !hasDismissedOnboarding}
+                    onComplete={(s) => {
+                        setSettings(p => ({ ...p, ...s }));
+                        setHasDismissedOnboarding(true);
+                        addToast("Setup complete!", "success");
+                    }}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                     initialApiKey={settings.googleGeminiApiKey || process.env.API_KEY}
                 />
