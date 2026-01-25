@@ -1,6 +1,7 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
 import { insertImage } from '../services/db/imageRepo';
+import { urlToPath } from '../utils/pathUtils';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -108,10 +109,20 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleDeleteForever = async (ids: string[]) => {
-        const { deleteImage } = await import('../services/db/imageRepo');
-        for (const id of ids) await deleteImage(id);
+        const { deleteImageFromDisk } = await import('../services/db/imageRepo');
+
+        // Fetch paths first to ensure we can trash them
+        const { getImagesByIds } = await import('../services/db/imageRepo');
+        const imagesToDelete = await getImagesByIds(ids);
+
+        for (const img of imagesToDelete) {
+            const path = img.id; // ID is the normalized path in this app
+            const thumbnailPath = img.thumbnailUrl ? urlToPath(img.thumbnailUrl) : null;
+            await deleteImageFromDisk(img.id, path, thumbnailPath);
+        }
+
         setImages(p => p.filter(i => !ids.includes(i.id)));
-        addToast(`Removed ${ids.length} records from library`, 'success');
+        addToast(`Permanently deleted ${ids.length} images`, 'success');
         refreshMaintenanceCounts();
     };
 

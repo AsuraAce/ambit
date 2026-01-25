@@ -263,6 +263,38 @@ export const deleteImage = async (id: string) => {
     await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
 };
 
+/**
+ * Deletes the image from the database AND moves the physical file to the OS trash.
+ * Also moves the generated thumbnail to trash.
+ */
+export const deleteImageFromDisk = async (id: string, path: string, thumbnailPath: string | null) => {
+    // 1. Move to Trash (OS)
+    if (path) {
+        try {
+            await unwrap(commands.moveToTrash(path));
+        } catch (e) {
+            console.error('[Repo] Failed to move file to trash:', path, e);
+            // We proceed even if trash fails?
+            // "make it a move to OS trash, this is an additonal safety net"
+            // If safety net fails, we should probably warn or throw?
+            // But blocking deletion because trash is full/error might be annoying.
+            // For now, we log and proceed.
+        }
+    }
+
+    // 2. Trash Thumbnail
+    if (thumbnailPath) {
+        try {
+            await unwrap(commands.deleteThumbnail(thumbnailPath));
+        } catch (e) {
+            console.warn('[Repo] Failed to trash thumbnail:', thumbnailPath, e);
+        }
+    }
+
+    // 3. Delete from DB
+    await deleteImage(id);
+};
+
 export const markAsDeleted = async (ids: string[], deleted: boolean) => {
     if (ids.length === 0) return;
     const normalizedIds = ids.map(normalizePath);
