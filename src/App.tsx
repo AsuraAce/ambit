@@ -154,9 +154,13 @@ export default function App() {
         modalManager: modals
     });
 
+    const handleImportFiles = useCallback((files: FileList) => {
+        fileOps.handleImportFiles(Array.from(files));
+    }, [fileOps]);
+
     const { isDraggingExternal } = useDragDrop({
         onImportPaths: fileOps.handleImportPaths,
-        onImportFiles: (files) => fileOps.handleImportFiles(Array.from(files))
+        onImportFiles: handleImportFiles
     });
 
     useFolderMonitor({
