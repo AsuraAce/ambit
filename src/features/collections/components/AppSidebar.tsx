@@ -53,7 +53,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-4">
-        <button onClick={onOpenDonation} className={`w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-all mb-2 ${showSupportPulse ? 'animate-pulse text-red-400' : ''}`} title="Support">
+        <button onClick={onOpenDonation} className={`w-10 h-10 rounded-xl flex items-center justify-center hover:text-red-500 dark:hover:text-red-400 transition-all mb-2 ${showSupportPulse ? 'animate-pulse hover:animate-none text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500'}`} title="Support">
           <Gift className="w-5 h-5" />
         </button>
         <button onClick={onOpenShortcuts} className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-white mb-2" title="Shortcuts">

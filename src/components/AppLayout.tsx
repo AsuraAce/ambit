@@ -98,6 +98,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const allCollections = useCollectionStore(s => s.collections);
     const onRefreshCollections = useCollectionStore(s => s.refreshCollections);
 
+    // Local State
+    const [showSupportPulse, setShowSupportPulse] = React.useState(true);
+
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            setShowSupportPulse(false);
+        }, 30000);
+        return () => clearTimeout(timer);
+    }, []);
+
     // Derived
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
@@ -180,7 +190,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 onOpenSettings={() => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); }}
                 onOpenShortcuts={() => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); }}
                 onOpenDonation={() => modals.openModal('donation')}
-                showSupportPulse={true}
+                showSupportPulse={showSupportPulse}
             />
 
             <FilterPanel
