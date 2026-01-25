@@ -84,7 +84,8 @@ export default function App() {
         isFiltering,
         toggleFavorite,
         clearAllFilters,
-        recentSearches, setRecentSearches
+        recentSearches, setRecentSearches,
+        refreshMetadata
     } = useSearch();
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
@@ -171,7 +172,8 @@ export default function App() {
         monitoredFolders: settings.monitoredFolders,
         onScan: (folders) => fileOps.handleImportFolders(folders),
         handleImportPaths: fileOps.handleImportPaths,
-        addToast
+        addToast,
+        refreshMetadata
     });
 
     // --- Callbacks ---

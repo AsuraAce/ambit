@@ -6,6 +6,7 @@ import { unwrap } from '../utils/spectaUtils';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
+import { useWatchers } from '../contexts/WatcherContext';
 
 interface ImportOptions {
     isStartup?: boolean;
@@ -20,12 +21,14 @@ interface UseFolderMonitorProps {
     // Update signature to match new options
     handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<void>;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
+    refreshMetadata: () => Promise<void>;
 }
 
-export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast }: UseFolderMonitorProps) {
+export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast, refreshMetadata }: UseFolderMonitorProps) {
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
+    const { lastWatcherEvent } = useWatchers(); // Listen for global file change events
 
     useEffect(() => {
         if (!isLoaded) {
@@ -81,6 +84,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                 // Phase 2: Execution - Run single unified batch for smart updates
                 if (totalFilesFound > 0) {
+                    // ... (existing logging/state setup)
                     console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
                     setIsImporting(true);
                     setImportProgress({ current: 0, total: totalFilesFound, message: 'Starting aggregated import...' });
@@ -107,6 +111,9 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                     setIsImporting(false);
                     setImportProgress(null);
+
+                    // Force UI Refresh
+                    await refreshMetadata();
                 }
             };
 
@@ -142,4 +149,82 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
         prevFoldersRef.current = currentFolders;
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths]);
+
+    // Live Watch Catch-up & Events
+    const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
+    const hasLiveWatchStartedRef = useRef(isLiveWatching);
+    const lastEventRef = useRef(lastWatcherEvent);
+
+    // Unified Watcher Effect (Handles both "Turn On" and "New Event")
+    useEffect(() => {
+        const activeFolders = monitoredFolders.filter(f => f.isActive);
+        if (activeFolders.length === 0) return;
+
+        // Condition 1: Turning ON (Catch-up)
+        const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
+
+        // Condition 2: Watcher Event Fired (if already watching)
+        // We check > 0 to ignore initial mount
+        const isNewEvent = isLiveWatching && lastWatcherEvent > 0 && lastWatcherEvent !== lastEventRef.current;
+
+        if (isTurningOn) {
+            console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
+            performUnifiedScan(activeFolders, 'Catch-up');
+        } else if (isNewEvent) {
+            console.log(`[FolderMonitor] Watcher event detected (${lastWatcherEvent}) - triggering smart scan`);
+            performUnifiedScan(activeFolders, 'Live Watch');
+        }
+
+        hasLiveWatchStartedRef.current = isLiveWatching;
+        lastEventRef.current = lastWatcherEvent;
+    }, [isLiveWatching, lastWatcherEvent, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata]);
+
+    // Reusable Scan Logic (Extracted from previous effect)
+    const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
+        const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+        let totalFilesFound = 0;
+        const tasks: any[] = [];
+
+        for (const folder of folders) {
+            try {
+                if (folder.lastScanned) {
+                    const newFiles = await unwrap((commands as any).scanDirectorySince(folder.path, folder.lastScanned)) as { path: string }[];
+                    if (newFiles.length > 0) {
+                        tasks.push({ paths: newFiles.map((f: any) => f.path), variant: folder.variant });
+                        totalFilesFound += newFiles.length;
+                    }
+                    updateFolderLastScanned(folder.id, Date.now());
+                } else {
+                    // Full scan fallback for new folders (rare here as startup handles new folders)
+                    console.log(`[FolderMonitor] ${source}: Full scan needed for ${folder.path}`);
+                    onScan([{ path: folder.path, variant: folder.variant }], false);
+                    updateFolderLastScanned(folder.id, Date.now());
+                }
+            } catch (e) {
+                console.error(`[FolderMonitor] ${source} failed for ${folder.path}`, e);
+            }
+        }
+
+        if (totalFilesFound > 0) {
+            setIsImporting(true);
+            setImportProgress({ current: 0, total: totalFilesFound, message: `${source}: Importing images...` });
+            let currentCount = 0;
+            for (const task of tasks) {
+                await handleImportPaths(task.paths, task.variant, {
+                    skipStateManagement: true,
+                    onProgress: (c, t, m) => setImportProgress({ current: currentCount + c, total: totalFilesFound, message: m })
+                });
+                currentCount += task.paths.length;
+            }
+            setIsImporting(false);
+            setImportProgress(null);
+
+            // Force UI Refresh
+            await refreshMetadata();
+
+            addToast(`${source}: Synced ${totalFilesFound} new images`, 'success');
+        } else {
+            console.log(`[FolderMonitor] ${source}: No new files found.`);
+        }
+    };
 }

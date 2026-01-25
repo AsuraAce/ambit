@@ -13,6 +13,7 @@ interface WatcherContextType {
     setIsLiveWatching: React.Dispatch<React.SetStateAction<boolean>>;
     refreshMaintenanceCounts: () => Promise<void>;
     maintenanceCounts: { untagged: number; orphans: number; intermediates: number; missing: number; trash: number; duplicates: number };
+    lastWatcherEvent: number;
 }
 
 const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
@@ -25,6 +26,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     // Zustand State
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
     const setIsLiveWatching = useLibraryStore(s => s.setIsLiveWatching);
+    const [lastWatcherEvent, setLastWatcherEvent] = React.useState<number>(0);
     const maintenanceCounts = useLibraryStore(s => s.maintenanceCounts);
     const setMaintenanceCounts = useLibraryStore(s => s.setMaintenanceCounts);
 
@@ -111,12 +113,22 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                     if (cb.settings.invokeAiPath) {
                         await cb.startInvokeSync({ mode: 'live' });
                     }
+
+                    // Signal consumers (like useFolderMonitor) that a change occurred
+                    setLastWatcherEvent(Date.now());
+
                     debounceTimer.current = null;
                 }, 3000); // 3 seconds silence required
             });
 
             if (pathsToWatch.length > 0) {
                 addToast(`Live Sync Active (${pathsToWatch.length} folders)`, 'success');
+
+                // Immediate Catch-up Scan
+                if (currentSettings.invokeAiPath) {
+                    console.log('[WatcherContext] Triggering catch-up sync for InvokeAI...');
+                    callbacksRef.current.startInvokeSync({ mode: 'live' });
+                }
             }
         };
 
@@ -124,7 +136,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         const timer = setTimeout(initWatcher, 500);
         return () => clearTimeout(timer);
 
-    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, addToast]); // Deps ensure restart on config change
+    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, addToast]);
 
     // Maintenance interval
     useEffect(() => {
@@ -138,7 +150,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             isLiveWatching,
             setIsLiveWatching,
             refreshMaintenanceCounts,
-            maintenanceCounts
+            maintenanceCounts,
+            lastWatcherEvent
         }}>
             {children}
         </WatcherContext.Provider>

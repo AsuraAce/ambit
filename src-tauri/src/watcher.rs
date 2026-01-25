@@ -50,8 +50,12 @@ pub fn start_native_folder_watcher(
     let event_handler = move |res: notify::Result<notify::Event>| {
         match res {
             Ok(event) => {
+                println!("[Rust Watcher] Raw Event: {:?}", event);
                 let is_relevant = match event.kind {
-                    notify::EventKind::Create(_) | notify::EventKind::Modify(_) => true,
+                    notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Access(notify::event::AccessKind::Close(_)) => true,
+                    notify::EventKind::Any => true, // Catch-all for some OSs
+                    // Handle Rename/Move - essential for windows drag/drop
+                    notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => true,
                     _ => false,
                 };
 
