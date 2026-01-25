@@ -30,6 +30,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
     }, [onImportPaths, onImportFiles]);
 
     useEffect(() => {
+        let isUnmounted = false;
         let unlistenDrop: (() => void) | null = null;
         let unlistenHover: (() => void) | null = null;
         let unlistenCancel: (() => void) | null = null;
@@ -42,6 +43,8 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
 
         if (isTauriEnv) {
             // Tauri Logic
+            let unlisteners: (() => void)[] = [];
+
             import('@tauri-apps/api/event').then(async ({ listen }) => {
                 console.log('[DragDrop] Setting up Tauri listeners (ONCE)');
 
@@ -64,33 +67,51 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
                 };
 
                 // Listen to ALL potential event names
-                const unlistenFileDrop = await listen('tauri://file-drop', (e) => handleTauriDrop(e, 'tauri://file-drop'));
-                const unlistenDragDrop = await listen('tauri://drag-drop', (e) => handleTauriDrop(e, 'tauri://drag-drop'));
-                const unlistenSpeculativeDrop = await listen('tauri://drop', (e) => handleTauriDrop(e, 'tauri://drop'));
+                // Check if we were cleaned up while awaiting
+                if (unlistenDrop === null && unlistenHover === null && unlistenCancel === null && unlistenDrop !== undefined) {
+                    // This indicates unmount happened? No, rely on variable.
+                }
 
-                // Assign the cleanup function to the outer let variable "unlistenDrop"
-                unlistenDrop = () => {
-                    unlistenFileDrop();
-                    unlistenDragDrop();
-                    unlistenSpeculativeDrop();
-                };
+                const u1 = await listen('tauri://file-drop', (e) => handleTauriDrop(e, 'tauri://file-drop'));
+                unlisteners.push(u1);
 
-                unlistenHover = await listen('tauri://file-drop-hover', (event) => {
+                const u2 = await listen('tauri://drag-drop', (e) => handleTauriDrop(e, 'tauri://drag-drop'));
+                unlisteners.push(u2);
+
+                const u3 = await listen('tauri://drop', (e) => handleTauriDrop(e, 'tauri://drop'));
+                unlisteners.push(u3);
+
+                const u4 = await listen('tauri://file-drop-hover', (event) => {
                     console.log('[DragDrop] tauri://file-drop-hover fired', event);
                     setIsDraggingExternal(true);
                 });
+                unlisteners.push(u4);
 
                 // Also listen for drag-enter/over for V2 consistency?
-                const unlistenDragEnter = await listen('tauri://drag-enter', (event) => {
+                const u5 = await listen('tauri://drag-enter', (event) => {
                     console.log('[DragDrop] tauri://drag-enter fired', event);
                     setIsDraggingExternal(true);
                 });
+                unlisteners.push(u5);
 
-                unlistenCancel = await listen('tauri://file-drop-cancelled', (event) => {
+                const u6 = await listen('tauri://file-drop-cancelled', (event) => {
                     console.log('[DragDrop] tauri://file-drop-cancelled fired');
                     setIsDraggingExternal(false);
                 });
+                unlisteners.push(u6);
+
+                // If unmount happened during setup, clean up immediately
+                if (isUnmounted) {
+                    unlisteners.forEach(u => u());
+                    unlisteners = [];
+                }
             });
+
+            // Assign the cleanup function
+            unlistenDrop = () => {
+                isUnmounted = true;
+                unlisteners.forEach(u => u());
+            };
         }
 
         // Web Logic

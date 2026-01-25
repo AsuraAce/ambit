@@ -59,7 +59,12 @@ export const useFileOperations = ({
         const dupeCount = newImages.length - uniqueNewImages.length;
 
         if (uniqueNewImages.length > 0) {
-            setImages(prev => [...uniqueNewImages, ...prev]);
+            setImages(prev => {
+                // Double-check unicity against the latest state to prevent race conditions
+                const reallyUnique = uniqueNewImages.filter(n => !prev.some(p => p.id === n.id));
+                if (reallyUnique.length === 0) return prev;
+                return [...reallyUnique, ...prev];
+            });
             await refreshCollectionThumbnails();
 
             let msg = `Imported ${uniqueNewImages.length} images.`;
