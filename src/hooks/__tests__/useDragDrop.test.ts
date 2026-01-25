@@ -46,6 +46,13 @@ describe('useDragDrop', () => {
     });
 
     it('should handle Tauri file-drop events', async () => {
+        // Mock Tauri environment
+        Object.defineProperty(window, '__TAURI_INTERNALS__', {
+            value: {},
+            writable: true,
+            configurable: true
+        });
+
         const { result } = renderHook(() => useDragDrop({
             onImportPaths: mockOnImportPaths,
             onImportFiles: mockOnImportFiles
@@ -66,6 +73,13 @@ describe('useDragDrop', () => {
     });
 
     it('should handle Tauri hover events', async () => {
+        // Mock Tauri environment
+        Object.defineProperty(window, '__TAURI_INTERNALS__', {
+            value: {},
+            writable: true,
+            configurable: true
+        });
+
         const { result } = renderHook(() => useDragDrop({
             onImportPaths: mockOnImportPaths,
             onImportFiles: mockOnImportFiles
