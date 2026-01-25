@@ -122,8 +122,6 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             });
 
             if (pathsToWatch.length > 0) {
-                addToast(`Live Sync Active (${pathsToWatch.length} folders)`, 'success');
-
                 // Immediate Catch-up Scan
                 if (currentSettings.invokeAiPath) {
                     console.log('[WatcherContext] Triggering catch-up sync for InvokeAI...');
