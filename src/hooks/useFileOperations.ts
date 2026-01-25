@@ -13,6 +13,13 @@ import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearch } from '../contexts/SearchContext';
 
+// Added ImportOptions interface
+interface ImportOptions {
+    isStartup?: boolean;
+    skipStateManagement?: boolean;
+    onProgress?: (current: number, total: number, message?: string) => void;
+}
+
 interface UseFileOperationsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
@@ -118,17 +125,19 @@ export const useFileOperations = ({
 
         for (const [variant, paths] of Object.entries(byVariant)) {
             const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
-            await handleImportPaths(paths, v, isStartup);
+            await handleImportPaths(paths, v, { isStartup });
         }
     };
 
-    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool, isStartup = false) => {
+    const handleImportPaths = async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
+        const { isStartup = false, skipStateManagement = false, onProgress: externalOnProgress } = options;
+
         // Silent Startup Mode: If no paths to import, simply return without triggering UI.
         if (paths.length === 0 && isStartup) return;
 
-        setIsImporting(true);
+        if (!skipStateManagement) setIsImporting(true);
         const abortCtrl = new AbortController();
-        setImportAbortController(abortCtrl);
+        if (!skipStateManagement) setImportAbortController(abortCtrl);
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
@@ -137,10 +146,14 @@ export const useFileOperations = ({
             // Since smart scan filters efficiently, if we are here, we have new files to process.
             // The "Silent" part mainly refers to NOT showing "0 imported" or "Intermediates" toasts at the end.
             const onProgress = (current: number, total: number, message?: string) => {
-                setImportProgress({ current, total, message });
+                if (externalOnProgress) {
+                    externalOnProgress(current, total, message);
+                } else {
+                    setImportProgress({ current, total, message });
+                }
             };
 
-            const result = await processNativePaths(paths, thumbDir, onProgress, defaultTool, abortCtrl.signal);
+            const result = await processNativePaths(paths, thumbDir, onProgress, defaultTool, abortCtrl.signal, isStartup);
 
             // If aborted, result might be partial. That's fine.
             await commitImportResult(result, isStartup); // Pass silent=true if isStartup
@@ -148,9 +161,11 @@ export const useFileOperations = ({
             console.error("Import error", error);
             if (!isStartup) addToast("Import failed or cancelled", "error");
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            if (!skipStateManagement) {
+                setIsImporting(false);
+                setImportProgress(null);
+                setImportAbortController(null);
+            }
         }
     };
 
@@ -163,7 +178,7 @@ export const useFileOperations = ({
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
                 setImportProgress({ current, total, message });
-            }, undefined, abortCtrl.signal);
+            }, undefined, abortCtrl.signal, false);
             if (result.images.length > 0) {
                 await commitImportResult(result, true);
             }

@@ -113,7 +113,8 @@ export const processNativePaths = async (
     thumbnailDir: string | undefined,
     onProgress?: (current: number, total: number, message?: string) => void,
     defaultTool?: GeneratorTool, // Added argument
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    isStartup: boolean = false // Added flag
 ): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     let skipped = 0;
@@ -124,12 +125,20 @@ export const processNativePaths = async (
     interface FileEntry { path: string; modified: number; size: number; }
     let allEntries: FileEntry[] = [];
 
-    if (onProgress) onProgress(0, paths.length, 'Scanning folders...');
+    if (onProgress) {
+        if (isStartup) {
+            onProgress(0, 0, 'Scanning folders...');
+        } else {
+            onProgress(0, paths.length, 'Scanning folders...');
+        }
+    }
 
     for (let i = 0; i < paths.length; i++) {
         if (abortSignal?.aborted) break;
         const p = paths[i];
-        if (onProgress) onProgress(i, paths.length, `Scanning: ${p.split(/[\\/]/).pop() || p}`);
+        if (onProgress && !isStartup) {
+            onProgress(i, paths.length, `Scanning folder ${i + 1}/${paths.length}: ${p.split(/[\\/]/).pop() || p}`);
+        }
         try {
             // Check if directory first (naive check based on extension or by trying scan)
             // But verify_image_paths or similar helpers are better. 
@@ -170,7 +179,13 @@ export const processNativePaths = async (
     const allPaths = allEntries.map(e => e.path);
 
     // 2. Pre-filter: Remove already-imported paths (optimization for rescan)
-    if (onProgress) onProgress(0, allPaths.length, 'Checking for new files...');
+    if (onProgress) {
+        if (isStartup) {
+            onProgress(0, 0, 'Checking for new files...');
+        } else {
+            onProgress(0, allPaths.length, `Checking ${allPaths.length} files for duplicates...`);
+        }
+    }
     const existingPaths = await getExistingPaths(allPaths);
     const newPaths = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
 
