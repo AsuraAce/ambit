@@ -117,7 +117,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
             let processed = 0;
             let offset = 0;
             const PAGE_SIZE = 1000;
-            const BATCH_SIZE = 150; // Increased to 150 for better throughput
+            const BATCH_SIZE = 50; // Reduced to 50 to keep CPU usage low for background tasks
 
             // Process in pages
             while (!abortController.signal.aborted) {
