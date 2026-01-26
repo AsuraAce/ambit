@@ -213,6 +213,13 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     };
 
     // --- Helpers ---
+    const formatModelName = (name: string | undefined): string => {
+        if (!name) return '';
+        const filename = getFilename(name);
+        return filename.replace(/\.(safetensors|ckpt|pt)$/i, '');
+    };
+
+    // --- Helpers ---
     const toggleGenData = () => {
         setIsGenDataOpen(prev => {
             const newState = !prev;
@@ -378,7 +385,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                             title={image.metadata.overrideModel || image.metadata.model !== 'Unknown' ? (image.metadata.overrideModel || image.metadata.model) : (image.metadata.modelHash || '')}
                         >
                             {image.metadata.overrideModel || image.metadata.model !== 'Unknown'
-                                ? (image.metadata.overrideModel || image.metadata.model)
+                                ? formatModelName(image.metadata.overrideModel || image.metadata.model)
                                 : `Hash: ${image.metadata.modelHash?.slice(0, 8)}`}
                         </span>
                     )}
@@ -594,7 +601,9 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                                                         </div>
                                                     ) : (
                                                         <div className="flex items-center gap-2">
-                                                            <div className="text-sm text-sage-800 dark:text-sage-200 truncate font-medium font-sans">{image.metadata.overrideModel || image.metadata.model}</div>
+                                                            <div className="text-sm text-sage-800 dark:text-sage-200 truncate font-medium font-sans" title={image.metadata.overrideModel || image.metadata.model}>
+                                                                {formatModelName(image.metadata.overrideModel || image.metadata.model)}
+                                                            </div>
                                                             {image.metadata.overrideModel && <div className="text-[10px] text-amber-600 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/20 px-1.5 rounded border border-amber-200 dark:border-amber-500/20">Override</div>}
                                                         </div>
                                                     )}
