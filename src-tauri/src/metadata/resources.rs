@@ -22,12 +22,16 @@ pub fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
                 });
 
             if let Some(n) = name {
-                let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(0.0);
-                let entry = if weight != 0.0 && weight != 1.0 {
+                // Default to 1.0 (standard implicit weight)
+                let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(1.0);
+                
+                // Show everything EXCEPT 1.0 (including 0.0)
+                let entry = if (weight - 1.0).abs() > f64::EPSILON {
                     format!("{} ({:.2})", n, weight)
                 } else {
                     n.to_string()
                 };
+                
                 if !res.loras.contains(&entry) {
                     res.loras.push(entry);
                 }
@@ -102,12 +106,14 @@ mod tests {
         let mut res = Resources::default();
         let payload = json!([
             { "lora_name": "epiNoiseOffset", "weight": 1.0 },
-            { "model_name": "detailer", "weight": 0.5 }
+            { "model_name": "detailer", "weight": 0.5 },
+            { "lora_name": "zero_weight", "weight": 0.0 }
         ]);
         extract_loras(&payload, &mut res);
-        assert_eq!(res.loras.len(), 2);
+        assert_eq!(res.loras.len(), 3);
         assert!(res.loras.contains(&"epiNoiseOffset".to_string()));
         assert!(res.loras.contains(&"detailer (0.50)".to_string()));
+        assert!(res.loras.contains(&"zero_weight (0.00)".to_string()));
     }
 
     #[test]

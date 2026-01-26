@@ -249,11 +249,23 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     }
 
     // Extract LoRAs from positive prompt
-    if let Ok(re) = Regex::new(r"<lora:([^:>]+)(?::[^>]+)?>") {
+    if let Ok(re) = Regex::new(r"<lora:([^:>]+)(?::([^>]+))?>") {
         for cap in re.captures_iter(&meta.positive_prompt) {
             let lora_name = cap[1].to_string();
-            if !meta.loras.contains(&lora_name) {
-                meta.loras.push(lora_name);
+            
+            // Extract weight (default 1.0)
+            let weight_str = cap.get(2).map(|m| m.as_str()).unwrap_or("1.0");
+            let weight = weight_str.parse::<f64>().unwrap_or(1.0);
+
+            // Consistency Rule: Hide 1.0, Show 0.0 and everything else
+            let entry = if (weight - 1.0).abs() > f64::EPSILON {
+                 format!("{} ({:.2})", lora_name, weight)
+            } else {
+                 lora_name
+            };
+
+            if !meta.loras.contains(&entry) {
+                meta.loras.push(entry);
             }
         }
     }
@@ -312,10 +324,11 @@ mod tests {
     
     #[test]
     fn test_extract_loras() {
-        let raw = "A beautiful <lora:cool_style:0.8> painting <lora:other_one:1>";
+        let raw = "A beautiful <lora:cool_style:0.8> painting <lora:other_one:1> <lora:zero_test:0>";
         let meta = extract_a1111_metadata(raw, None);
-        assert!(meta.loras.contains(&"cool_style".to_string()));
+        assert!(meta.loras.contains(&"cool_style (0.80)".to_string()));
         assert!(meta.loras.contains(&"other_one".to_string()));
+        assert!(meta.loras.contains(&"zero_test (0.00)".to_string()));
     }
 
     #[test]
