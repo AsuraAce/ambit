@@ -60,6 +60,39 @@ pub struct ImageMetadata {
     pub is_favorite: bool,
 }
 
+
+impl ImageMetadata {
+    pub fn is_incomplete(&self) -> bool {
+        // Considered incomplete if we are missing key generation data
+        (self.model.is_empty() || self.model == "Unknown")
+            || (self.positive_prompt.is_empty() && self.negative_prompt.is_empty())
+            || self.steps == 0
+    }
+
+    pub fn merge_if_missing(&mut self, other: ImageMetadata) {
+         if self.model.is_empty() || self.model == "Unknown" { self.model = other.model; }
+         if self.steps == 0 { self.steps = other.steps; }
+         if self.cfg == 0.0 { self.cfg = other.cfg; }
+         if self.seed == 0 { self.seed = other.seed; }
+         if self.sampler.is_empty() || self.sampler == "Unknown" || self.sampler == "_" { self.sampler = other.sampler; }
+         if self.positive_prompt.is_empty() { self.positive_prompt = other.positive_prompt; }
+         if self.negative_prompt.is_empty() { self.negative_prompt = other.negative_prompt; }
+         if self.generation_type == "unknown" && other.generation_type != "unknown" { self.generation_type = other.generation_type; }
+         
+         // Always merge collections
+         for x in other.loras { if !self.loras.contains(&x) { self.loras.push(x); } }
+         for x in other.control_nets { if !self.control_nets.contains(&x) { self.control_nets.push(x); } }
+         for x in other.embeddings { if !self.embeddings.contains(&x) { self.embeddings.push(x); } }
+         for x in other.hypernetworks { if !self.hypernetworks.contains(&x) { self.hypernetworks.push(x); } }
+    }
+
+    pub fn merge(&mut self, other: ImageMetadata) {
+        // General merge - overwrites even if present if other is "better"? 
+        // For now alias to merge_metadata function behavior but as a method
+        merge_metadata(self, other);
+    }
+}
+
 impl Default for ImageMetadata {
     fn default() -> Self {
         Self {
