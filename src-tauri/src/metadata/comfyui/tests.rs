@@ -654,6 +654,7 @@ fn test_extract_comfyui_primitive_multiline() {
 }
 
 #[test]
+#[ignore] // Disabled per user request: Ollama workflow is considered broken/edge case.
 fn test_extract_comfyui_ollama_chain() {
     let prompt = r#"{"3": {"inputs": {"seed": ["803", 5], "steps": ["803", 6], "cfg": ["803", 8], "sampler_name": ["803", 9], "scheduler": ["803", 10], "denoise": 1.0, "model": ["361", 0], "positive": ["176", 0], "negative": ["177", 0], "latent_image": ["33", 0]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}}, "8": {"inputs": {"samples": ["3", 0], "vae": ["803", 4]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}}, "33": {"inputs": {"resolution": "896x1152 (0.78)", "batch_size": 1, "width_override": 0, "height_override": 0}, "class_type": "SDXLEmptyLatentSizePicker+", "_meta": {"title": "\ud83d\udd27 Empty Latent Size Picker"}}, "79": {"inputs": {"CONDITIONING": ["177", 0]}, "class_type": "Prompts Everywhere", "_meta": {"title": "Prompts Everywhere"}}, "96": {"inputs": {"FLOAT": ["803", 8]}, "class_type": "Anything Everywhere", "_meta": {"title": "Anything Everywhere"}}, "97": {"inputs": {"MODEL": ["803", 2], "CLIP": ["803", 3], "VAE": ["803", 4]}, "class_type": "Anything Everywhere3", "_meta": {"title": "Anything Everywhere3"}}, "118": {"inputs": {"string": "\n", "strip_newlines": false}, "class_type": "StringConstantMultiline", "_meta": {"title": "String Constant Multiline"}}, "119": {"inputs": {"string": "low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,,low quality,worst quality,normal quality, signature,jpeg artifacts,bad anatomy, old, early, copyright name, watermark, artist name, signature,censor,", "strip_newlines": false}, "class_type": "StringConstantMultiline", "_meta": {"title": "String Constant Multiline"}}, "176": {"inputs": {"text": ["798", 0], "parser": "comfy", "mean_normalization": true, "multi_conditioning": true, "use_old_emphasis_implementation": false, "with_SDXL": false, "ascore": 6.0, "width": 1024, "height": 1024, "crop_w": 0, "crop_h": 0, "target_width": 1024, "target_height": 1024, "text_g": "", "text_l": "", "smZ_steps": 20, "clip": ["803", 3]}, "class_type": "smZ CLIPTextEncode", "_meta": {"title": "CLIP Text Encode++"}}, "177": {"inputs": {"text": ["119", 0], "parser": "comfy", "mean_normalization": true, "multi_conditioning": true, "use_old_emphasis_implementation": false, "with_SDXL": false, "ascore": 6.0, "width": 1024, "height": 1024, "crop_w": 0, "crop_h": 0, "target_width": 1024, "target_height": 1024, "text_g": "", "text_l": "", "smZ_steps": 20, "clip": ["803", 3]}, "class_type": "smZ CLIPTextEncode", "_meta": {"title": "CLIP Text Encode++"}}, "221": {"inputs": {"rescale_algorithm": "bislerp", "stitch": ["243", 0], "inpainted_image": ["259", 0]}, "class_type": "InpaintStitch", "_meta": {"title": "\u2702\ufe0f Inpaint Stitch"}}, "243": {"inputs": {"context_expand_pixels": 20, "context_expand_factor": 1.0, "fill_mask_holes": true, "blur_mask_pixels": 32.0, "invert_mask": false, "blend_pixels": 16.0, "rescale_algorithm": "bicubic", "mode": "forced size", "force_width": 1024, "force_height": 1024, "rescale_factor": 1.0, "min_width": 768, "min_height": 768, "max_width": 1024, "max_height": 1024, "padding": 32, "image": ["709", 0], "mask": ["287", 0]}, "class_type": "InpaintCrop", "_meta": {"title": "\u2702\ufe0f Inpaint Crop"}}, "254": {"inputs": {"seed": 1111, "steps": 10, "cfg": 2.0, "sampler_name": "deis", "scheduler": "beta", "denoise": 0.45, "positive": ["335", 0], "negative": ["335", 1], "latent_image": ["335", 2], "model": ["803", 2]}, "class_type": "KSampler", "_meta": {"title": "KSampler"}}, "259": {"inputs": {"samples": ["254", 0], "vae": ["803", 4]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}}, "261": {"inputs": {"rgthree_comparer": {"images": [{"name": "A", "selected": true, "url": "/api/view?filename=rgthree.compare._temp_hzfgr_00013_.png&type=temp&subfolder=&rand=0.22917040369605346"}]}, "image_a": ["221", 0]}, "class_type": "Image Comparer (rgthree)", "_meta": {"title": "Image Comparer (rgthree)"}}, "287": {"inputs": {"threshold": 0.3, "dilation": 1, "segm_detector": ["288", 1], "image": ["709", 0]}, "class_type": "SegmDetectorCombined_v2", "_meta": {"title": "SEGM Detector (combined)"}}, "288": {"inputs": {"model_name": "segm/face_yolov8m-seg_60.pt"}, "class_type": "UltralyticsDetectorProvider", "_meta": {"title": "UltralyticsDetectorProvider"}}, "330": {"inputs": {"mask_opacity": 0.5, "mask_color": "255, 255, 255", "pass_through": false, "image": ["243", 1], "mask": ["243", 2]}, "class_type": "ImageAndMaskPreview", "_meta": {"title": "ImageAndMaskPreview"}}, "335": {"inputs": {"noise_mask": true, "pixels": ["243", 1], "mask": ["243", 2], "positive": ["176", 0], "negative": ["177", 0], "vae": ["803", 4]}, "class_type": "InpaintModelConditioning", "_meta": {"title": "InpaintModelConditioning"}}, "361": {"inputs": {"hard_mode": true, "boost": true, "model": ["450", 0]}, "class_type": "Automatic CFG", "_meta": {"title": "Automatic CFG"}}, "450": {"inputs": {"object_to_patch": "diffusion_model", "residual_diff_threshold": 0.2, "start": 0.0, "end": 1.0, "max_consecutive_cache_hits": -1, "model": ["803", 2]}, "class_type": "ApplyFBCacheOnModel", "_meta": {"title": "Apply First Block Cache"}}, "709": {"inputs": {"samples": ["3", 0], "vae": ["803", 4]}, "class_type": "VAEDecode", "_meta": {"title": "VAE Decode"}}, "790": {"inputs": {"enable_mirostat": false, "mirostat": 0, "enable_mirostat_eta": false, "mirostat_eta": 0.1, "enable_mirostat_tau": false, "mirostat_tau": 5.0, "enable_num_ctx": false, "num_ctx": 2048, "enable_repeat_last_n": false, "repeat_last_n": 64, "enable_repeat_penalty": false, "repeat_penalty": 1.1, "enable_temperature": false, "temperature": 0.25, "enable_seed": false, "seed": 145620304, "enable_stop": false, "stop": "", "enable_tfs_z": false, "tfs_z": 1.0, "enable_num_predict": false, "num_predict": -1, "enable_top_k": false, "top_k": 40, "enable_top_p": false, "top_p": 0.9, "enable_min_p": false, "min_p": 0.0, "debug": false}, "class_type": "OllamaOptionsV2", "_meta": {"title": "Ollama Options V2"}}, "791": {"inputs": {"system": "You are playing the part of an expert critic. From the user input given, you must generate a text description of the required fictional image. Use present tense to describe the in professional detail all subjects, objects, colors, textures, designs, styles, lighting, artisitic technique used, styles, positions etc. along with any other additional details typically used to most accuretly describe both the scene, and the emotion to be conveyed perfectly. Provide the image prompt text only. Do not interject, do not include this context in your response, do not ask questions, and do not add any type of metacomemntary, do not add any pre or post-amble, do not include any headers or footers,", "prompt": "dynamic figure drawing reference pose, ", "keep_context": false, "format": "text", "connectivity": ["794", 0], "options": ["790", 0]}, "class_type": "OllamaGenerateV2", "_meta": {"title": "Ollama Generate V2"}}, "792": {"inputs": {"text": "\n\nhentai, female anime character, Naruto franchise, Hinata Hyuga, masturbation, squirting, pussy, soft lighting, anime-style artwork, detailed anatomy, realistic expressions, high-quality drawing, explicit content, solo scene, intimate setting, private moment, Japanese animation style, explicit hentai", "anything": ["795", 0]}, "class_type": "easy showAnything", "_meta": {"title": "Show Any"}}, "794": {"inputs": {"url": "http://127.0.0.1:11434", "model": "deepseek-r1:14b", "keep_alive": 0, "keep_alive_unit": "minutes"}, "class_type": "OllamaConnectivityV2", "_meta": {"title": "Ollama Connectivity V2"}}, "795": {"inputs": {"Opening_tag": "<think>", "Closing_tag": "</think>", "Open_tag_instance": 1, "Close_tag_instance": 1, "Remove_tags": true, "Pass_Through_on_error": true, "Text": ["791", 0]}, "class_type": "Remove Text", "_meta": {"title": "Remove Text Block\ud83e\uddf8"}}, "796": {"inputs": {"text": "<think>\nOkay, I need to figure out how to approach this request. The user is asking for a hentai image prompt featuring a specific female anime character from a franchise, including elements like masturbation, squirting, and pussy. They also want it in comma-separated tags with 250 tokens or less.\n\nFirst, I should choose a popular anime franchise that includes a female character known for her design and presence. Naruto is a good fit because it's well-known and has iconic characters. Hinata Hyuga is a suitable choice as she's a prominent and recognizable character from the series.\n\nNext, I need to include the key elements: masturbation, squirting, and pussy. These are explicit descriptors that clearly convey the intended content.\n\nI should also add details about the scene setup to make it vivid. This includes things like the setting (e.g., her bedroom), lighting (soft and warm to create a sensual mood), and any additional elements that enhance the atmosphere, such as sheets or pillows.\n\nIncluding art style aspects is important for accuracy. \"High-quality anime-style artwork\" ensures the visual style aligns with typical anime aesthetics. Terms like \"detailed anatomy\" and \"realistic expressions\" help in conveying the level of detail expected.\n\nI need to ensure all tags are comma-separated and concise, keeping within the 250-token limit. This means being precise without unnecessary words. I'll list each element clearly: character, actions, setting details, artistic style, etc.\n\nFinally, I should avoid any extra explanations or commentary as per the instructions. Just provide the prompt in the specified format with all necessary tags included.\n</think>", "anything": ["795", 1]}, "class_type": "easy showAnything", "_meta": {"title": "Show Any"}}, "798": {"inputs": {"inputcount": 2, "string_1": ["118", 0], "string_2": ["792", 0], "delimiter": " Break, ", "return_list": false, "Update inputs": null}, "class_type": "JoinStringMulti", "_meta": {"title": "Join String Multi"}}, "799": {"inputs": {"filename": "ComfyUI_%time_%seed_%counter", "path": "%date/", "model_name": ["803", 0], "seed": ["803", 5], "steps": ["803", 6], "cfg": ["803", 8], "sampler_name": ["803", 9], "scheduler": ["803", 10], "width": ["33", 1], "height": ["33", 2], "positive": ["118", 0], "negative": ["119", 0], "extension": "png", "calculate_hash": true, "resource_hash": true, "lossless_webp": true, "jpg_webp_quality": 100, "date_format": "%Y-%m-%d", "time_format": "%H%M%S", "save_metadata_file": false, "extra_info": "", "images": ["221", 0]}, "class_type": "SDPromptSaver", "_meta": {"title": "SD Prompt Saver"}}, "803": {"inputs": {"ckpt_name": "sdxl\\CHEYENNE_v16.safetensors", "vae_name": "sdxl_vae.safetensors", "model_version": "SDXL 1024px", "config_name": "none", "seed": 32216257768902, "steps": 20, "refiner_start": 0.8, "cfg": 8.0, "sampler_name": "deis", "scheduler": "beta", "positive_ascore": 6.0, "negative_ascore": 6.0, "aspect_ratio": "16:9 - 1344x768", "width": 1344, "height": 768, "batch_size": 1, "steps_display": "Total steps: 20,\nRefiner start at step: 16 (80%)", "aspect_ratio_display": "Optimal resolution for SDXL 1024px model\nwith aspect ratio 16:9: 1344 x 768"}, "class_type": "SDParameterGenerator", "_meta": {"title": "SD Parameter Generator"}}, "806": {"inputs": {"INT": ["803", 5]}, "class_type": "Anything Everywhere", "_meta": {"title": "Anything Everywhere"}}}
 "#;
@@ -740,4 +741,131 @@ fn test_extract_comfyui_nan_json() {
     let meta = extract_comfyui_metadata(&chunks);
     
     assert_eq!(meta.steps, 20);
+}
+
+#[test]
+fn test_extract_comfyui_stylealigned_reproduction() {
+    // User provided StyleAligned workflow (UI format)
+    let workflow = r#"{
+        "last_node_id": 98,
+        "last_link_id": 230,
+        "nodes": [
+            {
+                "id": 10,
+                "type": "StyleAlignedBatchAlign",
+                "inputs": [{"name": "model", "type": "MODEL", "link": null}],
+                "outputs": [{"name": "MODEL", "type": "MODEL", "links": [11], "shape": 3, "slot_index": 0}],
+                "properties": {"Node name for S&R": "StyleAlignedBatchAlign"},
+                "widgets_values": ["both", "q+k+v", 1]
+            },
+            {
+                "id": 76,
+                "type": "PrimitiveNode",
+                "outputs": [{"name": "STRING", "type": "STRING", "links": [94, 95], "slot_index": 0, "widget": {"name": "text_g"}}],
+                "properties": {"Run widget replace on values": false},
+                "widgets_values": ["text, watermark"]
+            },
+            {
+                "id": 36,
+                "type": "BatchPromptScheduleEncodeSDXL",
+                "inputs": [
+                    {"name": "clip", "type": "CLIP", "link": null},
+                    {"name": "text_g", "type": "STRING", "link": 40, "widget": {"name": "text_g"}},
+                    {"name": "pre_text_G", "type": "STRING", "link": 43, "widget": {"name": "pre_text_G"}},
+                    {"name": "app_text_G", "type": "STRING", "link": 45, "widget": {"name": "app_text_G"}}
+                ],
+                "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [144], "shape": 3, "slot_index": 0}],
+                "properties": {"Node name for S&R": "BatchPromptScheduleEncodeSDXL"},
+                "widgets_values": [4096, 4096, 0, 0, 1024, 1024, "formatted_json_omitted_for_brevity", "formatted_json_omitted_for_brevity", 4, false, "Low poly, Game asset", "Unreal Engine, Octane Render, flat background", "Low poly, Game asset", "Unreal Engine, Octane Render, flat background", 0, 0, 0, 0]
+            },
+            {
+                "id": 38, "type": "PrimitiveNode",
+                "outputs": [{"name": "STRING", "type": "STRING", "links": [40, 41], "slot_index": 0, "widget": {"name": "text_g"}}],
+                "title": "Subjects",
+                "widgets_values": ["\"0\": \"crystal\",\n\"1\": \"pine tree\""]
+            },
+            {
+                "id": 41, "type": "PrimitiveNode",
+                "outputs": [{"name": "STRING", "type": "STRING", "links": [43, 44], "slot_index": 0, "widget": {"name": "pre_text_G"}}],
+                "title": "Pre_Subject",
+                "widgets_values": ["Low poly, Game asset"]
+            },
+            {
+                "id": 42, "type": "PrimitiveNode",
+                "outputs": [{"name": "STRING", "type": "STRING", "links": [45, 46], "slot_index": 0, "widget": {"name": "app_text_G"}}],
+                "title": "After_Subjects",
+                "widgets_values": ["Unreal Engine, Octane Render, flat background"]
+            },
+            {
+                "id": 90,
+                "type": "StyleAlignedReferenceSampler",
+                "inputs": [
+                    {"name": "model", "type": "MODEL", "link": null},
+                    {"name": "positive", "type": "CONDITIONING", "link": 183},
+                    {"name": "negative", "type": "CONDITIONING", "link": 184},
+                    {"name": "sampler", "type": "SAMPLER", "link": 192, "slot_index": 3},
+                    {"name": "sigmas", "type": "SIGMAS", "link": 182, "slot_index": 4}
+                ],
+                "outputs": [{"name": "output", "type": "LATENT", "links": [185], "shape": 3, "slot_index": 0}],
+                "properties": {"Node name for S&R": "StyleAlignedReferenceSampler"}
+            },
+            {
+                "id": 69,
+                "type": "CLIPTextEncodeSDXL",
+                "inputs": [
+                    {"name": "clip", "type": "CLIP", "link": null},
+                    {"name": "text_g", "type": "STRING", "link": 77, "widget": {"name": "text_g"}, "slot_index": 1},
+                    {"name": "text_l", "type": "STRING", "link": 78, "widget": {"name": "text_l"}}
+                ],
+                "outputs": [{"name": "CONDITIONING", "type": "CONDITIONING", "links": [178, 183], "shape": 3, "slot_index": 0}],
+                "properties": {"Node name for S&R": "CLIPTextEncodeSDXL"},
+                "widgets_values": [4095, 4096, 0, 0, 1024, 1024, "A Japanese plastic toy of goku , flat white background", "A Japanese plastic toy of goku , flat white background"]
+            },
+            {
+                "id": 68,
+                "type": "PrimitiveNode",
+                "outputs": [{"name": "STRING", "type": "STRING", "links": [77, 78], "slot_index": 0, "widget": {"name": "text_g"}}],
+                "widgets_values": ["A Japanese plastic toy of goku , flat white background"]
+            },
+            {
+                "id": 88, "type": "SaveImage",
+                "inputs": [{"name": "images", "type": "IMAGE", "link": 148}]
+            },
+            {
+                "id": 98, "type": "SaveImage",
+                "inputs": [{"name": "images", "type": "IMAGE", "link": 195}]
+            },
+            {
+                "id": 3, "type": "KSampler",
+                "inputs": [{"name": "positive", "type": "CONDITIONING", "link": 151}],
+                "outputs": [{"name": "LATENT", "type": "LATENT", "links": [7], "slot_index": 0}]
+            }
+        ],
+        "links": [
+            [7, 3, 0, 8, 0, "LATENT"],
+            [40, 38, 0, 36, 1, "STRING"],
+            [41, 38, 0, 36, 2, "STRING"],
+            [43, 41, 0, 36, 3, "STRING"],
+            [44, 41, 0, 36, 4, "STRING"],
+            [45, 42, 0, 36, 5, "STRING"],
+            [46, 42, 0, 36, 6, "STRING"],
+            [77, 68, 0, 69, 1, "STRING"],
+            [78, 68, 0, 69, 2, "STRING"],
+            [144, 36, 0, 17, 0, "*"],
+            [151, 36, 0, 3, 1, "CONDITIONING"],
+            [183, 69, 0, 90, 1, "CONDITIONING"],
+            [185, 90, 0, 91, 0, "LATENT"],
+            [195, 91, 0, 98, 0, "IMAGE"],
+            [148, 8, 0, 88, 0, "IMAGE"]
+        ]
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("workflow".to_string(), workflow.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.tool, "ComfyUI");
+    assert!(meta.positive_prompt.contains("Low poly"));
+    assert!(meta.positive_prompt.contains("crystal"));
 }

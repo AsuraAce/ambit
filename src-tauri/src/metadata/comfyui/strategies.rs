@@ -73,6 +73,17 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                  else if let Some(v) = get_node_param(node, "noise_seed").and_then(|v| v.as_i64()) { meta.seed = v; }
              }
         }
+        if t == "String" || t == "PrimitiveNode" || t == "ShowText" || t == "Note" {
+             if meta.positive_prompt.is_empty() {
+                 if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
+                     meta.positive_prompt = text.to_string();
+                 } else if let Some(text) = get_node_param(node, "string").and_then(|v| v.as_str()) {
+                     meta.positive_prompt = text.to_string();
+                 } else if let Some(text) = get_node_param(node, "STRING").and_then(|v| v.as_str()) {
+                     meta.positive_prompt = text.to_string();
+                 }
+             }
+        }
     }
     
     meta

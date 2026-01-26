@@ -131,7 +131,7 @@ impl<'a> ComfyEvaluator<'a> {
         
         // Is this node a sampler?
         let t = get_node_type(node);
-        if t.contains("KSampler") || t == "SamplerCustomAdvanced" {
+        if t.contains("KSampler") || t == "SamplerCustomAdvanced" || t == "SamplerCustom" || t.contains("StyleAlignedReferenceSampler") {
              return Some(start_id.to_string());
         }
 
@@ -161,7 +161,7 @@ impl<'a> ComfyEvaluator<'a> {
                      // Check if source is also a sampler
                      if let Some(source_node) = self.graph.get_node(&source_id) {
                          let t = get_node_type(source_node);
-                         if t.contains("KSampler") || t == "SamplerCustomAdvanced" {
+                         if t.contains("KSampler") || t == "SamplerCustomAdvanced" || t == "SamplerCustom" || t.contains("StyleAlignedReferenceSampler") {
                              // It's a chain! Move upstream.
                              current_id = source_id;
                              depth += 1;
@@ -431,6 +431,7 @@ impl<'a> ComfyEvaluator<'a> {
         for _ in 0..20 {
              let node = self.graph.get_node(&current_id)?;
              let t = get_node_type(node);
+             // println!("Trace Conditioning: {} ({})", current_id, t);
 
              if t == "ControlNetApply" || t == "ControlNetApplyAdvanced" {
                  // Extract ControlNet
@@ -450,9 +451,28 @@ impl<'a> ComfyEvaluator<'a> {
                  }
                  break;
              }
-             else if t == "CLIPTextEncode" || t == "CLIPTextEncodeSDXL" || t.contains("CLIPTextEncode") {
+             else if t == "CLIPTextEncode" || t.contains("CLIPTextEncode") {
                  // Found Prompt!
+                 if t == "CLIPTextEncodeSDXL" {
+                     // SDXL uses text_g / text_l
+                     // Try text_g (global) first, then text_l (local), then generic text
+                     if let Some(s) = self.trace_text(node, "text_g") { return Some(s); }
+                     if let Some(s) = self.trace_text(node, "text_l") { return Some(s); }
+                 }
                  return self.trace_text(node, "text");
+             }
+             else if t == "BatchPromptScheduleEncodeSDXL" {
+                 // Concatenate parts: pre_text_G + text_g + app_text_G
+                 let mut parts = Vec::new();
+                 if let Some(s) = self.trace_text(node, "pre_text_G") { parts.push(s); }
+                 if let Some(s) = self.trace_text(node, "text_g") { parts.push(s); }
+                 if let Some(s) = self.trace_text(node, "text") { parts.push(s); }
+                 if let Some(s) = self.trace_text(node, "app_text_G") { parts.push(s); }
+                 
+                 if !parts.is_empty() {
+                     return Some(parts.join(", "));
+                 }
+                 return None;
              }
              else if t == "ConditioningCombine" || t == "ConditioningAverage" {
                  // For arrays/combos, just take the first one for now or text trace both?
