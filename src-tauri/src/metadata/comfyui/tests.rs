@@ -668,3 +668,54 @@ fn test_extract_comfyui_ollama_chain() {
 }
 
 
+#[test]
+fn test_extract_comfyui_nsp_reproduction() {
+    // User provided reproduction case with CLIPTextEncode (NSP)
+    let prompt = r#"{
+    "3": {"inputs": {"seed": 273138048298546, "steps": 12, "cfg": 4.0, "sampler_name": "dpmpp_sde", "scheduler": "karras", "denoise": 1.0, "model": ["32", 0], "positive": ["151", 0], "negative": ["114", 0], "latent_image": ["70", 0]}, "class_type": "KSampler"}, 
+    "8": {"inputs": {"samples": ["16", 0], "vae": ["20", 0]}, "class_type": "VAEDecode"}, 
+    "9": {"inputs": {"filename_prefix": "hr-fix", "images": ["8", 0]}, "class_type": "SaveImage"}, 
+    "16": {"inputs": {"seed": 517541427790355, "steps": 20, "cfg": 8.0, "sampler_name": "dpmpp_sde", "scheduler": "karras", "denoise": 0.54, "model": ["32", 0], "positive": ["34", 0], "negative": ["114", 0], "latent_image": ["71", 0]}, "class_type": "KSampler"}, 
+    "19": {"inputs": {"samples": ["3", 0], "vae": ["20", 0]}, "class_type": "VAEDecode"}, 
+    "20": {"inputs": {"vae_name": "kl-f8-anime.ckpt"}, "class_type": "VAELoader"}, 
+    "32": {"inputs": {"lora_name": "epiNoiseoffset_v2.safetensors", "strength_model": 1.0, "strength_clip": 1.0, "model": ["53", 0], "clip": ["53", 1]}, "class_type": "LoraLoader"}, 
+    "34": {"inputs": {"noodle_key": "::", "seed": 483340363264397, "text": "Alina Smirnov: young russian teenage girl, blonde hair, ballet dancer:\n\n::adj-beauty:: ::dress-multicolor:: ::dress-other::\n\nBeautiful Woman sitting on a boat, detailed dress and face, gorgeous face model face, full body shot, inflateble shapes, wires, tubes, veins, jellyfish, white biomechanical details, wearing epic bionic cyborg implants, masterpiece, intricate, biopunk, vogue, highly detailed, artstation, concept art", "clip": ["32", 1]}, "class_type": "CLIPTextEncode (NSP)"}, 
+    "53": {"inputs": {"config_name": "v1-inference_clip_skip_2_fp16.yaml", "ckpt_name": "revAnimated_v11.safetensors"}, "class_type": "CheckpointLoader"}, 
+    "61": {"inputs": {"model_name": "UltraSharp\\4x-UltraSharp.pth"}, "class_type": "UpscaleModelLoader"}, 
+    "62": {"inputs": {"upscale_model": ["61", 0], "image": ["8", 0]}, "class_type": "ImageUpscaleWithModel"}, 
+    "68": {"inputs": {"modifier": 2, "upscale_method": "nearest-exact", "crop": "disabled", "IMAGE": ["62", 0], "TUPLE": ["71", 1]}, "class_type": "ImageScale_Ratio_DF"}, 
+    "70": {"inputs": {"batch_size": 1, "TUPLE": ["108", 0]}, "class_type": "EmptyLatentImage_DF"}, 
+    "71": {"inputs": {"modifier": 2.0, "scale_method": "nearest-exact", "crop": "disabled", "LATENT": ["3", 0], "TUPLE": ["108", 0]}, "class_type": "LatentScale_Ratio_DF"}, 
+    "75": {"inputs": {"FLOAT_A": 1024, "FLOAT_B": 512, "Ceil2Int": false}, "class_type": "TupleNode_DF"}, 
+    "108": {"inputs": {"FLOAT_A": 512.0, "FLOAT_B": 768.01, "Ceil2Int": false}, "class_type": "TupleNode_DF"}, 
+    "114": {"inputs": {"noodle_key": "__", "seed": 608481745342694, "text": "bad_quality", "clip": ["32", 1]}, "class_type": "CLIPTextEncode (NSP)"}, 
+    "120": {"inputs": {"control_net_name": "control_sd15_openpose.pth"}, "class_type": "ControlNetLoader"}, 
+    "123": {"inputs": {"strength": 1, "conditioning": ["34", 0], "control_net": ["120", 0], "image": ["155", 0]}, "class_type": "ControlNetApply"}, 
+    "125": {"inputs": {"images": ["155", 0]}, "class_type": "PreviewImage"}, 
+    "132": {"inputs": {"filename_prefix": "base", "images": ["19", 0]}, "class_type": "SaveImage"}, 
+    "133": {"inputs": {"filename_prefix": "hrf-upscale"}, "class_type": "SaveImage"}, 
+    "134": {"inputs": {"text": ""}, "class_type": "Text String"}, 
+    "135": {"inputs": {"seed": 30555162120510}, "class_type": "Text Random Line"}, 
+    "136": {"inputs": {"text": "__adj-beauty__ __nationality__ __identity__ in a __scenario-desc__"}, "class_type": "Text Multiline"}, 
+    "137": {"inputs": {"text": "bad_prompt, bad_quality, bad-artist"}, "class_type": "Text Multiline"}, 
+    "138": {"inputs": {"mode": "incremental_image", "index": 0, "label": "Batch 002", "path": "C:\\Users\\Artemis\\OneDrive\\Dokumente\\AI Art\\poses\\362AnimePosesBy_v10\\controlnetposes.com\\preview", "pattern": "*"}, "class_type": "Load Image Batch"}, 
+    "149": {"inputs": {"control_net_name": "control_sd15_openpose.pth"}, "class_type": "ControlNetLoader"}, 
+    "150": {"inputs": {"detect_hand": "enable", "image": ["154", 0]}, "class_type": "OpenposePreprocessor"}, 
+    "151": {"inputs": {"strength": 1.0, "conditioning": ["34", 0], "control_net": ["149", 0], "image": ["150", 0]}, "class_type": "ControlNetApply"}, 
+    "153": {"inputs": {"images": ["150", 0]}, "class_type": "PreviewImage"}, 
+    "154": {"inputs": {"mode": "incremental_image", "index": 0, "label": "Batch 001", "path": "C:\\Users\\Artemis\\OneDrive\\Dokumente\\AI Art\\poses\\362AnimePosesBy_v10\\controlnetposes.com\\preview", "pattern": "*"}, "class_type": "Load Image Batch"}, 
+    "155": {"inputs": {"a": 6.283185307179586, "bg_threshold": 0.1, "image": ["138", 0]}, "class_type": "MiDaS-DepthMapPreprocessor"}, 
+    "173": {"inputs": {"images": ["154", 0]}, "class_type": "PreviewImage"}, 
+    "174": {"inputs": {"images": ["138", 0]}, "class_type": "PreviewImage"}, 
+    "176": {"inputs": {"mode": "caption", "question": "What does the background consist of?"}, "class_type": "BLIP Analyze Image"}, 
+    "177": {"inputs": {"label": "Text Output", "text": ["176", 0]}, "class_type": "Text to Console"}
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+
+    println!("Detected Prompt: {}", meta.positive_prompt);
+    assert!(meta.positive_prompt.contains("Alina Smirnov"));
+}

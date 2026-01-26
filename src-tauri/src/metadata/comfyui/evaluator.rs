@@ -487,6 +487,14 @@ impl<'a> ComfyEvaluator<'a> {
                 return Some(s.to_string());
             }
         }
+        // Fallback for "Text" (Capitalized) common in some nodes
+        if input_name == "text" {
+            if let Some(val) = get_node_param(node, "Text") {
+                if let Some(s) = val.as_str() {
+                     return Some(s.to_string());
+                }
+            }
+        }
         
         // 2. Trace upstream string logic
         if let Some(source_id) = self.get_source_id(node, input_name) {
@@ -564,6 +572,7 @@ impl<'a> ComfyEvaluator<'a> {
         else {
              // Generic fallback: check common string holding parameters
              if let Some(v) = get_node_param(node, "text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
+             if let Some(v) = get_node_param(node, "Text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
              if let Some(v) = get_node_param(node, "string").and_then(|v| v.as_str()) { return Some(v.to_string()); }
              if let Some(v) = get_node_param(node, "String").and_then(|v| v.as_str()) { return Some(v.to_string()); }
              if let Some(v) = get_node_param(node, "populated_text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
