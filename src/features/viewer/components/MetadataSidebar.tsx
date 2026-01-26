@@ -4,6 +4,7 @@ import { Workflow, Wand2, Undo2, Copy, Check, Palette, Tag, Settings2, Clipboard
 import { AIImage, Collection, ModelType, ImageMetadata, GeneratorTool } from '../../../types';
 import { WorkflowInspector } from './WorkflowInspector';
 import { getFilename } from '../../../utils/pathUtils';
+import { formatModelName } from '../../../utils/formatUtils';
 import { useToast } from '../../../hooks/useToast';
 
 interface MetadataSidebarProps {
@@ -210,13 +211,6 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             image.metadata.denoisingStrength !== image.originalMetadata.denoisingStrength ||
             image.metadata.hiresUpscale !== image.originalMetadata.hiresUpscale
         );
-    };
-
-    // --- Helpers ---
-    const formatModelName = (name: string | undefined): string => {
-        if (!name) return '';
-        const filename = getFilename(name);
-        return filename.replace(/\.(safetensors|ckpt|pt)$/i, '');
     };
 
     // --- Helpers ---

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Search } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { SectionHeader, SelectableRow, SearchInput } from './FilterPrimitives';
+import { formatModelName } from '../../../utils/formatUtils';
 
 interface ArchitectureSectionProps {
     filters: FilterState;
@@ -65,7 +66,7 @@ export const ArchitectureSection: React.FC<ArchitectureSectionProps> = ({
                         {filteredModels.map(model => (
                             <SelectableRow
                                 key={model}
-                                label={model}
+                                label={formatModelName(model)}
                                 isSelected={filters.models.includes(model)}
                                 onClick={() => toggleModel(model)}
                             />

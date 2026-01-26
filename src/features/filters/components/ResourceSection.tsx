@@ -6,7 +6,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown, SortOptionItem } from './FilterPrimitives';
-import { formatCountCompact } from '../../../utils/formatUtils';
+import { formatCountCompact, formatModelName } from '../../../utils/formatUtils';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface ResourceItem {
@@ -237,7 +237,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 {/* Overlay Info - Single Line Truncated */}
                 <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
                     <p className="text-[10px] font-medium text-white truncate leading-tight drop-shadow-sm">
-                        {item.name}
+                        {type === 'checkpoints' ? formatModelName(item.name) : item.name}
                     </p>
                 </div>
 
@@ -296,7 +296,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         )}
                     </div>
 
-                    <span className="truncate" title={item.name}>{item.name}</span>
+                    <span className="truncate" title={item.name}>{type === 'checkpoints' ? formatModelName(item.name) : item.name}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <span
@@ -438,7 +438,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 >
                     <div className="p-1">
                         <div className="px-2 py-1.5 text-xs font-medium text-gray-500 dark:text-zinc-500 border-b border-gray-100 dark:border-white/5 mb-1 truncate">
-                            {contextMenu.item.name}
+                            {type === 'checkpoints' ? formatModelName(contextMenu.item.name) : contextMenu.item.name}
                         </div>
                         {/* Use Preview - enabled if User Override OR (In Dynamic AND Sidecar available) */}
                         <button

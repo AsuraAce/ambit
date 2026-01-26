@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
+import { formatModelName } from '../../../utils/formatUtils';
 
 interface ImageCardProps {
   image: AIImage;
@@ -164,8 +165,8 @@ export const ImageCard: React.FC<ImageCardProps> = ({
               <div className="text-xs font-bold text-white truncate drop-shadow-md font-sans">
                 {(() => {
                   const model = typeof image.metadata.model === 'string' ? image.metadata.model : (image.metadata.model as any)?.name;
-                  if (image.metadata.overrideModel) return image.metadata.overrideModel;
-                  if (model && model !== 'Unknown') return model;
+                  if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);
+                  if (model && model !== 'Unknown') return formatModelName(model);
                   if (image.metadata.modelHash) return `Hash: ${image.metadata.modelHash.slice(0, 8)}`;
                   return 'Model';
                 })()}

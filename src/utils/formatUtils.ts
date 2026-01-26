@@ -1,3 +1,5 @@
+import { getFilename } from './pathUtils';
+
 /**
  * Formats a number into a shorter, human-readable string.
  * Examples:
@@ -38,4 +40,15 @@ export const formatCountCompact = (count: number): string => {
     }
 
     return format(count / 1000000, 'M');
+};
+
+/**
+ * Formats a model path or name to show only the clean basename.
+ * Removes paths and common extensions.
+ * e.g. "sdxl/my_model.safetensors" -> "my_model"
+ */
+export const formatModelName = (name: string | undefined): string => {
+    if (!name) return '';
+    const filename = getFilename(name);
+    return filename.replace(/\.(safetensors|ckpt|pt)$/i, '');
 };
