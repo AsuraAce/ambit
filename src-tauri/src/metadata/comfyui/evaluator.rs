@@ -1,5 +1,7 @@
 use super::graph::{ComfyGraph, get_node_type, get_node_input_link, get_node_param};
+
 use super::heuristics::find_wireless_node;
+use super::conditioning::find_reachable_prompts;
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -53,7 +55,7 @@ impl<'a> ComfyEvaluator<'a> {
                     
                     if let Some(root_node) = self.graph.get_node(&root_sampler_id) {
                         // Extract metadata from this Root Sampler
-                        let partial = self.extract_from_sampler(root_node);
+                        let partial = self.extract_from_sampler(&root_sampler_id, root_node);
                         meta.merge(partial);
                     }
                 }
@@ -75,7 +77,7 @@ impl<'a> ComfyEvaluator<'a> {
                  // We found a sampler. Extract from it.
                  // We might want to prioritize "active" ones (not muted)?
                  if !self.is_muted(node) {
-                     let partial = self.extract_from_sampler(node);
+                     let partial = self.extract_from_sampler(id, node);
                      // Merge carefully? Or just take the first one that has data?
                      // If we have multiple samplers, mixing metadata is risky.
                      // But typically finding ONE valid one is enough.
@@ -176,7 +178,7 @@ impl<'a> ComfyEvaluator<'a> {
     }
 
     /// Main logic to pull Steps, CFG, Model, etc from a generic Sampler node
-    fn extract_from_sampler(&self, node: &Value) -> ImageMetadata {
+    fn extract_from_sampler(&self, node_id: &str, node: &Value) -> ImageMetadata {
         let mut meta = ImageMetadata::default();
 
         // 1. Direct Parameters (Steps, CFG, Seed)
@@ -232,20 +234,19 @@ impl<'a> ComfyEvaluator<'a> {
 
         // 5. Prompts (Recursive with ControlNet collection)
         // Standard inputs
-        if let Some(pos) = self.trace_conditioning_chain(node, "positive", "positive", &mut meta.control_nets) {
-            meta.positive_prompt = pos;
-        }
-        if let Some(neg) = self.trace_conditioning_chain(node, "negative", "negative", &mut meta.control_nets) {
-            meta.negative_prompt = neg;
-        }
+        // 5. Prompts (Recursive Reachability Search)
+        // Standard inputs
+        let pos = find_reachable_prompts(self.graph, node_id, "positive");
+        if !pos.is_empty() { meta.positive_prompt = pos; }
+
+        let neg = find_reachable_prompts(self.graph, node_id, "negative");
+        if !neg.is_empty() { meta.negative_prompt = neg; }
+
         // Flux Guider inputs
          if meta.positive_prompt.is_empty() {
              if let Some(guider_id) = self.get_source_id(node, "guider") {
-                 if let Some(guider_node) = self.graph.get_node(&guider_id) {
-                     if let Some(pos) = self.trace_conditioning_chain(guider_node, "conditioning", "positive", &mut meta.control_nets) {
-                         meta.positive_prompt = pos;
-                     }
-                 }
+                 let pos_guider = find_reachable_prompts(self.graph, &guider_id, "conditioning");
+                 if !pos_guider.is_empty() { meta.positive_prompt = pos_guider; }
              }
          }
 
@@ -425,183 +426,7 @@ impl<'a> ComfyEvaluator<'a> {
          }
     }
 
-    fn trace_conditioning_chain(&self, start_node: &Value, input_name: &str, branch: &str, control_nets: &mut Vec<String>) -> Option<String> {
-        let mut current_id = self.get_source_id(start_node, input_name)?;
-        
-        for _ in 0..20 {
-             let node = self.graph.get_node(&current_id)?;
-             let t = get_node_type(node);
-             // println!("Trace Conditioning: {} ({})", current_id, t);
 
-             if t == "ControlNetApply" || t == "ControlNetApplyAdvanced" {
-                 // Extract ControlNet
-                 if let Some(cn_id) = self.get_source_id(node, "control_net") {
-                     if let Some(cn_node) = self.graph.get_node(&cn_id) {
-                         // ControlNetLoader -> control_net_name
-                         if let Some(name) = get_node_param(cn_node, "control_net_name").and_then(|v| v.as_str()) {
-                              let name = name.replace(".safetensors", "").replace(".pth", "");
-                              if !control_nets.contains(&name) { control_nets.push(name); }
-                         }
-                     }
-                 }
-                 // Continue up "conditioning"
-                 if let Some(next) = self.get_source_id(node, "conditioning") {
-                     current_id = next;
-                     continue;
-                 }
-                 break;
-             }
-             else if t == "CLIPTextEncode" || t.contains("CLIPTextEncode") {
-                 // Found Prompt!
-                 if t == "CLIPTextEncodeSDXL" {
-                     // SDXL uses text_g / text_l
-                     // Try text_g (global) first, then text_l (local), then generic text
-                     if let Some(s) = self.trace_text(node, "text_g") { return Some(s); }
-                     if let Some(s) = self.trace_text(node, "text_l") { return Some(s); }
-                 }
-                 return self.trace_text(node, "text");
-             }
-             else if t == "BatchPromptScheduleEncodeSDXL" {
-                 // Concatenate parts: pre_text_G + text_g + app_text_G
-                 let mut parts = Vec::new();
-                 if let Some(s) = self.trace_text(node, "pre_text_G") { parts.push(s); }
-                 if let Some(s) = self.trace_text(node, "text_g") { parts.push(s); }
-                 if let Some(s) = self.trace_text(node, "text") { parts.push(s); }
-                 if let Some(s) = self.trace_text(node, "app_text_G") { parts.push(s); }
-                 
-                 if !parts.is_empty() {
-                     return Some(parts.join(", "));
-                 }
-                 return None;
-             }
-             else if t == "ConditioningCombine" || t == "ConditioningAverage" {
-                 // For arrays/combos, just take the first one for now or text trace both?
-                 // Let's trace input "conditioning_1"
-                  if let Some(next) = self.get_source_id(node, "conditioning_1") {
-                     current_id = next;
-                     continue;
-                 }
-             }
-             
-             // Pass through (Generic + Branch aware)
-             if let Some(next) = self.get_source_id(node, "conditioning") {
-                 current_id = next;
-                 continue;
-             }
-             // Try branch specific input (e.g. "positive" for InpaintModelConditioning)
-             if let Some(next) = self.get_source_id(node, branch) {
-                 current_id = next;
-                 continue;
-             }
-             
-             break;
-        }
-        None
-    }
-    
-    // Evaluate text using simulation for primitives/concatenation
-    fn trace_text(&self, node: &Value, input_name: &str) -> Option<String> {
-        // 1. Check direct string widget
-        if let Some(val) = get_node_param(node, input_name) {
-            if let Some(s) = val.as_str() {
-                return Some(s.to_string());
-            }
-        }
-        // Fallback for "Text" (Capitalized) common in some nodes
-        if input_name == "text" {
-            if let Some(val) = get_node_param(node, "Text") {
-                if let Some(s) = val.as_str() {
-                     return Some(s.to_string());
-                }
-            }
-        }
-        
-        // 2. Trace upstream string logic
-        if let Some(source_id) = self.get_source_id(node, input_name) {
-             return self.evaluate_string_node(&source_id, 0);
-        }
-        
-        None
-    }
-    
-    fn evaluate_string_node(&self, node_id: &str, depth: u32) -> Option<String> {
-        if depth > 10 { return None; }
-        let node = self.graph.get_node(node_id)?;
-        let t = get_node_type(node);
-        
-        if t == "String" || t == "PrimitiveNode" || t.contains("StringLiteral") || t == "PrimitiveStringMultiline" || t == "PrimitiveString" {
-             if let Some(v) = get_node_param(node, "value") { 
-                 if let Some(s) = v.as_str() { return Some(s.to_string()); }
-                 // Check if it's a link?
-                 // But Primitive nodes usually have 'value' as widget.
-                 // If it is a link, get_node_param returns the link array. contextually we don't know it's a link here easily without `get_node_input_link` on the key.
-             }
-             // Actually, generic evaluate_string handles source_id lookup.
-             // But evaluating a "Primitive" node usually means reading its widget value.
-             // If a Primitive has an Input, it's weird.
-             // Let's rely on standard widget extraction which evaluate_string does NOT do?
-             // evaluate_string calls get_node_param.
-             
-             // Let's improve this block:
-             if let Some(s) = self.evaluate_string(node, "value") { return Some(s); }
-             if let Some(s) = self.evaluate_string(node, "string") { return Some(s); }
-             if let Some(s) = self.evaluate_string(node, "String") { return Some(s); }
-             // Primitives often use widgets_values[0]
-             if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-                 if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
-             }
-        }
-        else if t == "JoinStringMulti" || t == "String Concatenate" {
-            // Collect all inputs starting with "string_" or "text_"
-            // Rough simulation
-            let mut parts = Vec::new();
-            if let Some(inputs) = node.get("inputs").and_then(|v| v.as_object()) {
-                // We need to sort keys to maintain order? Comfy inputs usually unordered in API JSON, 
-                // but keys like "string_1", "string_2" etc imply order.
-                let mut keys: Vec<&String> = inputs.keys().collect();
-                keys.sort();
-                
-                for key in keys {
-                    if key.starts_with("string_") || key.starts_with("text_") {
-                         if let Some(s) = self.evaluate_string(node, key) {
-                             parts.push(s);
-                         }
-                    }
-                }
-            }
-            let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or("");
-            return Some(parts.join(delimiter));
-        }
-        else if t == "ShowText" || t.contains("ShowAnything") || t == "Text Box" || t.contains("TextEncode") || t.contains("Text Multiline") || t.contains("Text String") {
-             if let Some(s) = self.evaluate_string(node, "text") { return Some(s); }
-             if let Some(s) = self.evaluate_string(node, "Text") { return Some(s); }
-             if let Some(s) = self.evaluate_string(node, "anything") { return Some(s); }
-             return None;
-        }
-        else if t == "Remove Text" {
-             return self.trace_text(node, "Text");
-        }
-        else if t.contains("OllamaGenerate") {
-             // Index 1 is usually the User Prompt in Ollama nodes. 
-             // Default get_node_param might return Index 0 (System Prompt).
-             if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-                 if let Some(s) = arr.get(1).and_then(|v| v.as_str()) { return Some(s.to_string()); }
-             }
-             if let Some(s) = self.evaluate_string(node, "prompt") { return Some(s); }
-             return None;
-        }
-        else {
-             // Generic fallback: check common string holding parameters
-             if let Some(v) = get_node_param(node, "text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-             if let Some(v) = get_node_param(node, "Text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-             if let Some(v) = get_node_param(node, "string").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-             if let Some(v) = get_node_param(node, "String").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-             if let Some(v) = get_node_param(node, "populated_text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-             if let Some(v) = get_node_param(node, "trigger_words").and_then(|v| v.as_str()) { return Some(v.to_string()); }
-        }
-        
-        None
-    }
 
     // --- Helpers ---
     
@@ -654,7 +479,7 @@ impl<'a> ComfyEvaluator<'a> {
             if let Some(s) = val.as_str() { return Some(s.to_string()); }
         }
         if let Some(source_id) = self.get_source_id(node, param) {
-            return self.evaluate_string_node(&source_id, 0);
+            return super::conditioning::evaluate_string_node(self.graph, &source_id, 0);
         }
         None
     }

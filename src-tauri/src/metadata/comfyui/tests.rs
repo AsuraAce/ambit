@@ -869,3 +869,78 @@ fn test_extract_comfyui_stylealigned_reproduction() {
     assert!(meta.positive_prompt.contains("Low poly"));
     assert!(meta.positive_prompt.contains("crystal"));
 }
+
+#[test]
+fn test_find_reachable_prompts_combine() {
+    // ConditioningCombine (branching)
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["100", 0]
+            }
+        },
+        "100": {
+            "class_type": "ConditioningCombine",
+            "inputs": {
+                "conditioning_1": ["10", 0],
+                "conditioning_2": ["11", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "Prompt A"
+            }
+        },
+        "11": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "Prompt B"
+            }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+    
+    // We can test extract_comfyui_metadata or call finding directly if we exposed graph
+    let meta = extract_comfyui_metadata(&chunks);
+    
+    //println!("Positive: {}", meta.positive_prompt);
+    assert!(meta.positive_prompt.contains("Prompt A"));
+    assert!(meta.positive_prompt.contains("Prompt B"));
+}
+
+#[test]
+fn test_find_reachable_prompts_unknown_passthrough() {
+    // Unknown node passing 'conditioning' input
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["50", 0]
+            }
+        },
+        "50": {
+            "class_type": "CustomNodeUnknown",
+            "inputs": {
+                "conditioning": ["10", 0],
+                "dummy": 1
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "Hidden Prompt"
+            }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+    
+    assert_eq!(meta.positive_prompt, "Hidden Prompt");
+}
