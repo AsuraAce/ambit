@@ -744,6 +744,52 @@ fn test_extract_comfyui_nan_json() {
 }
 
 #[test]
+fn test_extract_comfyui_conditioning_concat() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["103", 0],
+                "negative": ["7", 0],
+                "model": ["4", 0]
+            }
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "negative prompt" }
+        },
+        "103": {
+            "class_type": "ConditioningConcat",
+            "inputs": {
+                "conditioning_to": ["105", 0],
+                "conditioning_from": ["102", 0]
+            }
+        },
+        "102": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "part A" }
+        },
+        "105": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "part B" }
+        },
+        "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "base.safetensors" } }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+    
+    // Should extract both parts
+    // Note: The order depends on how ConditioningConcat works, usually it appends 'from' to 'to', or vice versa.
+    // In ComfyUI: "Concatenate conditioning_from to conditioning_to"
+    // But our extractor just collects all text reachable.
+    assert!(meta.positive_prompt.contains("part A"));
+    assert!(meta.positive_prompt.contains("part B"));
+}
+
+#[test]
 fn test_extract_comfyui_stylealigned_reproduction() {
     // User provided StyleAligned workflow (UI format)
     let workflow = r#"{

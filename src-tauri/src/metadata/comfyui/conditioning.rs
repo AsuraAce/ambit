@@ -49,6 +49,13 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                 continue;
             }
 
+            // C. ConditioningConcat
+            if t == "ConditioningConcat" {
+                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") { queue.push_back(s); }
+                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") { queue.push_back(s); }
+                 continue;
+            }
+
             // B. Generic / Pass-through
             // We look for common input names that likely carry the conditioning signal upstream.
             let cond_inputs = ["conditioning", "positive", "negative", "cond", "c", "clip", "text_g", "text_l", "text"];
