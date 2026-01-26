@@ -552,8 +552,9 @@ impl<'a> ComfyEvaluator<'a> {
             let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or("");
             return Some(parts.join(delimiter));
         }
-        else if t == "ShowText" || t.contains("ShowAnything") || t == "Text Box" || t.contains("TextEncode") {
+        else if t == "ShowText" || t.contains("ShowAnything") || t == "Text Box" || t.contains("TextEncode") || t.contains("Text Multiline") || t.contains("Text String") {
              if let Some(s) = self.evaluate_string(node, "text") { return Some(s); }
+             if let Some(s) = self.evaluate_string(node, "Text") { return Some(s); }
              if let Some(s) = self.evaluate_string(node, "anything") { return Some(s); }
              return None;
         }

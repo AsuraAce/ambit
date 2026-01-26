@@ -12,7 +12,16 @@ impl ComfyGraph {
 
         // 1. Try "prompt" chunk (API format)
         if let Some(prompt_json) = chunks.get("prompt") {
-            if let Ok(json) = serde_json::from_str::<Value>(prompt_json) {
+            // ComfyUI metadata occasionally contains NaN or Infinity which is invalid JSON.
+            // We sanitize these to null to allow parsing.
+            let sanitized = if prompt_json.contains("NaN") || prompt_json.contains("Infinity") {
+                let re = regex::Regex::new(r":\s*(NaN|Infinity|-Infinity)\b").unwrap();
+                re.replace_all(prompt_json, ": null").to_string()
+            } else {
+                prompt_json.clone()
+            };
+
+            if let Ok(json) = serde_json::from_str::<Value>(&sanitized) {
                 if let Some(obj) = json.as_object() {
                     for (id, node) in obj {
                         nodes_map.insert(id.clone(), node.clone());
