@@ -29,7 +29,7 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let t = get_node_type(node);
 
             // 1. Found a Text Encode Node? Extract and Stop branch.
-            if t.contains("CLIPTextEncode") || t.contains("TextEncode") { // Covers standard, SDXL, smZ, etc.
+            if t.contains("CLIPTextEncode") || t.contains("TextEncode") || t == "Text to Conditioning" { // Covers standard, SDXL, smZ, Text to Conditioning etc.
                  if let Some(text) = extract_text_from_node(graph, &current_id, node) {
                      if !text.trim().is_empty() {
                          prompts.push(text);
@@ -61,10 +61,14 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let cond_inputs = ["conditioning", "positive", "negative", "cond", "c", "clip", "text_g", "text_l", "text"];
             
             // To be smart: only follow 'text' inputs if we are in a text-processing sub-chain?
-            // Only follow 'clip' if we are in a text encoder? No, we perform that in extract_text.
-            // Here we are flooding CONDITIONING.
-            
-            let relevant_inputs = ["conditioning", "positive", "negative"]; 
+            // "Text to Conditioning" nodes take 'text' and 'clip' => output conditioning.
+            // So we MUST follow 'text'.
+            if t == "Text to Conditioning" {
+                 if let Some(s) = get_source_id(graph, &current_id, "text") { queue.push_back(s); }
+                 continue;
+            }
+
+            let relevant_inputs = ["conditioning", "positive", "negative", "text"]; 
             
             for input in relevant_inputs {
                  if let Some(s) = get_source_id(graph, &current_id, input) {
@@ -134,13 +138,21 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     let t = get_node_type(node);
 
     // Primitives / String Literals
-    if t == "PrimitiveNode" || t == "String" || t.contains("StringLiteral") {
+    if t == "PrimitiveNode" || t == "String" || t.contains("StringLiteral") || t == "Text String" || t == "Text Multiline" {
          if let Some(v) = get_node_param(node, "value").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          if let Some(v) = get_node_param(node, "string").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          if let Some(v) = get_node_param(node, "String").and_then(|v| v.as_str()) { return Some(v.to_string()); }
+         if let Some(v) = get_node_param(node, "text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
+         
+         // UI Format: widgets_values
          if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
              if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
          }
+    }
+
+    // Pass-throughs
+    if t == "Text to String" || t == "Text Parse Noodle Soup Prompts" {
+        return trace_text_input(graph, node_id, "text");
     }
 
     // JoinStringMulti
@@ -154,9 +166,19 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
              }
          }
          let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or(" ");
+         let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or(" ");
          return Some(parts.join(delimiter));
     }
     
+    // Text Concatenate (WAS Node suite)
+    if t == "Text Concatenate" {
+        let text_a = trace_text_input(graph, node_id, "text_a").unwrap_or_default();
+        let text_b = trace_text_input(graph, node_id, "text_b").unwrap_or_default();
+        let linebreak_val = get_node_param(node, "linebreak_addition").and_then(|v| v.as_str()).unwrap_or("false");
+        let sep = if linebreak_val == "true" { "\n" } else { "" };
+        return Some(format!("{}{}{}", text_a, sep, text_b));
+    }
+
     // Fallback: check "text" input
     trace_text_input(graph, node_id, "text")
         .or_else(|| trace_text_input(graph, node_id, "string"))

@@ -640,6 +640,78 @@ fn test_extract_comfyui_flux_user_case() {
 }
 
 #[test]
+fn test_extract_comfyui_ui_format_complex() {
+    // Huge UI format workflow with Text to Conditioning, Text Concatenate, Text Multiline, Text String, Reroutes
+    // Link 412: Text to Conditioning -> Reroute -> ControlNetApply -> KSampler
+    // Text to Conditioning <- Text Concatenate <- Text String + Text Multiline
+    
+    // Simplified chain based on user's JSON structure for the reproduction
+    // Reroutes are just pass-throughs handled by graph.rs or find_upstream_sampler
+    // We focus on the text chain extraction.
+    
+    let workflow = r#"{
+        "nodes": [
+            { "id": 3, "type": "KSampler", "inputs": [{"name": "positive", "link": 393}] },
+            { "id": 39, "type": "Reroute", "inputs": [{"name": "", "link": 121}] },
+            { "id": 121, "type": "Reroute", "inputs": [{"name": "", "link": 412}] },
+            // Note: In user JSON, link 412 is output of Node 183 (slot 0)
+            { "id": 183, "type": "Text to Conditioning", "inputs": [{"name": "text", "link": 405}] },
+            { "id": 179, "type": "Text Concatenate", "inputs": [{"name": "text_a", "link": 403}, {"name": "text_b", "link": 417}], "widgets_values": ["true"] },
+            { "id": 134, "type": "Text String", "widgets_values": ["Part A"] }, 
+            // Node 134 output link 403
+            { "id": 177, "type": "Text Parse Noodle Soup Prompts", "inputs": [{"name": "text", "link": 416}] },
+            // Node 177 output link 417
+            { "id": 136, "type": "Text Multiline", "widgets_values": ["Part B"] }
+            // Node 136 output link 416
+        ],
+        "links": [
+            [393, 39, 0, 3, 0, "CONDITIONING"],
+            [121, 183, 0, 39, 0, "CONDITIONING"], 
+            // Wait, link 121 connects 183 to 39?
+            // User JSON: [121, 38, 0, 39, 0, "*"] -> 38 is Reroute.
+            // [412, 183, 0, 38, 0, "*"]
+            // Let's simplify: 183 -> 3
+            [412, 183, 0, 3, 0, "CONDITIONING"],
+            
+            [405, 179, 0, 183, 0, "ASCII"],
+            [403, 134, 0, 179, 0, "ASCII"],
+            [417, 177, 0, 179, 1, "ASCII"],
+            [416, 136, 0, 177, 0, "ASCII"]
+        ]
+    }"#;
+    // We need to fix the links to match the IDs in my simplified nodes list
+    // Node 3 input '393' -> I used link ID 412 directly in my simplfication to skip reroutes for brevity
+    // Let's fix the JSON to be consistent
+    let workflow_fixed = r#"{
+        "nodes": [
+            { "id": 3, "type": "KSampler", "inputs": [{"name": "positive", "link": 1}] },
+            { "id": 183, "type": "Text to Conditioning", "inputs": [{"name": "text", "link": 2}] },
+            { "id": 179, "type": "Text Concatenate", "inputs": [{"name": "text_a", "link": 3}, {"name": "text_b", "link": 4}], "widgets_values": ["true"] },
+            { "id": 134, "type": "Text String", "widgets_values": ["Part A"] },
+            { "id": 177, "type": "Text Parse Noodle Soup Prompts", "inputs": [{"name": "text", "link": 5}] },
+            { "id": 136, "type": "Text Multiline", "widgets_values": ["Part B"] }
+        ],
+        "links": [
+            [1, 183, 0, 3, 0, "CONDITIONING"],
+            [2, 179, 0, 183, 0, "ASCII"],
+            [3, 134, 0, 179, 0, "ASCII"],
+            [4, 177, 0, 179, 1, "ASCII"],
+            [5, 136, 0, 177, 0, "ASCII"]
+        ]
+    }"#;
+
+
+    let mut chunks = HashMap::new();
+    chunks.insert("workflow".to_string(), workflow_fixed.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert!(meta.positive_prompt.contains("Part A"));
+    assert!(meta.positive_prompt.contains("Part B"));
+}
+
+
+#[test]
 fn test_extract_comfyui_primitive_multiline() {
     let prompt = r#"{"39":{"inputs":{"clip_name":"qwen_3_4b.safetensors","type":"lumina2","device":"cpu"},"class_type":"CLIPLoader","_meta":{"title":"Load CLIP"}},"40":{"inputs":{"vae_name":"ae.safetensors"},"class_type":"VAELoader","_meta":{"title":"Load VAE"}},"41":{"inputs":{"width":1024,"height":1536,"batch_size":1},"class_type":"EmptySD3LatentImage","_meta":{"title":"EmptySD3LatentImage"}},"42":{"inputs":{"conditioning":["45",0]},"class_type":"ConditioningZeroOut","_meta":{"title":"ConditioningZeroOut"}},"43":{"inputs":{"samples":["44",0],"vae":["40",0]},"class_type":"VAEDecode","_meta":{"title":"VAE Decode"}},"44":{"inputs":{"seed":515018389178561,"steps":6,"cfg":1.0,"sampler_name":"res_multistep","scheduler":"simple","denoise":1.0,"model":["47",0],"positive":["48",0],"negative":["42",0],"latent_image":["41",0]},"class_type":"KSampler","_meta":{"title":"KSampler"}},"45":{"inputs":{"text":["81",0],"clip":["79",1]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP Text Encode (Prompt)"}},"46":{"inputs":{"unet_name":"z_image_turbo_bf16.safetensors","weight_dtype":"default"},"class_type":"UNETLoader","_meta":{"title":"Load Diffusion Model"}},"47":{"inputs":{"shift":3.0,"model":["79",0]},"class_type":"ModelSamplingAuraFlow","_meta":{"title":"ModelSamplingAuraFlow"}},"48":{"inputs":{"randomize_percent":20.5,"strength":20.0,"noise_insert":"noise on beginning steps","steps_switchover_percent":20.0,"seed":1091057402567859,"mask_starts_at":"beginning","mask_percent":0.0,"log_to_console":false,"conditioning":["45",0]},"class_type":"SeedVarianceEnhancer","_meta":{"title":"SeedVarianceEnhancer"}},"51":{"inputs":{"samples":["44",0],"vae":["40",0]},"class_type":"VAEDecode","_meta":{"title":"VAE Decode"}},"52":{"inputs":{"sharpen_radius":1,"sigma":0.43,"alpha":0.31,"image":["75",0]},"class_type":"ImageSharpen","_meta":{"title":"ImageSharpen"}},"56":{"inputs":{"model_name":"4x_NMKD-Siax_200k.pth"},"class_type":"UpscaleModelLoader","_meta":{"title":"Load Upscale Model"}},"62":{"inputs":{"seed":640425679631887,"steps":4,"cfg":1.0,"sampler_name":"res_multistep","scheduler":"simple","denoise":0.2,"mode_type":"Linear","tile_width":512,"tile_height":512,"mask_blur":16,"tile_padding":32,"seam_fix_mode":"None","seam_fix_denoise":1.0,"seam_fix_width":64,"seam_fix_mask_blur":8,"seam_fix_padding":16,"force_uniform_tiles":true,"tiled_decode":false,"upscaled_image":["51",0],"model":["47",0],"positive":["48",0],"negative":["42",0],"vae":["40",0]},"class_type":"UltimateSDUpscaleNoUpscale","_meta":{"title":"Ultimate SD Upscale (No Upscale)"}},"63":{"inputs":{"density":1.0,"intensity":0.07,"highlights":1.0,"supersample_factor":1,"repeats":1,"image":["52",0]},"class_type":"Film Grain","_meta":{"title":"Film Grain"}},"71":{"inputs":{"rgthree_comparer":{"images":[{"name":"A","selected":true,"url":"/api/view?filename=rgthree.compare._temp_haghi_00023_.png&type=temp&subfolder=&rand=0.13643572995104325"},{"name":"B","selected":true,"url":"/api/view?filename=rgthree.compare._temp_haghi_00024_.png&type=temp&subfolder=&rand=0.7454203124188927"}]},"image_a":["63",0],"image_b":["51",0]},"class_type":"Image Comparer (rgthree)","_meta":{"title":"Image Comparer (rgthree)"}},"75":{"inputs":{"upscale_method":"nearest-exact","factor":1.5,"upscale_model":["56",0],"image":["59:3",0]},"class_type":"Upscale by Factor with Model (WLSH)","_meta":{"title":"Upscale by Factor with Model (WLSH)"}},"76":{"inputs":{"filename":"%time_%basemodelname_%seed","path":"%date/","extension":"png","lossless_webp":true,"quality_jpeg_or_webp":100,"optimize_png":false,"embed_workflow":true,"save_workflow_as_json":false,"counter":0,"time_format":"%Y-%m-%d-%H%M%S","show_preview":true,"images":["63",0]},"class_type":"Image Saver Simple","_meta":{"title":"Image Saver Simple"}},"77":{"inputs":{"text":["76",1]},"class_type":"ShowText|pysssss","_meta":{"title":"Show Text \ud83d\udc0d"}},"78":{"inputs":{"text":"","anything":["76",1]},"class_type":"easy showAnything","_meta":{"title":"Show Any"}},"79":{"inputs":{"text":"<lora:Mystic-XXX-ZIT-V5:1.00:1.00> <lora:NIceAsians_Zimage:0.65>","loras":{"__value__":[{"name":"Mystic-XXX-ZIT-V5","strength":"1.00","active":false,"expanded":false,"clipStrength":"1.00"},{"name":"NIceAsians_Zimage","strength":"0.65","active":false,"expanded":false,"clipStrength":"0.65"}]},"model":["46",0],"clip":["39",0]},"class_type":"Lora Loader (LoraManager)","_meta":{"title":"Lora Loader (LoraManager)"}},"80":{"inputs":{"group_mode":true,"default_active":true,"allow_strength_adjustment":false,"toggle_trigger_words":{"__value__":[]},"orinalMessage":"","trigger_words":["79",2]},"class_type":"TriggerWord Toggle (LoraManager)","_meta":{"title":"TriggerWord Toggle (LoraManager)"}},"81":{"inputs":{"inputcount":85,"delimiter":", ","return_list":true,"Update inputs":null,"string_1":["84",0],"string_2":["82",0]},"class_type":"JoinStringMulti","_meta":{"title":"Join String Multi"}},"82":{"inputs":{"value":["80",0]},"class_type":"PrimitiveString","_meta":{"title":"String"}},"84":{"inputs":{"value":"hinonome Umi stands triumphant"},"class_type":"PrimitiveStringMultiline","_meta":{"title":"String (Multiline)"}},"59:0":{"inputs":{"model_name":"sam_vit_b_01ec64.pth","device_mode":"Prefer GPU"},"class_type":"SAMLoader","_meta":{"title":"SAMLoader (Impact)"}},"59:1":{"inputs":{"model_name":"bbox/Nipple-yoro11x_bbox.pt"},"class_type":"UltralyticsDetectorProvider","_meta":{"title":"UltralyticsDetectorProvider"}},"59:2":{"inputs":{"model_name":"bbox/face_yolov8m.pt"},"class_type":"UltralyticsDetectorProvider","_meta":{"title":"UltralyticsDetectorProvider"}},"59:3":{"inputs":{"guide_size":1024.0,"guide_size_for":false,"max_size":1024.0,"seed":633628399021815,"steps":4,"cfg":1.0,"sampler_name":"res_multistep","scheduler":"simple","denoise":0.2,"feather":5,"noise_mask":false,"force_inpaint":false,"bbox_threshold":0.7,"bbox_dilation":5,"bbox_crop_factor":1.5,"sam_detection_hint":"center-1","sam_dilation":0,"sam_threshold":0.75,"sam_bbox_expansion":0,"sam_mask_hint_threshold":0.0,"sam_mask_hint_use_negative":"False","drop_size":10,"wildcard":"","cycle":1,"inpaint_model":false,"noise_mask_feather":0,"tiled_encode":false,"tiled_decode":false,"image":["62",0],"model":["47",0],"clip":["79",1],"vae":["40",0],"positive":["48",0],"negative":["42",0],"bbox_detector":["59:2",0],"sam_model_opt":["59:0",0],"segm_detector_opt":["59:1",1]},"class_type":"FaceDetailer","_meta":{"title":"FaceDetailer"}}}
 "#;
@@ -787,6 +859,55 @@ fn test_extract_comfyui_conditioning_concat() {
     // But our extractor just collects all text reachable.
     assert!(meta.positive_prompt.contains("part A"));
     assert!(meta.positive_prompt.contains("part B"));
+}
+
+#[test]
+fn test_extract_comfyui_text_concatenate() {
+    // User report: Text to Conditioning -> Text Concatenate
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["183", 0],
+                "negative": ["114", 0],
+                "model": ["32", 0]
+            }
+        },
+        "183": {
+            "class_type": "Text to Conditioning",
+            "inputs": {
+                "text": ["179", 0],
+                "clip": ["32", 1]
+            }
+        },
+        "179": {
+            "class_type": "Text Concatenate",
+            "inputs": {
+                "text_a": ["134", 0],
+                "text_b": ["136", 0],
+                "linebreak_addition": "true"
+            }
+        },
+        "134": {
+            "class_type": "Text String",
+            "inputs": { "text": "Part A" }
+        },
+        "136": {
+            "class_type": "Text Multiline",
+            "inputs": { "text": "Part B" }
+        },
+        "114": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative" } },
+        "32": { "class_type": "LoraLoader", "inputs": { "model": ["53",0], "clip": ["53",1] } },
+        "53": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "base.safetensors" } }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+    
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert!(meta.positive_prompt.contains("Part A"));
+    assert!(meta.positive_prompt.contains("Part B"));
 }
 
 #[test]
