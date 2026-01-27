@@ -1,4 +1,5 @@
-use super::graph::{ComfyGraph, get_node_type, get_node_param, get_node_title, get_node_input_link};
+use super::graph::{ComfyGraph, get_node_type, get_node_param, get_node_title};
+use super::conditioning::evaluate_string_node;
 use crate::metadata::ImageMetadata;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -37,13 +38,13 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             let title_lower = title.to_lowercase();
             let t_lower = t.to_lowercase();
             if title_lower.contains("positive") || (t_lower.contains("cliptextencode") && !title_lower.contains("negative")) || t_lower.contains("showanything") {
-                if let Some(text) = trace_text_source_simple(graph, id) {
-                    meta.positive_prompt = text.to_string();
+                if let Some(text) = evaluate_string_node(graph, id, 0) {
+                    meta.positive_prompt = text;
                     found = true;
                 }
             } else if title_lower.contains("negative") {
-                if let Some(text) = trace_text_source_simple(graph, id) {
-                    meta.negative_prompt = text.to_string();
+                if let Some(text) = evaluate_string_node(graph, id, 0) {
+                    meta.negative_prompt = text;
                     found = true;
                 }
             }
@@ -66,7 +67,7 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
     
     // Find ANY KSampler
-    for (_id, node) in graph.nodes() {
+    for (id, node) in graph.nodes() {
         let t = get_node_type(node);
         if t.to_lowercase().contains("ksampler") {
              if meta.steps == 0 {
@@ -81,28 +82,23 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
              }
         }
         let t_lower = t.to_lowercase();
+        
+        let mut is_negative = false;
+        if let Some(title) = get_node_title(node) {
+            if title.to_lowercase().contains("negative") { is_negative = true; }
+        }
+
         if t_lower == "string" || t_lower == "primitivenode" || t_lower == "showtext" || t_lower == "note" || t_lower.contains("cliptextencode") {
-             if meta.positive_prompt.trim().is_empty() {
-                 if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
-                 } else if let Some(text) = get_node_param(node, "string").and_then(|v| v.as_str()) {
-                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
-                 } else if let Some(text) = get_node_param(node, "STRING").and_then(|v| v.as_str()) {
-                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
-                 } else if t_lower.contains("cliptextencode") {
-                     // Heuristic: check if this is likely a negative prompt by title
-                     let mut is_negative = false;
-                     if let Some(title) = get_node_title(node) {
-                         if title.to_lowercase().contains("negative") { is_negative = true; }
+             if is_negative {
+                 if meta.negative_prompt.trim().is_empty() {
+                     if let Some(text) = evaluate_string_node(graph, id, 0) {
+                         if text.trim().len() > 2 { meta.negative_prompt = text; }
                      }
-                     
-                     if !is_negative {
-                        // Check direct widget values if param search failed
-                        if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-                            if let Some(s) = arr.get(0).and_then(|v| v.as_str()) {
-                                if s.trim().len() > 5 { meta.positive_prompt = s.to_string(); }
-                            }
-                        }
+                 }
+             } else {
+                 if meta.positive_prompt.trim().is_empty() {
+                     if let Some(text) = evaluate_string_node(graph, id, 0) {
+                         if text.trim().len() > 2 { meta.positive_prompt = text; }
                      }
                  }
              }
@@ -120,26 +116,4 @@ fn extract_model_from_node(node: &Value) -> Option<String> {
     None
 }
 
-/// Simple 1-level trace for text (text widget or linked primitive)
-fn trace_text_source_simple(graph: &ComfyGraph, node_id: &str) -> Option<String> {
-    let node = graph.get_node(node_id)?;
-    // 1. Check direct text
-    if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-        if !text.trim().is_empty() { return Some(text.to_string()); }
-    }
-    if let Some(text) = get_node_param(node, "string").and_then(|v| v.as_str()) {
-         if !text.trim().is_empty() { return Some(text.to_string()); }
-    }
-    
-    // 2. Check input link (max 1 depth)
-    // Common case: Primitive -> CLIPTextEncode
-    if let Some(source_id) = get_node_input_link(node, "text") {
-         let source = graph.get_node(&source_id)?;
-         if let Some(text) = get_node_param(source, "value").and_then(|v| v.as_str()) { return Some(text.to_string()); }
-         if let Some(text) = get_node_param(source, "string").and_then(|v| v.as_str()) { return Some(text.to_string()); }
-         if let Some(arr) = source.get("widgets_values").and_then(|v| v.as_array()) {
-             if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
-         }
-    }
-    None
-}
+

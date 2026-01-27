@@ -1111,3 +1111,79 @@ fn test_find_reachable_prompts_unknown_passthrough() {
     
     assert_eq!(meta.positive_prompt, "Hidden Prompt");
 }
+
+#[test]
+fn test_missing_prompt_extraction() {
+    // This test replicates the specific workflow provided by the user where prompt extraction fails.
+    // It involves PrimitiveString, JoinStringMulti, TriggerWord Toggle (LoraManager), and recursive inputs.
+    let prompt = r#"{
+        "44": {
+            "inputs": {
+                "positive": ["48", 0],
+                "model": ["47", 0]
+            },
+            "class_type": "KSampler"
+        },
+        "48": {
+            "inputs": {
+                "conditioning": ["45", 0]
+            },
+            "class_type": "SeedVarianceEnhancer"
+        },
+        "45": {
+            "inputs": {
+                "text": ["81", 0],
+                "clip": ["79", 1]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+        "81": {
+            "inputs": {
+                "string_1": ["84", 0],
+                "string_2": ["82", 0],
+                "delimiter": ", "
+            },
+            "class_type": "JoinStringMulti"
+        },
+        "82": {
+            "inputs": {
+                "value": ["80", 0]
+            },
+            "class_type": "PrimitiveString"
+        },
+        "84": {
+            "inputs": {
+                "value": "Aiyana Lumiere Nyoka..."
+            },
+            "class_type": "PrimitiveStringMultiline"
+        },
+        "80": {
+            "inputs": {
+                "trigger_words": ["79", 2]
+            },
+            "class_type": "TriggerWord Toggle (LoraManager)"
+        },
+        "79": {
+            "inputs": {
+                "text": "<lora:Mystic-XXX:1.0> <lora:Asians:0.65>",
+                "loras": {
+                     "__value__": [
+                         { "name": "Mystic-XXX", "strength": 1.0 },
+                         { "name": "Asians", "strength": 0.65 }
+                     ]
+                }
+            },
+            "class_type": "Lora Loader (LoraManager)"
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    println!("Extracted Positive Prompt: '{}'", meta.positive_prompt);
+    
+    // Debug assertion
+    assert_eq!(meta.positive_prompt, "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1.0> <lora:Asians:0.65>");
+}

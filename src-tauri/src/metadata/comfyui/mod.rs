@@ -6,7 +6,6 @@ mod evaluator;
 mod heuristics;
 mod conditioning;
 mod strategies;
-// mod traversal; // Legacy module - removed
 
 #[cfg(test)]
 mod tests;

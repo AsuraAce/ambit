@@ -30,13 +30,19 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let t_lower = t.to_lowercase();
 
             // 1. Found a Text Encode Node? Extract and Stop branch.
-            if t_lower.contains("cliptextencode") || t_lower.contains("textencode") || t == "Text to Conditioning" { // Covers standard, SDXL, smZ, Text to Conditioning etc.
+            // Nodes that directly contain or produce the final text
+            if t_lower.contains("cliptextencode") || t_lower.contains("textencode") || t == "Text to Conditioning" ||
+               t == "PrimitiveNode" || t == "String" || t == "Text String" || t == "Text Multiline" || 
+               t == "PrimitiveString" || t == "PrimitiveStringMultiline" || t == "ImpactWildcardProcessor" ||
+               t.contains("Qwen") || t.contains("LLM") 
+            { 
                  if let Some(text) = extract_text_from_node(graph, &current_id, node) {
                      if !text.trim().is_empty() {
                          prompts.push(text);
                      }
                  }
-                 // We don't continue upstream from a TextEncode usually, it's the source.
+                 // Usually a leaf for text/conditioning, but for some nodes we might want to continue.
+                 // For standard encoders, we stop here.
                  continue;
             }
 
@@ -59,9 +65,6 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
 
             // B. Generic / Pass-through
             // We look for common input names that likely carry the conditioning signal upstream.
-            let cond_inputs = ["conditioning", "positive", "negative", "cond", "c", "clip", "text_g", "text_l", "text"];
-            
-            // To be smart: only follow 'text' inputs if we are in a text-processing sub-chain?
             // "Text to Conditioning" nodes take 'text' and 'clip' => output conditioning.
             // So we MUST follow 'text'.
             if t == "Text to Conditioning" {
@@ -69,12 +72,51 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                  continue;
             }
 
-            let relevant_inputs = ["conditioning", "positive", "negative", "text"]; 
+            // Trace upstream
+            let relevant_prefixes = ["conditioning", "positive", "cond", "c", "clip", "text_g", "text_l", "text"];
             
-            for input in relevant_inputs {
-                 if let Some(s) = get_source_id(graph, &current_id, input) {
-                     queue.push_back(s);
-                 }
+            // 1. Check pre-resolved inputs (preferred, covers both API and UI format)
+            if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
+                for (key, val) in resolved {
+                    if let Some(source_id) = val.as_str() {
+                        let input_lower = key.to_lowercase();
+                        if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                            if input_name == "positive" && input_lower.contains("negative") { continue; }
+                            queue.push_back(source_id.to_string());
+                        }
+                    }
+                }
+            }
+            // 2. Fallback to raw inputs (API format object)
+            else if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
+                for (input_key, _input_val) in inputs_obj {
+                    let input_lower = input_key.to_lowercase();
+                    let is_relevant_prefix = relevant_prefixes.iter().any(|&r| input_lower.contains(r));
+                    let is_negative_input = input_lower.contains("negative");
+
+                    if is_relevant_prefix {
+                        if input_name == "positive" && is_negative_input { continue; }
+                        if let Some(s) = get_source_id(graph, &current_id, input_key) {
+                            queue.push_back(s);
+                        }
+                    }
+                }
+            }
+            // 3. Fallback to raw inputs (UI format array)
+            else if let Some(inputs_arr) = node.get("inputs").and_then(|v| v.as_array()) {
+                for input in inputs_arr {
+                    if let Some(name) = input.get("name").and_then(|v| v.as_str()) {
+                        let input_lower = name.to_lowercase();
+                        if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                            if input_name == "positive" && input_lower.contains("negative") { continue; }
+                            if let Some(link_id) = input.get("link").and_then(|v| v.as_i64()) {
+                                // We need a way to resolve this Link ID to a Node ID...
+                                // Fortunately graph.rs should have put it in _resolved_inputs already.
+                                // If we are here, it means _resolved_inputs was missing or incomplete.
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -102,7 +144,7 @@ fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<
 fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
     let t = get_node_type(node);
 
-    // SDXL specific
+    // SDXL specific (if we want to combine them specifically)
     if t == "CLIPTextEncodeSDXL" {
         let mut parts = Vec::new();
         if let Some(g) = trace_text_input(graph, node_id, "text_g") { parts.push(g); }
@@ -110,10 +152,7 @@ fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Op
         if !parts.is_empty() { return Some(parts.join(" . ")); }
     }
 
-    // Standard
-    trace_text_input(graph, node_id, "text")
-        .or_else(|| trace_text_input(graph, node_id, "text_g"))
-        .or_else(|| trace_text_input(graph, node_id, "Text"))
+    evaluate_string_node(graph, node_id, 0)
 }
 
 fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
@@ -139,16 +178,32 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     let t = get_node_type(node);
 
     // Primitives / String Literals
-    if t == "PrimitiveNode" || t == "String" || t.contains("StringLiteral") || t == "Text String" || t == "Text Multiline" {
+    // Also include ImpactWildcardProcessor (populated_text) and Qwen (0/text)
+    if t == "ImpactWildcardProcessor" {
+         if let Some(text) = get_node_param(node, "populated_text").and_then(|v| v.as_str()) { return Some(text.to_string()); }
+    }
+    
+    if t.contains("Qwen") || t.contains("LLM") {
+         if let Some(text) = get_node_param(node, "0").and_then(|v| v.as_str()) { return Some(text.to_string()); }
+         if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) { return Some(text.to_string()); }
+         if let Some(text) = get_node_param(node, "prompt").and_then(|v| v.as_str()) { return Some(text.to_string()); }
+    }
+
+    if t == "PrimitiveNode" || t == "String" || t.contains("StringLiteral") || t == "Text String" || t == "Text Multiline" || 
+       t == "PrimitiveString" || t == "PrimitiveStringMultiline" {
          if let Some(v) = get_node_param(node, "value").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          if let Some(v) = get_node_param(node, "string").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          if let Some(v) = get_node_param(node, "String").and_then(|v| v.as_str()) { return Some(v.to_string()); }
+         if let Some(v) = get_node_param(node, "STRING").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          if let Some(v) = get_node_param(node, "text").and_then(|v| v.as_str()) { return Some(v.to_string()); }
          
          // UI Format: widgets_values
          if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
              if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
          }
+         
+         // Linked input fallback (e.g. PrimitiveString linked to another PrimitiveString or logic)
+         if let Some(s) = trace_text_input(graph, node_id, "value") { return Some(s); }
     }
 
     // Pass-throughs
@@ -178,6 +233,24 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         let linebreak_val = get_node_param(node, "linebreak_addition").and_then(|v| v.as_str()).unwrap_or("false");
         let sep = if linebreak_val == "true" { "\n" } else { "" };
         return Some(format!("{}{}{}", text_a, sep, text_b));
+    }
+
+    // TriggerWord Toggle (LoraManager)
+    if t == "TriggerWord Toggle (LoraManager)" {
+        if let Some(text) = trace_text_input(graph, node_id, "trigger_words") {
+            return Some(text);
+        }
+    }
+
+    // Lora Loader (LoraManager) - Extract text/trigger words
+    if t == "Lora Loader (LoraManager)" {
+         if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
+             return Some(text.to_string());
+         }
+         // Check widgets if param didn't catch it
+         if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+             if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
+         }
     }
 
     // Fallback: check "text" input
