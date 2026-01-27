@@ -27,9 +27,10 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
 
         if let Some(node) = graph.get_node(&current_id) {
             let t = get_node_type(node);
+            let t_lower = t.to_lowercase();
 
             // 1. Found a Text Encode Node? Extract and Stop branch.
-            if t.contains("CLIPTextEncode") || t.contains("TextEncode") || t == "Text to Conditioning" { // Covers standard, SDXL, smZ, Text to Conditioning etc.
+            if t_lower.contains("cliptextencode") || t_lower.contains("textencode") || t == "Text to Conditioning" { // Covers standard, SDXL, smZ, Text to Conditioning etc.
                  if let Some(text) = extract_text_from_node(graph, &current_id, node) {
                      if !text.trim().is_empty() {
                          prompts.push(text);

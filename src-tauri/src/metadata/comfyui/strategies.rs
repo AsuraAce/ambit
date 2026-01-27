@@ -11,6 +11,12 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
 
     for (id, node) in graph.nodes() {
         let t = get_node_type(node);
+        let t_lower = t.to_lowercase();
+        
+        // Skip routing nodes
+        if t_lower == "setnode" || t_lower == "getnode" || t_lower == "reroute" || t_lower == "node reroute" {
+            continue;
+        }
 
         // SDParameterGenerator / Crystools
         if t == "SDParameterGenerator" || t.contains("Crystools") {
@@ -29,12 +35,13 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
         // If user labeled a node "Positive", trust it?
         if let Some(title) = get_node_title(node) {
             let title_lower = title.to_lowercase();
-            if title.contains("positive") || (t.contains("cliptextencode") && !title.contains("negative")) || t.contains("showanything") {
+            let t_lower = t.to_lowercase();
+            if title_lower.contains("positive") || (t_lower.contains("cliptextencode") && !title_lower.contains("negative")) || t_lower.contains("showanything") {
                 if let Some(text) = trace_text_source_simple(graph, id) {
                     meta.positive_prompt = text.to_string();
                     found = true;
                 }
-            } else if title.contains("negative") {
+            } else if title_lower.contains("negative") {
                 if let Some(text) = trace_text_source_simple(graph, id) {
                     meta.negative_prompt = text.to_string();
                     found = true;
@@ -73,14 +80,30 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                  else if let Some(v) = get_node_param(node, "noise_seed").and_then(|v| v.as_i64()) { meta.seed = v; }
              }
         }
-        if t == "String" || t == "PrimitiveNode" || t == "ShowText" || t == "Note" {
-             if meta.positive_prompt.is_empty() {
+        let t_lower = t.to_lowercase();
+        if t_lower == "string" || t_lower == "primitivenode" || t_lower == "showtext" || t_lower == "note" || t_lower.contains("cliptextencode") {
+             if meta.positive_prompt.trim().is_empty() {
                  if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-                     meta.positive_prompt = text.to_string();
+                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
                  } else if let Some(text) = get_node_param(node, "string").and_then(|v| v.as_str()) {
-                     meta.positive_prompt = text.to_string();
+                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
                  } else if let Some(text) = get_node_param(node, "STRING").and_then(|v| v.as_str()) {
-                     meta.positive_prompt = text.to_string();
+                     if text.trim().len() > 2 { meta.positive_prompt = text.to_string(); }
+                 } else if t_lower.contains("cliptextencode") {
+                     // Heuristic: check if this is likely a negative prompt by title
+                     let mut is_negative = false;
+                     if let Some(title) = get_node_title(node) {
+                         if title.to_lowercase().contains("negative") { is_negative = true; }
+                     }
+                     
+                     if !is_negative {
+                        // Check direct widget values if param search failed
+                        if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                            if let Some(s) = arr.get(0).and_then(|v| v.as_str()) {
+                                if s.trim().len() > 5 { meta.positive_prompt = s.to_string(); }
+                            }
+                        }
+                     }
                  }
              }
         }

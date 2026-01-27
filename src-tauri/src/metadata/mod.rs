@@ -65,7 +65,7 @@ impl ImageMetadata {
     pub fn is_incomplete(&self) -> bool {
         // Considered incomplete if we are missing key generation data
         (self.model.is_empty() || self.model == "Unknown")
-            || (self.positive_prompt.is_empty() && self.negative_prompt.is_empty())
+            || (self.positive_prompt.trim().is_empty() && self.negative_prompt.trim().is_empty())
             || self.steps == 0
     }
 
@@ -75,8 +75,8 @@ impl ImageMetadata {
          if self.cfg == 0.0 { self.cfg = other.cfg; }
          if self.seed == 0 { self.seed = other.seed; }
          if self.sampler.is_empty() || self.sampler == "Unknown" || self.sampler == "_" { self.sampler = other.sampler; }
-         if self.positive_prompt.is_empty() { self.positive_prompt = other.positive_prompt; }
-         if self.negative_prompt.is_empty() { self.negative_prompt = other.negative_prompt; }
+         if self.positive_prompt.trim().is_empty() { self.positive_prompt = other.positive_prompt; }
+         if self.negative_prompt.trim().is_empty() { self.negative_prompt = other.negative_prompt; }
          if self.generation_type == "unknown" && other.generation_type != "unknown" { self.generation_type = other.generation_type; }
          
          // Always merge collections
@@ -148,11 +148,11 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.sampler = secondary.sampler;
     }
     
-    if base.positive_prompt.is_empty() {
+    if base.positive_prompt.trim().is_empty() {
         base.positive_prompt = secondary.positive_prompt;
     }
     
-    if base.negative_prompt.is_empty() {
+    if base.negative_prompt.trim().is_empty() {
         base.negative_prompt = secondary.negative_prompt;
     }
     

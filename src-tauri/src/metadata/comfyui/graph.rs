@@ -131,7 +131,9 @@ pub fn is_output_node(t: &str) -> bool {
 }
 
 pub fn get_node_title(node: &Value) -> Option<&str> {
-    node.get("_meta").and_then(|m| m.get("title")).and_then(|v| v.as_str())
+    node.get("_meta").and_then(|m| m.get("title"))
+        .or_else(|| node.get("title"))
+        .and_then(|v| v.as_str())
 }
 
 pub fn is_model_loader(t: &str) -> bool {
@@ -149,12 +151,27 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     
     // 2. Check in UI format "widgets_values"
     if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+        let t = get_node_type(node);
+        
+        // Specialized mapping for common complex nodes
+        if t == "SDParameterGenerator" {
+            match key {
+                "seed" => return arr.get(4),
+                "steps" => return arr.get(5),
+                "cfg" => return arr.get(7),
+                "sampler_name" => return arr.get(8),
+                "scheduler" => return arr.get(9),
+                "ckpt_name" => return arr.get(0),
+                _ => {}
+            }
+        }
+
         // Heuristic mapping for UI format
         for val in arr {
             match key {
                 "steps" => {
                     if let Some(v) = val.as_u64() {
-                        if v > 0 && v < 10000 { return Some(val); }
+                        if v > 0 && v < 200 { return Some(val); } // Lowered limit for steps to avoid seed conflict
                     }
                 },
                 "seed" | "noise_seed" => {
