@@ -2,6 +2,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
+import { dbMutex } from './connection';
 
 export interface DbCollection {
     id: string;
@@ -18,21 +19,32 @@ export interface DbCollection {
 }
 
 export const ensureCollectionSchema = async () => {
-    const db = await getDb();
-    try {
-        // Check if updated_at column exists
-        const columns = await db.select<{ name: string }[]>('PRAGMA table_info(collections)');
-        const hasUpdatedAt = columns.some(c => c.name === 'updated_at');
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        try {
+            // Check if updated_at column exists
+            const columns = await db.select<{ name: string }[]>('PRAGMA table_info(collections)');
+            const hasUpdatedAt = columns.some(c => c.name === 'updated_at');
 
-        if (!hasUpdatedAt) {
-            console.log('[DB] Migrating collections table: adding updated_at column');
-            await db.execute('ALTER TABLE collections ADD COLUMN updated_at INTEGER');
-            // Backfill updated_at with created_at for existing records
-            await db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL');
+            if (!hasUpdatedAt) {
+                console.log('[DB] Migrating collections table: adding updated_at column');
+                try {
+                    await db.execute('ALTER TABLE collections ADD COLUMN updated_at INTEGER');
+                    // Backfill updated_at with created_at for existing records
+                    await db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL');
+                } catch (e: any) {
+                    // Ignore duplicate column error if it raced despite mutex (unlikely but safe)
+                    if (e?.toString().includes('duplicate column')) {
+                        console.warn('[DB] Migration raced, column already exists (handled)');
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[DB] Failed to ensure collection schema', e);
         }
-    } catch (e) {
-        console.error('[DB] Failed to ensure collection schema', e);
-    }
+    });
 };
 
 export const upsertCollection = async (collection: Partial<Collection> & { id: string, name: string }) => {
