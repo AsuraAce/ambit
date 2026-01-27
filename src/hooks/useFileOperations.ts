@@ -35,13 +35,13 @@ export const useFileOperations = ({
 }: UseFileOperationsProps) => {
     const { addToast } = useToast();
     const {
-        isImporting, setIsImporting, importProgress, setImportProgress,
+        isImporting, setIsImporting, setImportProgress,
         isRegeneratingThumbnails, setIsRegeneratingThumbnails,
-        thumbnailProgress, setThumbnailProgress,
+        setThumbnailProgress,
         setImportAbortController,
         setThumbnailAbortController
     } = useLibraryStore();
-    const { refreshHiddenAvailability } = useSearch();
+    const { refreshHiddenAvailability, refreshMetadata } = useSearch(); // Use destructuring to access refreshMetadata
     const [isExporting, setIsExporting] = useState(false);
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
 
@@ -59,13 +59,21 @@ export const useFileOperations = ({
         const dupeCount = newImages.length - uniqueNewImages.length;
 
         if (uniqueNewImages.length > 0) {
-            setImages(prev => {
-                // Double-check unicity against the latest state to prevent race conditions
-                const reallyUnique = uniqueNewImages.filter(n => !prev.some(p => p.id === n.id));
-                if (reallyUnique.length === 0) return prev;
-                return [...reallyUnique, ...prev];
-            });
-            await refreshCollectionThumbnails();
+            // Optimization: If importing a huge number of images (e.g. > 500), 
+            // directly updating the state causes React DevTools to crash (DataCloneError) or freezes the UI.
+            // In these cases, we skip the optimistic update and just trigger a full refresh.
+            if (uniqueNewImages.length > 500) {
+                console.log(`[FileOps] Large import detected (${uniqueNewImages.length} images). Skipping incremental state update.`);
+                await refreshMetadata();
+            } else {
+                setImages(prev => {
+                    // Double-check unicity against the latest state to prevent race conditions
+                    const reallyUnique = uniqueNewImages.filter(n => !prev.some(p => p.id === n.id));
+                    if (reallyUnique.length === 0) return prev;
+                    return [...reallyUnique, ...prev];
+                });
+                await refreshCollectionThumbnails();
+            }
 
             let msg = `Imported ${uniqueNewImages.length} images.`;
             if (dupeCount > 0) msg += ` (Skipped ${dupeCount} duplicates)`;
@@ -395,7 +403,6 @@ export const useFileOperations = ({
 
     return {
         isImporting,
-        importProgress,
         isExporting,
         isRecoveringMetadata,
         isRegeneratingThumbnails,

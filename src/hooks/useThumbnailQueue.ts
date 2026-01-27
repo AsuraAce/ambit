@@ -12,7 +12,7 @@ const STARTUP_DELAY_MS = 5000;
 const BATCH_DELAY_MS = 100;
 
 // Delay before resuming after import completes (ms)
-const RESUME_DELAY_MS = 2000;
+const RESUME_DELAY_MS = 5000;
 
 /**
  * Background thumbnail auto-healing queue.
@@ -387,7 +387,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
         // 2. Blocking activity is gone
         // 3. Feature is still enabled
         if (store.backgroundHealingPaused && !isBlocked && enableAutoThumbnailHealing) {
-            console.log('[ThumbnailQueue] Resuming after blocking activity');
+            console.log('[ThumbnailQueue] Resuming after blocking activity...');
             setBackgroundHealingPaused(false);
 
             // Delay before resuming to let things settle
