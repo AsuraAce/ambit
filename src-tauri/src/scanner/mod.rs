@@ -1,26 +1,25 @@
-pub mod models;
-pub mod utils;
-pub mod traversal;
 pub mod core;
+pub mod models;
+pub mod traversal;
+pub mod utils;
 
 use crate::metadata;
 use models::{FolderStats, ScanResult};
+use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use std::path::Path;
-use once_cell::sync::Lazy;
 
 // Custom Rayon pool with larger stack size (8MB) to prevent overflows in deep recursions
 // or deep JSON/PNG structures.
 static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
     rayon::ThreadPoolBuilder::new()
         //.num_threads(12) // REMOVED: limit to allow full CPU utilization
-        .stack_size(8 * 1024 * 1024) 
+        .stack_size(8 * 1024 * 1024)
         .build()
         .unwrap()
 });
 
 // Re-export ScanResult so Specta can see it if needed via scanner::ScanResult
- 
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
@@ -31,7 +30,13 @@ pub async fn scan_image(
     extract_workflow: bool,
     default_tool: Option<String>,
 ) -> Result<ScanResult, String> {
-    core::scan_image_internal(path, thumbnail_dir, skip_thumbnail, extract_workflow, default_tool)
+    core::scan_image_internal(
+        path,
+        thumbnail_dir,
+        skip_thumbnail,
+        extract_workflow,
+        default_tool,
+    )
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -75,33 +80,38 @@ pub async fn scan_images_bulk(
                 .collect();
             Ok(results)
         })
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
-   core::scan_image_workflow(path)
+    core::scan_image_workflow(path)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn read_image_metadata(path: String, default_tool: Option<String>) -> Result<metadata::ImageMetadata, String> {
+pub async fn read_image_metadata(
+    path: String,
+    default_tool: Option<String>,
+) -> Result<metadata::ImageMetadata, String> {
     core::read_image_metadata(path, default_tool)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        Ok(utils::get_file_sizes_bulk_impl(paths))
-    }).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || Ok(utils::get_file_sizes_bulk_impl(paths)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn verify_image_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
-     Ok(utils::verify_image_paths_impl(paths))
+    Ok(utils::verify_image_paths_impl(paths))
 }
 
 #[tauri::command]
@@ -116,7 +126,9 @@ pub async fn audit_invokeai_folder(path: String) -> Result<FolderStats, String> 
             traversal::scan_dir_recursive(&path.as_ref(), &images_path, &mut stats);
         }
         Ok(stats)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -129,7 +141,9 @@ pub async fn list_invokeai_images(path: String) -> Result<Vec<String>, String> {
             traversal::collect_images_recursive(&path.as_ref(), &images_path, &mut files);
         }
         Ok(files)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -142,7 +156,9 @@ pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, Strin
             traversal::collect_images_recursive_absolute(&root, &root, &mut files);
         }
         Ok(files)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -167,12 +183,17 @@ pub async fn scan_directory_with_stats(path: String) -> Result<Vec<models::FileE
             traversal::collect_images_with_stats_recursive(&root, &mut files);
         }
         Ok(files)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_directory_since(path: String, since: u64) -> Result<Vec<models::FileEntry>, String> {
+pub async fn scan_directory_since(
+    path: String,
+    since: u64,
+) -> Result<Vec<models::FileEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut files = Vec::new();
         let root = Path::new(&path);
@@ -180,5 +201,7 @@ pub async fn scan_directory_since(path: String, since: u64) -> Result<Vec<models
             traversal::collect_images_with_stats_since_recursive(&root, since, &mut files);
         }
         Ok(files)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

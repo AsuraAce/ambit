@@ -50,12 +50,15 @@ fn test_extract_comfyui_complex_prompt() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     // Current implementation fails here because it doesn't follow the 'text' link in CLIPTextEncode
     // nor does it handle JoinStringMulti or ImpactWildcardProcessor
-    assert_eq!(meta.positive_prompt, "trigger_abc, A battle-hardened mercenary captain...");
+    assert_eq!(
+        meta.positive_prompt,
+        "trigger_abc, A battle-hardened mercenary captain..."
+    );
 }
 
 #[test]
@@ -107,10 +110,12 @@ fn test_extract_comfyui_show_anything() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
 
-    assert!(meta.positive_prompt.contains("hentai, female anime character"));
+    assert!(meta
+        .positive_prompt
+        .contains("hentai, female anime character"));
 }
 
 #[test]
@@ -146,7 +151,7 @@ fn test_extract_comfyui_failed_case_2() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
 
     assert!(meta.positive_prompt.contains("A highly detailed"));
@@ -195,9 +200,9 @@ fn test_extract_comfyui_passthrough() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.positive_prompt, "positive prompt");
     assert_eq!(meta.negative_prompt, "negative prompt");
     assert_eq!(meta.model, "model");
@@ -238,9 +243,9 @@ fn test_extract_comfyui_conditioning_concat() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     // Should extract both parts
     // Note: The order depends on how ConditioningConcat works, usually it appends 'from' to 'to', or vice versa.
     // In ComfyUI: "Concatenate conditioning_from to conditioning_to"
@@ -291,7 +296,7 @@ fn test_extract_comfyui_text_concatenate() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
 
     assert!(meta.positive_prompt.contains("Part A"));
@@ -331,10 +336,10 @@ fn test_find_reachable_prompts_combine() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     // We can test extract_comfyui_metadata or call finding directly if we exposed graph
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     //println!("Positive: {}", meta.positive_prompt);
     assert!(meta.positive_prompt.contains("Prompt A"));
     assert!(meta.positive_prompt.contains("Prompt B"));
@@ -367,9 +372,9 @@ fn test_find_reachable_prompts_unknown_passthrough() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.positive_prompt, "Hidden Prompt");
 }
 
@@ -444,7 +449,10 @@ fn test_missing_prompt_extraction() {
     let meta = extract_comfyui_metadata(&chunks);
 
     println!("Extracted Positive Prompt: '{}'", meta.positive_prompt);
-    
+
     // Debug assertion
-    assert_eq!(meta.positive_prompt, "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1.0> <lora:Asians:0.65>");
+    assert_eq!(
+        meta.positive_prompt,
+        "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1.0> <lora:Asians:0.65>"
+    );
 }

@@ -1,13 +1,13 @@
 pub mod a1111;
-pub mod invokeai;
 pub mod comfyui;
+pub mod invokeai;
+pub mod models;
 pub mod parsers;
 pub mod resources;
-pub mod models;
 
 pub use a1111::extract_a1111_metadata;
-pub use invokeai::extract_invokeai_metadata;
 pub use comfyui::extract_comfyui_metadata;
+pub use invokeai::extract_invokeai_metadata;
 pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 
 #[derive(serde::Serialize, Clone, Debug, specta::Type)]
@@ -60,34 +60,75 @@ pub struct ImageMetadata {
     pub is_favorite: bool,
 }
 
-
 impl ImageMetadata {
     pub fn is_incomplete(&self) -> bool {
         // Considered incomplete if we are missing key generation data
-        (self.model.is_empty() || self.model == "Unknown")
+        (self.model.is_empty() || self.model == "Unknown" || self.model == "None")
             || (self.positive_prompt.trim().is_empty() && self.negative_prompt.trim().is_empty())
+            || (self
+                .positive_prompt
+                .trim()
+                .eq_ignore_ascii_case("negative prompt:")
+                && self.negative_prompt.trim().is_empty())
             || self.steps == 0
     }
 
     pub fn merge_if_missing(&mut self, other: ImageMetadata) {
-         if self.model.is_empty() || self.model == "Unknown" { self.model = other.model; }
-         if self.steps == 0 { self.steps = other.steps; }
-         if self.cfg == 0.0 { self.cfg = other.cfg; }
-         if self.seed == 0 { self.seed = other.seed; }
-         if self.sampler.is_empty() || self.sampler == "Unknown" || self.sampler == "_" { self.sampler = other.sampler; }
-         if self.positive_prompt.trim().is_empty() { self.positive_prompt = other.positive_prompt; }
-         if self.negative_prompt.trim().is_empty() { self.negative_prompt = other.negative_prompt; }
-         if self.generation_type == "unknown" && other.generation_type != "unknown" { self.generation_type = other.generation_type; }
-         
-         // Always merge collections
-         for x in other.loras { if !self.loras.contains(&x) { self.loras.push(x); } }
-         for x in other.control_nets { if !self.control_nets.contains(&x) { self.control_nets.push(x); } }
-         for x in other.embeddings { if !self.embeddings.contains(&x) { self.embeddings.push(x); } }
-         for x in other.hypernetworks { if !self.hypernetworks.contains(&x) { self.hypernetworks.push(x); } }
+        if self.model.is_empty() || self.model == "Unknown" || self.model == "None" {
+            self.model = other.model;
+        }
+        if self.steps == 0 {
+            self.steps = other.steps;
+        }
+        if self.cfg == 0.0 {
+            self.cfg = other.cfg;
+        }
+        if self.seed == 0 {
+            self.seed = other.seed;
+        }
+        if self.sampler.is_empty() || self.sampler == "Unknown" || self.sampler == "_" {
+            self.sampler = other.sampler;
+        }
+        if self.positive_prompt.trim().is_empty()
+            || self
+                .positive_prompt
+                .trim()
+                .eq_ignore_ascii_case("negative prompt:")
+        {
+            self.positive_prompt = other.positive_prompt;
+        }
+        if self.negative_prompt.trim().is_empty() {
+            self.negative_prompt = other.negative_prompt;
+        }
+        if self.generation_type == "unknown" && other.generation_type != "unknown" {
+            self.generation_type = other.generation_type;
+        }
+
+        // Always merge collections
+        for x in other.loras {
+            if !self.loras.contains(&x) {
+                self.loras.push(x);
+            }
+        }
+        for x in other.control_nets {
+            if !self.control_nets.contains(&x) {
+                self.control_nets.push(x);
+            }
+        }
+        for x in other.embeddings {
+            if !self.embeddings.contains(&x) {
+                self.embeddings.push(x);
+            }
+        }
+        for x in other.hypernetworks {
+            if !self.hypernetworks.contains(&x) {
+                self.hypernetworks.push(x);
+            }
+        }
     }
 
     pub fn merge(&mut self, other: ImageMetadata) {
-        // General merge - overwrites even if present if other is "better"? 
+        // General merge - overwrites even if present if other is "better"?
         // For now alias to merge_metadata function behavior but as a method
         merge_metadata(self, other);
     }
@@ -130,71 +171,96 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.tool == "Unknown" && secondary.tool != "Unknown" {
         base.tool = secondary.tool;
     }
-    
+
     // Merge favorites (if either is true, result is true)
     if secondary.is_favorite {
         base.is_favorite = true;
     }
-    
-    if base.model == "Unknown" || base.model.is_empty() {
+
+    if base.model == "Unknown" || base.model.is_empty() || base.model == "None" {
         base.model = secondary.model;
     }
-    
-    if base.steps == 0 { base.steps = secondary.steps; }
-    if base.cfg == 0.0 { base.cfg = secondary.cfg; }
-    if base.seed == 0 { base.seed = secondary.seed; }
-    
+
+    if base.steps == 0 {
+        base.steps = secondary.steps;
+    }
+    if base.cfg == 0.0 {
+        base.cfg = secondary.cfg;
+    }
+    if base.seed == 0 {
+        base.seed = secondary.seed;
+    }
+
     if base.sampler == "Unknown" || base.sampler.is_empty() || base.sampler == "_" {
         base.sampler = secondary.sampler;
     }
-    
-    if base.positive_prompt.trim().is_empty() {
+
+    if base.positive_prompt.trim().is_empty()
+        || base
+            .positive_prompt
+            .trim()
+            .eq_ignore_ascii_case("negative prompt:")
+    {
         base.positive_prompt = secondary.positive_prompt;
     }
-    
+
     if base.negative_prompt.trim().is_empty() {
         base.negative_prompt = secondary.negative_prompt;
     }
-    
+
     if base.workflow_json.is_none() {
         base.workflow_json = secondary.workflow_json;
     }
-    
-    if base.vae.is_none() { base.vae = secondary.vae; }
-    if base.clip_skip.is_none() { base.clip_skip = secondary.clip_skip; }
-    if base.denoising_strength.is_none() { base.denoising_strength = secondary.denoising_strength; }
-    if base.hires_upscale.is_none() { base.hires_upscale = secondary.hires_upscale; }
-    if base.hires_steps.is_none() { base.hires_steps = secondary.hires_steps; }
-    if base.hires_upscaler.is_none() { base.hires_upscaler = secondary.hires_upscaler; }
-    if base.model_hash.is_none() { base.model_hash = secondary.model_hash; }
-    
+
+    if base.vae.is_none() {
+        base.vae = secondary.vae;
+    }
+    if base.clip_skip.is_none() {
+        base.clip_skip = secondary.clip_skip;
+    }
+    if base.denoising_strength.is_none() {
+        base.denoising_strength = secondary.denoising_strength;
+    }
+    if base.hires_upscale.is_none() {
+        base.hires_upscale = secondary.hires_upscale;
+    }
+    if base.hires_steps.is_none() {
+        base.hires_steps = secondary.hires_steps;
+    }
+    if base.hires_upscaler.is_none() {
+        base.hires_upscaler = secondary.hires_upscaler;
+    }
+    if base.model_hash.is_none() {
+        base.model_hash = secondary.model_hash;
+    }
+
     // Merge generation type (prefer specific over 'unknown')
-    if (base.generation_type.is_empty() || base.generation_type == "unknown") 
-        && !secondary.generation_type.is_empty() 
-        && secondary.generation_type != "unknown" 
+    if (base.generation_type.is_empty() || base.generation_type == "unknown")
+        && !secondary.generation_type.is_empty()
+        && secondary.generation_type != "unknown"
     {
         base.generation_type = secondary.generation_type;
     }
-    
+
     // Union for resources
     for lora in secondary.loras {
         if !base.loras.contains(&lora) {
             base.loras.push(lora);
         }
     }
-    
+
     for cn in secondary.control_nets {
         if !base.control_nets.contains(&cn) {
             base.control_nets.push(cn);
         }
     }
-    
+
     for emb in secondary.embeddings {
         if !base.embeddings.contains(&emb) {
             base.embeddings.push(emb);
         }
     }
-    
+
     for hn in secondary.hypernetworks {
         if !base.hypernetworks.contains(&hn) {
             base.hypernetworks.push(hn);
@@ -204,11 +270,24 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
 
 pub fn detect_generation_type(path: &std::path::Path) -> String {
     let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
-    if lower_path.contains("/txt2img-images") || lower_path.contains("/outputs/txt2img") || lower_path.contains("/txt2img/") || lower_path.contains("/text/") {
+    if lower_path.contains("/txt2img-images")
+        || lower_path.contains("/outputs/txt2img")
+        || lower_path.contains("/txt2img/")
+        || lower_path.contains("/text/")
+    {
         "txt2img".to_string()
-    } else if lower_path.contains("/img2img-images") || lower_path.contains("/outputs/img2img") || lower_path.contains("/img2img/") || lower_path.contains("/image/") {
+    } else if lower_path.contains("/img2img-images")
+        || lower_path.contains("/outputs/img2img")
+        || lower_path.contains("/img2img/")
+        || lower_path.contains("/image/")
+    {
         "img2img".to_string()
-    } else if lower_path.contains("/extras-images") || lower_path.contains("/outputs/extras") || lower_path.contains("/extras/") || lower_path.contains("/save") || lower_path.contains("/saved") {
+    } else if lower_path.contains("/extras-images")
+        || lower_path.contains("/outputs/extras")
+        || lower_path.contains("/extras/")
+        || lower_path.contains("/save")
+        || lower_path.contains("/saved")
+    {
         "extras".to_string()
     } else if lower_path.contains("-grids") || lower_path.contains("/grids/") {
         "grid".to_string()
@@ -224,13 +303,36 @@ mod tests {
 
     #[test]
     fn test_detect_generation_type() {
-        assert_eq!(detect_generation_type(&PathBuf::from("/path/to/txt2img-images/image.png")), "txt2img");
-        assert_eq!(detect_generation_type(&PathBuf::from("/path/to/img2img-images/image.png")), "img2img");
-        assert_eq!(detect_generation_type(&PathBuf::from("/path/to/extras-images/image.png")), "extras");
-        assert_eq!(detect_generation_type(&PathBuf::from("/path/to/txt2img-grids/image.png")), "grid");
-        assert_eq!(detect_generation_type(&PathBuf::from("D:/SDNext/outputs/txt2img/2023-10-01/image.png")), "txt2img");
-        assert_eq!(detect_generation_type(&PathBuf::from("D:\\SDNext\\outputs\\txt2img\\image.png")), "txt2img");
-        assert_eq!(detect_generation_type(&PathBuf::from("/path/to/random/image.png")), "unknown");
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("/path/to/txt2img-images/image.png")),
+            "txt2img"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("/path/to/img2img-images/image.png")),
+            "img2img"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("/path/to/extras-images/image.png")),
+            "extras"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("/path/to/txt2img-grids/image.png")),
+            "grid"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from(
+                "D:/SDNext/outputs/txt2img/2023-10-01/image.png"
+            )),
+            "txt2img"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("D:\\SDNext\\outputs\\txt2img\\image.png")),
+            "txt2img"
+        );
+        assert_eq!(
+            detect_generation_type(&PathBuf::from("/path/to/random/image.png")),
+            "unknown"
+        );
     }
     #[test]
     fn test_merge_metadata_override() {
@@ -239,15 +341,15 @@ mod tests {
         base.sampler = "_".to_string(); // Simulate bad A1111 param
         base.steps = 0;
         base.cfg = 0.0;
-        
+
         let mut secondary = ImageMetadata::default();
         secondary.tool = "ComfyUI".to_string();
         secondary.sampler = "euler".to_string();
         secondary.steps = 20;
         secondary.cfg = 3.5;
-        
+
         merge_metadata(&mut base, secondary);
-        
+
         assert_eq!(base.sampler, "euler");
         assert_eq!(base.steps, 20);
         assert_eq!(base.cfg, 3.5);

@@ -1,10 +1,10 @@
 use super::models::ScanResult;
 use crate::metadata;
+use std::collections::HashMap;
 use std::fs::File;
+use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::io::BufReader;
-use std::collections::HashMap;
 
 pub fn scan_image_internal(
     path: String,
@@ -15,7 +15,6 @@ pub fn scan_image_internal(
 ) -> Result<ScanResult, String> {
     // println!("[Scan] Starting: {}", path);
     // println!("[Scan] Starting: {}", path);
-
 
     let path_buf = PathBuf::from(&path);
     if path_buf.is_dir() {
@@ -36,7 +35,7 @@ pub fn scan_image_internal(
     // Try to read dimensions - if this fails, we may still be able to return a cached thumbnail
     // Optimization: When generating a thumbnail, we capture dimensions from that decode,
     // avoiding a second file open.
-    
+
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
     let mut dimensions: (u32, u32) = (0, 0);
@@ -45,28 +44,28 @@ pub fn scan_image_internal(
     // Handle thumbnail generation/lookup
     if let Some(dir) = &thumbnail_dir {
         if !skip_thumbnail {
-             // Check if thumbnail already exists
+            // Check if thumbnail already exists
             let thumb_path = crate::thumb::get_thumbnail_path(&path, dir);
-            
+
             if thumb_path.exists() {
-                 generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
-                 // Thumbnail cached - will need to read dimensions separately below
+                generated_thumbnail_path = thumb_path.to_string_lossy().to_string();
+                // Thumbnail cached - will need to read dimensions separately below
             } else {
                 // Need to generate - dimensions will come from the decode
                 match crate::thumb::generate_thumbnail(&path, dir) {
                     Ok(result) => {
                         generated_thumbnail_path = result.thumbnail_path;
                         generated_micro_thumbnail = result.micro_thumbnail;
-                        
+
                         // Use dimensions from thumbnail generation (avoids second file open)
                         if let Some(dims) = result.original_dimensions {
                             dimensions = dims;
                         }
-                    },
+                    }
                     Err(e) => {
                         // Log failure but don't fail the scan
-                         println!("[Thumb] Failed to generate thumbnail: {}", e);
-                         thumbnail_error = Some(e.to_string());
+                        println!("[Thumb] Failed to generate thumbnail: {}", e);
+                        thumbnail_error = Some(e.to_string());
                     }
                 }
             }
@@ -99,11 +98,10 @@ pub fn scan_image_internal(
                     });
                 }
                 // No thumbnail and no dimensions - this is a real failure
-                 return Err(format!("Failed to read image dimensions: {}", e));
+                return Err(format!("Failed to read image dimensions: {}", e));
             }
         };
     }
-
 
     let mut file = File::open(&path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 8];
@@ -133,9 +131,10 @@ pub fn scan_image_internal(
     let mut found_metadata = false;
 
     // 1. A1111/Forge (Compatibility)
-    if let Some(params) = chunks.get("parameters")
+    if let Some(params) = chunks
+        .get("parameters")
         .or_else(|| chunks.get("Parameters"))
-        .or_else(|| chunks.get("PARAMETERS")) 
+        .or_else(|| chunks.get("PARAMETERS"))
     {
         parsed_metadata = metadata::extract_a1111_metadata(params, default_tool.clone());
         found_metadata = true;
@@ -160,15 +159,16 @@ pub fn scan_image_internal(
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
         let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
         metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
-        
+
         // Finalize tool label
         parsed_metadata.tool = "ComfyUI".to_string();
         found_metadata = true;
     }
 
-    if let Some(workflow) = chunks.get("graph")
+    if let Some(workflow) = chunks
+        .get("graph")
         .or_else(|| chunks.get("invokeai_workflow"))
-        .or_else(|| chunks.get("invokeai_graph")) 
+        .or_else(|| chunks.get("invokeai_graph"))
     {
         parsed_metadata.workflow_json = Some(workflow.clone());
         // These chunk names are InvokeAI-specific, set tool if not already set by specific parser
@@ -197,7 +197,8 @@ pub fn scan_image_internal(
             if xmp.contains("favorite") {
                 // Pattern matches <rdf:li>favorite</rdf:li> with optional whitespace handling
                 // This covers standard XMP Bag/Seq array items
-                if let Ok(re) = regex::Regex::new(r"<\s*rdf:li\s*>\s*favorite\s*<\s*/\s*rdf:li\s*>") {
+                if let Ok(re) = regex::Regex::new(r"<\s*rdf:li\s*>\s*favorite\s*<\s*/\s*rdf:li\s*>")
+                {
                     if re.is_match(xmp) {
                         parsed_metadata.is_favorite = true;
                         found_metadata = true;
@@ -210,15 +211,16 @@ pub fn scan_image_internal(
     // Check for Legacy Favorite tag in generic chunks (Subject, Keywords, Description)
     // Common in XMP/IPTC or standard PNG chunks used by older managers
     if !parsed_metadata.is_favorite {
-        let is_fav = chunks.get("Subject")
+        let is_fav = chunks
+            .get("Subject")
             .or_else(|| chunks.get("Keywords"))
             .or_else(|| chunks.get("Description"))
             .map(|s| s.to_lowercase().contains("favorite"))
             .unwrap_or(false);
-        
+
         if is_fav {
             parsed_metadata.is_favorite = true;
-            // Ensure we consider metadata found if we found a favorite tag, 
+            // Ensure we consider metadata found if we found a favorite tag,
             // so that the metadata object (and thus the flag) is returned.
             found_metadata = true;
         }
@@ -243,12 +245,20 @@ pub fn scan_image_internal(
         height: dimensions.1,
         size,
         modified,
-        thumbnail: if has_thumbnail { generated_thumbnail_path } else { String::new() },
+        thumbnail: if has_thumbnail {
+            generated_thumbnail_path
+        } else {
+            String::new()
+        },
         micro_thumbnail: generated_micro_thumbnail,
-        thumbnail_source: if has_thumbnail { Some("ambit".to_string()) } else { None },
+        thumbnail_source: if has_thumbnail {
+            Some("ambit".to_string())
+        } else {
+            None
+        },
         chunks: chunks_to_return,
         metadata: metadata_obj,
-        error: thumbnail_error
+        error: thumbnail_error,
     })
 }
 
@@ -260,7 +270,7 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
 
     let file = File::open(path_obj).map_err(|e| e.to_string())?;
     let mut reader = BufReader::new(file);
-    
+
     // We use the robust parser which handles headers, decompression, and key-value splitting
     let chunks = match metadata::extract_png_chunks(&mut reader) {
         Ok(c) => c,
@@ -268,7 +278,8 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     };
 
     // 1. Prioritize Dedicated Workflow Chunks
-    if let Some(workflow) = chunks.get("invokeai_workflow")
+    if let Some(workflow) = chunks
+        .get("invokeai_workflow")
         .or_else(|| chunks.get("workflow"))
         .or_else(|| chunks.get("invokeai_graph"))
         .or_else(|| chunks.get("graph"))
@@ -277,7 +288,8 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     }
 
     // 2. Fallback to Metadata Chunks
-    if let Some(content) = chunks.get("invokeai_metadata")
+    if let Some(content) = chunks
+        .get("invokeai_metadata")
         .or_else(|| chunks.get("sd-metadata"))
         .or_else(|| chunks.get("dream_metadata"))
     {
@@ -287,7 +299,10 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
     Ok(None)
 }
 
-pub fn read_image_metadata(path: String, default_tool: Option<String>) -> Result<metadata::ImageMetadata, String> {
+pub fn read_image_metadata(
+    path: String,
+    default_tool: Option<String>,
+) -> Result<metadata::ImageMetadata, String> {
     let path_obj = std::path::Path::new(&path);
     if !path_obj.exists() {
         return Err("File not found".to_string());
@@ -298,9 +313,12 @@ pub fn read_image_metadata(path: String, default_tool: Option<String>) -> Result
     let chunks = metadata::extract_png_chunks(&mut reader)?;
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
-    
+
     // 1. A1111/Forge (Compatibility)
-    if let Some(params) = chunks.get("parameters").or_else(|| chunks.get("Parameters")) {
+    if let Some(params) = chunks
+        .get("parameters")
+        .or_else(|| chunks.get("Parameters"))
+    {
         parsed_metadata = metadata::extract_a1111_metadata(params, default_tool.clone());
     }
 
@@ -320,7 +338,7 @@ pub fn read_image_metadata(path: String, default_tool: Option<String>) -> Result
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
         let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
         metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
-        
+
         // Finalize tool label: ComfyUI chunks exist, so it's a ComfyUI generation
         parsed_metadata.tool = "ComfyUI".to_string();
     }
@@ -351,14 +369,14 @@ mod tests {
     #[test]
     fn test_scan_image_internal_png_metadata() {
         let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
-        
+
         // IHDR
         let mut ihdr_data = Vec::new();
         ihdr_data.extend_from_slice(b"IHDR");
         ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // width
         ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // height
         ihdr_data.extend_from_slice(&[1, 0, 0, 0, 0]); // bit depth 1, color type 0 (greyscale)
-        
+
         png.extend_from_slice(&13u32.to_be_bytes());
         let crc = crc32(&ihdr_data);
         png.extend_from_slice(&ihdr_data);
@@ -368,8 +386,10 @@ mod tests {
         let mut text_data = Vec::new();
         text_data.extend_from_slice(b"tEXt");
         text_data.extend_from_slice(b"parameters\0");
-        text_data.extend_from_slice(b"Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: test-model");
-        
+        text_data.extend_from_slice(
+            b"Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: test-model",
+        );
+
         png.extend_from_slice(&((text_data.len() - 4) as u32).to_be_bytes());
         let text_crc = crc32(&text_data);
         png.extend_from_slice(&text_data);
@@ -380,10 +400,10 @@ mod tests {
         idat_data.extend_from_slice(b"IDAT");
         // For a 1x1 1-bit greyscale, we need at least some zlib data.
         // Easiest is to just use a valid minimal IDAT if we want image crate to load it.
-        // Actually, we don't strictly need it to be LOADABLE by image crate for THIS test 
+        // Actually, we don't strictly need it to be LOADABLE by image crate for THIS test
         // IF we only care about metadata, BUT scan_image_internal calls into_dimensions().
         // into_dimensions() only needs IHDR!
-        
+
         png.extend_from_slice(&0u32.to_be_bytes());
         png.extend_from_slice(b"IDAT");
         png.extend_from_slice(&crc32(b"IDAT").to_be_bytes());
@@ -408,14 +428,14 @@ mod tests {
     #[test]
     fn test_scan_image_internal_xmp_favorite() {
         let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
-        
+
         // IHDR
         let mut ihdr_data = Vec::new();
         ihdr_data.extend_from_slice(b"IHDR");
         ihdr_data.extend_from_slice(&1u32.to_be_bytes());
         ihdr_data.extend_from_slice(&1u32.to_be_bytes());
         ihdr_data.extend_from_slice(&[1, 0, 0, 0, 0]);
-        
+
         png.extend_from_slice(&13u32.to_be_bytes());
         let crc = crc32(&ihdr_data);
         png.extend_from_slice(&ihdr_data);
@@ -424,7 +444,7 @@ mod tests {
         // iTXt chunk: XML:com.adobe.xmp
         let keyword = b"XML:com.adobe.xmp";
         let xmp_content = b"<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description rdf:about=''><dc:subject><rdf:Bag><rdf:li>favorite</rdf:li></rdf:Bag></dc:subject></rdf:Description></rdf:RDF></x:xmpmeta>";
-        
+
         let mut text_data = Vec::new();
         text_data.extend_from_slice(keyword);
         text_data.push(0); // null sep
@@ -433,7 +453,7 @@ mod tests {
         text_data.push(0); // lang tag empty
         text_data.push(0); // trans msg empty
         text_data.extend_from_slice(xmp_content);
-        
+
         png.extend_from_slice(&(text_data.len() as u32).to_be_bytes());
         png.extend_from_slice(b"iTXt");
         png.extend_from_slice(&text_data);

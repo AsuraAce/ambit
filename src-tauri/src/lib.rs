@@ -1,72 +1,66 @@
-mod metadata;
 mod db;
-mod scanner;
-mod watcher;
-mod thumb;
 mod fs_commands;
+mod metadata;
+mod scanner;
+mod thumb;
+mod watcher;
 
-
-use watcher::WatcherState;
 use metadata::models::ModelResolutionState;
+use watcher::WatcherState;
 
 /// Create the Specta builder with all commands registered.
 /// This is shared between the app runtime and the export test.
 #[cfg(not(test))]
 pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(tauri_specta::collect_commands![
-            // db commands
-            db::commands::save_images_batch,
-            db::commands::get_db_diagnostics,
-            db::commands::refresh_boards_native,
-            db::commands::get_image_count_for_path_prefix,
-
-            db::commands::optimize_database,
-            db::commands::purge_database,
-            db::commands::get_parameter_ranges,
-            db::commands::backfill_parameter_columns,
-            db::facets::rebuild_facet_cache,
-
-            db::facets::get_valid_facet_names,
-            db::commands::mark_images_corrupt,
-            db::commands::verify_library_integrity,
-
-            // db backup commands
-            db::backup::get_backups,
-            db::backup::backup_database,
-            db::backup::check_and_run_autobackup,
-
-            // scanner commands
-            scanner::scan_image,
-            scanner::scan_images_bulk,
-            scanner::scan_image_workflow,
-            scanner::read_image_metadata,
-            scanner::get_file_sizes_bulk,
-            scanner::verify_image_paths,
-            scanner::audit_invokeai_folder,
-            scanner::list_invokeai_images,
-            scanner::scan_directory_recursive,
-            scanner::open_file,
-            scanner::show_in_folder,
-            scanner::scan_directory_with_stats,
-            scanner::scan_directory_since,
-            // watcher commands
-            watcher::start_native_folder_watcher,
-            // metadata commands
-            metadata::models::import_a1111_cache,
-            metadata::models::resolve_hashes_online,
-            metadata::models::clear_model_cache,
-            metadata::models::cancel_model_resolution,
-            metadata::models::scan_model_thumbnails,
-            metadata::models::set_model_thumbnail,
-            metadata::models::unset_model_thumbnail,
-            metadata::models::set_model_thumbnail,
-            metadata::models::unset_model_thumbnail,
-            metadata::models::clear_all_thumbnails,
-            // fs commands
-            fs_commands::move_to_trash,
-            fs_commands::delete_thumbnail,
-        ])
+    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+        // db commands
+        db::commands::save_images_batch,
+        db::commands::get_db_diagnostics,
+        db::commands::refresh_boards_native,
+        db::commands::get_image_count_for_path_prefix,
+        db::commands::optimize_database,
+        db::commands::purge_database,
+        db::commands::get_parameter_ranges,
+        db::commands::backfill_parameter_columns,
+        db::facets::rebuild_facet_cache,
+        db::facets::get_valid_facet_names,
+        db::commands::mark_images_corrupt,
+        db::commands::verify_library_integrity,
+        // db backup commands
+        db::backup::get_backups,
+        db::backup::backup_database,
+        db::backup::check_and_run_autobackup,
+        // scanner commands
+        scanner::scan_image,
+        scanner::scan_images_bulk,
+        scanner::scan_image_workflow,
+        scanner::read_image_metadata,
+        scanner::get_file_sizes_bulk,
+        scanner::verify_image_paths,
+        scanner::audit_invokeai_folder,
+        scanner::list_invokeai_images,
+        scanner::scan_directory_recursive,
+        scanner::open_file,
+        scanner::show_in_folder,
+        scanner::scan_directory_with_stats,
+        scanner::scan_directory_since,
+        // watcher commands
+        watcher::start_native_folder_watcher,
+        // metadata commands
+        metadata::models::import_a1111_cache,
+        metadata::models::resolve_hashes_online,
+        metadata::models::clear_model_cache,
+        metadata::models::cancel_model_resolution,
+        metadata::models::scan_model_thumbnails,
+        metadata::models::set_model_thumbnail,
+        metadata::models::unset_model_thumbnail,
+        metadata::models::set_model_thumbnail,
+        metadata::models::unset_model_thumbnail,
+        metadata::models::clear_all_thumbnails,
+        // fs commands
+        fs_commands::move_to_trash,
+        fs_commands::delete_thumbnail,
+    ])
 }
 
 // Force Rebuild
@@ -90,7 +84,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
-        .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:images.db", db::migrations::init_db()).build())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:images.db", db::migrations::init_db())
+                .build(),
+        )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -122,7 +120,7 @@ fn check_and_execute_deferred_purge() {
     // We need to check both potential locations because Tauri might look in either
     // depending on system configuration and version.
     let mut paths_to_check = Vec::new();
-    
+
     if let Some(config_dir) = dirs::config_dir() {
         paths_to_check.push(config_dir.join("com.ambit.app"));
         paths_to_check.push(config_dir.join("com.ambit.dev"));
@@ -135,50 +133,62 @@ fn check_and_execute_deferred_purge() {
         paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
         paths_to_check.push(data_local_dir.join("com.tauri.dev"));
     }
-    
+
     for app_dir in paths_to_check {
         let marker_path = app_dir.join(".purge_on_restart");
 
         if marker_path.exists() {
-            println!("[Purge] Found purge marker at {:?}! Proceeding to delete database...", marker_path);
-            
+            println!(
+                "[Purge] Found purge marker at {:?}! Proceeding to delete database...",
+                marker_path
+            );
+
             // Delete the marker first
             let _ = std::fs::remove_file(&marker_path);
-            
+
             // Delete database files with retry loop for Windows file locking
             let db_path = app_dir.join("images.db");
             let wal_path = app_dir.join("images.db-wal");
             let shm_path = app_dir.join("images.db-shm");
-            
+
             if db_path.exists() {
                 let mut attempts = 0;
                 let max_attempts = 5;
                 let mut success = false;
-                
+
                 while attempts < max_attempts && !success {
                     match std::fs::remove_file(&db_path) {
                         Ok(_) => {
-                            println!("[Purge] SUCCESS: Database deleted. Fresh DB will be created.");
+                            println!(
+                                "[Purge] SUCCESS: Database deleted. Fresh DB will be created."
+                            );
                             success = true;
-                        },
+                        }
                         Err(e) => {
                             attempts += 1;
-                            eprintln!("[Purge] Attempt {}/{} failed to delete database: {}", attempts, max_attempts, e);
+                            eprintln!(
+                                "[Purge] Attempt {}/{} failed to delete database: {}",
+                                attempts, max_attempts, e
+                            );
                             if attempts < max_attempts {
                                 std::thread::sleep(std::time::Duration::from_millis(500));
                             }
                         }
                     }
                 }
-                
+
                 if !success {
                     eprintln!("[Purge] FATAL: Could not delete database after {} attempts. Manual intervention may be required.", max_attempts);
                 }
             }
-            
+
             // Best effort cleanup for WAL/SHM files
-            if wal_path.exists() { let _ = std::fs::remove_file(&wal_path); }
-            if shm_path.exists() { let _ = std::fs::remove_file(&shm_path); }
+            if wal_path.exists() {
+                let _ = std::fs::remove_file(&wal_path);
+            }
+            if shm_path.exists() {
+                let _ = std::fs::remove_file(&shm_path);
+            }
         }
     }
 }

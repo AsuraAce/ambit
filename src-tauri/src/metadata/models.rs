@@ -1,11 +1,11 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::db::resolve_db_path;
+use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use reqwest::Client;
-use crate::db::resolve_db_path;
-use serde_json;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ModelResolutionState {
     pub is_cancelled: Arc<AtomicBool>,
@@ -54,12 +54,19 @@ pub struct ImportResult {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<ImportResult, String> {
+pub fn import_a1111_cache(
+    app: tauri::AppHandle,
+    cache_path: String,
+) -> Result<ImportResult, String> {
     let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
-    
-    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
     let mut entries = Vec::new();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
     let mut debug_info = String::new();
 
@@ -69,10 +76,10 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                 if let Some(inner_obj) = val.as_object() {
                     // Check if Flat structure: "checkpoint/foo": { "sha256": "..." }
                     if let Some(sha256) = inner_obj.get("sha256").and_then(|s| s.as_str()) {
-                         let name = key.split(&['/', '\\'][..]).last().unwrap_or(key);
-                         let short_hash = &sha256[..10];
-                         
-                         entries.push(ModelCacheEntry {
+                        let name = key.split(&['/', '\\'][..]).last().unwrap_or(key);
+                        let short_hash = &sha256[..10];
+
+                        entries.push(ModelCacheEntry {
                             hash: short_hash.to_string(),
                             name: name.to_string(),
                             filename: Some(name.to_string()),
@@ -97,7 +104,7 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
                         for (filename, data) in inner_obj {
                             if let Some(sha256) = data.get("sha256").and_then(|h| h.as_str()) {
                                 let short_hash = &sha256[..10];
-                                 entries.push(ModelCacheEntry {
+                                entries.push(ModelCacheEntry {
                                     hash: short_hash.to_string(),
                                     name: filename.clone(),
                                     filename: Some(filename.clone()),
@@ -129,32 +136,37 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
         debug_info.push_str("No 'hashes' key. ");
         // Fallback
         if let Some(obj) = json.as_object() {
-             let mut added = 0;
-             for (key, val) in obj {
-                 if let Some(v_str) = val.as_str() {
-                     entries.push(ModelCacheEntry {
-                         hash: key.clone(),
-                         name: v_str.to_string(),
-                         filename: None,
-                         lookup_source: "local_cache_simple".to_string(),
-                         scanned_at: now,
-                         thumbnail_path: None,
-                         preview_url: None,
-                         resource_type: Some("checkpoint".to_string()),
-                     });
-                     added += 1;
-                 }
-             }
-             if added == 0 {
-                 debug_info.push_str("Fallback: top-level object was empty or had non-string values. ");
-             }
+            let mut added = 0;
+            for (key, val) in obj {
+                if let Some(v_str) = val.as_str() {
+                    entries.push(ModelCacheEntry {
+                        hash: key.clone(),
+                        name: v_str.to_string(),
+                        filename: None,
+                        lookup_source: "local_cache_simple".to_string(),
+                        scanned_at: now,
+                        thumbnail_path: None,
+                        preview_url: None,
+                        resource_type: Some("checkpoint".to_string()),
+                    });
+                    added += 1;
+                }
+            }
+            if added == 0 {
+                debug_info
+                    .push_str("Fallback: top-level object was empty or had non-string values. ");
+            }
         } else {
             debug_info.push_str("Root is not an object. ");
         }
     }
 
     if entries.is_empty() {
-        return Ok(ImportResult { added: 0, total_found: 0, message: format!("No models found. {}", debug_info) });
+        return Ok(ImportResult {
+            added: 0,
+            total_found: 0,
+            message: format!("No models found. {}", debug_info),
+        });
     }
 
     let db_path = resolve_db_path(&app)?;
@@ -168,26 +180,42 @@ pub fn import_a1111_cache(app: tauri::AppHandle, cache_path: String) -> Result<I
         ).map_err(|e| e.to_string())?;
 
         for entry in &entries {
-             if let Ok(rows) = stmt.execute(params![entry.hash, entry.name, entry.filename, entry.lookup_source, entry.scanned_at, entry.thumbnail_path, entry.preview_url, entry.resource_type]) {
-                 added_count += rows;
-             }
+            if let Ok(rows) = stmt.execute(params![
+                entry.hash,
+                entry.name,
+                entry.filename,
+                entry.lookup_source,
+                entry.scanned_at,
+                entry.thumbnail_path,
+                entry.preview_url,
+                entry.resource_type
+            ]) {
+                added_count += rows;
+            }
         }
     }
 
     tx.commit().map_err(|e| e.to_string())?;
-    
+
     // Divide by 2 because we insert 2 entries per model (short hash + long hash)
     let added_unique = added_count / 2;
-    let total_unique = if entries.first().map(|e| e.lookup_source.starts_with("local_cache")).unwrap_or(false) {
-        entries.len() / 2 
+    let total_unique = if entries
+        .first()
+        .map(|e| e.lookup_source.starts_with("local_cache"))
+        .unwrap_or(false)
+    {
+        entries.len() / 2
     } else {
         entries.len()
     };
 
-    Ok(ImportResult { 
-        added: added_unique, 
+    Ok(ImportResult {
+        added: added_unique,
         total_found: total_unique,
-        message: format!("Imported {} new models ({} found in file).", added_unique, total_unique) 
+        message: format!(
+            "Imported {} new models ({} found in file).",
+            added_unique, total_unique
+        ),
     })
 }
 
@@ -210,9 +238,9 @@ struct ProgressPayload {
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn resolve_hashes_online(
-    app: tauri::AppHandle, 
+    app: tauri::AppHandle,
     skip_harvest: bool,
-    state: tauri::State<'_, ModelResolutionState>
+    state: tauri::State<'_, ModelResolutionState>,
 ) -> Result<ResolutionResult, String> {
     use tauri::Emitter;
 
@@ -220,8 +248,11 @@ pub async fn resolve_hashes_online(
     state.is_cancelled.store(false, Ordering::SeqCst);
 
     let db_path = resolve_db_path(&app)?;
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
- 
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     let mut harvest_count = 0;
 
     // 1. Collect hashes and do initial harvest
@@ -230,12 +261,15 @@ pub async fn resolve_hashes_online(
 
         if !skip_harvest {
             // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
-            let _ = app.emit("model_resolution_progress", ProgressPayload {
-                current: 0,
-                total: 100,
-                message: "Harvesting existing local metadata...".to_string()
-            });
-            
+            let _ = app.emit(
+                "model_resolution_progress",
+                ProgressPayload {
+                    current: 0,
+                    total: 100,
+                    message: "Harvesting existing local metadata...".to_string(),
+                },
+            );
+
             harvest_count = conn.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
                  SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1, 'checkpoint'
@@ -245,22 +279,28 @@ pub async fn resolve_hashes_online(
                  params![now]
             ).unwrap_or(0);
         } else {
-            let _ = app.emit("model_resolution_progress", ProgressPayload {
-                current: 0,
-                total: 100,
-                message: "Skipping harvest, searching unknown hashes...".to_string()
-            });
+            let _ = app.emit(
+                "model_resolution_progress",
+                ProgressPayload {
+                    current: 0,
+                    total: 100,
+                    message: "Skipping harvest, searching unknown hashes...".to_string(),
+                },
+            );
         }
-        
+
         // Find all images with missing model names or hash-like model names
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
              FROM images 
              WHERE hash IS NOT NULL 
-             AND hash NOT IN (SELECT hash FROM models)"
-        ).map_err(|e| e.to_string())?;
+             AND hash NOT IN (SELECT hash FROM models)",
+            )
+            .map_err(|e| e.to_string())?;
 
-        let res = stmt.query_map([], |row| row.get(0))
+        let res = stmt
+            .query_map([], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<String>, _>>()
             .map_err(|e| e.to_string())?;
@@ -269,11 +309,11 @@ pub async fn resolve_hashes_online(
 
     let total = hashes_to_resolve.len();
     if total == 0 {
-        return Ok(ResolutionResult { 
-            resolved_count: harvest_count, 
+        return Ok(ResolutionResult {
+            resolved_count: harvest_count,
             failed_count: 0,
             named_fallback_count: 0,
-            unknown_count: 0
+            unknown_count: 0,
         });
     }
 
@@ -292,11 +332,14 @@ pub async fn resolve_hashes_online(
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
-        let _ = app.emit("model_resolution_progress", ProgressPayload {
-            current: i + 1,
-            total,
-            message: format!("Resolving online {}/{}", i + 1, total)
-        });
+        let _ = app.emit(
+            "model_resolution_progress",
+            ProgressPayload {
+                current: i + 1,
+                total,
+                message: format!("Resolving online {}/{}", i + 1, total),
+            },
+        );
 
         let url = format!("https://civitai.com/api/v1/model-versions/by-hash/{}", hash);
         match client.get(&url).send().await {
@@ -309,7 +352,7 @@ pub async fn resolve_hashes_online(
                         failed += 1;
                     }
                 } else {
-                    failed += 1; 
+                    failed += 1;
                 }
             }
             Err(_) => {
@@ -323,7 +366,7 @@ pub async fn resolve_hashes_online(
     if newly_resolved > 0 {
         let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
-        
+
         for (hash, name, version_id) in resolved_items {
             let _ = tx.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at, resource_type) VALUES (?1, ?2, 'civitai', ?3, ?4, 'checkpoint')",
@@ -340,41 +383,45 @@ pub async fn resolve_hashes_online(
     // Only analyze if we had failures
     if failed > 0 {
         let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-        
+
         // Find hashes that are NOT in models table (failed lookups)
         // And check if they have a 'model' name in images table
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
+        let mut stmt = conn
+            .prepare(
+                "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
              FROM images 
              WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
              AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
-             AND json_extract(metadata_json, '$.model') IS NOT NULL"
-        ).map_err(|e| e.to_string())?;
+             AND json_extract(metadata_json, '$.model') IS NOT NULL",
+            )
+            .map_err(|e| e.to_string())?;
 
         let fallback_count: usize = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
-        
+
         named_fallback = fallback_count;
         // Total Failures - Named Fallbacks = Truly Unknown (No hash match AND No name match)
         // We calculate truly_unknown based on total active failures in the library, not just this session's failures
-        // But for this return value, 'failed' tracks session failures. 
+        // But for this return value, 'failed' tracks session failures.
         // Let's rely on the DB query for truth.
-        
-        let mut stmt_unknown = conn.prepare(
-             "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
+
+        let mut stmt_unknown = conn
+            .prepare(
+                "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
              FROM images 
              WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
              AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
-             AND json_extract(metadata_json, '$.model') IS NULL"
-        ).map_err(|e| e.to_string())?;
-        
+             AND json_extract(metadata_json, '$.model') IS NULL",
+            )
+            .map_err(|e| e.to_string())?;
+
         truly_unknown = stmt_unknown.query_row([], |row| row.get(0)).unwrap_or(0);
     }
 
-    Ok(ResolutionResult { 
-        resolved_count: harvest_count + newly_resolved, 
+    Ok(ResolutionResult {
+        resolved_count: harvest_count + newly_resolved,
         failed_count: failed,
         named_fallback_count: named_fallback,
-        unknown_count: truly_unknown
+        unknown_count: truly_unknown,
     })
 }
 
@@ -383,7 +430,8 @@ pub async fn resolve_hashes_online(
 pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM models", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM models", [])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -402,7 +450,10 @@ pub struct ThumbnailScanResult {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) -> Result<ThumbnailScanResult, String> {
+pub async fn scan_model_thumbnails(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<ThumbnailScanResult, String> {
     let mut models_found = Vec::new();
     let mut images_map = std::collections::HashSet::new();
 
@@ -414,13 +465,19 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
     }
 
     if models_found.is_empty() {
-        return Ok(ThumbnailScanResult { found: 0, updated: 0 });
+        return Ok(ThumbnailScanResult {
+            found: 0,
+            updated: 0,
+        });
     }
 
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
     // 1. Harvest resource names from library if not already in models table
     harvest_resource_names(&mut conn, now)?;
@@ -439,9 +496,15 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
 
         for model_path in &models_found {
             let model_path_buf = std::path::PathBuf::from(model_path);
-            let filename = model_path_buf.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            let stem = model_path_buf.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            
+            let filename = model_path_buf
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let stem = model_path_buf
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+
             // Infer type from path
             let path_lower = model_path.to_lowercase();
             let r_type = if path_lower.contains("lora") {
@@ -457,7 +520,7 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
             // For full discovery, we use the filename as a temporary 'hash' if we don't have one
             // This is just to ensure it's in the table so it can be matched.
             let pseudo_hash = format!("file:{}", model_path);
-            
+
             let _ = upsert_stmt.execute(params![
                 pseudo_hash,
                 stem,
@@ -475,17 +538,17 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
 
         for model_path in &models_found {
             let model_path_buf = std::path::PathBuf::from(&model_path);
-            
+
             let parent = match model_path_buf.parent() {
                 Some(p) => p,
                 None => continue,
             };
-            
+
             let stem = match model_path_buf.file_stem().and_then(|s| s.to_str()) {
                 Some(s) => s,
                 None => continue,
             };
-            
+
             let filename = match model_path_buf.file_name().and_then(|s| s.to_str()) {
                 Some(n) => n,
                 None => continue,
@@ -510,25 +573,29 @@ pub async fn scan_model_thumbnails(app: tauri::AppHandle, paths: Vec<String>) ->
             }
 
             if let Some(thumb_path) = best_thumb {
-                 if let Ok(rows) = update_stmt.execute(params![thumb_path, filename, stem, filename]) {
-                     if rows > 0 {
-                         updated_count += 1;
-                     }
-                 }
+                if let Ok(rows) = update_stmt.execute(params![thumb_path, filename, stem, filename])
+                {
+                    if rows > 0 {
+                        updated_count += 1;
+                    }
+                }
             }
         }
     }
 
     tx.commit().map_err(|e| e.to_string())?;
-    
-    Ok(ThumbnailScanResult { found: models_found.len(), updated: updated_count }) 
+
+    Ok(ThumbnailScanResult {
+        found: models_found.len(),
+        updated: updated_count,
+    })
 }
 
 // Helper function override
 fn scan_dir_for_resources(
-    dir: &std::path::Path, 
-    models: &mut Vec<String>, 
-    images: &mut std::collections::HashSet<String> 
+    dir: &std::path::Path,
+    models: &mut Vec<String>,
+    images: &mut std::collections::HashSet<String>,
 ) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -536,7 +603,11 @@ fn scan_dir_for_resources(
             if p.is_dir() {
                 scan_dir_for_resources(&p, models, images);
             } else if p.is_file() {
-                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                let ext = p
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
                 if ["safetensors", "ckpt", "pt", "bin", "pth"].contains(&ext.as_str()) {
                     models.push(p.to_string_lossy().to_string());
                 } else if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
@@ -567,8 +638,9 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
              FROM images, json_each(metadata_json, '$.loras') j
          ) 
          WHERE clean_name IS NOT NULL AND clean_name != ''",
-         params![now]
-    ).map_err(|e| e.to_string())?;
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
 
     // 2. Embeddings
     conn.execute(
@@ -581,8 +653,9 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
             'embeddings'
          FROM images, json_each(metadata_json, '$.embeddings') j
          WHERE j.value IS NOT NULL AND j.value != ''",
-         params![now]
-    ).map_err(|e| e.to_string())?;
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
 
     // 3. Hypernetworks
     conn.execute(
@@ -595,9 +668,10 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
             'hypernetworks'
          FROM images, json_each(metadata_json, '$.hypernetworks') j
          WHERE j.value IS NOT NULL AND j.value != ''",
-         params![now]
-    ).map_err(|e| e.to_string())?;
- 
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
+
     // 4. Checkpoints
     conn.execute(
         "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
@@ -610,22 +684,31 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
          FROM images
          WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
          AND json_extract(metadata_json, '$.model') IS NOT NULL",
-         params![now]
-    ).map_err(|e| e.to_string())?;
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>, image_path: String, resource_type: Option<String>) -> Result<(), String> {
+pub async fn set_model_thumbnail(
+    app: tauri::AppHandle,
+    model_hash: String,
+    model_name: Option<String>,
+    image_path: String,
+    resource_type: Option<String>,
+) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
-    
+
     // Default to checkpoint if not provided, but sanitize just in case
     let r_type = resource_type.unwrap_or_else(|| "checkpoint".to_string());
-    
+
     // Default name if missing
-    let name_val = model_name.clone().unwrap_or_else(|| "Unknown Model".to_string());
+    let name_val = model_name
+        .clone()
+        .unwrap_or_else(|| "Unknown Model".to_string());
 
     // Perform blocking DB operations on a thread
     tauri::async_runtime::spawn_blocking(move || {
@@ -676,10 +759,14 @@ pub async fn set_model_thumbnail(app: tauri::AppHandle, model_hash: String, mode
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+pub async fn unset_model_thumbnail(
+    app: tauri::AppHandle,
+    model_hash: String,
+    model_name: Option<String>,
+) -> Result<(), String> {
     // "Use Sidecar / Reset" - clears user override, falls back to sidecar > dynamic > preview_url
     let db_path = resolve_db_path(&app)?;
-    
+
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
         
@@ -742,9 +829,13 @@ pub async fn unset_model_thumbnail(app: tauri::AppHandle, model_hash: String, mo
 /// "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, model_name: Option<String>) -> Result<(), String> {
+pub async fn clear_all_thumbnails(
+    app: tauri::AppHandle,
+    model_hash: String,
+    model_name: Option<String>,
+) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
-    
+
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
         
@@ -791,5 +882,3 @@ pub async fn clear_all_thumbnails(app: tauri::AppHandle, model_hash: String, mod
         Ok(())
     }).await.map_err(|e| e.to_string())?
 }
-
-

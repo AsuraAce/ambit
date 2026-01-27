@@ -9,24 +9,37 @@ fn test_upscale_model_false_positive() {
     chunks.insert("workflow".to_string(), workflow.to_string());
 
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     println!("Extracted Model: {}", meta.model);
 
     // Should NOT be the upscale model
-    assert!(!meta.model.contains("4x_NMKD"), "Should not extract upscale model as main model");
-    
+    assert!(
+        !meta.model.contains("4x_NMKD"),
+        "Should not extract upscale model as main model"
+    );
+
     // Should be the actual checkpoint
-    assert!(meta.model.contains("moodyPornMix"), "Should extract the actual checkpoint. Got: {}", meta.model);
+    assert!(
+        meta.model.contains("moodyPornMix"),
+        "Should extract the actual checkpoint. Got: {}",
+        meta.model
+    );
 }
 
 #[test]
 fn test_bbox_model_false_positive() {
-     let workflow = r#"{"id":"bbox_test","nodes":[{"id":100,"type":"UltralyticsDetectorProvider","widgets_values":["bbox/face_yolov8m.pt"]},{"id":86,"type":"CheckpointLoaderSimple","widgets_values":["real_model.safetensors"]}],"links":[]}"#;
-     
+    let workflow = r#"{"id":"bbox_test","nodes":[{"id":100,"type":"UltralyticsDetectorProvider","widgets_values":["bbox/face_yolov8m.pt"]},{"id":86,"type":"CheckpointLoaderSimple","widgets_values":["real_model.safetensors"]}],"links":[]}"#;
+
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
 
     let meta = extract_comfyui_metadata(&chunks);
-    assert!(!meta.model.contains("yolov8m"), "Should not extract bbox model");
-    assert!(meta.model.contains("real_model"), "Should extract real model");
+    assert!(
+        !meta.model.contains("yolov8m"),
+        "Should not extract bbox model"
+    );
+    assert!(
+        meta.model.contains("real_model"),
+        "Should extract real model"
+    );
 }

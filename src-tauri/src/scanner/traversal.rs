@@ -25,7 +25,8 @@ pub fn scan_dir_recursive(root: &Path, current: &Path, stats: &mut FolderStats) 
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    let is_thumbnail = p.file_name()
+                    let is_thumbnail = p
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                         .unwrap_or(false);
@@ -54,11 +55,7 @@ pub fn scan_dir_recursive(root: &Path, current: &Path, stats: &mut FolderStats) 
     }
 }
 
-pub fn collect_images_recursive(
-    root: &Path,
-    current: &Path,
-    files: &mut Vec<String>,
-) {
+pub fn collect_images_recursive(root: &Path, current: &Path, files: &mut Vec<String>) {
     if files.len() > 300_000 {
         return;
     }
@@ -77,7 +74,8 @@ pub fn collect_images_recursive(
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    let is_thumbnail = p.file_name()
+                    let is_thumbnail = p
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                         .unwrap_or(false);
@@ -93,11 +91,7 @@ pub fn collect_images_recursive(
     }
 }
 
-pub fn collect_images_recursive_absolute(
-    root: &Path,
-    current: &Path,
-    files: &mut Vec<String>,
-) {
+pub fn collect_images_recursive_absolute(root: &Path, current: &Path, files: &mut Vec<String>) {
     if files.len() > 300_000 {
         return;
     }
@@ -116,7 +110,8 @@ pub fn collect_images_recursive_absolute(
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    let is_thumbnail = p.file_name()
+                    let is_thumbnail = p
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                         .unwrap_or(false);
@@ -152,7 +147,8 @@ pub fn collect_images_with_stats_recursive(
                     .unwrap_or("")
                     .to_lowercase();
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    let is_thumbnail = p.file_name()
+                    let is_thumbnail = p
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                         .unwrap_or(false);
@@ -205,15 +201,16 @@ pub fn collect_images_with_stats_since_recursive(
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                    
+
                 if ["png", "jpg", "jpeg", "webp"].contains(&ext.as_str()) {
-                    let is_thumbnail = p.file_name()
+                    let is_thumbnail = p
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                         .unwrap_or(false);
 
                     if !is_thumbnail {
-                         // Now check timestamp
+                        // Now check timestamp
                         let (size, modified) = match entry.metadata() {
                             Ok(m) => (
                                 m.len(),
@@ -243,5 +240,3 @@ pub fn collect_images_with_stats_since_recursive(
         }
     }
 }
-
-

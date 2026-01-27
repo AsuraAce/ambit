@@ -1,5 +1,5 @@
+use super::resources::{scan_for_resources, Resources};
 use super::ImageMetadata;
-use super::resources::{Resources, scan_for_resources};
 
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
@@ -96,7 +96,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
             else if let Some(name) = model.as_str() {
                 meta.model = name.to_string();
             }
-            
+
             // Extract model hash from v5.x format (model.hash with blake3: prefix)
             if meta.model_hash.is_none() {
                 if let Some(hash) = model.get("hash").and_then(|s| s.as_str()) {
@@ -137,7 +137,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     // Resources (LoRAs, ControlNets)
     let mut resources = Resources::default();
     scan_for_resources(json, &mut resources);
-    
+
     meta.loras = resources.loras;
     meta.control_nets = resources.control_nets;
 
@@ -153,9 +153,9 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     // Detect postprocessing-only images (upscales, face fixes, etc.)
     // These have postprocessing data but no generation data (no prompt, no steps, no model)
     // Note: generation_type defaults to "unknown", so check for both empty and unknown
-    if (meta.generation_type.is_empty() || meta.generation_type == "unknown") 
-        && meta.positive_prompt.is_empty() 
-        && meta.steps == 0 
+    if (meta.generation_type.is_empty() || meta.generation_type == "unknown")
+        && meta.positive_prompt.is_empty()
+        && meta.steps == 0
     {
         if let Some(pp) = root.get("postprocessing") {
             if pp.is_array() && !pp.as_array().unwrap().is_empty() {
@@ -194,7 +194,10 @@ mod tests {
         });
         let meta = extract_invokeai_metadata(&payload);
         assert_eq!(meta.tool, "InvokeAI");
-        assert_eq!(meta.positive_prompt, "a professional portrait extreme detail");
+        assert_eq!(
+            meta.positive_prompt,
+            "a professional portrait extreme detail"
+        );
         assert_eq!(meta.steps, 30);
         assert_eq!(meta.cfg, 7.5);
         assert_eq!(meta.seed, 42);
@@ -258,10 +261,13 @@ mod tests {
             }
         });
         let meta = extract_invokeai_metadata(&payload);
-        
+
         assert_eq!(meta.tool, "InvokeAI");
         assert_eq!(meta.model, "Cyberpunk-Anime-Diffusion");
-        assert_eq!(meta.model_hash.as_deref(), Some("a8f7dcece7bc4a6273ed1efa427d481b03237a8f635f1bc44128dd48217a2947"));
+        assert_eq!(
+            meta.model_hash.as_deref(),
+            Some("a8f7dcece7bc4a6273ed1efa427d481b03237a8f635f1bc44128dd48217a2947")
+        );
         assert_eq!(meta.steps, 50);
         assert_eq!(meta.cfg, 7.5);
         assert_eq!(meta.seed, 3038946690);
@@ -294,7 +300,7 @@ mod tests {
             "hrf_strength": 0.6
         });
         let meta = extract_invokeai_metadata(&payload);
-        
+
         assert_eq!(meta.tool, "InvokeAI");
         assert_eq!(meta.model, "westernAnimation_v1");
         assert_eq!(meta.steps, 24);
@@ -351,4 +357,3 @@ mod tests {
         assert!(meta.is_favorite);
     }
 }
-

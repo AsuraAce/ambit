@@ -1,5 +1,5 @@
-use std::path::Path;
 use rayon::prelude::*;
+use std::path::Path;
 
 pub fn verify_image_paths_impl(paths: Vec<String>) -> Vec<String> {
     paths

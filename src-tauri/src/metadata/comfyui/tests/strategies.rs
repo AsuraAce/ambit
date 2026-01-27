@@ -83,12 +83,12 @@ fn test_extract_comfyui_wireless_fallback() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.tool, "ComfyUI");
     assert_eq!(meta.model, "realvis-v3"); // Should be found by linear scan
-    assert_eq!(meta.steps, 30);           // Should be found by linear scan
+    assert_eq!(meta.steps, 30); // Should be found by linear scan
     assert_eq!(meta.sampler, "dpmpp_2m"); // Should be found by linear scan
 }
 
@@ -122,9 +122,9 @@ fn test_extract_comfyui_wireless_titled_nodes() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     // Fallback should find model and prompts by labels/types
     assert_eq!(meta.model, "base");
     assert_eq!(meta.positive_prompt, "landscape, sunset");

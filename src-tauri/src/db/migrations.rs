@@ -378,7 +378,6 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-
     let migration22 = Migration {
         version: 22,
         description: "optimize_strict_and_stored",
@@ -601,7 +600,6 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-
     let migration24 = Migration {
         version: 24,
         description: "fix_boolean_generation",
@@ -711,7 +709,6 @@ pub fn init_db() -> Vec<Migration> {
         ",
         kind: MigrationKind::Up,
     };
-
 
     let migration25 = Migration {
         version: 25,
@@ -920,8 +917,42 @@ pub fn init_db() -> Vec<Migration> {
         kind: MigrationKind::Up,
     };
 
-    vec![migration, migration2, migration3, migration4, migration5, migration6, migration7, migration8, migration9, migration10, migration11, migration12, migration13, migration14, migration15, migration16, migration17, migration18, migration19, migration20, migration21, migration22, migration23, migration24, migration25,
-        migration26, migration27, migration28, migration29, migration30, migration31, migration32, migration33(), migration34(), migration35(),
+    vec![
+        migration,
+        migration2,
+        migration3,
+        migration4,
+        migration5,
+        migration6,
+        migration7,
+        migration8,
+        migration9,
+        migration10,
+        migration11,
+        migration12,
+        migration13,
+        migration14,
+        migration15,
+        migration16,
+        migration17,
+        migration18,
+        migration19,
+        migration20,
+        migration21,
+        migration22,
+        migration23,
+        migration24,
+        migration25,
+        migration26,
+        migration27,
+        migration28,
+        migration29,
+        migration30,
+        migration31,
+        migration32,
+        migration33(),
+        migration34(),
+        migration35(),
         // Migration 37 (Retry of 36): Add is_corrupt column
         // We bump version to ensure it runs even if 36 failed/partial
         Migration {
@@ -959,7 +990,7 @@ fn migration35() -> Migration {
 
 /// Migration 33: Denormalize parameter columns for faster filtering
 /// Adds steps, cfg, sampler, and generation_type columns with indexes
-/// 
+///
 /// NOTE: Backfill is done via TRIGGER on insert and via a separate background command
 /// to avoid blocking app startup on large databases.
 fn migration33() -> Migration {
@@ -1000,4 +1031,3 @@ fn migration34() -> Migration {
         kind: MigrationKind::Up,
     }
 }
-

@@ -1,7 +1,7 @@
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use std::path::PathBuf;
 use tauri::Emitter;
 
 pub struct WatcherState {
@@ -26,7 +26,7 @@ pub fn start_native_folder_watcher(
     state: tauri::State<'_, WatcherState>,
 ) -> Result<(), String> {
     if paths.is_empty() {
-         let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
+        let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
         if watcher_guard.is_some() {
             *watcher_guard = None;
             println!("[Rust Watcher] Stopped watcher");
@@ -42,7 +42,7 @@ pub fn start_native_folder_watcher(
     }
 
     let app_handle = app.clone();
-    
+
     let last_emit_local = std::sync::Arc::new(Mutex::new(
         Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
     ));
@@ -52,7 +52,9 @@ pub fn start_native_folder_watcher(
             Ok(event) => {
                 println!("[Rust Watcher] Raw Event: {:?}", event);
                 let is_relevant = match event.kind {
-                    notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Access(notify::event::AccessKind::Close(_)) => true,
+                    notify::EventKind::Create(_)
+                    | notify::EventKind::Modify(_)
+                    | notify::EventKind::Access(notify::event::AccessKind::Close(_)) => true,
                     notify::EventKind::Any => true, // Catch-all for some OSs
                     // Handle Rename/Move - essential for windows drag/drop
                     notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => true,
@@ -61,7 +63,8 @@ pub fn start_native_folder_watcher(
 
                 if is_relevant {
                     let has_image = event.paths.iter().any(|p| {
-                        let is_image = p.extension()
+                        let is_image = p
+                            .extension()
                             .map(|e| {
                                 let s = e.to_string_lossy().to_lowercase();
                                 ["png", "jpg", "jpeg", "webp"].contains(&s.as_str())
@@ -73,7 +76,8 @@ pub fn start_native_folder_watcher(
                         }
 
                         // Filter out A1111 thumbnails
-                        let is_thumbnail = p.file_name()
+                        let is_thumbnail = p
+                            .file_name()
                             .and_then(|n| n.to_str())
                             .map(|n| n.to_lowercase().ends_with("thumbnail.png"))
                             .unwrap_or(false);
@@ -104,7 +108,7 @@ pub fn start_native_folder_watcher(
             if let Err(e) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
                 println!("[Rust Watcher] Failed to watch path {}: {}", path_str, e);
             } else {
-                 println!("[Rust Watcher] Added path: {}", path_str);
+                println!("[Rust Watcher] Added path: {}", path_str);
             }
         } else {
             println!("[Rust Watcher] Skipping non-existent path: {}", path_str);
@@ -112,6 +116,6 @@ pub fn start_native_folder_watcher(
     }
 
     *watcher_guard = Some(watcher);
-    
+
     Ok(())
 }

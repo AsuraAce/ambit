@@ -1,7 +1,7 @@
+use super::{configure_connection, resolve_db_path, ProgressPayload};
+use regex::Regex;
 use rusqlite::params;
 use tauri::Emitter;
-use regex::Regex;
-use super::{resolve_db_path, configure_connection, ProgressPayload};
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
@@ -13,19 +13,36 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
         println!("[FacetCache] Starting rebuild...");
-        let _ = app.emit("facet_cache_progress", ProgressPayload { current: 0, total: 6, message: "Starting facet cache build...".into() });
+        let _ = app.emit(
+            "facet_cache_progress",
+            ProgressPayload {
+                current: 0,
+                total: 6,
+                message: "Starting facet cache build...".into(),
+            },
+        );
 
         // --- PHASE 1: HARVEST ---
         {
             let tx = conn.transaction().map_err(|e| e.to_string())?;
             println!("[FacetCache] Harvesting models from images...");
             let start_harvest = std::time::Instant::now();
-            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 1, total: 6, message: "Harvesting models from library...".into() });
-            
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 1,
+                    total: 6,
+                    message: "Harvesting models from library...".into(),
+                },
+            );
+
             harvest_models(&tx)?;
 
             tx.commit().map_err(|e| e.to_string())?;
-            println!("[FacetCache] Harvest completed in {:?}.", start_harvest.elapsed());
+            println!(
+                "[FacetCache] Harvest completed in {:?}.",
+                start_harvest.elapsed()
+            );
         }
 
         // --- PHASE 2: BUILD CACHE ---
@@ -33,35 +50,73 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             let tx = conn.transaction().map_err(|e| e.to_string())?;
 
             // Clear existing cache
-            tx.execute("DELETE FROM facet_cache", []).map_err(|e| e.to_string())?;
+            tx.execute("DELETE FROM facet_cache", [])
+                .map_err(|e| e.to_string())?;
 
             // 1. Checkpoints
             println!("[FacetCache] Building checkpoints...");
             let start_cp = std::time::Instant::now();
-            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 2, total: 6, message: "Building checkpoints cache...".into() });
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 2,
+                    total: 6,
+                    message: "Building checkpoints cache...".into(),
+                },
+            );
             build_checkpoint_facets(&tx)?;
-            println!("[FacetCache] Checkpoints built in {:?}.", start_cp.elapsed());
+            println!(
+                "[FacetCache] Checkpoints built in {:?}.",
+                start_cp.elapsed()
+            );
 
             // 2. LoRAs
             println!("[FacetCache] Building LoRAs...");
             let start_lora = std::time::Instant::now();
-            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 3, total: 6, message: "Building LoRAs cache...".into() });
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 3,
+                    total: 6,
+                    message: "Building LoRAs cache...".into(),
+                },
+            );
             build_resource_facets(&tx, "loras", "loras")?;
             println!("[FacetCache] LoRAs built in {:?}.", start_lora.elapsed());
 
             // 3. Embeddings
             println!("[FacetCache] Building Embeddings...");
             let start_emb = std::time::Instant::now();
-            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 4, total: 6, message: "Building Embeddings cache...".into() });
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 4,
+                    total: 6,
+                    message: "Building Embeddings cache...".into(),
+                },
+            );
             build_resource_facets(&tx, "embeddings", "embeddings")?;
-            println!("[FacetCache] Embeddings built in {:?}.", start_emb.elapsed());
+            println!(
+                "[FacetCache] Embeddings built in {:?}.",
+                start_emb.elapsed()
+            );
 
             // 4. Hypernetworks
             println!("[FacetCache] Building Hypernetworks...");
             let start_hyper = std::time::Instant::now();
-            let _ = app.emit("facet_cache_progress", ProgressPayload { current: 5, total: 6, message: "Building Hypernetworks cache...".into() });
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 5,
+                    total: 6,
+                    message: "Building Hypernetworks cache...".into(),
+                },
+            );
             build_resource_facets(&tx, "hypernetworks", "hypernetworks")?;
-            println!("[FacetCache] Hypernetworks built in {:?}.", start_hyper.elapsed());
+            println!(
+                "[FacetCache] Hypernetworks built in {:?}.",
+                start_hyper.elapsed()
+            );
 
             // 5. Tools
             build_tool_facets(&tx)?;
@@ -69,21 +124,35 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             tx.commit().map_err(|e| e.to_string())?;
 
             // Return total cache entries
-            let count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
                 .map_err(|e| e.to_string())?;
-                
+
             // Update stats after rebuild
             let _ = conn.execute("ANALYZE facet_cache", []);
             let _ = conn.execute("ANALYZE models", []);
-            
+
             count
         };
 
-        println!("[FacetCache] Rebuild complete in {:?}. Total entries: {}", start_total.elapsed(), count_result);
-        let _ = app.emit("facet_cache_progress", ProgressPayload { current: 6, total: 6, message: "Cache rebuild complete.".into() });
+        println!(
+            "[FacetCache] Rebuild complete in {:?}. Total entries: {}",
+            start_total.elapsed(),
+            count_result
+        );
+        let _ = app.emit(
+            "facet_cache_progress",
+            ProgressPayload {
+                current: 6,
+                total: 6,
+                message: "Cache rebuild complete.".into(),
+            },
+        );
 
         Ok(count_result as usize)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Valid facet names result - used for drill-down filtering
@@ -100,7 +169,7 @@ pub struct ValidFacetNames {
 /// Get distinct facet names that exist in the current filtered result set.
 /// This is used for drill-down filtering - hiding facets that have no images
 /// in the current filter context.
-/// 
+///
 /// OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
 /// to reduce database round-trips and allow SQLite to share table scans.
 #[tauri::command(rename_all = "camelCase")]
@@ -110,7 +179,7 @@ pub async fn get_valid_facet_names(
     where_clause: String,
     params_json: String,
     collection_id: Option<String>,
-    lora_name: Option<String>
+    lora_name: Option<String>,
 ) -> Result<ValidFacetNames, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
@@ -275,9 +344,11 @@ pub async fn get_valid_facet_names(
     }).await.map_err(|e| e.to_string())?
 }
 
-
 fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
     // Harvest Checkpoints
     conn.execute(
@@ -291,11 +362,16 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM images
             WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
             AND json_extract(metadata_json, '$.model') IS NOT NULL",
-            params![now]
-    ).map_err(|e| format!("Harvest Checkpoints failed: {}", e))?;
+        params![now],
+    )
+    .map_err(|e| format!("Harvest Checkpoints failed: {}", e))?;
 
     // Helper for generic harvests (LoRAs, Embeddings, Hypernetworks)
-    let types = [("loras", "harvest_lora"), ("embeddings", "harvest_embedding"), ("hypernetworks", "harvest_hypernet")];
+    let types = [
+        ("loras", "harvest_lora"),
+        ("embeddings", "harvest_embedding"),
+        ("hypernetworks", "harvest_hypernet"),
+    ];
     for (json_key, source) in types {
         let prefix = match json_key {
             "loras" => "lora_",
@@ -345,8 +421,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM images 
             WHERE is_deleted = 0
             GROUP BY mh, mn",
-        []
-    ).map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
+        [],
+    )
+    .map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
 
     // 2. Calculate Best Dynamic Thumbnail (Pinned > Recent)
     // We use model_name (or json_extract) to ensure it matches what harvest_models uses
@@ -420,20 +497,29 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key: &str) -> Result<(), String> {
+fn build_resource_facets(
+    conn: &rusqlite::Connection,
+    facet_type: &str,
+    json_key: &str,
+) -> Result<(), String> {
     // Optimization: Use JUNCTION TABLES instead of JSON extraction
-    
+
     // Determine the junction table and ID column based on the facet type/json_key
     let (junction_table, name_col, image_id_col) = match json_key {
         "loras" => ("image_loras", "lora_name", "image_id"),
         "embeddings" => ("image_embeddings", "embedding_name", "image_id"),
         "hypernetworks" => ("image_hypernetworks", "hypernetwork_name", "image_id"),
-        _ => return Err(format!("Unsupported resource type for optimization: {}", json_key)),
+        _ => {
+            return Err(format!(
+                "Unsupported resource type for optimization: {}",
+                json_key
+            ))
+        }
     };
-    
+
     let temp_table = format!("{}_counts", facet_type);
     let temp_thumbs = format!("{}_thumbs", facet_type);
-    
+
     // Step 1: Pre-aggregate Counts from Junction Table (No JSON Parsing!)
     conn.execute(
         &format!(
@@ -453,17 +539,22 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
                 JOIN images i ON i.id = jt.{}
                 WHERE i.is_deleted = 0
                 GROUP BY jt.{}",
-            temp_table, 
-            name_col, 
-            name_col, name_col, name_col, // substr args
-            name_col, name_col, name_col, // substr args 2
+            temp_table,
+            name_col,
+            name_col,
+            name_col,
+            name_col, // substr args
+            name_col,
+            name_col,
+            name_col, // substr args 2
             name_col, // ELSE
             junction_table,
             image_id_col,
             name_col
         ),
-        []
-    ).map_err(|e| format!("Failed to create optimized {} table: {}", temp_table, e))?;
+        [],
+    )
+    .map_err(|e| format!("Failed to create optimized {} table: {}", temp_table, e))?;
 
     // Step 2: Calculate Best Dynamic Thumbnails (Pinned > Recent) for these Resources
     // We need to group by the CLEANED reference name to match models
@@ -555,8 +646,10 @@ fn build_resource_facets(conn: &rusqlite::Connection, facet_type: &str, json_key
         []
     ).map_err(|e| format!("Failed to insert orphan {} into facet_cache: {}", facet_type, e))?;
 
-    conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_table), []).ok();
-    conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_thumbs), []).ok();
+    conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_table), [])
+        .ok();
+    conn.execute(&format!("DROP TABLE IF EXISTS {}", temp_thumbs), [])
+        .ok();
     Ok(())
 }
 
@@ -618,22 +711,28 @@ mod tests {
             "tool": "Automatic1111"
         }"#;
 
-         // Image 2: New, Pinned (Should be preferred thumbnail for SDXL and DetailedEyes)
-         conn.execute(
+        // Image 2: New, Pinned (Should be preferred thumbnail for SDXL and DetailedEyes)
+        conn.execute(
             "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png', 'SDXL Base', '12345')",
             params!["img2", "test2.png", metadata2],
         ).unwrap();
 
         // Populate Junction Tables (Simulating Scanner behavior)
         conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'DetailedEyes:1.0'), ('img1', 'PixelArt')", []).unwrap();
-        conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img2', 'DetailedEyes:1.0')", []).unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img2', 'DetailedEyes:1.0')",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img1', 'EasyNegative')", []).unwrap();
         conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img2', 'EasyNegative:v2')", []).unwrap();
         conn.execute("INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES ('img2', 'MyHyper:1.0')", []).unwrap();
 
         harvest_models(&conn).unwrap();
-        
-        let model_count: i64 = conn.query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0)).unwrap();
+
+        let model_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0))
+            .unwrap();
         assert!(model_count > 0, "Models should be populated from harvest");
 
         build_checkpoint_facets(&conn).unwrap();
@@ -647,28 +746,40 @@ mod tests {
             "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
             [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(cp_count, 2, "Should count 2 images for SDXL Base");
-        assert_eq!(cp_thumb, "thumb2.png", "Checkpoint thumbnail should be from pinned image (thumb2)");
+        assert_eq!(
+            cp_thumb, "thumb2.png",
+            "Checkpoint thumbnail should be from pinned image (thumb2)"
+        );
 
         // LoRA Check: Expected thumb2.png (Pinned)
         let (lora_count, lora_thumb): (i64, String) = conn.query_row(
             "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='loras' AND resource_name='DetailedEyes'", 
             [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(lora_count, 2, "Should count 2 images for DetailedEyes lora");
-        assert_eq!(lora_thumb, "thumb2.png", "LoRA thumbnail should be from pinned image (thumb2)");
-        
+        assert_eq!(
+            lora_thumb, "thumb2.png",
+            "LoRA thumbnail should be from pinned image (thumb2)"
+        );
+
         // Manual Override Check
         // Set manual thumbnail for SDXL Base
-        conn.execute("UPDATE models SET thumbnail_path = 'manual_override.png' WHERE hash = '12345'", []).unwrap();
-        
+        conn.execute(
+            "UPDATE models SET thumbnail_path = 'manual_override.png' WHERE hash = '12345'",
+            [],
+        )
+        .unwrap();
+
         // Rebuild Only Checkpoints - MUST CLEAR CACHE FIRST or handle upsert
-        conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoint'", []).unwrap();
+        conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoint'", [])
+            .unwrap();
         build_checkpoint_facets(&conn).unwrap();
-        
+
         let cp_thumb_manual: String = conn.query_row(
             "SELECT thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
             [], |r| r.get(0)).unwrap();
-        assert_eq!(cp_thumb_manual, "manual_override.png", "Manual thumbnail should take precedence");
+        assert_eq!(
+            cp_thumb_manual, "manual_override.png",
+            "Manual thumbnail should take precedence"
+        );
     }
-
-
 }

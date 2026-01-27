@@ -24,14 +24,14 @@ pub fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
             if let Some(n) = name {
                 // Default to 1.0 (standard implicit weight)
                 let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(1.0);
-                
+
                 // Show everything EXCEPT 1.0 (including 0.0)
                 let entry = if (weight - 1.0).abs() > f64::EPSILON {
                     format!("{} ({:.2})", n, weight)
                 } else {
                     n.to_string()
                 };
-                
+
                 if !res.loras.contains(&entry) {
                     res.loras.push(entry);
                 }
@@ -48,12 +48,12 @@ pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
                 .and_then(|v| v.as_str())
                 .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
                 .or_else(|| {
-                    c.get("model")
-                        .and_then(|m| {
-                            m.get("model_name").and_then(|v| v.as_str())
-                                // v5.x: model.name
-                                .or_else(|| m.get("name").and_then(|v| v.as_str()))
-                        })
+                    c.get("model").and_then(|m| {
+                        m.get("model_name")
+                            .and_then(|v| v.as_str())
+                            // v5.x: model.name
+                            .or_else(|| m.get("name").and_then(|v| v.as_str()))
+                    })
                 });
 
             if let Some(n) = name {
@@ -125,8 +125,12 @@ mod tests {
         ]);
         extract_controlnets(&payload, &mut res);
         assert_eq!(res.control_nets.len(), 2);
-        assert!(res.control_nets.contains(&"control_v11p_sd15_canny".to_string()));
-        assert!(res.control_nets.contains(&"control_v11f1p_sd15_depth".to_string()));
+        assert!(res
+            .control_nets
+            .contains(&"control_v11p_sd15_canny".to_string()));
+        assert!(res
+            .control_nets
+            .contains(&"control_v11f1p_sd15_depth".to_string()));
     }
 
     #[test]

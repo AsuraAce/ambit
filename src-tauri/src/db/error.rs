@@ -1,5 +1,5 @@
 //! Custom error types for database operations.
-//! 
+//!
 //! Uses `thiserror` for ergonomic error handling with automatic
 //! `Display` and `Error` trait implementations.
 

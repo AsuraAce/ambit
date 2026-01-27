@@ -1,17 +1,16 @@
+use rusqlite::Connection;
 use std::path::PathBuf;
 use tauri::Manager;
-use rusqlite::Connection;
 
-pub mod migrations;
-pub mod commands;
-pub mod facets;
-pub mod error;
 pub mod backup;
-
+pub mod commands;
+pub mod error;
+pub mod facets;
+pub mod migrations;
 
 /// Apply performance-optimized PRAGMAs to a SQLite connection.
 /// Should be called immediately after opening any rusqlite connection.
-/// 
+///
 /// Configuration:
 /// - WAL mode: Allows concurrent reads during writes
 /// - synchronous=NORMAL: Good balance of safety vs speed
@@ -20,7 +19,8 @@ pub mod backup;
 /// - temp_store=MEMORY: Faster sorting and GROUP BY operations
 /// - mmap_size=268435456: 256MB memory-mapped I/O
 pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA busy_timeout = 60000;
@@ -28,7 +28,8 @@ pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
         PRAGMA cache_size = -64000;
         PRAGMA temp_store = MEMORY;
         PRAGMA mmap_size = 268435456;
-    ")?;
+    ",
+    )?;
     log::info!("[DB] Applied performance PRAGMAs to rusqlite connection");
     Ok(())
 }

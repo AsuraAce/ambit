@@ -21,7 +21,7 @@ fn test_extract_comfyui_unet_loader() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
     assert_eq!(meta.model, "flux_dev");
 }
@@ -46,7 +46,7 @@ fn test_extract_comfyui_easy_loader() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
     assert_eq!(meta.model, "flux1-dev-fp8");
 }
@@ -76,9 +76,9 @@ fn test_extract_comfyui_qwen() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.model, "base");
 }
 
@@ -117,9 +117,9 @@ fn test_extract_comfyui_supir_conflict() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     // Should find the actual KSampler model (novaAnimeXL), NOT SUPIR
     assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
 }

@@ -1,7 +1,7 @@
-use specta::Type;
-use serde::Serialize;
-use std::collections::HashMap;
 use crate::metadata;
+use serde::Serialize;
+use specta::Type;
+use std::collections::HashMap;
 
 #[derive(Serialize, Default, Type)]
 pub struct FolderStats {

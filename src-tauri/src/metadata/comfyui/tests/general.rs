@@ -16,9 +16,9 @@ fn test_extract_comfyui_nan_json() {
 
     let mut chunks = HashMap::new();
     chunks.insert("prompt".to_string(), prompt.to_string());
-    
+
     // This should NOT panic or return empty metadata if we sanitize correctly
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.steps, 20);
 }

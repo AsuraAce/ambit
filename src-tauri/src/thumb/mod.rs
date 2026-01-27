@@ -1,10 +1,9 @@
-use image::io::Reader;
 use image::imageops::FilterType;
-use std::path::{Path, PathBuf};
+use image::io::Reader;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailResult {
@@ -22,10 +21,7 @@ pub fn get_thumbnail_path(path: &str, thumbnail_dir: &str) -> PathBuf {
     PathBuf::from(thumbnail_dir).join(&thumb_filename)
 }
 
-pub fn generate_thumbnail(
-    path: &str,
-    thumbnail_dir: &str,
-) -> Result<ThumbnailResult, String> {
+pub fn generate_thumbnail(path: &str, thumbnail_dir: &str) -> Result<ThumbnailResult, String> {
     let thumb_path = get_thumbnail_path(path, thumbnail_dir);
     let mut original_dimensions: Option<(u32, u32)> = None;
 
@@ -48,7 +44,8 @@ pub fn generate_thumbnail(
             .with_guessed_format()
             .map_err(|e| format!("Failed to guess format: {}", e))?;
 
-        let img = reader.decode()
+        let img = reader
+            .decode()
             .map_err(|e| format!("Failed to decode image: {}", e))?;
 
         // Capture original dimensions before resizing
@@ -60,17 +57,13 @@ pub fn generate_thumbnail(
         let thumb = img.resize(512, 512, FilterType::Triangle);
         let rgba = thumb.to_rgba8();
         let (width, height) = rgba.dimensions();
-        
-        let encoder = webp::Encoder::from_rgba(
-            rgba.as_raw(),
-            width,
-            height
-        );
+
+        let encoder = webp::Encoder::from_rgba(rgba.as_raw(), width, height);
         let webp_data = encoder.encode(85.0);
-        
+
         fs::write(&thumb_path, &*webp_data)
             .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
-            
+
         thumb_path.to_string_lossy().to_string()
     };
 
@@ -84,4 +77,3 @@ pub fn generate_thumbnail(
         original_dimensions,
     })
 }
-

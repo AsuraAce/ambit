@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use super::{configure_connection, resolve_db_path, ImageRecord};
 use rusqlite::params;
-use super::{resolve_db_path, configure_connection, ImageRecord};
+use std::collections::HashMap;
 
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -20,12 +20,30 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<DbDiagnostics, 
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
-        
-        let image_count: i64 = conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0)).unwrap_or(0);
-        let deleted_count: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE is_deleted = 1", [], |r| r.get(0)).unwrap_or(0);
-        let model_count: i64 = conn.query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0)).unwrap_or(0);
-        let cache_count: i64 = conn.query_row("SELECT COUNT(*) FROM facet_cache", [], |r| r.get(0)).unwrap_or(0);
-        let tool_null_count: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL", [], |r| r.get(0)).unwrap_or(0);
+
+        let image_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .unwrap_or(0);
+        let deleted_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE is_deleted = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let model_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0))
+            .unwrap_or(0);
+        let cache_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM facet_cache", [], |r| r.get(0))
+            .unwrap_or(0);
+        let tool_null_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(DbDiagnostics {
             db_path: db_path.to_string_lossy().to_string(),
@@ -35,12 +53,17 @@ pub async fn get_db_diagnostics(app: tauri::AppHandle) -> Result<DbDiagnostics, 
             cache_count,
             tool_null_count,
         })
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn get_image_count_for_path_prefix(app: tauri::AppHandle, path: String) -> Result<i64, String> {
+pub async fn get_image_count_for_path_prefix(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<i64, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -50,20 +73,27 @@ pub async fn get_image_count_for_path_prefix(app: tauri::AppHandle, path: String
         // e.g. "C:/Images" shouldn't match "C:/ImagesBackup"
         // But we need to handle both slash types or rely on normalization.
         // For now, we trust the input is normalized, but we append % for the LIKE query.
-        
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
-            params![format!("{}%", path), format!("{}\\%", path)], // Match forward or backslash just in case
-            |r| r.get(0)
-        ).unwrap_or(0);
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
+                params![format!("{}%", path), format!("{}\\%", path)], // Match forward or backslash just in case
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(count)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn save_images_batch(app: tauri::AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
+pub async fn save_images_batch(
+    app: tauri::AppHandle,
+    images: Vec<ImageRecord>,
+) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         
@@ -261,8 +291,9 @@ pub async fn refresh_boards_native(
 
         tx.commit().map_err(|e| e.to_string())?;
         Ok(updated_count)
-    }).await.map_err(|e| e.to_string())?
-
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -274,47 +305,52 @@ pub async fn optimize_database(app: tauri::AppHandle) -> Result<String, String> 
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
         let start = std::time::Instant::now();
-        
+
         // ANALYZE gathers statistics about indices and stores them in sqlite_stat1
         // This helps the query planner make better decisions
         conn.execute("ANALYZE", []).map_err(|e| e.to_string())?;
-        
+
         // PRAGMA optimize is also good practice - it runs ANALYZE only if needed
         // but explicit ANALYZE is better for user-triggered optimization
-        conn.execute("PRAGMA optimize", []).map_err(|e| e.to_string())?;
+        conn.execute("PRAGMA optimize", [])
+            .map_err(|e| e.to_string())?;
 
         // VACUUM is too heavy/locking to run generally, so we skip it here
-        
+
         let duration = start.elapsed();
-        Ok(format!("Database optimized in {:.2}s", duration.as_secs_f64()))
-    }).await.map_err(|e| e.to_string())?
+        Ok(format!(
+            "Database optimized in {:.2}s",
+            duration.as_secs_f64()
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
-
-
-
 
 /// Request a database purge on next app startup.
 /// Creates a marker file and immediately restarts the application.
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn purge_database(app: tauri::AppHandle) -> Result<String, String> {
-
-    
     // Get the path where we'll put the marker file (same dir as db)
-    // Note: In dev mode, Tauri uses 'com.tauri.dev' by default. 
+    // Note: In dev mode, Tauri uses 'com.tauri.dev' by default.
     // We should ideally read this from context, but for now we'll write to the resolved DB path's parent
     // to be 100% sure we're in the right place.
     let db_path = resolve_db_path(&app)?;
-    let marker_path = db_path.parent()
+    let marker_path = db_path
+        .parent()
         .ok_or("Failed to get DB parent directory")?
         .join(".purge_on_restart");
-    
+
     // Write the marker file
     std::fs::write(&marker_path, "purge requested")
         .map_err(|e| format!("Failed to create purge marker: {}", e))?;
-    
-    println!("[Purge] Created purge marker at {:?}. Restarting app...", marker_path);
-    
+
+    println!(
+        "[Purge] Created purge marker at {:?}. Restarting app...",
+        marker_path
+    );
+
     // In production, we can auto-restart seamlessly.
     // In dev (debug), auto-restart kills the Vite dev server, showing a "Connection Refused" error.
     // So in dev, we ask the user to restart manually.
@@ -328,8 +364,6 @@ pub async fn purge_database(app: tauri::AppHandle) -> Result<String, String> {
         Ok("Purge scheduled. Please restart 'npm run tauri dev' to complete.".to_string())
     }
 }
-
-
 
 /// Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
 /// This runs in batches to avoid blocking the database and can be called after app startup.
@@ -428,7 +462,6 @@ pub async fn backfill_parameter_columns(app: tauri::AppHandle) -> Result<usize, 
     }).await.map_err(|e| e.to_string())?
 }
 
-
 /// Numeric range for a parameter
 #[derive(serde::Serialize, specta::Type)]
 pub struct NumericRange {
@@ -456,7 +489,7 @@ pub async fn get_parameter_ranges(
     where_clause: Option<String>,
     params_json: Option<String>,
     collection_id: Option<String>,
-    lora_name: Option<String>
+    lora_name: Option<String>,
 ) -> Result<ParameterRanges, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
@@ -621,13 +654,17 @@ pub async fn mark_images_corrupt(app: tauri::AppHandle, ids: Vec<String>) -> Res
         let mut updated_count = 0;
         {
             // We use a prepared statement for safety
-            let mut stmt = tx.prepare_cached("
+            let mut stmt = tx
+                .prepare_cached(
+                    "
                 UPDATE images 
                 SET is_corrupt = 1, 
                     thumbnail_path = '', 
                     micro_thumbnail = NULL 
                 WHERE id = ?1
-            ").map_err(|e| e.to_string())?;
+            ",
+                )
+                .map_err(|e| e.to_string())?;
 
             for id in ids {
                 updated_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
@@ -637,7 +674,9 @@ pub async fn mark_images_corrupt(app: tauri::AppHandle, ids: Vec<String>) -> Res
         tx.commit().map_err(|e| e.to_string())?;
         log::info!("[DB] Marked {} images as corrupt", updated_count);
         Ok(updated_count)
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Verify integrity of the entire library.
@@ -661,16 +700,19 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
 
         // 1. Get all images
         let images: Vec<(String, String, Option<String>)> = {
-            let mut stmt = conn.prepare("SELECT id, path, thumbnail_path FROM images")
+            let mut stmt = conn
+                .prepare("SELECT id, path, thumbnail_path FROM images")
                 .map_err(|e| e.to_string())?;
-            
-            let rows = stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?, 
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?
-                ))
-            }).map_err(|e| e.to_string())?;
+
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
 
             let mut res = Vec::new();
             for r in rows {
@@ -682,7 +724,11 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
         };
 
         if images.is_empty() {
-             return Ok(IntegrityResult { missing: 0, recovered: 0, broken_thumbs: 0 });
+            return Ok(IntegrityResult {
+                missing: 0,
+                recovered: 0,
+                broken_thumbs: 0,
+            });
         }
 
         let mut ids_to_mark_missing = Vec::new();
@@ -707,14 +753,16 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
 
         // Apply updates
         let tx = conn.transaction().map_err(|e| e.to_string())?;
-        
+
         let mut missing_count = 0;
         let mut recovered_count = 0; // Not explicitly tracking previously-missing
         let mut thumb_count = 0;
 
         {
-             // 1. Mark Missing
-            let mut stmt = tx.prepare_cached("UPDATE images SET is_missing = 1 WHERE id = ?").map_err(|e| e.to_string())?;
+            // 1. Mark Missing
+            let mut stmt = tx
+                .prepare_cached("UPDATE images SET is_missing = 1 WHERE id = ?")
+                .map_err(|e| e.to_string())?;
             for id in &ids_to_mark_missing {
                 missing_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
             }
@@ -722,30 +770,40 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
 
         {
             // 2. Mark Found (Recovered)
-             let mut stmt = tx.prepare_cached("UPDATE images SET is_missing = 0 WHERE id = ?").map_err(|e| e.to_string())?;
-             for id in &ids_to_mark_found {
-                 stmt.execute(params![id]).map_err(|e| e.to_string())?;
-             }
-             recovered_count = ids_to_mark_found.len(); 
+            let mut stmt = tx
+                .prepare_cached("UPDATE images SET is_missing = 0 WHERE id = ?")
+                .map_err(|e| e.to_string())?;
+            for id in &ids_to_mark_found {
+                stmt.execute(params![id]).map_err(|e| e.to_string())?;
+            }
+            recovered_count = ids_to_mark_found.len();
         }
 
         {
             // 3. Clear Thumbs
-            let mut stmt = tx.prepare_cached("UPDATE images SET thumbnail_path = '', micro_thumbnail = NULL WHERE id = ?").map_err(|e| e.to_string())?;
+            let mut stmt = tx
+                .prepare_cached(
+                    "UPDATE images SET thumbnail_path = '', micro_thumbnail = NULL WHERE id = ?",
+                )
+                .map_err(|e| e.to_string())?;
             for id in ids_to_clear_thumb {
-               thumb_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
+                thumb_count += stmt.execute(params![id]).map_err(|e| e.to_string())?;
             }
         }
-        
+
         tx.commit().map_err(|e| e.to_string())?;
-        
-        println!("[Verify] Integrity check complete. Missing: {}, Found: {}, Broken Thumbs: {}", missing_count, recovered_count, thumb_count);
-        
+
+        println!(
+            "[Verify] Integrity check complete. Missing: {}, Found: {}, Broken Thumbs: {}",
+            missing_count, recovered_count, thumb_count
+        );
+
         Ok(IntegrityResult {
             missing: missing_count,
             recovered: recovered_count,
-            broken_thumbs: thumb_count
+            broken_thumbs: thumb_count,
         })
-
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

@@ -31,13 +31,13 @@ fn test_extract_comfyui_ui_format() {
 
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
-    
+
     // We set tool to unknown to ensure extract logic identifies it
     let meta = extract_comfyui_metadata(&chunks);
-    
+
     assert_eq!(meta.tool, "ComfyUI");
     assert_eq!(meta.model, "sd_xl_base_1.0"); // Found from widgets_values
-    assert_eq!(meta.steps, 30);              // Found from widgets_values
+    assert_eq!(meta.steps, 30); // Found from widgets_values
     assert_eq!(meta.sampler, "euler (normal)"); // Found from widgets_values
 }
 
@@ -65,7 +65,7 @@ fn test_extract_comfyui_ui_format_complex() {
 
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow_fixed.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
 
     assert!(meta.positive_prompt.contains("Part A"));
@@ -191,7 +191,7 @@ fn test_extract_comfyui_stylealigned_reproduction() {
 
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
-    
+
     let meta = extract_comfyui_metadata(&chunks);
 
     assert_eq!(meta.tool, "ComfyUI");
