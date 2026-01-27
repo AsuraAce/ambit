@@ -177,6 +177,115 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
     prompts.join(", ")
 }
 
+pub fn find_connected_controlnets(graph: &ComfyGraph, start_node_id: &str, input_name: &str) -> Vec<String> {
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+    let mut controlnets = Vec::new();
+
+    if let Some(source_id) = get_source_id(graph, start_node_id, input_name) {
+        queue.push_back(source_id);
+    }
+
+    while let Some(current_id) = queue.pop_front() {
+        if !visited.insert(current_id.clone()) {
+            continue;
+        }
+
+        if let Some(node) = graph.get_node(&current_id) {
+            let t = get_node_type(node);
+
+            // ControlNet Apply Logic
+            if t.contains("ControlNetApply") {
+                // Extract the ControlNet name
+                if let Some(cn_source) = get_source_id(graph, &current_id, "control_net") {
+                    if let Some(cn_name) = trace_controlnet_name_valid(graph, &cn_source) {
+                         if !controlnets.contains(&cn_name) {
+                             controlnets.push(cn_name);
+                         }
+                    }
+                }
+                // Continue upstream via conditioning
+                if let Some(s) = get_source_id(graph, &current_id, "positive") {
+                    queue.push_back(s);
+                } else if let Some(s) = get_source_id(graph, &current_id, "conditioning") {
+                    queue.push_back(s);
+                }
+                 if let Some(s) = get_source_id(graph, &current_id, "negative") {
+                     queue.push_back(s);
+                 }
+                 continue;
+            }
+
+            // combiners/splitters
+           if t == "ConditioningCombine" || t == "ConditioningAverage" {
+                if let Some(s) = get_source_id(graph, &current_id, "conditioning_1") {
+                    queue.push_back(s);
+                }
+                if let Some(s) = get_source_id(graph, &current_id, "conditioning_2") {
+                    queue.push_back(s);
+                }
+                continue;
+            }
+            if t == "ConditioningConcat" {
+                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") {
+                    queue.push_back(s);
+                }
+                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") {
+                    queue.push_back(s);
+                }
+                continue;
+            }
+
+            // General Pass-through
+             let relevant_prefixes = [
+                "conditioning",
+                "positive",
+                "cond",
+                "c",
+            ];
+             if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
+                 for (input_key, _input_val) in inputs_obj {
+                     let input_lower = input_key.to_lowercase();
+                      if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                          if input_name == "positive" && input_lower.contains("negative") {
+                             continue;
+                          }
+                          if let Some(s) = get_source_id(graph, &current_id, input_key) {
+                             queue.push_back(s);
+                          }
+                      }
+                 }
+             }
+        }
+    }
+    controlnets
+}
+
+fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<String> {
+    let mut current_id = node_id.to_string();
+    for _ in 0..10 {
+        if let Some(node) = graph.get_node(&current_id) {
+            let t = get_node_type(node);
+             if t == "ControlNetLoader" || t.contains("ControlNet Loader") {
+                 if let Some(name) = get_node_param(node, "control_net_name").and_then(|v| v.as_str()) {
+                     return Some(name.replace(".pth", "").replace(".safetensors", ""));
+                 }
+                 if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                     if let Some(s) = arr.first().and_then(|v| v.as_str()) {
+                          return Some(s.replace(".pth", "").replace(".safetensors", ""));
+                     }
+                 }
+             }
+             if let Some(s) = get_node_input_link(node, "control_net") {
+                 current_id = s;
+                 continue;
+             }
+        }
+        break;
+    }
+    None
+}
+
 /// Helper to resolve links (including wireless)
 fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
     if let Some(node) = graph.get_node(node_id) {

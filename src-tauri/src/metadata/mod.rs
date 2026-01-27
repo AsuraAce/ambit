@@ -28,6 +28,8 @@ pub struct ImageMetadata {
     pub loras: Vec<String>,
     #[serde(rename = "controlNets", skip_serializing_if = "Vec::is_empty")]
     pub control_nets: Vec<String>,
+    #[serde(rename = "ipAdapters", skip_serializing_if = "Vec::is_empty")]
+    pub ip_adapters: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub embeddings: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -115,6 +117,11 @@ impl ImageMetadata {
                 self.control_nets.push(x);
             }
         }
+        for x in other.ip_adapters {
+            if !self.ip_adapters.contains(&x) {
+                self.ip_adapters.push(x);
+            }
+        }
         for x in other.embeddings {
             if !self.embeddings.contains(&x) {
                 self.embeddings.push(x);
@@ -148,6 +155,7 @@ impl Default for ImageMetadata {
             negative_prompt: String::new(),
             loras: Vec::new(),
             control_nets: Vec::new(),
+            ip_adapters: Vec::new(),
             embeddings: Vec::new(),
             hypernetworks: Vec::new(),
             variation_id: None,
@@ -252,6 +260,12 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     for cn in secondary.control_nets {
         if !base.control_nets.contains(&cn) {
             base.control_nets.push(cn);
+        }
+    }
+
+    for ip in secondary.ip_adapters {
+        if !base.ip_adapters.contains(&ip) {
+            base.ip_adapters.push(ip);
         }
     }
 

@@ -7,3 +7,5 @@ pub mod strategies;
 pub mod subgraph_repro;
 pub mod test_workflow_repro;
 pub mod ui_format;
+mod repro_ip_adapter;
+pub mod repro_dual_ip_adapter;

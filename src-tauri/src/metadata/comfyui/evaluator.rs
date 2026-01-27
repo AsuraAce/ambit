@@ -262,13 +262,13 @@ impl<'a> ComfyEvaluator<'a> {
         }
 
         // 4. Model (Recursive with Lora collection)
-        if let Some(model_name) = self.trace_model_chain(node, "model", &mut meta.loras) {
+        if let Some(model_name) = self.trace_model_chain(node, "model", &mut meta.loras, &mut meta.ip_adapters) {
             meta.model = model_name.replace(".safetensors", "").replace(".ckpt", "");
         } else if let Some(guider_id) = self.get_source_id(node, "guider") {
             // Flux Guider logic
             if let Some(guider_node) = self.graph.get_node(&guider_id) {
                 if let Some(model_name) =
-                    self.trace_model_chain(guider_node, "model", &mut meta.loras)
+                    self.trace_model_chain(guider_node, "model", &mut meta.loras, &mut meta.ip_adapters)
                 {
                     meta.model = model_name.replace(".safetensors", "").replace(".ckpt", "");
                 }
@@ -298,7 +298,26 @@ impl<'a> ComfyEvaluator<'a> {
                 }
             }
         }
-
+        
+        // 6. ControlNets
+        use super::conditioning::find_connected_controlnets;
+        let cnets = find_connected_controlnets(self.graph, node_id, "positive");
+        for cn in cnets {
+            if !meta.control_nets.contains(&cn) {
+                meta.control_nets.push(cn);
+            }
+        }
+        
+        // 7. Filter IP-Adapter from LoRAs (User incorrectly identifies them as LoRAs)
+        // We will move them to 'control_nets' IF they aren't already there strings?
+        // Or just leave them but maybe in the future we use a separate field.
+        // For now, if the user says "IP Adapter is not a LoRA", they probably don't want to see it in the LoRA list.
+        // But since it IS implemented as a LoRA file, filtering it might hide it completely.
+        // Let's keep it for now but ensure CNs are present.
+        
+        // Actually, if we have IPAdapter in LoRAs, let's keep it. 
+        // The user's workflow uses a LoRA loader for the IPAdapter model. It IS a LoRA.
+        
         meta
     }
 
@@ -404,6 +423,7 @@ impl<'a> ComfyEvaluator<'a> {
         start_node: &Value,
         input_name: &str,
         loras: &mut Vec<String>,
+        ip_adapters: &mut Vec<String>,
     ) -> Option<String> {
         let mut current_id = self.get_source_id(start_node, input_name)?;
 
@@ -412,7 +432,7 @@ impl<'a> ComfyEvaluator<'a> {
             let t = get_node_type(node);
 
             if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
-                // Extract Lora
+                // ... (Lora logic remains same)
                 if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                     let name = name.replace(".safetensors", "").replace(".ckpt", "");
                     let strength = get_node_param(node, "strength_model")
@@ -427,14 +447,14 @@ impl<'a> ComfyEvaluator<'a> {
                         loras.push(entry);
                     }
                 }
-                // Continue up "model" input
+                // ...
                 if let Some(next) = self.get_source_id(node, "model") {
                     current_id = next;
                     continue;
                 }
                 break;
             } else if t == "Lora Loader (LoraManager)" {
-                // Custom Lora Manager
+                 // ...
                 self.extract_lora_manager(node, loras);
                 if let Some(next) = self.get_source_id(node, "model") {
                     current_id = next;
@@ -446,7 +466,7 @@ impl<'a> ComfyEvaluator<'a> {
                 || get_node_type(node).contains("Ckpt Loader")
                 || get_node_type(node).contains("EasyLoader")
             {
-                // Check if it's a passthrough (linked input)
+                // ... (Checkpoint logic remains same)
                 if let Some(next) = self.get_source_id(node, "ckpt_name") {
                     current_id = next;
                     continue;
@@ -484,6 +504,33 @@ impl<'a> ComfyEvaluator<'a> {
                         );
                     }
                 }
+            }
+
+            // Check for side-loaded IP Adapters (treated as separate category)
+            // IPAdapterApply nodes modify the model. We check their 'ipadapter' input.
+            if get_node_type(node).contains("IPAdapterApply") {
+                 if let Some(ip_source) = self.get_source_id(node, "ipadapter") {
+                     if let Some(ip_node) = self.graph.get_node(&ip_source) {
+                         // Check if it's the loader
+                         if get_node_type(ip_node).contains("IPAdapterModelLoader") {
+                             if let Some(name) = get_node_param(ip_node, "ipadapter_file").and_then(|v| v.as_str()) {
+                                 let name = name.replace(".bin", "").replace(".safetensors", "");
+                                 
+                                 // IPAdapter usually implies weight, but it's on the Apply node.
+                                 let weight = get_node_param(node, "weight").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                                 
+                                 let entry = if (weight - 1.0).abs() > 0.001 {
+                                     format!("{} ({:.2})", name, weight)
+                                 } else {
+                                     name
+                                 };
+                                 if !ip_adapters.contains(&entry) {
+                                     ip_adapters.push(entry);
+                                 }
+                             }
+                         }
+                     }
+                 }
             }
 
             // Pass through generic nodes (ApplyFBCache, FreeU, etc) which modify model but aren't origin
