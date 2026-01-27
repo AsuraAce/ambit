@@ -180,10 +180,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                     }
                 }
             },
-            "ckpt_name" | "unet_name" | "model_name" | "checkpoint" => {
+            "ckpt_name" | "unet_name" | "model_name" | "checkpoint" | "files" => {
                 for val in arr {
                     if let Some(s) = val.as_str() {
-                        if s.ends_with(".safetensors") || s.ends_with(".ckpt") { return Some(val); }
+                        if s.ends_with(".safetensors") || s.ends_with(".ckpt") || s.ends_with(".gguf") { return Some(val); }
                     }
                 }
             },

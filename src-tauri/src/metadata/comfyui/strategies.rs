@@ -28,7 +28,7 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             if let Some(v) = get_node_param(node, "scheduler").and_then(|v| v.as_str()) { 
                 if !meta.sampler.is_empty() { meta.sampler = format!("{} ({})", meta.sampler, v); } 
             }
-            if let Some(v) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) { meta.model = v.replace(".safetensors", "").replace(".ckpt", ""); found = true; }
+            if let Some(v) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) { meta.model = v.replace(".safetensors", "").replace(".ckpt", "").replace(".gguf", ""); found = true; }
         }
         
         // ShowText / ShowAnything (Specific labels)
@@ -50,9 +50,22 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
         }
 
         // Try to extract model from any node that might have it
-        if meta.model.is_empty() {
+        if meta.model.is_empty() || meta.model == "Unknown" {
+            // Skip LoRA nodes and other auxiliary models (upscalers, detectors, etc)
+            // as they often contain "model-like" filenames but are not the main checkpoint
+            if t_lower.contains("lora") 
+                || t_lower.contains("upscale") 
+                || t_lower.contains("detector")
+                || t_lower.contains("segment")
+                || t_lower.contains("samloader") // Specific to avoid ignoring "Sampler" which contains "sam"
+                || t_lower.contains("detailer")
+            {
+                continue;
+            }
+
             if let Some(model_name) = extract_model_from_node(node) {
                 meta.model = model_name;
+                found = true;
             }
         }
     }
@@ -106,10 +119,10 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
 }
 
 fn extract_model_from_node(node: &Value) -> Option<String> {
-    if let Some(name) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "")); }
-    if let Some(name) = get_node_param(node, "unet_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "")); }
-    if let Some(name) = get_node_param(node, "model_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "")); }
-    if let Some(name) = get_node_param(node, "checkpoint").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "")); }
+    if let Some(name) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "").replace(".gguf", "")); }
+    if let Some(name) = get_node_param(node, "unet_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "").replace(".gguf", "")); }
+    if let Some(name) = get_node_param(node, "model_name").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "").replace(".gguf", "")); }
+    if let Some(name) = get_node_param(node, "checkpoint").and_then(|v| v.as_str()) { return Some(name.replace(".safetensors", "").replace(".ckpt", "").replace(".gguf", "")); }
     None
 }
 
