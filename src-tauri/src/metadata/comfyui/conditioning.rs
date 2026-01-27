@@ -109,10 +109,8 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         let input_lower = name.to_lowercase();
                         if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
                             if input_name == "positive" && input_lower.contains("negative") { continue; }
-                            if let Some(link_id) = input.get("link").and_then(|v| v.as_i64()) {
-                                // We need a way to resolve this Link ID to a Node ID...
-                                // Fortunately graph.rs should have put it in _resolved_inputs already.
-                                // If we are here, it means _resolved_inputs was missing or incomplete.
+                            if input.get("link").and_then(|v| v.as_i64()).is_some() {
+                                // Link ID found but resolving it to Node ID requires more context or _resolved_inputs.
                             }
                         }
                     }
@@ -199,7 +197,7 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
          
          // UI Format: widgets_values
          if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-             if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
+             if let Some(s) = arr.first().and_then(|v| v.as_str()) { return Some(s.to_string()); }
          }
          
          // Linked input fallback (e.g. PrimitiveString linked to another PrimitiveString or logic)
@@ -221,7 +219,6 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
                  parts.push(s);
              }
          }
-         let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or(" ");
          let delimiter = get_node_param(node, "delimiter").and_then(|v| v.as_str()).unwrap_or(" ");
          return Some(parts.join(delimiter));
     }
@@ -249,7 +246,7 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
          }
          // Check widgets if param didn't catch it
          if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-             if let Some(s) = arr.get(0).and_then(|v| v.as_str()) { return Some(s.to_string()); }
+             if let Some(s) = arr.first().and_then(|v| v.as_str()) { return Some(s.to_string()); }
          }
     }
 

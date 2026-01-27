@@ -18,8 +18,10 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
     // Breadcrumb for ComfyUI parsing
     println!("[ComfyUI] Parsing metadata...");
     
-    let mut meta = ImageMetadata::default();
-    meta.tool = "ComfyUI".to_string();
+    let mut meta = ImageMetadata {
+        tool: "ComfyUI".to_string(),
+        ..ImageMetadata::default()
+    };
 
     // Layer 1: Archival (Workflow JSON)
     if let Some(workflow) = chunks.get("workflow") {

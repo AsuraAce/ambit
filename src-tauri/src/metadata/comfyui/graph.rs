@@ -126,21 +126,12 @@ pub fn get_node_type(node: &Value) -> &str {
         .unwrap_or("")
 }
 
-pub fn is_output_node(t: &str) -> bool {
-    t == "SaveImage" || t == "PreviewImage" || t == "ImageSave" || t.contains("SaveImage")
-}
+
 
 pub fn get_node_title(node: &Value) -> Option<&str> {
     node.get("_meta").and_then(|m| m.get("title"))
         .or_else(|| node.get("title"))
         .and_then(|v| v.as_str())
-}
-
-pub fn is_model_loader(t: &str) -> bool {
-    t == "CheckpointLoaderSimple" || t == "CheckpointLoader" || t == "CheckpointLoader|Lib" || 
-    t == "CheckpointSelector" || t == "UNETLoader" || t == "LoadDiffusionModel" || 
-    t == "DiffusionLoader" || t == "DualCLIPLoader" || t.contains("EasyLoader") ||
-    t.contains("ParameterGenerator") || t.contains("Ckpt Loader") // Support SDParameterGenerator, Ckpt Loader JK, etc
 }
 
 pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
@@ -161,50 +152,69 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "cfg" => return arr.get(7),
                 "sampler_name" => return arr.get(8),
                 "scheduler" => return arr.get(9),
-                "ckpt_name" => return arr.get(0),
+                "ckpt_name" => return arr.first(),
                 _ => {}
             }
         }
 
         // Heuristic mapping for UI format
-        for val in arr {
-            match key {
-                "steps" => {
+        match key {
+            "steps" => {
+                for val in arr {
                     if let Some(v) = val.as_u64() {
-                        if v > 0 && v < 200 { return Some(val); } // Lowered limit for steps to avoid seed conflict
+                        if v > 0 && v < 200 { return Some(val); }
                     }
-                },
-                "seed" | "noise_seed" => {
+                }
+            },
+            "seed" | "noise_seed" => {
+                for val in arr {
                     if let Some(v) = val.as_i64() {
-                        if v > 100000 || v < -1 { return Some(val); }
+                        if !(-1..=100000).contains(&v) { return Some(val); }
                     }
-                },
-                "cfg" => if val.is_f64() || val.is_i64() { return Some(val); },
-                "ckpt_name" | "unet_name" | "model_name" => {
+                }
+            },
+            "cfg" => {
+                for val in arr {
+                    if let Some(v) = val.as_f64() {
+                        if (0.1..=30.0).contains(&v) { return Some(val); }
+                    }
+                }
+            },
+            "ckpt_name" | "unet_name" | "model_name" | "checkpoint" => {
+                for val in arr {
                     if let Some(s) = val.as_str() {
                         if s.ends_with(".safetensors") || s.ends_with(".ckpt") { return Some(val); }
                     }
-                },
-                "sampler_name" => {
+                }
+            },
+            "sampler_name" => {
+                for val in arr {
                     if let Some(s) = val.as_str() {
                         let common = ["euler", "dpmpp", "uni_pc", "heun", "ddim", "ancestral", "2m", "sde", "ddpm", "lcm", "ipndm"];
                         let lower = s.to_lowercase();
                         if common.iter().any(|&c| lower.contains(c)) { return Some(val); }
-                        // Fallback
                         let exclusions = ["fixed", "increment", "decrement", "random"];
-                        if !s.contains(" ") && s.len() < 20 && !exclusions.contains(&lower.as_str()) { return Some(val); }
+                        if !s.contains(' ') && s.len() < 20 && !exclusions.contains(&lower.as_str()) { return Some(val); }
                     }
-                },
-                "scheduler" => {
+                }
+            },
+            "scheduler" => {
+                for val in arr {
                     if let Some(s) = val.as_str() {
                         let common = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "beta"];
                         let lower = s.to_lowercase();
                         if common.iter().any(|&c| lower.contains(c)) { return Some(val); }
                     }
-                },
-                "text" => if val.is_string() && val.as_str().unwrap().len() > 5 { return Some(val); },
-                _ => {}
-            }
+                }
+            },
+            "text" => {
+                for val in arr {
+                    if let Some(s) = val.as_str() {
+                        if s.len() > 5 { return Some(val); }
+                    }
+                }
+            },
+            _ => {}
         }
     }
     None

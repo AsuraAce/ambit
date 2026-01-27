@@ -15,7 +15,7 @@ impl<'a> ComfyEvaluator<'a> {
         Self { graph }
     }
 
-    pub fn split_sampler_scheduler(sampler_field: &str) -> (Option<String>, Option<String>) {
+    pub fn _split_sampler_scheduler(sampler_field: &str) -> (Option<String>, Option<String>) {
         if let Some((samp, sched)) = sampler_field.split_once(' ') {
             // Check if second part looks like a scheduler
             let common_schedulers = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "beta"];
@@ -288,7 +288,7 @@ impl<'a> ComfyEvaluator<'a> {
                         // Just take the first valid link
                         // NOTE: Bypassed nodes pass input index 0 to output index 0 usually.
                         // Simplification: We take the first input we can find.
-                        if let Some((_, val)) = obj.iter().next() {
+                        if obj.values().next().is_some() {
                              // Parse link format (Array [link_id, slot] or String/Number)
                              // Warning: This depends on graph.rs normalization from 'formatted'
                              // graph.rs `get_node_input_link` logic needs to be robust. 

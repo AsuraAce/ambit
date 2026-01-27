@@ -1,7 +1,6 @@
 use super::graph::{ComfyGraph, get_node_type, get_node_param, get_node_title};
 use super::conditioning::evaluate_string_node;
 use crate::metadata::ImageMetadata;
-use std::collections::HashMap;
 use serde_json::Value;
 
 /// Layer 2: Explicit Metadata Nodes
@@ -95,11 +94,9 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                          if text.trim().len() > 2 { meta.negative_prompt = text; }
                      }
                  }
-             } else {
-                 if meta.positive_prompt.trim().is_empty() {
-                     if let Some(text) = evaluate_string_node(graph, id, 0) {
-                         if text.trim().len() > 2 { meta.positive_prompt = text; }
-                     }
+             } else if meta.positive_prompt.trim().is_empty() {
+                 if let Some(text) = evaluate_string_node(graph, id, 0) {
+                     if text.trim().len() > 2 { meta.positive_prompt = text; }
                  }
              }
         }
