@@ -436,16 +436,8 @@ impl<'a> ComfyEvaluator<'a> {
                 // ... (Lora logic remains same)
                 if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                     let name = name.replace(".safetensors", "").replace(".ckpt", "");
-                    let strength = get_node_param(node, "strength_model")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(1.0);
-                    let entry = if (strength - 1.0).abs() > 0.001 {
-                        format!("{} ({:.2})", name, strength)
-                    } else {
-                        name
-                    };
-                    if !loras.contains(&entry) {
-                        loras.push(entry);
+                    if !loras.contains(&name) {
+                        loras.push(name);
                     }
                 }
                 // ...
@@ -518,15 +510,8 @@ impl<'a> ComfyEvaluator<'a> {
                                  let name = name.replace(".bin", "").replace(".safetensors", "");
                                  
                                  // IPAdapter usually implies weight, but it's on the Apply node.
-                                 let weight = get_node_param(node, "weight").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                                 
-                                 let entry = if (weight - 1.0).abs() > 0.001 {
-                                     format!("{} ({:.2})", name, weight)
-                                 } else {
-                                     name
-                                 };
-                                 if !ip_adapters.contains(&entry) {
-                                     ip_adapters.push(entry);
+                                 if !ip_adapters.contains(&name) {
+                                     ip_adapters.push(name);
                                  }
                              }
                          }
@@ -561,16 +546,10 @@ impl<'a> ComfyEvaluator<'a> {
                 for lora in values {
                     if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
                         let name = name.replace(".safetensors", "").replace(".ckpt", "");
-                        let strength = lora.get("strength").and_then(|v| v.as_f64()).unwrap_or(1.0);
                         let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
                         if active {
-                            let entry = if (strength - 1.0).abs() > 0.001 {
-                                format!("{} ({:.2})", name, strength)
-                            } else {
-                                name
-                            };
-                            if !loras.contains(&entry) {
-                                loras.push(entry);
+                            if !loras.contains(&name) {
+                                loras.push(name);
                             }
                         }
                     }

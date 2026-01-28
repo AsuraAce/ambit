@@ -160,6 +160,30 @@ pub async fn save_images_batch(
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
 
+                    let mut cn_stmt = tx.prepare_cached("
+                        INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
+                        SELECT ?1, 
+                            CASE 
+                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                ELSE value 
+                            END
+                        FROM json_each(?2, '$.controlNets')
+                        WHERE value IS NOT NULL AND value != ''
+                    ").map_err(|e| e.to_string())?;
+
+                    let mut ip_stmt = tx.prepare_cached("
+                        INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
+                        SELECT ?1, 
+                            CASE 
+                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                ELSE value 
+                            END
+                        FROM json_each(?2, '$.ipAdapters')
+                        WHERE value IS NOT NULL AND value != ''
+                    ").map_err(|e| e.to_string())?;
+
                     let mut emb_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
                         SELECT ?1, 
@@ -214,6 +238,8 @@ pub async fn save_images_batch(
                         lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
                         emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
                         hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
                     }
                 }
 
@@ -478,6 +504,8 @@ pub struct ParameterRanges {
     pub denoising_strength: Option<NumericRange>,
     pub samplers: Vec<String>,
     pub generation_types: Vec<String>,
+    pub control_nets: Vec<String>,
+    pub ip_adapters: Vec<String>,
 }
 
 /// Get parameter ranges and distinct values for dynamic filter UI.
@@ -628,6 +656,54 @@ pub async fn get_parameter_ranges(
                 .map_err(|e| e.to_string())?;
             rows.filter_map(|r| r.ok()).collect()
         };
+
+        // Distinct ControlNets (REACTIVE: respect filters)
+        let control_nets: Vec<String> = {
+            let sql = format!(
+                "SELECT DISTINCT controlnet_name 
+                 FROM image_controlnets
+                 JOIN images ON images.id = image_controlnets.image_id
+                 {} -- reactive_where starts with WHERE, but images is aliased? No, images is not aliased in reactive_where usually.
+                 -- Wait, buildSqlWhereClause uses 'images.sampler' etc or just 'sampler'?
+                 -- In get_parameter_ranges, reactive_where comes from frontend.
+                 ORDER BY 1",
+                 reactive_where.replace("WHERE", "WHERE images.id IN (SELECT id FROM images ") + ")" // This is a bit hacky but safe
+            );
+            
+            // Actually, let's use a joining approach for consistency
+            let sql = format!(
+                "SELECT DISTINCT cn.controlnet_name 
+                 {}
+                 JOIN image_controlnets cn ON cn.image_id = images.id
+                 {}
+                 ORDER BY 1",
+                 from_clause,
+                 reactive_where
+            );
+
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        // Distinct IP-Adapters (REACTIVE: respect filters)
+        let ip_adapters: Vec<String> = {
+            let sql = format!(
+                "SELECT DISTINCT ip.ipadapter_name 
+                 {}
+                 JOIN image_ipadapters ip ON ip.image_id = images.id
+                 {}
+                 ORDER BY 1",
+                 from_clause,
+                 reactive_where
+            );
+
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
         
         Ok(ParameterRanges {
             steps,
@@ -635,6 +711,8 @@ pub async fn get_parameter_ranges(
             denoising_strength,
             samplers,
             generation_types,
+            control_nets,
+            ip_adapters,
         })
     }).await.map_err(|e| e.to_string())?
 }

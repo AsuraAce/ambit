@@ -83,14 +83,14 @@ fn test_repro_ip_adapter_lora() {
     println!("Extracted LoRAs: {:?}", meta.loras);
     println!("Extracted ControlNets: {:?}", meta.control_nets);
     
-    // IP Adapter check
-    let found_ip_adapter = meta.loras.iter().any(|l| l.contains("ip-adapter"));
-    println!("Found IP Adapter in LoRAs: {}", found_ip_adapter);
-    assert!(found_ip_adapter, "Should find the IP-Adapter LoRA (current behavior)");
+    // IP Adapter check (Should be consolidated name without weight "(0.60)")
+    println!("Extracted LoRAs: {:?}", meta.loras);
+    assert!(meta.loras.contains(&"ip-adapter-faceid-plusv2_sd15_lora".to_string()));
+    assert!(!meta.loras.iter().any(|l| l.contains("(")), "LoRA names should not contain weights");
     
     // ControlNet check
-    let found_cn = meta.control_nets.iter().any(|cn| cn.contains("openpose"));
-    println!("Found ControlNet: {}", found_cn);
-    assert!(found_cn, "Should find the ControlNet");
+    println!("Extracted ControlNets: {:?}", meta.control_nets);
+    assert!(meta.control_nets.contains(&"control_v11p_sd15_openpose".to_string()));
+    assert!(!meta.control_nets.iter().any(|cn| cn.contains(".pth")), "ControlNet names should not contain extensions");
 }
 

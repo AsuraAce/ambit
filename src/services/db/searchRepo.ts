@@ -17,6 +17,8 @@ export interface Facets {
     loras: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
     embeddings: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
     hypernetworks: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
+    controlNets: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
+    ipAdapters: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
     tools: string[];
 }
 
@@ -26,6 +28,8 @@ export interface ValidFacetNames {
     embeddings: string[];
     hypernetworks: string[];
     tools: string[];
+    controlNets: string[];
+    ipAdapters: string[];
 }
 
 export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
@@ -407,7 +411,7 @@ export const getFacets = async (
 ): Promise<Facets> => {
     const db = await getDb();
 
-    const result: Facets = { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+    const result: Facets = { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] };
 
     try {
         // Map frontend type names to cache type names and create parameterized query
@@ -449,6 +453,12 @@ export const getFacets = async (
                 case 'hypernetworks':
                     result.hypernetworks.push(item);
                     break;
+                case 'control_nets':
+                    result.controlNets.push(item);
+                    break;
+                case 'ip_adapters':
+                    result.ipAdapters.push(item);
+                    break;
                 case 'tools':
                     result.tools.push(row.resource_name);
                     break;
@@ -459,7 +469,7 @@ export const getFacets = async (
 
     } catch (e) {
         console.error('[DB] Failed to get facets from cache', e);
-        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
     }
 };
 
@@ -489,10 +499,10 @@ export const getValidFacetNames = async (
             return result.data;
         } else {
             console.error('[DB] Failed to get valid facet names:', result.error);
-            return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+            return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
         }
     } catch (e) {
         console.error('[DB] Failed to get valid facet names', e);
-        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
     }
 };

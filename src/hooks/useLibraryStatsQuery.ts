@@ -29,6 +29,8 @@ const INITIAL_FACETS: Facets = {
     loras: [],
     embeddings: [],
     hypernetworks: [],
+    controlNets: [],
+    ipAdapters: [],
     tools: []
 };
 
@@ -54,7 +56,7 @@ export const useLibraryStatsQuery = ({
     );
 
     // Always fetch all facet types - they're cheap from facet_cache
-    const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'];
+    const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
     // Determine if we have any active filters that would benefit from drill-down
     const hasActiveFilters = useMemo(() => {
@@ -68,6 +70,8 @@ export const useLibraryStatsQuery = ({
             filters.dateRange !== 'all' ||
             filters.favoritesOnly ||
             filters.pinnedOnly ||
+            filters.controlNets.length > 0 ||
+            filters.ipAdapters.length > 0 ||
             !!filters.searchQuery
         );
     }, [filters]);
@@ -110,6 +114,8 @@ export const useLibraryStatsQuery = ({
             if (filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
             if (filters.tools.length > 0 && filters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
             if (filters.models.length > 0 && filters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
+            if (filters.controlNets.length > 0 && filters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
+            if (filters.ipAdapters.length > 0 && filters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
@@ -123,6 +129,8 @@ export const useLibraryStatsQuery = ({
                     if (cat === 'hypernetworks') excludeKey = 'hypernetworks';
                     if (cat === 'tools') excludeKey = 'tools';
                     if (cat === 'checkpoints') excludeKey = 'models';
+                    if (cat === 'controlNets') excludeKey = 'controlNets';
+                    if (cat === 'ipAdapters') excludeKey = 'ipAdapters';
 
                     // Build "Partial" Where Clause (Global - Self)
                     const partial = buildSqlWhereClause(

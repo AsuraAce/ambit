@@ -41,6 +41,8 @@ const INITIAL_FILTERS: FilterState = {
     hypernetworks: [],
     samplers: [],
     generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
     collectionId: null,

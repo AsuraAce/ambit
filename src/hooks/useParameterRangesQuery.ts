@@ -43,7 +43,7 @@ export function useParameterRangesQuery(filters: FilterState) {
                 settings.maskedKeywords,
                 allCollections,
                 false,
-                ['samplers', 'generationTypes'] // Exclude these from WHERE clause
+                ['samplers', 'generationTypes', 'controlNets', 'ipAdapters'] // Exclude these from WHERE clause
             );
 
             const result = await commands.getParameterRanges(

@@ -130,6 +130,8 @@ export interface FilterState {
   hypernetworks: string[];
   samplers: string[]; // Filter by sampler name
   generationTypes: string[]; // Filter by generation type (txt2img, img2img, etc.)
+  controlNets: string[];
+  ipAdapters: string[];
   dateRange: 'all' | 'today' | 'week' | 'month';
   favoritesOnly: boolean;
   collectionId: string | null;
@@ -176,7 +178,7 @@ export type FacetSortOption =
   | 'recent_desc' | 'recent_asc'
   | 'added_desc' | 'added_asc';
 
-export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'tools';
+export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters' | 'tools';
 
 
 export interface PaginationCursor {

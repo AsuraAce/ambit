@@ -36,39 +36,23 @@ export const buildSqlWhereClause = (
     }
 
     // 2. Collection ID (Hybrid Logic)
-    // NOTE: For manual collection filtering, we DON'T add a WHERE clause here.
-    // Instead, the collectionId is returned separately and searchRepo uses INNER JOIN 
-    // with collection_images for much better performance (starts from smaller table).
     if (filters.collectionId) {
         const col = collections?.find(c => c.id === filters.collectionId);
         const subConditions: string[] = [];
 
-        // ONLY add smart filter rules to WHERE - manual inclusions handled via INNER JOIN
-
-        // B. Smart Filter Rules (Hybrid Mode)
-        // If the collection defines smart rules, we combine them with manual inclusions using OR.
-        // If the collection defines smart rules, we combine them with manual inclusions using OR.
         if (col && col.filters) {
-            /** 
-             * DATE PRE-EMPTION LOGIC:
-             * If the user has selected a GLOBAL date filter (e.g. "Today") in the filter panel,
-             * it should take precedence over any date range saved inside the smart collection's own rules.
-             * This allows "narrowing down" a smart collection by date.
-             */
             const effectiveSmartFilters = { ...col.filters };
             if (filters.dateRange !== 'all') {
-                effectiveSmartFilters.dateRange = 'all'; // Disable internal date rule to let global one apply
+                effectiveSmartFilters.dateRange = 'all';
             }
 
-            // Recursively build conditions for the smart rules
-            // We set isRecursive=true to skip repeating base constraints (is_deleted, privacy)
             const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
                 effectiveSmartFilters,
-                false,   // privacy handled by parent
+                false,
                 'blur',
                 [],
                 [],
-                true     // isRecursive
+                true
             );
 
             if (smartWhere) {
@@ -80,7 +64,6 @@ export const buildSqlWhereClause = (
         if (subConditions.length > 0) {
             let combined = `(${subConditions.join(' OR ')})`;
 
-            // C. Manual Exclusions
             if (col && col.manualExclusions && col.manualExclusions.length > 0) {
                 const placeholders = col.manualExclusions.map(() => '?').join(',');
                 combined = `(${combined} AND id NOT IN (${placeholders}))`;
@@ -102,7 +85,7 @@ export const buildSqlWhereClause = (
         conditions.push('is_pinned = 1');
     }
 
-    // 5. Models (Array) - Use denormalized resolved_model_name and model_hash columns
+    // 5. Models (Array)
     if (filters.models.length > 0 && !excludeCategories.includes('models')) {
         const matchMode = filters.matchModes?.models || 'any';
         const modelConditions = filters.models.map(m => {
@@ -110,13 +93,12 @@ export const buildSqlWhereClause = (
                 return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
             }
             params.push(m);
-            // Use indexed resolved_model_name column for fast lookup
             return `resolved_model_name = ?`;
         });
         conditions.push(`(${modelConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
-    // 5. Tools (Array) - Use denormalized tool column
+    // 5. Tools (Array)
     if (filters.tools.length > 0 && !excludeCategories.includes('tools')) {
         const matchMode = filters.matchModes?.tools || 'any';
         const toolConditions = filters.tools.map(t => {
@@ -129,18 +111,12 @@ export const buildSqlWhereClause = (
         conditions.push(`(${toolConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
-    // 6. LoRAs, Embeddings, Hypernetworks - Use denormalized junction tables for fast filtering
-    // For SINGLE lora filter, we skip adding WHERE and use INNER JOIN in searchRepo instead (like collections)
-    // UNLESS matchMode is 'all', in which case we might want to force standard behavior for consistency, 
-    // but single 'AND' is same as single 'OR', so optimization is still valid for length=1.
-    // For multiple loras (OR condition), we still use EXISTS
-
+    // 6. Assets
     // LoRAs
     const loraMode = filters.matchModes?.loras || 'any';
     if (!excludeCategories.includes('loras')) {
         if (filters.loras.length === 1 && loraMode === 'any') {
-            // Single lora - will use INNER JOIN in searchRepo, don't add WHERE condition
-            // The loraName is returned and handled by searchRepo
+            // Handled by searchRepo
         } else if (filters.loras.length > 0) {
             const loraConditions = filters.loras.map(l => {
                 params.push(l);
@@ -170,18 +146,36 @@ export const buildSqlWhereClause = (
         conditions.push(`(${hnConditions.join(hnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
+    // ControlNets
+    const cnMode = filters.matchModes?.controlNets || 'any';
+    if (filters.controlNets && filters.controlNets.length > 0 && !excludeCategories.includes('controlNets')) {
+        const cnConditions = filters.controlNets.map(c => {
+            params.push(c);
+            return `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ?)`;
+        });
+        conditions.push(`(${cnConditions.join(cnMode === 'all' ? ' AND ' : ' OR ')})`);
+    }
+
+    // IP-Adapters
+    const ipMode = filters.matchModes?.ipAdapters || 'any';
+    if (filters.ipAdapters && filters.ipAdapters.length > 0 && !excludeCategories.includes('ipAdapters')) {
+        const ipConditions = filters.ipAdapters.map(i => {
+            params.push(i);
+            return `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ?)`;
+        });
+        conditions.push(`(${ipConditions.join(ipMode === 'all' ? ' AND ' : ' OR ')})`);
+    }
+
     // 7. Search Query (Advanced)
     if (filters.searchQuery) {
-        // Regex to handle quoted phrases or single terms, optionally prefixed with - or !
         const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
         let match;
 
         while ((match = termRegex.exec(filters.searchQuery)) !== null) {
-            const prefix = match[1]; // - or !
+            const prefix = match[1];
             const isNegative = !!prefix;
             let term = match[2];
 
-            // Remove quotes if present
             if (term.startsWith('"') && term.endsWith('"')) {
                 term = term.slice(1, -1).replace(/\\"/g, '"');
             }
@@ -211,14 +205,12 @@ export const buildSqlWhereClause = (
                     else if (val.startsWith('<')) { sql = "height < ?"; param = Number(val.slice(1)); }
                     else { sql = "height = ?"; param = Number(val); }
                 } else if (key === 'model') {
-                    // Search specific model entries only - prevents matching random JSON keys like "scheuler"
                     sql = `(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)`;
                     param = `%${val}%`;
-                    // Push param twice for the two ? placeholders
                     conditions.push(sql);
                     params.push(param);
                     params.push(param);
-                    continue; // Skip the normal sql handling below
+                    continue;
                 } else if (key === 'seed') {
                     sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
                     param = `%${val}%`;
@@ -226,11 +218,9 @@ export const buildSqlWhereClause = (
                     sql = `json_extract(metadata_json, '$.negativePrompt') LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'file' || key === 'filename' || key === 'path') {
-                    // Search filename/path only
                     sql = `path LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'all') {
-                    // Legacy behavior: search everything (path + full metadata)
                     if (isNegative) {
                         conditions.push(`(path NOT LIKE ? AND metadata_json NOT LIKE ?)`);
                     } else {
@@ -238,18 +228,21 @@ export const buildSqlWhereClause = (
                     }
                     params.push(`%${val}%`);
                     params.push(`%${val}%`);
-                    continue; // Skip the normal sql handling below
+                    continue;
                 } else if (key === 'sampler') {
-                    // Use indexed column
                     sql = `sampler LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'tool') {
-                    // Use indexed column
                     sql = `tool LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'lora') {
-                    // Use normalized junction table for accurate lookup
                     sql = `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)`;
+                    param = `%${val}%`;
+                } else if (key === 'cn' || key === 'controlnet') {
+                    sql = `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name LIKE ?)`;
+                    param = `%${val}%`;
+                } else if (key === 'ip' || key === 'ipadapter') {
+                    sql = `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name LIKE ?)`;
                     param = `%${val}%`;
                 } else if (key === 'upscaled') {
                     sql = `json_extract(metadata_json, '$.upscaled') = ?`;
@@ -265,8 +258,6 @@ export const buildSqlWhereClause = (
                     params.push(param);
                 }
             } else {
-                // General text search - POSITIVE PROMPT ONLY (not negative prompt or metadata blob)
-                // This prevents semantic inversions where searching "nsfw" matches images avoiding NSFW
                 if (isNegative) {
                     conditions.push(`json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?`);
                 } else {
@@ -277,7 +268,7 @@ export const buildSqlWhereClause = (
         }
     }
 
-    // 8. Range Sliders - Use denormalized columns (perf: no json_extract!)
+    // 8. Range Sliders
     if (filters.minSteps !== undefined) {
         conditions.push("steps >= ?");
         params.push(filters.minSteps);
@@ -295,17 +286,16 @@ export const buildSqlWhereClause = (
         params.push(filters.maxCfg);
     }
 
-    // 9. Samplers (Array) - Use denormalized sampler column (already normalized)
+    // 9. Samplers
     if (filters.samplers && filters.samplers.length > 0 && !excludeCategories.includes('samplers')) {
         const samplerConditions = filters.samplers.map(() => {
             return `sampler = ?`;
         });
-        // Push normalized values to match the pre-normalized column
         filters.samplers.forEach(s => params.push(s.toLowerCase().replace(/[_-]/g, ' ')));
         conditions.push(`(${samplerConditions.join(' OR ')})`);
     }
 
-    // 10. Generation Types (Array) - Use denormalized generation_type column
+    // 10. Generation Types
     if (filters.generationTypes && filters.generationTypes.length > 0 && !excludeCategories.includes('generationTypes')) {
         const genTypeConditions = filters.generationTypes.map(() => {
             return `generation_type = ?`;
@@ -315,7 +305,6 @@ export const buildSqlWhereClause = (
     }
 
     // 11. Date Range
-
     if (filters.dateRange !== 'all') {
         const midnight = new Date();
         midnight.setHours(0, 0, 0, 0);
@@ -335,15 +324,9 @@ export const buildSqlWhereClause = (
 
     const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';
 
-    // Return collectionId for INNER JOIN optimization in searchRepo
-    // Only for non-smart collections (manual collections) that don't have filter rules
     const col = collections?.find(c => c.id === filters.collectionId);
     const isManualOnly = filters.collectionId && (!col?.filters);
 
-    // Return loraName for single-lora filter INNER JOIN optimization
-    // OPTIMIZATION: Only use if matchMode is 'any' (default). 
-    // If 'all', we might have logic differences (though for length=1 they are identical).
-    // CRITICAL: Do NOT return loraName if 'loras' is excluded (Disjunctive Faceting)
     const loraModeCheck = filters.matchModes?.loras || 'any';
     const loraExcluded = excludeCategories.includes('loras');
     const singleLoraName = (!loraExcluded && filters.loras.length === 1 && loraModeCheck === 'any') ? filters.loras[0] : undefined;
