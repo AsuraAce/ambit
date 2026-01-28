@@ -18,15 +18,15 @@ pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
             let pos_part = &pre_steps[..neg_idx];
             let neg_part = &pre_steps[neg_idx + "negative prompt:".len()..];
 
-            if !pos_part.trim().is_empty() {
+            if !pos_part.trim().is_empty() && pos_part.trim() != "undefined" {
                 meta.positive_prompt = pos_part.trim().to_string();
             }
-            if !neg_part.trim().is_empty() {
+            if !neg_part.trim().is_empty() && neg_part.trim() != "undefined" {
                 meta.negative_prompt = neg_part.trim().to_string();
             }
         } else {
             // No negative prompt label, everything before Steps is positive
-            if !pre_steps.trim().is_empty() {
+            if !pre_steps.trim().is_empty() && pre_steps.trim() != "undefined" {
                 meta.positive_prompt = pre_steps.trim().to_string();
             }
         }

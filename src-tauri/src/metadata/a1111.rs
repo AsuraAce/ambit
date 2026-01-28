@@ -108,8 +108,15 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
         }
     }
 
-    meta.positive_prompt = positive_parts.join("\n").trim().to_string();
-    meta.negative_prompt = negative_prompt.trim().to_string();
+    let pos_final = positive_parts.join("\n").trim().to_string();
+    if pos_final != "undefined" {
+        meta.positive_prompt = pos_final;
+    }
+    
+    let neg_final = negative_prompt.trim().to_string();
+    if neg_final != "undefined" {
+        meta.negative_prompt = neg_final;
+    }
 
     // Parse params (process all lines identified as params)
     for line in params_lines {

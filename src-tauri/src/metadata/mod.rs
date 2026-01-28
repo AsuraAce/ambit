@@ -70,6 +70,11 @@ impl ImageMetadata {
             || (self
                 .positive_prompt
                 .trim()
+                .eq_ignore_ascii_case("undefined")
+                && self.negative_prompt.trim().is_empty())
+            || (self
+                .positive_prompt
+                .trim()
                 .eq_ignore_ascii_case("negative prompt:")
                 && self.negative_prompt.trim().is_empty())
             || self.steps == 0
@@ -97,6 +102,7 @@ impl ImageMetadata {
             self.sampler = other.sampler;
         }
         if self.positive_prompt.trim().is_empty()
+            || self.positive_prompt.trim() == "undefined"
             || self
                 .positive_prompt
                 .trim()
@@ -104,7 +110,7 @@ impl ImageMetadata {
         {
             self.positive_prompt = other.positive_prompt;
         }
-        if self.negative_prompt.trim().is_empty() {
+        if self.negative_prompt.trim().is_empty() || self.negative_prompt.trim() == "undefined" {
             self.negative_prompt = other.negative_prompt;
         }
         if self.generation_type == "unknown" && other.generation_type != "unknown" {
@@ -182,7 +188,7 @@ impl Default for ImageMetadata {
 
 pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.tool == "Unknown" && secondary.tool != "Unknown" {
-        base.tool = secondary.tool;
+        base.tool = secondary.tool.clone();
     }
 
     // Merge favorites (if either is true, result is true)
@@ -194,13 +200,13 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.model = secondary.model;
     }
 
-    if base.steps == 0 {
+    if base.steps == 0 || (secondary.tool == "ComfyUI" && secondary.steps > 0) {
         base.steps = secondary.steps;
     }
-    if base.cfg == 0.0 {
+    if base.cfg == 0.0 || (secondary.tool == "ComfyUI" && secondary.cfg > 0.0) {
         base.cfg = secondary.cfg;
     }
-    if base.seed == 0 {
+    if base.seed == 0 || (secondary.tool == "ComfyUI" && secondary.seed != 0) {
         base.seed = secondary.seed;
     }
 
@@ -208,11 +214,13 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         || base.sampler.is_empty()
         || base.sampler == "_"
         || base.sampler.starts_with("Unknown (")
+        || (secondary.tool == "ComfyUI" && !secondary.sampler.is_empty() && secondary.sampler != "Unknown")
     {
         base.sampler = secondary.sampler;
     }
 
     if base.positive_prompt.trim().is_empty()
+        || base.positive_prompt.trim() == "undefined"
         || base
             .positive_prompt
             .trim()
@@ -221,7 +229,7 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.positive_prompt = secondary.positive_prompt;
     }
 
-    if base.negative_prompt.trim().is_empty() {
+    if base.negative_prompt.trim().is_empty() || base.negative_prompt.trim() == "undefined" {
         base.negative_prompt = secondary.negative_prompt;
     }
 
