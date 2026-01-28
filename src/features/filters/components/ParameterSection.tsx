@@ -95,6 +95,7 @@ const groupSamplers = (samplers: string[]) => {
         'Heun': [],
         'DDIM': [],
         'UniPC': [],
+        'Deis': [],
         'Other': []
     };
 
@@ -112,13 +113,21 @@ const groupSamplers = (samplers: string[]) => {
         else if (lower.includes('lms')) groups['LMS'].push(canonical);
         else if (lower.includes('heun')) groups['Heun'].push(canonical);
         else if (lower.includes('ddim')) groups['DDIM'].push(canonical);
-        else if (lower.includes('unipc')) groups['UniPC'].push(canonical);
+        else if (lower.includes('unipc') || lower.includes('uni pc')) groups['UniPC'].push(canonical);
+        else if (lower.includes('deis')) groups['Deis'].push(canonical);
         else groups['Other'].push(canonical);
     });
 
     return Object.entries(groups)
         .map(([label, items]) => ({ label, items: items.sort() }))
-        .filter(g => g.items.length > 0);
+        .filter(g => g.items.length > 0)
+        .sort((a, b) => {
+            // Keep "Other" at the bottom
+            if (a.label === 'Other') return 1;
+            if (b.label === 'Other') return -1;
+            // Otherwise sort alphabetically
+            return a.label.localeCompare(b.label);
+        });
 };
 
 export const ParameterSection: React.FC<ParameterSectionProps> = ({
