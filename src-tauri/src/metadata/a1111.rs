@@ -46,9 +46,22 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     meta.tool = default_tool.unwrap_or_else(|| "Automatic1111".to_string());
     meta.raw_parameters = Some(sanitized_text.clone());
 
-    let lines: Vec<&str> = sanitized_text.lines().map(|l| l.trim()).collect();
-    if lines.is_empty() {
-        return meta;
+    let mut normalized_lines = Vec::new();
+    for line in sanitized_text.lines() {
+        let mut l = line.to_string();
+        // Break jumbled one-liners into logical segments
+        if l.contains("Negative prompt: ") {
+            l = l.replace("Negative prompt: ", "\nNegative prompt: ");
+        }
+        if l.contains("Steps: ") {
+            l = l.replace("Steps: ", "\nSteps: ");
+        }
+        for subline in l.lines() {
+            let s = subline.trim();
+            if !s.is_empty() {
+                normalized_lines.push(s.to_string());
+            }
+        }
     }
 
     let mut positive_parts = Vec::new();
@@ -56,85 +69,61 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     let mut params_lines = Vec::new();
     let mut state = 0; // 0: positive, 1: negative, 2: params
 
-    for line in lines {
+    for line in normalized_lines {
         if line.starts_with("Negative prompt: ") {
             state = 1;
-            negative_prompt.push_str(&line[17..]);
+            let content = line[17..].trim();
+            if content.starts_with("Model: ") || content.starts_with("Seed: ") || content.starts_with("Steps: ") {
+                state = 2;
+                if !content.is_empty() {
+                    params_lines.push(content.to_string());
+                }
+            } else {
+                negative_prompt.push_str(content);
+            }
         } else if line.starts_with("Steps: ") {
             state = 2;
-            params_lines.push(line.to_string());
+            params_lines.push(line);
         } else if state == 0 {
-            positive_parts.push(line);
-        } else if state == 1 {
-            if !negative_prompt.is_empty() {
-                negative_prompt.push(' ');
+            // Check for ComfyUI "SDPromptSaver" style params starting at the top
+            if line.starts_with("Model: ") || line.starts_with("Seed: ") {
+                state = 2;
+                params_lines.push(line);
+            } else {
+                positive_parts.push(line);
             }
-            negative_prompt.push_str(line);
-        } else if state == 2 {
-            params_lines.push(line.to_string());
+        } else if state == 1 {
+            // Check if even inside negative prompt we hit more params (ComfyUI mess)
+            if line.starts_with("Model: ") || line.starts_with("Seed: ") {
+                state = 2;
+                params_lines.push(line);
+            } else {
+                if !negative_prompt.is_empty() {
+                    negative_prompt.push(' ');
+                }
+                negative_prompt.push_str(&line);
+            }
+        } else if (state == 2) {
+            params_lines.push(line);
         }
     }
 
     meta.positive_prompt = positive_parts.join("\n").trim().to_string();
     meta.negative_prompt = negative_prompt.trim().to_string();
 
-    // Parse params (prefer the line starting with Steps:)
-    let mut params_line = params_lines
-        .iter()
-        .find(|l| l.starts_with("Steps: "))
-        .cloned()
-        .unwrap_or_default();
+    // Parse params (process all lines identified as params)
+    for line in params_lines {
+        let mut params_content = line.clone();
 
-    // Fallback: If strict parsing failed, but text contains "Steps: ", try to extract it from the raw blob
-    if params_line.is_empty() && sanitized_text.contains("Steps: ") {
-        if let Some(pos) = sanitized_text.find("Steps: ") {
-            // Find the start of the line containing "Steps: "
-            let start_of_line = sanitized_text[..pos + 6]
-                .rfind('\n')
-                .map(|idx| idx + 1)
-                .unwrap_or(0);
-            let tail = &sanitized_text[start_of_line..];
-            params_line = tail.lines().next().unwrap_or("").to_string();
-
-            // Also try to recover positive/negative if they were missed due to single-line format
-            // This is a heuristic attempt for the "JK" node format
-            if meta.negative_prompt.is_empty() {
-                if let Some(neg_pos) = sanitized_text.find("Negative prompt: ") {
-                    if neg_pos < pos {
-                        let neg_part = &sanitized_text[neg_pos..pos];
-                        meta.negative_prompt =
-                            neg_part.replace("Negative prompt: ", "").trim().to_string();
-
-                        // And Positive is likely everything before Negative
-                        if meta.positive_prompt.is_empty() {
-                            meta.positive_prompt = sanitized_text[..neg_pos].trim().to_string();
-                        }
-                    }
-                }
+        // Fallback: If line contains prompts and then "Steps: ", isolate params
+        if let Some(pos) = params_content.find("Steps: ") {
+            // But only if Steps: is not at the start and preceded by something that looks like prompt
+            if pos > 0 && !params_content[..pos].contains(": ") {
+                params_content = params_content[pos..].to_string();
             }
         }
-    }
 
-    // Extract Hypernetworks from positive prompt
-    if let Ok(re) = Regex::new(r"<hypernet:([^:>]+)(?::[^>]+)?>") {
-        for cap in re.captures_iter(&meta.positive_prompt) {
-            let hn_name = cap[1].to_string();
-            if !meta.hypernetworks.contains(&hn_name) {
-                meta.hypernetworks.push(hn_name);
-            }
-        }
-    }
-
-    if params_line.contains("Steps: ") {
-        // If the parameters line contains prompt text before "Steps: ", try to isolate parameters
-        if let Some(pos) = params_line.find("Steps: ") {
-            if pos > 0 {
-                // We'll use everything from Steps: onwards for pairs,
-                // as everything before it on the same line is likely a dangling prompt
-                params_line = params_line[pos..].to_string();
-            }
-        }
-        let pairs = split_a1111_params(&params_line);
+        let pairs = split_a1111_params(&params_content);
         let mut variation_seed = String::new();
         let mut variation_strength = String::new();
 
@@ -143,12 +132,45 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                 let key = key.trim();
                 let val = val.trim().trim_matches('"');
                 match key {
-                    "Steps" => meta.steps = val.parse().unwrap_or(0),
-                    "Sampler" => meta.sampler = val.to_string(),
-                    "CFG scale" => meta.cfg = val.parse().unwrap_or(0.0),
-                    "Seed" => meta.seed = val.parse().unwrap_or(0),
+                    "Steps" => {
+                        let s: u32 = val.parse().unwrap_or(0);
+                        if s > 0 {
+                            meta.steps = s;
+                        }
+                    }
+                    "Sampler" => {
+                        if meta.sampler == "Unknown" || meta.sampler.is_empty() {
+                            meta.sampler = val.to_string();
+                        } else if !meta.sampler.contains(val) {
+                            meta.sampler = format!("{}_{}", meta.sampler, val);
+                        }
+                    }
+                    "Scheduler" => {
+                        if meta.sampler.is_empty() || meta.sampler == "Unknown" {
+                            meta.sampler = format!("Unknown ({})", val);
+                        } else if !meta.sampler.to_lowercase().contains(&val.to_lowercase()) {
+                            meta.sampler = format!("{}_{}", meta.sampler, val);
+                        }
+                    }
+                    "CFG scale" => {
+                        let c: f32 = val.parse().unwrap_or(0.0);
+                        if c > 0.0 {
+                            meta.cfg = c;
+                        }
+                    }
+                    "Seed" => {
+                        let s: i64 = val.parse().unwrap_or(0);
+                        if s > 0 {
+                            meta.seed = s;
+                        }
+                    }
                     "Model" | "Checkpoint" | "Model name" | "SD model" => {
-                        meta.model = val.to_string()
+                        // Avoid overwriting a good model name with a generic one or repeating info
+                        if meta.model == "Unknown" || meta.model.is_empty() {
+                            meta.model = val.to_string();
+                        } else if val.len() > meta.model.len() && val.starts_with(&meta.model) {
+                            meta.model = val.to_string();
+                        }
                     }
                     "VAE" => meta.vae = Some(val.to_string()),
                     "Clip skip" => meta.clip_skip = val.parse().ok(),
@@ -156,7 +178,11 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     "Hires upscale" => meta.hires_upscale = val.parse().ok(),
                     "Hires steps" => meta.hires_steps = val.parse().ok(),
                     "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
-                    "Model hash" => meta.model_hash = Some(val.to_string()),
+                    "Model hash" => {
+                        if meta.model_hash.is_none() || val.len() > meta.model_hash.as_ref().map(|s| s.len()).unwrap_or(0) {
+                            meta.model_hash = Some(val.to_string());
+                        }
+                    }
                     "App" => {
                         let low_val = val.to_lowercase();
                         if low_val.contains("sd.next") || low_val.contains("sdnext") {
@@ -413,5 +439,25 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         assert!(!meta.embeddings.iter().any(|e| e.contains("oil on canvas")));
         assert!(!meta.embeddings.iter().any(|e| e.contains("+++")));
         assert!(meta.embeddings.contains(&"EasyNegative".to_string()));
+    }
+
+    #[test]
+    fn test_extract_comfyui_jumbled_parameters() {
+        let raw = "Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Negative prompt: Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1 Steps: 36, Sampler: dpmpp_2m_karras, CFG scale: 6, Seed: 819601553905272, Size: 512x768, Model: Osaka[REV3].fp16, Version: ComfyUI, Extra info: Model: Osaka[REV3].fp16.safetensors, Seed: 819601553905272, Steps: 36, CFG scale: 6, Sampler: dpmpp_2m, Scheduler: karras, Size: 512x768, Batch size: 1";
+        let meta = extract_a1111_metadata(raw, None);
+        println!("EXTRACTED META: {:#?}", meta);
+
+        // Current buggy state:
+        // - positive_prompt should NOT contain the technical data
+        // - negative_prompt should NOT contain the technical data
+        // - model should be Osaka[REV3].fp16
+        // - sampler should be dpmpp_2m (or dpmpp_2m_karras)
+
+        assert!(meta.positive_prompt.is_empty() || meta.positive_prompt.contains("Extra info"), "Positive prompt should be empty or only contain Extra info, got: {}", meta.positive_prompt);
+        assert!(meta.negative_prompt.is_empty(), "Negative prompt should be empty, got: {}", meta.negative_prompt);
+        assert_eq!(meta.steps, 36);
+        assert_eq!(meta.cfg, 6.0);
+        assert_eq!(meta.seed, 819601553905272);
+        assert!(meta.model.contains("Osaka[REV3]"));
     }
 }
