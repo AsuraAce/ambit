@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { normalizeSampler } from '../../../utils/samplerUtils';
 import { FilterState } from '../../../types';
-import { SectionHeader, FilterSlider, MultiSelectDropdown } from './FilterPrimitives';
+import { SectionHeader, FilterSlider, MultiSelectDropdown, ChipSelect } from './FilterPrimitives';
 import { useParameterRangesQuery } from '../../../hooks/useParameterRangesQuery';
 import { Check } from 'lucide-react';
 
@@ -12,65 +12,6 @@ interface ParameterSectionProps {
     onToggle: () => void;
 }
 
-/** Chip-style multi-select for categorical filters */
-const ChipSelect: React.FC<{
-    label: string;
-    options: string[];
-    selected: string[];
-    onChange: (selected: string[]) => void;
-    formatLabel?: (value: string) => string;
-    /** Optional list of currently available options (for dimming unavailable ones) */
-    availableOptions?: string[];
-}> = ({ label, options, selected, onChange, formatLabel, availableOptions }) => {
-    if (options.length === 0) return null;
-
-    const toggleOption = (opt: string) => {
-        if (selected.includes(opt)) {
-            onChange(selected.filter(s => s !== opt));
-        } else {
-            onChange([...selected, opt]);
-        }
-    };
-
-    const format = formatLabel || ((v: string) => v);
-
-    // If availableOptions is provided, use it for availability check; otherwise all are available
-    const isAvailable = (opt: string) => {
-        if (!availableOptions) return true;
-        if (selected.includes(opt)) return true; // Always show selected as available
-        return availableOptions.includes(opt);
-    };
-
-    return (
-        <div className="space-y-2">
-            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</div>
-            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-2">
-                {options.map(opt => {
-                    const isSelected = selected.includes(opt);
-                    const available = isAvailable(opt);
-                    return (
-                        <button
-                            key={opt}
-                            onClick={() => available && toggleOption(opt)}
-                            disabled={!available}
-                            className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all ${isSelected
-                                ? 'bg-sage-100 dark:bg-sage-600/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300'
-                                : available
-                                    ? 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-300 dark:hover:border-sage-500/30'
-                                    : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-600 opacity-50 cursor-not-allowed line-through'
-                                }`}
-                        >
-                            <span className="flex items-center gap-1">
-                                {isSelected && <Check className="w-3 h-3" />}
-                                {format(opt)}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
 
 /** Format generation type for display */
 const formatGenType = (type: string): string => {

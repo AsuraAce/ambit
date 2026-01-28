@@ -33,6 +33,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         filters.maxSteps !== undefined ||
         filters.minCfg !== undefined ||
         filters.maxCfg !== undefined ||
+        filters.controlNets.length > 0 ||
+        filters.ipAdapters.length > 0 ||
         !!activeSmartCol;
 
     // Deduplicate logic: Filter out manual chips that are already in the smart collection
@@ -43,6 +45,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const smartHypernetworks = activeSmartCol?.filters?.hypernetworks || [];
     const smartSamplers = activeSmartCol?.filters?.samplers || [];
     const smartGenTypes = activeSmartCol?.filters?.generationTypes || [];
+    const smartControlNets = activeSmartCol?.filters?.controlNets || [];
+    const smartIpAdapters = activeSmartCol?.filters?.ipAdapters || [];
 
     const visibleModels = Array.from(new Set(filters.models)).filter(m => !smartModels.includes(m));
     const visibleTools = Array.from(new Set(filters.tools)).filter(t => !smartTools.includes(t));
@@ -51,6 +55,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const visibleHypernetworks = Array.from(new Set(filters.hypernetworks)).filter(h => !smartHypernetworks.includes(h));
     const visibleSamplers = Array.from(new Set(filters.samplers || [])).filter(s => !smartSamplers.includes(s));
     const visibleGenTypes = Array.from(new Set(filters.generationTypes || [])).filter(g => !smartGenTypes.includes(g));
+    const visibleControlNets = Array.from(new Set(filters.controlNets || [])).filter(c => !smartControlNets.includes(c));
+    const visibleIpAdapters = Array.from(new Set(filters.ipAdapters || [])).filter(i => !smartIpAdapters.includes(i));
 
     if (!hasActiveFilters) return null;
 
@@ -112,6 +118,18 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     {activeSmartCol.filters.generationTypes?.map(g => (
                         <div key={`smart-gentype-${g}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
                             <span>{g}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {activeSmartCol.filters.controlNets?.map(c => (
+                        <div key={`smart-cn-${c}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{c}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    ))}
+                    {activeSmartCol.filters.ipAdapters?.map(i => (
+                        <div key={`smart-ip-${i}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span className="truncate max-w-[100px]">{i}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
@@ -191,6 +209,20 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 <div key={g} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 text-xs border border-cyan-200 dark:border-cyan-500/30">
                     <span>{g}</span>
                     <button onClick={() => setFilters(f => ({ ...f, generationTypes: (f.generationTypes || []).filter(x => x !== g) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {visibleControlNets.map(c => (
+                <div key={c} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-200 text-xs border border-sky-200 dark:border-sky-500/30">
+                    <span className="truncate max-w-[100px]">{c}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, controlNets: (f.controlNets || []).filter(x => x !== c) }))}><X className="w-3 h-3" /></button>
+                </div>
+            ))}
+
+            {visibleIpAdapters.map(i => (
+                <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-200 text-xs border border-teal-200 dark:border-teal-500/30">
+                    <span className="truncate max-w-[100px]">{i}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, ipAdapters: (f.ipAdapters || []).filter(x => x !== i) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 

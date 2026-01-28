@@ -400,7 +400,7 @@ export type NumericRange = { min: number; max: number }
 /**
  * Parameter ranges and distinct values for dynamic filters
  */
-export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[] }
+export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[] }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**
@@ -419,7 +419,7 @@ export type ThumbnailScanResult = { found: number; updated: number }
 /**
  * Valid facet names result - used for drill-down filtering
  */
-export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[] }
+export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[]; controlNets: string[]; ipAdapters: string[] }
 
 /** tauri-specta globals **/
 

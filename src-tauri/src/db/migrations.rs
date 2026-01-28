@@ -963,7 +963,74 @@ pub fn init_db() -> Vec<Migration> {
             sql: "ALTER TABLE images ADD COLUMN is_corrupt INTEGER NOT NULL DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        migration38(),
+        migration39(),
     ]
+}
+
+/// Migration 39: Fix ControlNet backfill key and consolidate resource names (strip weights/extensions)
+fn migration39() -> Migration {
+    Migration {
+        version: 39,
+        description: "fix_guidance_backfill_and_clean_names",
+        sql: "
+            -- 1. Correct ControlNet backfill (wrong key used in migration 38)
+            DELETE FROM image_controlnets;
+            INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
+            SELECT i.id, 
+                CASE 
+                    WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                    WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                    ELSE j.value 
+                END
+            FROM images i, json_each(i.metadata_json, '$.controlNets') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+
+            -- 2. Clean names in image_ipadapters (strip weights/extensions)
+            CREATE TABLE image_ipadapters_new (
+                image_id TEXT NOT NULL,
+                ipadapter_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, ipadapter_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT OR IGNORE INTO image_ipadapters_new (image_id, ipadapter_name)
+            SELECT image_id,
+                CASE 
+                    WHEN instr(ipadapter_name, ' (') > 0 THEN substr(ipadapter_name, 1, instr(ipadapter_name, ' (') - 1)
+                    WHEN instr(ipadapter_name, ':') > 0 THEN substr(ipadapter_name, 1, instr(ipadapter_name, ':') - 1)
+                    ELSE ipadapter_name 
+                END
+            FROM image_ipadapters;
+            DROP TABLE image_ipadapters;
+            ALTER TABLE image_ipadapters_new RENAME TO image_ipadapters;
+            CREATE INDEX IF NOT EXISTS idx_ipadapter_by_name ON image_ipadapters(ipadapter_name);
+
+            -- 3. Consolidate image_loras (just in case some were saved with weights)
+            CREATE TABLE image_loras_new (
+                image_id TEXT NOT NULL,
+                lora_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, lora_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            INSERT OR IGNORE INTO image_loras_new (image_id, lora_name)
+            SELECT image_id,
+                CASE 
+                    WHEN instr(lora_name, ' (') > 0 THEN substr(lora_name, 1, instr(lora_name, ' (') - 1)
+                    WHEN instr(lora_name, ':') > 0 THEN substr(lora_name, 1, instr(lora_name, ':') - 1)
+                    ELSE lora_name 
+                END
+            FROM image_loras;
+            DROP TABLE image_loras;
+            ALTER TABLE image_loras_new RENAME TO image_loras;
+            CREATE INDEX IF NOT EXISTS idx_lora_by_name ON image_loras(lora_name);
+
+            -- Update ANALYZE
+            ANALYZE image_controlnets;
+            ANALYZE image_ipadapters;
+            ANALYZE image_loras;
+        ",
+        kind: MigrationKind::Up,
+    }
 }
 
 /// Migration 35: Add thumbnail source tracking and micro-thumbnails for progressive loading
@@ -1028,6 +1095,50 @@ fn migration34() -> Migration {
         version: 34,
         description: "add_original_state_column",
         sql: "ALTER TABLE images ADD COLUMN original_state_json TEXT;",
+        kind: MigrationKind::Up,
+    }
+}
+
+/// Migration 38: Add junction tables for ControlNet and IP-Adapter filtering
+fn migration38() -> Migration {
+    Migration {
+        version: 38,
+        description: "add_guidance_junction_tables",
+        sql: "
+            -- Junction table for ControlNets
+            CREATE TABLE IF NOT EXISTS image_controlnets (
+                image_id TEXT NOT NULL,
+                controlnet_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, controlnet_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            CREATE INDEX IF NOT EXISTS idx_controlnet_by_name ON image_controlnets(controlnet_name);
+
+            -- Junction table for IP-Adapters
+            CREATE TABLE IF NOT EXISTS image_ipadapters (
+                image_id TEXT NOT NULL,
+                ipadapter_name TEXT NOT NULL,
+                PRIMARY KEY (image_id, ipadapter_name),
+                FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+            ) STRICT;
+            CREATE INDEX IF NOT EXISTS idx_ipadapter_by_name ON image_ipadapters(ipadapter_name);
+
+            -- Backfill ControlNets from existing JSON
+            INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
+            SELECT i.id, j.value
+            FROM images i, json_each(i.metadata_json, '$.control_nets') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+
+            -- Backfill IP-Adapters from existing JSON
+            INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
+            SELECT i.id, j.value
+            FROM images i, json_each(i.metadata_json, '$.ipAdapters') j
+            WHERE j.value IS NOT NULL AND j.value != '';
+
+            -- Update ANALYZE for new tables
+            ANALYZE image_controlnets;
+            ANALYZE image_ipadapters;
+        ",
         kind: MigrationKind::Up,
     }
 }

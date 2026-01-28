@@ -10,6 +10,7 @@ import { GeneratorSection } from './GeneratorSection';
 import { ArchitectureSection } from './ArchitectureSection';
 import { ResourceSection } from './ResourceSection';
 import { DateRangeSection } from './DateRangeSection';
+import { GuidanceSection } from './GuidanceSection';
 import { APP_NAME, APP_VERSION } from '../../../constants/app';
 
 interface FilterPanelProps {
@@ -87,6 +88,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         resources: true,
         embeddings: false,
         hypernetworks: false,
+        guidance: true,
         date: true
     });
 
@@ -116,7 +118,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         filters.minSteps ||
         filters.maxSteps ||
         filters.minCfg ||
-        filters.maxCfg
+        filters.maxCfg ||
+        filters.controlNets.length > 0 ||
+        filters.ipAdapters.length > 0
     );
 
     // The Update Button should show if we are in a smart collection AND have added manual edits.
@@ -150,6 +154,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 loras: Array.from(new Set([...(saved.loras || []), ...manual.loras])),
                 embeddings: Array.from(new Set([...(saved.embeddings || []), ...manual.embeddings])),
                 hypernetworks: Array.from(new Set([...(saved.hypernetworks || []), ...manual.hypernetworks])),
+                controlNets: Array.from(new Set([...(saved.controlNets || []), ...manual.controlNets])),
+                ipAdapters: Array.from(new Set([...(saved.ipAdapters || []), ...manual.ipAdapters])),
 
                 // Keep Collection ID? Usually filters object for a collection definition doesn't contain its own ID or 'collectionId'.
                 // But FilterState might. Let's explicitly NOT include collectionId in the saved rule "payload" if possible, 
@@ -179,7 +185,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 minSteps: undefined,
                 maxSteps: undefined,
                 minCfg: undefined,
-                maxCfg: undefined
+                maxCfg: undefined,
+                controlNets: [],
+                ipAdapters: []
                 // Preserve collectionId and view options
             }));
         } else if (activeSmartCol) {
@@ -194,7 +202,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Tab-Specific Dirty Checks (for dot indicators)
     // Note: dateRange is NOT included in isOrganizeDirty because Date Range is a global section in the footer, not part of Organize tab
     const isOrganizeDirty = !!(filters.collectionId || filters.favoritesOnly || filters.pinnedOnly);
-    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || (filters.samplers && filters.samplers.length > 0) || (filters.generationTypes && filters.generationTypes.length > 0));
+    const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || (filters.samplers && filters.samplers.length > 0) || (filters.generationTypes && filters.generationTypes.length > 0) || filters.controlNets.length > 0 || filters.ipAdapters.length > 0);
     const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
 
 
@@ -357,6 +365,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             <ParameterSection
                                 filters={filters} setFilters={setFilters}
                                 isOpen={expanded.params} onToggle={() => toggleSection('params')}
+                            />
+
+                            <GuidanceSection
+                                filters={filters} setFilters={setFilters}
+                                isOpen={expanded.guidance} onToggle={() => toggleSection('guidance')}
                             />
                         </div>
                     )}

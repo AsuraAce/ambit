@@ -17,7 +17,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             "facet_cache_progress",
             ProgressPayload {
                 current: 0,
-                total: 6,
+                total: 8,
                 message: "Starting facet cache build...".into(),
             },
         );
@@ -31,7 +31,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 "facet_cache_progress",
                 ProgressPayload {
                     current: 1,
-                    total: 6,
+                    total: 8,
                     message: "Harvesting models from library...".into(),
                 },
             );
@@ -60,7 +60,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 "facet_cache_progress",
                 ProgressPayload {
                     current: 2,
-                    total: 6,
+                    total: 8,
                     message: "Building checkpoints cache...".into(),
                 },
             );
@@ -77,7 +77,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 "facet_cache_progress",
                 ProgressPayload {
                     current: 3,
-                    total: 6,
+                    total: 8,
                     message: "Building LoRAs cache...".into(),
                 },
             );
@@ -91,7 +91,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 "facet_cache_progress",
                 ProgressPayload {
                     current: 4,
-                    total: 6,
+                    total: 8,
                     message: "Building Embeddings cache...".into(),
                 },
             );
@@ -108,7 +108,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
                 "facet_cache_progress",
                 ProgressPayload {
                     current: 5,
-                    total: 6,
+                    total: 8,
                     message: "Building Hypernetworks cache...".into(),
                 },
             );
@@ -119,7 +119,37 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             );
 
             // 5. Tools
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 6,
+                    total: 8,
+                    message: "Building tools cache...".into(),
+                },
+            );
             build_tool_facets(&tx)?;
+
+            // 6. ControlNets
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 7,
+                    total: 8,
+                    message: "Building ControlNet cache...".into(),
+                },
+            );
+            build_resource_facets(&tx, "control_nets", "control_nets")?;
+
+            // 7. IP-Adapters
+            let _ = app.emit(
+                "facet_cache_progress",
+                ProgressPayload {
+                    current: 8,
+                    total: 8,
+                    message: "Building IP-Adapter cache...".into(),
+                },
+            );
+            build_resource_facets(&tx, "ip_adapters", "ip_adapters")?;
 
             tx.commit().map_err(|e| e.to_string())?;
 
@@ -143,8 +173,8 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
         let _ = app.emit(
             "facet_cache_progress",
             ProgressPayload {
-                current: 6,
-                total: 6,
+                current: 8,
+                total: 8,
                 message: "Cache rebuild complete.".into(),
             },
         );
@@ -164,6 +194,8 @@ pub struct ValidFacetNames {
     pub embeddings: Vec<String>,
     pub hypernetworks: Vec<String>,
     pub tools: Vec<String>,
+    pub control_nets: Vec<String>,
+    pub ip_adapters: Vec<String>,
 }
 
 /// Get distinct facet names that exist in the current filtered result set.
@@ -225,7 +257,7 @@ pub async fn get_valid_facet_names(
                 "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
                 "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
                 "metadata_json", "path", "id", "width", "height", "file_size",
-                "steps", "cfg", "sampler", "generation_type"
+                "steps", "cfg", "sampler", "generation_type", "control_nets", "ip_adapters"
             ];
             
             let mut result = clause.to_string();
@@ -281,15 +313,19 @@ pub async fn get_valid_facet_names(
              UNION ALL
              SELECT 'hypernetwork', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
              UNION ALL
-             SELECT 'tool', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}",
+             SELECT 'tool', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
+             UNION ALL
+             SELECT 'control_net', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
+             UNION ALL
+             SELECT 'ip_adapter', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
             coll = collection_join,
             lora = lora_join,
             where = prefixed
         );
 
-        // Build params - we need to repeat them 5 times (once per subquery)
+        // Build params - we need to repeat them 7 times (once per subquery)
         let mut all_params: Vec<rusqlite::types::Value> = Vec::new();
-        for _ in 0..5 {
+        for _ in 0..7 {
             if let Some(ref cid) = collection_id {
                 all_params.push(rusqlite::types::Value::Text(cid.clone()));
             }
@@ -305,6 +341,8 @@ pub async fn get_valid_facet_names(
         let mut embeddings: Vec<String> = Vec::new();
         let mut hypernetworks: Vec<String> = Vec::new();
         let mut tools: Vec<String> = Vec::new();
+        let mut control_nets: Vec<String> = Vec::new();
+        let mut ip_adapters: Vec<String> = Vec::new();
 
         // Use HashSets for deduplication (UNION ALL doesn't dedupe)
         use std::collections::HashSet;
@@ -313,6 +351,8 @@ pub async fn get_valid_facet_names(
         let mut emb_set: HashSet<String> = HashSet::new();
         let mut hyper_set: HashSet<String> = HashSet::new();
         let mut tool_set: HashSet<String> = HashSet::new();
+        let mut cn_set: HashSet<String> = HashSet::new();
+        let mut ip_set: HashSet<String> = HashSet::new();
 
         let mut stmt = conn.prepare(&combined_query).map_err(|e| format!("Combined facet query failed: {}", e))?;
         let rows = stmt.query_map(rusqlite::params_from_iter(&all_params), |row| {
@@ -327,6 +367,8 @@ pub async fn get_valid_facet_names(
                 "embedding" => { if emb_set.insert(name.clone()) { embeddings.push(name); } }
                 "hypernetwork" => { if hyper_set.insert(name.clone()) { hypernetworks.push(name); } }
                 "tool" => { if tool_set.insert(name.clone()) { tools.push(name); } }
+                "control_net" => { if cn_set.insert(name.clone()) { control_nets.push(name); } }
+                "ip_adapter" => { if ip_set.insert(name.clone()) { ip_adapters.push(name); } }
                 _ => {}
             }
         }
@@ -340,6 +382,8 @@ pub async fn get_valid_facet_names(
             embeddings,
             hypernetworks,
             tools,
+            control_nets,
+            ip_adapters,
         })
     }).await.map_err(|e| e.to_string())?
 }
@@ -509,6 +553,8 @@ fn build_resource_facets(
         "loras" => ("image_loras", "lora_name", "image_id"),
         "embeddings" => ("image_embeddings", "embedding_name", "image_id"),
         "hypernetworks" => ("image_hypernetworks", "hypernetwork_name", "image_id"),
+        "control_nets" => ("image_controlnets", "controlnet_name", "image_id"),
+        "ip_adapters" => ("image_ipadapters", "ipadapter_name", "image_id"),
         _ => {
             return Err(format!(
                 "Unsupported resource type for optimization: {}",
