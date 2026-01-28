@@ -471,3 +471,120 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
         </div>
     );
 };
+
+interface ChipSelectProps {
+    label: string;
+    options: string[];
+    selected: string[];
+    onChange: (selected: string[]) => void;
+    formatLabel?: (value: string) => string;
+    /** Optional list of currently available options (for dimming unavailable ones) */
+    availableOptions?: string[];
+}
+
+/** Chip-style multi-select for categorical filters */
+export const ChipSelect: React.FC<ChipSelectProps> = ({ label, options, selected, onChange, formatLabel, availableOptions }) => {
+    if (options.length === 0) return null;
+
+    const toggleOption = (opt: string) => {
+        if (selected.includes(opt)) {
+            onChange(selected.filter(s => s !== opt));
+        } else {
+            onChange([...selected, opt]);
+        }
+    };
+
+    const format = formatLabel || ((v: string) => v);
+
+    // If availableOptions is provided, use it for availability check; otherwise all are available
+    const isAvailable = (opt: string) => {
+        if (!availableOptions) return true;
+        if (selected.includes(opt)) return true; // Always show selected as available
+        return availableOptions.includes(opt);
+    };
+
+    return (
+        <div className="space-y-2">
+            {label && <div className="text-[10px] font-bold text-gray-500 dark:text-zinc-500 uppercase tracking-wider px-0.5">{label}</div>}
+            <div className="flex flex-wrap gap-1.5">
+                {options.map(opt => {
+                    const isSelected = selected.includes(opt);
+                    const available = isAvailable(opt);
+                    const displayLabel = format(opt);
+
+                    return (
+                        <button
+                            key={opt}
+                            type="button"
+                            onClick={() => available && toggleOption(opt)}
+                            disabled={!available}
+                            title={displayLabel}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all max-w-full ${isSelected
+                                ? 'bg-sage-500/10 border-sage-500/50 text-sage-700 dark:text-sage-300 ring-1 ring-sage-500/20 shadow-sm shadow-sage-500/10'
+                                : available
+                                    ? 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-400 hover:border-sage-400 dark:hover:border-sage-500/30 hover:bg-white dark:hover:bg-white/5'
+                                    : 'bg-gray-50/50 dark:bg-white/[0.03] border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-600 opacity-50 cursor-not-allowed line-through'
+                                }`}
+                        >
+                            <span className="flex items-center gap-1.5 truncate">
+                                {isSelected && <Check className="w-3 h-3 flex-shrink-0" />}
+                                <span className="truncate">{displayLabel}</span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+// --- IconButton Select ---
+interface IconButtonOption {
+    id: string;
+    label: string;
+    icon: LucideIcon;
+}
+
+interface IconButtonSelectProps {
+    label?: string;
+    options: IconButtonOption[];
+    selected: string[];
+    onChange: (selected: string[]) => void;
+}
+
+export const IconButtonSelect: React.FC<IconButtonSelectProps> = ({ label, options, selected, onChange }) => {
+    const toggleOption = (id: string) => {
+        if (selected.includes(id)) {
+            onChange(selected.filter(s => s !== id));
+        } else {
+            onChange([...selected, id]);
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            {label && <div className="text-[10px] font-bold text-gray-500 dark:text-zinc-500 uppercase tracking-wider px-0.5">{label}</div>}
+            <div className="grid grid-cols-3 gap-2">
+                {options.map(opt => {
+                    const isSelected = selected.includes(opt.id);
+                    const Icon = opt.icon;
+                    return (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => toggleOption(opt.id)}
+                            className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl border transition-all aspect-square sm:aspect-auto sm:h-auto ${isSelected
+                                    ? 'bg-sage-500/10 border-sage-500/50 text-sage-800 dark:text-sage-300 ring-4 ring-sage-500/10 shadow-sm'
+                                    : 'bg-white/50 dark:bg-white/[0.03] border-gray-100 dark:border-white/5 text-gray-500 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/5 hover:border-gray-300 dark:hover:border-white/20'
+                                }`}
+                        >
+                            <div className={`p-1.5 rounded-lg transition-colors ${isSelected ? 'bg-sage-500/20' : 'bg-gray-100 dark:bg-white/5'}`}>
+                                <Icon className={`w-4 h-4 ${isSelected ? 'text-sage-600 dark:text-sage-400' : 'text-gray-400 dark:text-zinc-500'}`} />
+                            </div>
+                            <span className="text-[10px] font-semibold truncate w-full text-center">{opt.label}</span>
+                        </button>
+                    )
+                })}
+            </div>
+        </div>
+    );
+};

@@ -134,12 +134,13 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
-    // Resources (LoRAs, ControlNets)
+    // Resources (LoRAs, ControlNets, IP-Adapters)
     let mut resources = Resources::default();
     scan_for_resources(json, &mut resources);
 
     meta.loras = resources.loras;
     meta.control_nets = resources.control_nets;
+    meta.ip_adapters = resources.ip_adapters;
 
     // Extract embedded workflow/graph if present
     if let Some(wf) = root.get("workflow").or_else(|| root.get("graph")) {
