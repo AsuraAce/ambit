@@ -194,7 +194,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
         <div className={`absolute bottom-0 left-0 right-0 pt-44 pb-8 px-12 z-20 pointer-events-none bg-gradient-to-t from-black via-black/90 to-transparent transition-opacity duration-1000 ${showHud ? 'opacity-100' : 'opacity-0 md:opacity-100'}`}>
           <div className="max-w-5xl mx-auto text-center">
             <p className="text-xl md:text-2xl text-gray-200 font-medium leading-relaxed drop-shadow-lg line-clamp-3 text-balance font-serif tracking-wide">
-              "{currentImage.metadata.positivePrompt}"
+              {currentImage.metadata.positivePrompt}
             </p>
             <div className="flex items-center justify-center gap-6 mt-6 text-sm font-bold text-gray-400 uppercase tracking-widest opacity-80">
               <span>{currentImage.metadata.model}</span>
