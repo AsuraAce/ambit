@@ -322,19 +322,22 @@ fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Op
 }
 
 fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
+    // 1. Link (Priority)
+    if let Some(source_id) = get_source_id(graph, node_id, input_name) {
+        if let Some(s) = evaluate_string_node(graph, &source_id, 0) {
+            return Some(s);
+        }
+    }
+
     let node = graph.get_node(node_id)?;
 
-    // 1. Direct Widget
+    // 2. Direct Widget (Fallback)
     if let Some(val) = get_node_param(node, input_name) {
         if let Some(s) = val.as_str() {
             return Some(s.to_string());
         }
     }
 
-    // 2. Link
-    if let Some(source_id) = get_source_id(graph, node_id, input_name) {
-        return evaluate_string_node(graph, &source_id, 0);
-    }
     None
 }
 
@@ -393,7 +396,20 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         // UI Format: widgets_values
         if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
             if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                return Some(s.to_string());
+                let lower = s.to_lowercase();
+                let exclusions = [
+                    "enable",
+                    "disable",
+                    "randomize",
+                    "fixed",
+                    "increment",
+                    "decrement",
+                    "true",
+                    "false",
+                ];
+                if !exclusions.contains(&lower.as_str()) && s.len() > 2 {
+                    return Some(s.to_string());
+                }
             }
         }
 
@@ -404,8 +420,27 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     }
 
     // Pass-throughs
-    if t == "Text to String" || t == "Text Parse Noodle Soup Prompts" {
-        return trace_text_input(graph, node_id, "text");
+    if t == "Text to String"
+        || t == "Text Parse Noodle Soup Prompts"
+        || t == "GetNode"
+        || t == "SetNode"
+    {
+        let names = ["text", "string", "value", "STRING", "VALUE"];
+        for n in names {
+            if let Some(source_id) = get_source_id(graph, node_id, n) {
+                if let Some(s) = evaluate_string_node(graph, &source_id, depth + 1) {
+                    return Some(s);
+                }
+            }
+        }
+        for n in names {
+            if let Some(val) = get_node_param(node, n) {
+                if let Some(s) = val.as_str() {
+                    return Some(s.to_string());
+                }
+            }
+        }
+        return None;
     }
 
     // JoinStringMulti
@@ -440,8 +475,12 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         let text_a = trace_text_input(graph, node_id, "text1").unwrap_or_default();
         let text_b = trace_text_input(graph, node_id, "text2").unwrap_or_default();
         // Typically these are joined with a comma or space
-        if text_a.is_empty() { return Some(text_b); }
-        if text_b.is_empty() { return Some(text_a); }
+        if text_a.is_empty() {
+            return Some(text_b);
+        }
+        if text_b.is_empty() {
+            return Some(text_a);
+        }
         return Some(format!("{}, {}", text_a, text_b));
     }
 
@@ -465,6 +504,22 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         }
     }
 
-    // Fallback: check "text" input
-    trace_text_input(graph, node_id, "text").or_else(|| trace_text_input(graph, node_id, "string"))
+    // Fallback: check all common inputs for links, then widgets
+    let names = ["text", "string", "value", "STRING", "VALUE"];
+    for n in names {
+        if let Some(source_id) = get_source_id(graph, node_id, n) {
+            if let Some(s) = evaluate_string_node(graph, &source_id, depth + 1) {
+                return Some(s);
+            }
+        }
+    }
+    for n in names {
+        if let Some(val) = get_node_param(node, n) {
+            if let Some(s) = val.as_str() {
+                return Some(s.to_string());
+            }
+        }
+    }
+
+    None
 }

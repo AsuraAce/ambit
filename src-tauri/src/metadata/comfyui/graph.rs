@@ -323,6 +323,53 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "KSampler" {
+            match key {
+                "seed" | "noise_seed" => return arr.get(0),
+                "steps" => return arr.get(2),
+                "cfg" => return arr.get(3),
+                "sampler_name" => return arr.get(4),
+                "scheduler" => return arr.get(5),
+                "denoise" => return arr.get(6),
+                _ => {}
+            }
+        }
+
+        if t == "KSamplerAdvanced" {
+            match key {
+                "noise_seed" | "seed" => return arr.get(1),
+                "steps" => return arr.get(3),
+                "cfg" => return arr.get(4),
+                "sampler_name" => return arr.get(5),
+                "scheduler" => return arr.get(6),
+                "start_at_step" => return arr.get(7),
+                "end_at_step" => return arr.get(8),
+                _ => {}
+            }
+        }
+
+        if t == "ImpactWildcardProcessor" {
+            match key {
+                "wildcard_text" => return arr.get(0),
+                "populated_text" => return arr.get(1),
+                "seed" => return arr.get(3),
+                _ => {
+                    // Default to populated_text if asking for "text" or "string"
+                    if key == "text" || key == "string" {
+                        return arr.get(1);
+                    }
+                }
+            }
+        }
+
+        if t == "Concat Text _O" {
+            match key {
+                "text1" => return arr.get(0),
+                "text2" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         // Heuristic mapping for UI format
         match key {
             "steps" => {
@@ -384,7 +431,18 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                         if common.iter().any(|&c| lower.contains(c)) {
                             return Some(val);
                         }
-                        let exclusions = ["fixed", "increment", "decrement", "random"];
+                        let exclusions = [
+                            "fixed",
+                            "increment",
+                            "decrement",
+                            "random",
+                            "randomize",
+                            "enable",
+                            "disable",
+                            "none",
+                            "null",
+                            "undefined",
+                        ];
                         if !s.contains(' ') && s.len() < 20 && !exclusions.contains(&lower.as_str())
                         {
                             return Some(val);
@@ -406,6 +464,22 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                         ];
                         let lower = s.to_lowercase();
                         if common.iter().any(|&c| lower.contains(c)) {
+                            return Some(val);
+                        }
+                        let exclusions = [
+                            "fixed",
+                            "increment",
+                            "decrement",
+                            "random",
+                            "randomize",
+                            "enable",
+                            "disable",
+                            "none",
+                            "null",
+                            "undefined",
+                        ];
+                        if !s.contains(' ') && s.len() < 20 && !exclusions.contains(&lower.as_str())
+                        {
                             return Some(val);
                         }
                     }

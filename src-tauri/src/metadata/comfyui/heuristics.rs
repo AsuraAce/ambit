@@ -101,33 +101,39 @@ pub fn find_wireless_node(
         }
     }
 
-    // Wireless Prompts (By Title)
+    // Wireless Prompts (By Title or Broadcaster)
     if needed_type == "CONDITIONING" {
+        let mut best_match = None;
         for (id, node) in graph.nodes() {
-            if let Some(title) = node
+            let t = get_node_type(node);
+            let title = node
                 .get("_meta")
                 .and_then(|m| m.get("title"))
                 .and_then(|v| v.as_str())
-            {
-                let title_lower = title.to_lowercase();
-                let t = get_node_type(node);
+                .unwrap_or("");
+            let title_lower = title.to_lowercase();
 
-                // Positive
-                if (input_name == "positive" || input_name == "conditioning")
-                    && title_lower.contains("positive")
-                {
-                    // Ensure it is a prompt node type
-                    if t.contains("CLIPTextEncode") {
-                        return Some(id.clone());
-                    }
-                }
-                // Negative
-                if input_name == "negative" && title_lower.contains("negative") {
-                    if t.contains("CLIPTextEncode") {
-                        return Some(id.clone());
-                    }
+            // 1. Explicitly Titled Prompt Node (Strongest Match)
+            if (input_name == "positive" || input_name == "conditioning")
+                && title_lower.contains("positive")
+            {
+                if t.contains("CLIPTextEncode") {
+                    return Some(id.clone());
                 }
             }
+            if input_name == "negative" && title_lower.contains("negative") {
+                if t.contains("CLIPTextEncode") {
+                    return Some(id.clone());
+                }
+            }
+
+            // 2. Broadcaster Nodes (Fallback)
+            if t == "Prompts Everywhere" || t == "Anything Everywhere" || t == "Everything Everywhere" {
+                best_match = Some(id.clone());
+            }
+        }
+        if best_match.is_some() {
+            return best_match;
         }
     }
 
