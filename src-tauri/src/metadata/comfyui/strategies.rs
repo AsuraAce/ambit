@@ -38,7 +38,10 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                 meta.seed = v;
                 found = true;
             }
-            if let Some(v) = get_node_param(node, "sampler").and_then(|v| v.as_str()) {
+            if let Some(v) = get_node_param(node, "sampler")
+                .or_else(|| get_node_param(node, "sampler_name"))
+                .and_then(|v| v.as_str())
+            {
                 meta.sampler = v.to_string();
                 found = true;
             }

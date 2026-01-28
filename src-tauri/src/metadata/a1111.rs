@@ -152,7 +152,7 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         }
                     }
                     "Scheduler" => {
-                        if meta.sampler.is_empty() || meta.sampler == "Unknown" {
+                        if meta.sampler.is_empty() || meta.sampler == "Unknown" || meta.sampler == "_" {
                             meta.sampler = format!("Unknown ({})", val);
                         } else if !meta.sampler.to_lowercase().contains(&val.to_lowercase()) {
                             meta.sampler = format!("{}_{}", meta.sampler, val);

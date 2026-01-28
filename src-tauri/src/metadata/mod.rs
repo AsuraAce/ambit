@@ -88,7 +88,12 @@ impl ImageMetadata {
         if self.seed == 0 {
             self.seed = other.seed;
         }
-        if self.sampler.is_empty() || self.sampler == "Unknown" || self.sampler == "_" {
+        if self.sampler.is_empty()
+            || self.sampler == "Unknown"
+            || self.sampler == "_"
+            || self.sampler.starts_with("Unknown (")
+            || self.sampler.starts_with("_ (")
+        {
             self.sampler = other.sampler;
         }
         if self.positive_prompt.trim().is_empty()

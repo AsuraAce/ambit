@@ -55,7 +55,12 @@ pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
                         meta.seed = v;
                     }
                 }
-                "Sampler" => meta.sampler = val.trim().to_string(),
+                "Sampler" => {
+                    let s = val.trim();
+                    if s != "_" && s != "None" {
+                        meta.sampler = s.to_string();
+                    }
+                }
                 "Scheduler" => {
                     if !meta.sampler.is_empty() {
                         meta.sampler = format!("{} ({})", meta.sampler, val.trim());
