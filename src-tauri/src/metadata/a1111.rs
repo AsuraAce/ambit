@@ -103,7 +103,7 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                 }
                 negative_prompt.push_str(&line);
             }
-        } else if (state == 2) {
+        } else if state == 2 {
             params_lines.push(line);
         }
     }
@@ -139,10 +139,16 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         }
                     }
                     "Sampler" => {
+                        let cleaned_val = if val == "_" || val == "None" || val.is_empty() {
+                            "Unknown"
+                        } else {
+                            val
+                        };
+
                         if meta.sampler == "Unknown" || meta.sampler.is_empty() {
-                            meta.sampler = val.to_string();
-                        } else if !meta.sampler.contains(val) {
-                            meta.sampler = format!("{}_{}", meta.sampler, val);
+                            meta.sampler = cleaned_val.to_string();
+                        } else if cleaned_val != "Unknown" && !meta.sampler.contains(cleaned_val) {
+                            meta.sampler = format!("{}_{}", meta.sampler, cleaned_val);
                         }
                     }
                     "Scheduler" => {
@@ -459,5 +465,17 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         assert_eq!(meta.cfg, 6.0);
         assert_eq!(meta.seed, 819601553905272);
         assert!(meta.model.contains("Osaka[REV3]"));
+    }
+
+    #[test]
+    fn test_extract_comfyui_mock_sampler() {
+        let raw = "Steps: 20, Sampler: _, CFG scale: 5, Seed: 1047146944135898, Size: 512x768, Model: , Version: ComfyUI";
+        let meta = extract_a1111_metadata(raw, None);
+        
+        // Sampler should be Unknown, not "_"
+        assert_eq!(meta.sampler, "Unknown");
+        assert_eq!(meta.steps, 20);
+        assert_eq!(meta.cfg, 5.0);
+        assert_eq!(meta.seed, 1047146944135898);
     }
 }

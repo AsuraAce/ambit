@@ -435,6 +435,16 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         return Some(format!("{}{}{}", text_a, sep, text_b));
     }
 
+    // Concat Text _O (Custom node)
+    if t == "Concat Text _O" {
+        let text_a = trace_text_input(graph, node_id, "text1").unwrap_or_default();
+        let text_b = trace_text_input(graph, node_id, "text2").unwrap_or_default();
+        // Typically these are joined with a comma or space
+        if text_a.is_empty() { return Some(text_b); }
+        if text_b.is_empty() { return Some(text_a); }
+        return Some(format!("{}, {}", text_a, text_b));
+    }
+
     // TriggerWord Toggle (LoraManager)
     if t == "TriggerWord Toggle (LoraManager)" {
         if let Some(text) = trace_text_input(graph, node_id, "trigger_words") {

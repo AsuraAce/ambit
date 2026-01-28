@@ -199,7 +199,11 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.seed = secondary.seed;
     }
 
-    if base.sampler == "Unknown" || base.sampler.is_empty() || base.sampler == "_" {
+    if base.sampler == "Unknown"
+        || base.sampler.is_empty()
+        || base.sampler == "_"
+        || base.sampler.starts_with("Unknown (")
+    {
         base.sampler = secondary.sampler;
     }
 

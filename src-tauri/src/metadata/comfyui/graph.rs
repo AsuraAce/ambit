@@ -287,6 +287,42 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "SDPromptSaver" {
+            match key {
+                "seed" => {
+                    if let Some(v) = arr.get(3) {
+                        return Some(v);
+                    }
+                }
+                "steps" => {
+                    if let Some(v) = arr.get(5) {
+                        return Some(v);
+                    }
+                }
+                "cfg" => {
+                    if let Some(v) = arr.get(6) {
+                        return Some(v);
+                    }
+                }
+                "sampler_name" => {
+                    if let Some(v) = arr.get(7) {
+                        return Some(v);
+                    }
+                }
+                "scheduler" => {
+                    if let Some(v) = arr.get(8) {
+                        return Some(v);
+                    }
+                }
+                "model_name" | "ckpt_name" => {
+                    if let Some(v) = arr.get(2) {
+                        return Some(v);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         // Heuristic mapping for UI format
         match key {
             "steps" => {
@@ -370,6 +406,16 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                         ];
                         let lower = s.to_lowercase();
                         if common.iter().any(|&c| lower.contains(c)) {
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+            "lora_name" => {
+                for val in arr {
+                    if let Some(s) = val.as_str() {
+                        if s.ends_with(".safetensors") || s.ends_with(".ckpt") || s.ends_with(".pt")
+                        {
                             return Some(val);
                         }
                     }
