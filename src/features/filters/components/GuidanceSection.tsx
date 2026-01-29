@@ -49,11 +49,15 @@ const CONTROLNET_TYPES = [
 ];
 
 const IPADAPTER_TYPES = [
-    { id: 'faceid', label: 'FaceID', icon: Smile },
+    { id: 'faceid-plus', label: 'FaceID Plus', icon: Smile },
+    { id: 'faceid', label: 'FaceID', icon: User },
+    { id: 'plus-face', label: 'Plus Face', icon: Smile },
     { id: 'plus', label: 'Plus', icon: Zap },
+    { id: 'portrait', label: 'Portrait', icon: User },
     { id: 'full-face', label: 'Full Face', icon: User },
     { id: 'light', label: 'Light', icon: Sun },
     { id: 'composition', label: 'Comp', icon: Box },
+    { id: 'style', label: 'Style', icon: Palette },
     { id: 'standard', label: 'Standard', icon: ImageIcon },
 ];
 
@@ -104,23 +108,63 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
         // This is still useful while the background harvester hasn't run yet
         const descriptiveName = resolveDescriptiveName(modelName).toLowerCase();
 
-        // Special check for IP-Adapter separation in fallback
-        if (descriptiveName.includes('ip-adapter') || descriptiveName.includes('ipad_')) {
-            if (descriptiveName.includes('faceid')) return 'faceid';
-            if (descriptiveName.includes('plus')) return 'plus';
+        const isIpAdapter = descriptiveName.includes('ip-adapter') || descriptiveName.includes('ipad_') || descriptiveName.includes('ip adapter') || descriptiveName.includes('ipadapter') || descriptiveName.includes('ipad');
+        const hasStrongIpKeyword = descriptiveName.includes('faceid') || descriptiveName.includes('face-id') || descriptiveName.includes('portrait') || descriptiveName.includes('reference') || descriptiveName.includes('precise') || descriptiveName.includes('face') || descriptiveName.includes('plus');
+
+        // Strong ControlNet indicators (subtypes)
+        const hasStrongCnetKeyword = descriptiveName.includes('canny') || descriptiveName.includes('depth') || descriptiveName.includes('pose') ||
+            descriptiveName.includes('scribble') || descriptiveName.includes('lineart') || descriptiveName.includes('softedge') ||
+            descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge') || descriptiveName.includes('normal') ||
+            descriptiveName.includes('inpaint') || descriptiveName.includes('tile') || descriptiveName.includes('seg') ||
+            descriptiveName.includes('shuffle') || descriptiveName.includes('recolor') || descriptiveName.includes('mlsd');
+
+        const isControlnet = descriptiveName.includes('controlnet') || descriptiveName.includes('cnet') || descriptiveName.includes('control_');
+
+        if (isIpAdapter || (hasStrongIpKeyword && !hasStrongCnetKeyword)) {
+            if ((descriptiveName.includes('faceid') || descriptiveName.includes('face-id')) && descriptiveName.includes('plus')) {
+                return 'faceid-plus';
+            }
+            if (descriptiveName.includes('faceid') || descriptiveName.includes('face-id') || descriptiveName.includes('insightface')) {
+                return 'faceid';
+            }
+            if ((descriptiveName.includes('face') || descriptiveName.includes('full')) && descriptiveName.includes('plus')) {
+                return 'plus-face';
+            }
+            if (descriptiveName.includes('portrait')) {
+                return 'portrait';
+            }
+            if (descriptiveName.includes('plus') || descriptiveName.includes('vit-h') || descriptiveName.includes('precise') || descriptiveName.includes('reference')) {
+                return 'plus';
+            }
+            if (descriptiveName.includes('style')) {
+                return 'style';
+            }
+            if (descriptiveName.includes('composition')) {
+                return 'composition';
+            }
+            if (descriptiveName.includes('light')) {
+                return 'light';
+            }
+            if (descriptiveName.includes('full-face') || descriptiveName.includes('full face')) {
+                return 'full-face';
+            }
             return 'standard';
         }
 
-        // Simple keyword fallback
-        if (descriptiveName.includes('canny')) return 'canny';
-        if (descriptiveName.includes('depth')) return 'depth';
-        if (descriptiveName.includes('pose')) return 'pose';
-        if (descriptiveName.includes('scribble') || descriptiveName.includes('softedge') || descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge')) return 'scribble';
-        if (descriptiveName.includes('lineart')) return 'lineart';
-        if (descriptiveName.includes('normal')) return 'normal';
-        if (descriptiveName.includes('inpaint')) return 'inpaint';
-        if (descriptiveName.includes('tile')) return 'tile';
-        if (descriptiveName.includes('seg')) return 'segmentation';
+        if (isControlnet || hasStrongCnetKeyword) {
+            if (descriptiveName.includes('canny') || descriptiveName.includes('precise')) return 'canny';
+            if (descriptiveName.includes('depth')) return 'depth';
+            if (descriptiveName.includes('pose')) return 'pose';
+            if (descriptiveName.includes('scribble') || descriptiveName.includes('softedge') || descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge')) return 'scribble';
+            if (descriptiveName.includes('lineart')) return 'lineart';
+            if (descriptiveName.includes('normal')) return 'normal';
+            if (descriptiveName.includes('inpaint')) return 'inpaint';
+            if (descriptiveName.includes('tile')) return 'tile';
+            if (descriptiveName.includes('seg')) return 'segmentation';
+            if (descriptiveName.includes('shuffle')) return 'shuffle';
+            if (descriptiveName.includes('recolor')) return 'recolor';
+            if (descriptiveName.includes('mlsd')) return 'mlsd';
+        }
 
         return null;
     };
