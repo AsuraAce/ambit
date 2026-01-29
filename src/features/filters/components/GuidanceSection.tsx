@@ -19,7 +19,10 @@ import {
     Image as ImageIcon,
     Sun,
     Accessibility,
-    HelpCircle
+    HelpCircle,
+    Shuffle,
+    Palette,
+    Box
 } from 'lucide-react';
 
 interface GuidanceSectionProps {
@@ -30,25 +33,28 @@ interface GuidanceSectionProps {
 }
 
 const CONTROLNET_TYPES = [
-    { id: 'canny', label: 'Canny', icon: Zap, keywords: ['canny'] },
-    { id: 'depth', label: 'Depth', icon: Layers, keywords: ['depth', 'midas', 'leres', 'zoe'] },
-    { id: 'pose', label: 'Pose', icon: Accessibility, keywords: ['pose', 'openpose'] },
-    { id: 'scribble', label: 'Scribble', icon: Pencil, keywords: ['scribble', 'hed'] },
-    { id: 'lineart', label: 'Lineart', icon: PenTool, keywords: ['lineart'] },
-    { id: 'normal', label: 'Normal', icon: Globe, keywords: ['normal', 'bae'] },
-    { id: 'inpaint', label: 'Inpaint', icon: Brush, keywords: ['inpaint'] },
-    { id: 'tile', label: 'Tile', icon: LayoutGrid, keywords: ['tile'] },
-    { id: 'mlsd', label: 'MLSD', icon: Grid, keywords: ['mlsd'] },
-    { id: 'segmentation', label: 'Seg', icon: Puzzle, keywords: ['seg', 'segmentation', 'ade20k'] },
-    { id: 'ip2p', label: 'Instruct', icon: Sparkles, keywords: ['ip2p', 'instruct'] },
+    { id: 'canny', label: 'Canny', icon: Zap },
+    { id: 'depth', label: 'Depth', icon: Layers },
+    { id: 'pose', label: 'Pose', icon: Accessibility },
+    { id: 'scribble', label: 'Scribble', icon: Pencil },
+    { id: 'lineart', label: 'Lineart', icon: PenTool },
+    { id: 'normal', label: 'Normal', icon: Globe },
+    { id: 'inpaint', label: 'Inpaint', icon: Brush },
+    { id: 'tile', label: 'Tile', icon: LayoutGrid },
+    { id: 'mlsd', label: 'MLSD', icon: Grid },
+    { id: 'segmentation', label: 'Seg', icon: Puzzle },
+    { id: 'ip2p', label: 'Instruct', icon: Sparkles },
+    { id: 'shuffle', label: 'Shuffle', icon: Shuffle },
+    { id: 'recolor', label: 'Recolor', icon: Palette },
 ];
 
 const IPADAPTER_TYPES = [
-    { id: 'faceid', label: 'FaceID', icon: Smile, keywords: ['faceid'] },
-    { id: 'plus', label: 'Plus', icon: Zap, keywords: ['plus'] },
-    { id: 'full-face', label: 'Full Face', icon: User, keywords: ['full-face', 'plus-face'] },
-    { id: 'light', label: 'Light', icon: Sun, keywords: ['light'] },
-    { id: 'standard', label: 'Standard', icon: ImageIcon, keywords: ['ip-adapter', 'adapter'] },
+    { id: 'faceid', label: 'FaceID', icon: Smile },
+    { id: 'plus', label: 'Plus', icon: Zap },
+    { id: 'full-face', label: 'Full Face', icon: User },
+    { id: 'light', label: 'Light', icon: Sun },
+    { id: 'composition', label: 'Comp', icon: Box },
+    { id: 'standard', label: 'Standard', icon: ImageIcon },
 ];
 
 export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
@@ -87,15 +93,35 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
         return filename;
     };
 
-    // Generic type resolution helper
-    const getModelType = (modelName: string, types: { id: string, keywords: string[] }[]): string | null => {
-        // Use resolved descriptive name for matching to avoid missing keywords in generic filenames
-        const descriptiveName = resolveDescriptiveName(modelName).toLowerCase();
-        for (const type of types) {
-            if (type.keywords.some(kw => descriptiveName.includes(kw))) {
-                return type.id;
-            }
+    // Guidance type resolution helper - now uses backend signatures
+    const getModelType = (modelName: string): string | null => {
+        // 1. Try backend classification first (Signatures/Subtypes)
+        if (ranges?.guidanceSubtypes?.[modelName]) {
+            return ranges.guidanceSubtypes[modelName];
         }
+
+        // 2. Fallback to name resolution for new/unsaved items
+        // This is still useful while the background harvester hasn't run yet
+        const descriptiveName = resolveDescriptiveName(modelName).toLowerCase();
+
+        // Special check for IP-Adapter separation in fallback
+        if (descriptiveName.includes('ip-adapter') || descriptiveName.includes('ipad_')) {
+            if (descriptiveName.includes('faceid')) return 'faceid';
+            if (descriptiveName.includes('plus')) return 'plus';
+            return 'standard';
+        }
+
+        // Simple keyword fallback
+        if (descriptiveName.includes('canny')) return 'canny';
+        if (descriptiveName.includes('depth')) return 'depth';
+        if (descriptiveName.includes('pose')) return 'pose';
+        if (descriptiveName.includes('scribble') || descriptiveName.includes('softedge') || descriptiveName.includes('soft_edge') || descriptiveName.includes('soft-edge')) return 'scribble';
+        if (descriptiveName.includes('lineart')) return 'lineart';
+        if (descriptiveName.includes('normal')) return 'normal';
+        if (descriptiveName.includes('inpaint')) return 'inpaint';
+        if (descriptiveName.includes('tile')) return 'tile';
+        if (descriptiveName.includes('seg')) return 'segmentation';
+
         return null;
     };
 
@@ -103,8 +129,8 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     const controlNetModelsByType = React.useMemo(() => {
         const mapping: Record<string, string[]> = { other: [] };
         (ranges?.controlNets || []).forEach(model => {
-            const type = getModelType(model, CONTROLNET_TYPES);
-            if (type) {
+            const type = getModelType(model);
+            if (type && CONTROLNET_TYPES.some(t => t.id === type)) {
                 if (!mapping[type]) mapping[type] = [];
                 mapping[type].push(model);
             } else {
@@ -112,21 +138,22 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
-    }, [ranges?.controlNets]);
+    }, [ranges?.controlNets, ranges?.guidanceSubtypes]);
 
     const activeControlNetTypes = React.useMemo(() => {
         const selected = filters.controlNets || [];
         const activeTypes = new Set<string>();
         selected.forEach(model => {
-            const type = getModelType(model, CONTROLNET_TYPES);
-            if (type) {
+            const type = getModelType(model);
+            if (type && CONTROLNET_TYPES.some(t => t.id === type)) {
                 activeTypes.add(type);
             } else if (controlNetModelsByType.other.includes(model)) {
                 activeTypes.add('other');
             }
         });
         return Array.from(activeTypes);
-    }, [filters.controlNets, controlNetModelsByType.other]);
+    }, [filters.controlNets, controlNetModelsByType.other, ranges?.guidanceSubtypes]);
+
 
     const availableControlNetOptions = React.useMemo(() => {
         const options = CONTROLNET_TYPES.filter(t => controlNetModelsByType[t.id])
@@ -151,8 +178,8 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     const ipAdapterModelsByType = React.useMemo(() => {
         const mapping: Record<string, string[]> = { other: [] };
         (ranges?.ipAdapters || []).forEach(model => {
-            const type = getModelType(model, IPADAPTER_TYPES);
-            if (type) {
+            const type = getModelType(model);
+            if (type && IPADAPTER_TYPES.some(t => t.id === type)) {
                 if (!mapping[type]) mapping[type] = [];
                 mapping[type].push(model);
             } else {
@@ -160,21 +187,21 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
             }
         });
         return mapping;
-    }, [ranges?.ipAdapters]);
+    }, [ranges?.ipAdapters, ranges?.guidanceSubtypes]);
 
     const activeIpAdapterTypes = React.useMemo(() => {
         const selected = filters.ipAdapters || [];
         const activeTypes = new Set<string>();
         selected.forEach(model => {
-            const type = getModelType(model, IPADAPTER_TYPES);
-            if (type) {
+            const type = getModelType(model);
+            if (type && IPADAPTER_TYPES.some(t => t.id === type)) {
                 activeTypes.add(type);
             } else if (ipAdapterModelsByType.other.includes(model)) {
                 activeTypes.add('other');
             }
         });
         return Array.from(activeTypes);
-    }, [filters.ipAdapters, ipAdapterModelsByType.other]);
+    }, [filters.ipAdapters, ipAdapterModelsByType.other, ranges?.guidanceSubtypes]);
 
     const availableIpAdapterOptions = React.useMemo(() => {
         const options = IPADAPTER_TYPES.filter(t => ipAdapterModelsByType[t.id])

@@ -6,63 +6,92 @@ pub struct Resources {
 }
 
 pub fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
-    if let Some(arr) = val.as_array() {
-        for l in arr {
-            let name = l
-                .get("lora_name")
-                .and_then(|v| v.as_str())
-                .or_else(|| l.get("model_name").and_then(|v| v.as_str()))
-                .or_else(|| {
-                    l.get("model").and_then(|m| {
-                        m.as_str()
-                            // v3.x: model.model_name
-                            .or_else(|| m.get("model_name").and_then(|v| v.as_str()))
-                            // v5.x: model.name
-                            .or_else(|| m.get("name").and_then(|v| v.as_str()))
-                    })
-                });
+    let process_item = |l: &serde_json::Value, res: &mut Resources| {
+        let name = l
+            .get("lora_name")
+            .and_then(|v| v.as_str())
+            .or_else(|| l.get("model_name").and_then(|v| v.as_str()))
+            .or_else(|| {
+                l.get("model").and_then(|m| {
+                    m.as_str()
+                        // v3.x: model.model_name
+                        .or_else(|| m.get("model_name").and_then(|v| v.as_str()))
+                        // v5.x: model.name
+                        .or_else(|| m.get("name").and_then(|v| v.as_str()))
+                })
+            })
+            .or_else(|| l.as_str()); // Handle string value direct
 
-            if let Some(n) = name {
-                // Default to 1.0 (standard implicit weight)
-                let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(1.0);
+        if let Some(n) = name {
+            // Default to 1.0 (standard implicit weight)
+            let weight = l.get("weight").and_then(|w| w.as_f64()).unwrap_or(1.0);
 
-                // Show everything EXCEPT 1.0 (including 0.0)
-                let entry = if (weight - 1.0).abs() > f64::EPSILON {
-                    format!("{} ({:.2})", n, weight)
-                } else {
-                    n.to_string()
-                };
+            // Show everything EXCEPT 1.0 (including 0.0)
+            let entry = if (weight - 1.0).abs() > f64::EPSILON {
+                format!("{} ({:.2})", n, weight)
+            } else {
+                n.to_string()
+            };
 
-                if !res.loras.contains(&entry) {
-                    res.loras.push(entry);
-                }
+            if !res.loras.contains(&entry) {
+                res.loras.push(entry);
             }
         }
+    };
+
+    if let Some(arr) = val.as_array() {
+        for l in arr {
+            process_item(l, res);
+        }
+    } else {
+        process_item(val, res);
     }
 }
 
 pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
-    if let Some(arr) = val.as_array() {
-        for c in arr {
-            let name = c
-                .get("control_model")
-                .and_then(|v| v.as_str())
-                .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
-                .or_else(|| {
-                    c.get("model").and_then(|m| {
-                        m.get("model_name")
-                            .and_then(|v| v.as_str())
-                            // v5.x: model.name
-                            .or_else(|| m.get("name").and_then(|v| v.as_str()))
-                    })
-                });
+    let process_item = |c: &serde_json::Value, res: &mut Resources| {
+        let name = c
+            .get("control_model")
+            .and_then(|v| v.as_str())
+            .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
+            .or_else(|| {
+                c.get("model").and_then(|m| {
+                    m.get("model_name")
+                        .and_then(|v| v.as_str())
+                        // v5.x: model.name
+                        .or_else(|| m.get("name").and_then(|v| v.as_str()))
+                })
+            })
+            .or_else(|| c.as_str()); // Handle string value direct
 
-            if let Some(n) = name {
-                if !res.control_nets.contains(&n.to_string()) {
-                    res.control_nets.push(n.to_string());
+        if let Some(n) = name {
+            let cleaned = crate::metadata::guidance::GuidanceClassifier::clean_name(n);
+            
+            // Redirection check
+            let (category, _) = crate::metadata::guidance::GuidanceClassifier::classify(&cleaned, None)
+                .unwrap_or((crate::metadata::guidance::GuidanceCategory::ControlNet, "other".to_string()));
+
+            match category {
+                crate::metadata::guidance::GuidanceCategory::IPAdapter => {
+                    if !res.ip_adapters.contains(&cleaned) {
+                        res.ip_adapters.push(cleaned);
+                    }
+                }
+                _ => {
+                    if !res.control_nets.contains(&cleaned) {
+                        res.control_nets.push(cleaned);
+                    }
                 }
             }
         }
+    };
+
+    if let Some(arr) = val.as_array() {
+        for c in arr {
+            process_item(c, res);
+        }
+    } else {
+        process_item(val, res);
     }
 }
 
@@ -78,11 +107,13 @@ pub fn extract_ipadapters(val: &serde_json::Value, res: &mut Resources) {
                         .and_then(|v| v.as_str())
                         .or_else(|| m.get("name").and_then(|v| v.as_str()))
                 })
-            });
+            })
+            .or_else(|| item.as_str()); // Handle string value direct
 
         if let Some(n) = name {
-            if !res.ip_adapters.contains(&n.to_string()) {
-                res.ip_adapters.push(n.to_string());
+            let cleaned = crate::metadata::guidance::GuidanceClassifier::clean_name(n);
+            if !res.ip_adapters.contains(&cleaned) {
+                res.ip_adapters.push(cleaned);
             }
         }
     };
@@ -91,7 +122,7 @@ pub fn extract_ipadapters(val: &serde_json::Value, res: &mut Resources) {
         for item in arr {
             process_item(item, res);
         }
-    } else if val.is_object() {
+    } else {
         process_item(val, res);
     }
 }
@@ -102,21 +133,22 @@ pub fn scan_for_resources(val: &serde_json::Value, res: &mut Resources) {
             if let Some(loras) = map.get("loras") {
                 extract_loras(loras, res);
             }
-            if let Some(cns) = map.get("controlnets").or(map.get("control_adapters")) {
+            if let Some(cns) = map.get("controlnets").or(map.get("control_adapters")).or(map.get("control_model")) {
                 extract_controlnets(cns, res);
             }
-            if let Some(ips) = map.get("ip_adapters").or(map.get("ip_adapter")) {
+            if let Some(ips) = map.get("ip_adapters").or(map.get("ip_adapter")).or(map.get("ip_adapter_model")) {
                 extract_ipadapters(ips, res);
             }
 
             for (_, v) in map {
                 if let Some(s) = v.as_str() {
+                    // Try to parse string as JSON if it looks like one
                     if s.trim_start().starts_with('{') {
                         if let Ok(nested) = serde_json::from_str(s) {
                             scan_for_resources(&nested, res);
                         }
                     }
-                } else {
+                } else if v.is_object() || v.is_array() {
                     scan_for_resources(v, res);
                 }
             }
@@ -183,7 +215,8 @@ mod tests {
                 "1": {
                     "loras": [
                         { "model_name": "style2", "weight": 1.0 }
-                    ]
+                    ],
+                    "control_model": "softedge"
                 }
             }
         });
@@ -191,8 +224,9 @@ mod tests {
         assert_eq!(res.loras.len(), 2);
         assert!(res.loras.contains(&"style1 (0.80)".to_string()));
         assert!(res.loras.contains(&"style2".to_string()));
-        assert_eq!(res.control_nets.len(), 1);
+        assert_eq!(res.control_nets.len(), 2);
         assert!(res.control_nets.contains(&"canny".to_string()));
+        assert!(res.control_nets.contains(&"softedge".to_string()));
     }
 
     #[test]

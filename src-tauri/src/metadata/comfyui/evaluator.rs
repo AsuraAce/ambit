@@ -302,7 +302,7 @@ impl<'a> ComfyEvaluator<'a> {
         
         // 6. ControlNets
         use super::conditioning::find_connected_controlnets;
-        let cnets = find_connected_controlnets(self.graph, node_id, "positive");
+        let cnets = find_connected_controlnets(self.graph, node_id, "positive", &mut meta.ip_adapters);
         for cn in cnets {
             if !meta.control_nets.contains(&cn) {
                 meta.control_nets.push(cn);
@@ -435,7 +435,7 @@ impl<'a> ComfyEvaluator<'a> {
             if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
                 // ... (Lora logic remains same)
                 if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
-                    let name = name.replace(".safetensors", "").replace(".ckpt", "");
+                    let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                     if !loras.contains(&name) {
                         loras.push(name);
                     }
@@ -485,16 +485,12 @@ impl<'a> ComfyEvaluator<'a> {
                 }
 
                 if !name.is_empty() && name != "None" {
-                    return Some(name.replace(".safetensors", "").replace(".ckpt", ""));
+                    return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(&name));
                 }
             } else if get_node_type(node) == "SDParameterGenerator" {
                 if let Some(n) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) {
                     if n != "None" {
-                        return Some(
-                            n.to_string()
-                                .replace(".safetensors", "")
-                                .replace(".ckpt", ""),
-                        );
+                        return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(n));
                     }
                 }
             }
@@ -507,7 +503,7 @@ impl<'a> ComfyEvaluator<'a> {
                          // Check if it's the loader
                          if get_node_type(ip_node).contains("IPAdapterModelLoader") {
                              if let Some(name) = get_node_param(ip_node, "ipadapter_file").and_then(|v| v.as_str()) {
-                                 let name = name.replace(".bin", "").replace(".safetensors", "");
+                                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                                  
                                  // IPAdapter usually implies weight, but it's on the Apply node.
                                  if !ip_adapters.contains(&name) {

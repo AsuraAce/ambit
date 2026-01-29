@@ -274,15 +274,49 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         if key.starts_with("ControlNet") {
                             if let Some(start) = val.find("Model: ") {
                                 let model_part = &val[start + 7..];
-                                let model_name = model_part
+                                let full_model_str = model_part
                                     .split(',')
                                     .next()
                                     .unwrap_or("")
                                     .trim()
                                     .trim_matches('"');
-                                if !model_name.is_empty() {
-                                    meta.control_nets.push(model_name.to_string());
-                                }
+                                
+                                if !full_model_str.is_empty() {
+                                    // Check for hash in [abc1234] format at the end of the string
+                                    let (model_name, hash) = if let Some(h_start) = full_model_str.rfind('[') {
+                                        if let Some(h_end) = full_model_str.rfind(']') {
+                                            if h_end > h_start {
+                                                let name = full_model_str[..h_start].trim();
+                                                let h = &full_model_str[h_start+1..h_end];
+                                                (name, Some(h))
+                                            } else {
+                                                (full_model_str, None)
+                                            }
+                                        } else {
+                                            (full_model_str, None)
+                                        }
+                                    } else {
+                                        (full_model_str, None)
+                                    };
+
+                                     let model_name = super::guidance::GuidanceClassifier::clean_name(model_name);
+
+                                    let (cat, _subtype) = super::guidance::GuidanceClassifier::classify(&model_name, hash)
+                                        .unwrap_or((super::guidance::GuidanceCategory::ControlNet, "other".to_string()));
+                                     
+                                     match cat {
+                                         super::guidance::GuidanceCategory::IPAdapter => {
+                                             if !meta.ip_adapters.contains(&model_name.to_string()) {
+                                                 meta.ip_adapters.push(model_name.to_string());
+                                             }
+                                         },
+                                         _ => {
+                                             if !meta.control_nets.contains(&model_name.to_string()) {
+                                                 meta.control_nets.push(model_name.to_string());
+                                             }
+                                         }
+                                     }
+                                 }
                             }
                         } else if key.starts_with("AddNet Model") {
                             let name = val.split('(').next().unwrap_or("").trim().trim_matches('"');
@@ -416,9 +450,10 @@ mod tests {
         assert_eq!(meta.model, "realcartoonSpecial_sp1");
         assert_eq!(meta.seed, 83289333);
         assert_eq!(meta.steps, 48);
-        assert!(meta
-            .control_nets
-            .contains(&"ip-adapter_sd15_light [932b88cf]".to_string()));
+        
+        // Should be moved to IP-Adapter by the classifier
+        assert!(meta.ip_adapters.contains(&"ip-adapter_sd15_light".to_string()));
+        assert!(meta.control_nets.is_empty());
     }
 
     #[test]

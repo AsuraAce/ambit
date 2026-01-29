@@ -177,7 +177,12 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
     prompts.join(", ")
 }
 
-pub fn find_connected_controlnets(graph: &ComfyGraph, start_node_id: &str, input_name: &str) -> Vec<String> {
+pub fn find_connected_controlnets(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    ip_adapters: &mut Vec<String>,
+) -> Vec<String> {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut controlnets = Vec::new();
@@ -199,8 +204,20 @@ pub fn find_connected_controlnets(graph: &ComfyGraph, start_node_id: &str, input
                 // Extract the ControlNet name
                 if let Some(cn_source) = get_source_id(graph, &current_id, "control_net") {
                     if let Some(cn_name) = trace_controlnet_name_valid(graph, &cn_source) {
-                         if !controlnets.contains(&cn_name) {
-                             controlnets.push(cn_name);
+                         let (category, _) = crate::metadata::guidance::GuidanceClassifier::classify(&cn_name, None)
+                             .unwrap_or((crate::metadata::guidance::GuidanceCategory::ControlNet, "other".to_string()));
+
+                         match category {
+                             crate::metadata::guidance::GuidanceCategory::IPAdapter => {
+                                 if !ip_adapters.contains(&cn_name) {
+                                     ip_adapters.push(cn_name);
+                                 }
+                             }
+                             _ => {
+                                 if !controlnets.contains(&cn_name) {
+                                     controlnets.push(cn_name);
+                                 }
+                             }
                          }
                     }
                 }
@@ -268,11 +285,11 @@ fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<Stri
             let t = get_node_type(node);
              if t == "ControlNetLoader" || t.contains("ControlNet Loader") {
                  if let Some(name) = get_node_param(node, "control_net_name").and_then(|v| v.as_str()) {
-                     return Some(name.replace(".pth", "").replace(".safetensors", ""));
+                     return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(name));
                  }
                  if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
                      if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                          return Some(s.replace(".pth", "").replace(".safetensors", ""));
+                          return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(s));
                      }
                  }
              }
