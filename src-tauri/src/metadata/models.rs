@@ -38,11 +38,17 @@ struct CivitAiVersion {
     model: CivitAiModel,
     name: String,
     id: i64,
+    #[serde(rename = "baseModel")]
+    base_model: Option<String>,
+    #[serde(rename = "trainedWords", default)]
+    trained_words: Vec<String>,
 }
 
 #[derive(Deserialize)]
 struct CivitAiModel {
     name: String,
+    #[serde(rename = "type")]
+    model_type: String,
 }
 
 #[derive(Serialize, specta::Type)]
@@ -290,13 +296,29 @@ pub async fn resolve_hashes_online(
             );
         }
 
-        // Find all images with missing model names or hash-like model names
+        // Find all hashes in models table that haven't been resolved yet
+        // OR hashes found in images that aren't in models at all
         let mut stmt = conn
             .prepare(
-                "SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
-             FROM images 
-             WHERE hash IS NOT NULL 
-             AND hash NOT IN (SELECT hash FROM models)",
+                "SELECT DISTINCT hash FROM (
+                    -- Hashes in images but not in models
+                    SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
+                    FROM images 
+                    WHERE hash IS NOT NULL 
+                    AND hash NOT IN (SELECT hash FROM models)
+                    
+                    UNION
+                    
+                    -- Hashes in models that haven't been resolved online (and aren't local-only pseudo-hashes)
+                    SELECT hash FROM models 
+                    WHERE civitai_version_id IS NULL 
+                    AND hash NOT LIKE 'file:%'
+                    AND hash NOT LIKE 'lora_%'
+                    AND hash NOT LIKE 'emb_%'
+                    AND hash NOT LIKE 'hyper_%'
+                    AND hash NOT LIKE 'cnet_%'
+                    AND hash NOT LIKE 'ipad_%'
+                )",
             )
             .map_err(|e| e.to_string())?;
 
@@ -348,7 +370,18 @@ pub async fn resolve_hashes_online(
                 if resp.status().is_success() {
                     if let Ok(version) = resp.json::<CivitAiVersion>().await {
                         let full_name = format!("{} {}", version.model.name, version.name);
-                        resolved_items.push((hash, full_name, version.id));
+                        
+                        // Map Civitai type to our resource_type
+                        let r_type = match version.model.model_type.to_lowercase().as_str() {
+                            "checkpoint" => "checkpoint",
+                            "lora" | "lycoris" => "loras",
+                            "textualinversion" => "embeddings",
+                            "hypernetwork" => "hypernetworks",
+                            "controlnet" => "control_nets",
+                            _ => "checkpoint", // Default
+                        };
+
+                        resolved_items.push((hash, full_name, version.id, r_type.to_string()));
                     } else {
                         failed += 1;
                     }
@@ -362,18 +395,28 @@ pub async fn resolve_hashes_online(
         }
     }
 
-    // 2. Save results
+    // 2. Save results and classify
     let newly_resolved = resolved_items.len();
     if newly_resolved > 0 {
         let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-        for (hash, name, version_id) in resolved_items {
+        for (hash, name, version_id, r_type) in resolved_items {
             let _ = tx.execute(
-                "INSERT OR IGNORE INTO models (hash, name, lookup_source, civitai_version_id, scanned_at, resource_type) VALUES (?1, ?2, 'civitai', ?3, ?4, 'checkpoint')",
-                params![hash, name, version_id, now]
+                "INSERT INTO models (hash, name, lookup_source, civitai_version_id, scanned_at, resource_type) 
+                 VALUES (?1, ?2, 'civitai', ?3, ?4, ?5)
+                 ON CONFLICT(hash) DO UPDATE SET 
+                    name = excluded.name, 
+                    lookup_source = 'civitai', 
+                    civitai_version_id = excluded.civitai_version_id, 
+                    resource_type = excluded.resource_type",
+                params![hash, name, version_id, now, r_type]
             );
         }
+        
+        // Run classification on these new models
+        let _ = classify_unlabeled_models(&tx);
+        
         tx.commit().map_err(|e| e.to_string())?;
     }
 
