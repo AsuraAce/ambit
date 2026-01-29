@@ -6,6 +6,7 @@ import { SyncProvider, useSync } from './SyncContext';
 import { CollectionProvider, useCollections } from './CollectionContext';
 import { SearchProvider, useSearch } from './SearchContext';
 import { WatcherProvider, useWatchers } from './WatcherContext';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 // Existing type for backward compatibility
 export interface LibraryContextType {
@@ -47,8 +48,17 @@ export interface LibraryContextType {
   // isImporting, isLiveWatching, etc. (Wait, isLiveWatching was already in Store but exposed here?)
 
   isImporting: boolean;
+  setIsImporting: (val: boolean) => void;
+  setImportProgress: (progress: any) => void;
   isRegeneratingThumbnails: boolean;
+  setIsRegeneratingThumbnails: (val: boolean) => void;
+  setThumbnailProgress: (progress: any) => void;
   isResolvingModels: boolean;
+  setIsResolvingModels: (val: boolean) => void;
+  modelResolutionProgress: any;
+  setModelResolutionProgress: (progress: any) => void;
+  lastModelResolutionResult: any;
+  setLastModelResolutionResult: (result: any) => void;
   isLiveSyncing: boolean;
   // isLiveWatching should be removed too? It was migrated earlier.
   // Actually isLiveWatching was used in AppHeader from LibraryContext earlier.
@@ -79,7 +89,7 @@ export interface LibraryContextType {
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
-import { ErrorBoundary } from '../components/common/ErrorBoundary';
+
 
 export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   return (
@@ -144,7 +154,11 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
   // Use Store for Activity Check
   const {
     isImporting, isRegeneratingThumbnails, isResolvingModels,
-    syncStatus, setIsActivityDockDismissed
+    syncStatus, setIsActivityDockDismissed,
+    setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress,
+    lastModelResolutionResult, setLastModelResolutionResult,
+    setIsImporting, setImportProgress,
+    setIsRegeneratingThumbnails, setThumbnailProgress
   } = useLibraryStore();
 
   const isAnyTaskActive = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing' || isResolvingModels;
@@ -159,15 +173,22 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     ...settingsCtx,
     ...collectionCtx,
     ...searchCtx,
-    ...syncCtx,
-    ...syncCtx,
     ...watcherCtx,
     isImporting,
+    setIsImporting,
+    setImportProgress,
     isRegeneratingThumbnails,
+    setIsRegeneratingThumbnails,
+    setThumbnailProgress,
     isResolvingModels,
+    setIsResolvingModels,
+    modelResolutionProgress,
+    setModelResolutionProgress,
+    lastModelResolutionResult,
+    setLastModelResolutionResult,
     syncState: syncCtx.syncState,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
-  }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx]);
+  }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx, isImporting, isRegeneratingThumbnails, isResolvingModels, modelResolutionProgress, lastModelResolutionResult]);
 
   return (
     <LibraryContext.Provider value={value as any}>

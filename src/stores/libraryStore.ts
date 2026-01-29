@@ -39,6 +39,7 @@ interface LibraryState {
     isActivityDockDismissed: boolean;
     isActivityDockMinimized: boolean;
     isPopulatingThumbnails: boolean;
+    lastModelResolutionResult: { success: boolean; message: string } | null;
 
     // Background Auto-Healing State
     isBackgroundHealingActive: boolean;
@@ -69,6 +70,7 @@ interface LibraryState {
     setIsActivityDockDismissed: (val: boolean) => void;
     setIsActivityDockMinimized: (val: boolean) => void;
     setIsPopulatingThumbnails: (val: boolean) => void;
+    setLastModelResolutionResult: (result: { success: boolean; message: string } | null) => void;
     incrementFacetCacheVersion: () => void;
 
     // Background Healing Actions
@@ -104,6 +106,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isActivityDockDismissed: false,
     isActivityDockMinimized: false,
     isPopulatingThumbnails: false,
+    lastModelResolutionResult: null,
     facetCacheVersion: 0,
 
     // Background Healing State
@@ -145,6 +148,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsActivityDockDismissed: (d) => set({ isActivityDockDismissed: d }),
     setIsActivityDockMinimized: (m) => set({ isActivityDockMinimized: m }),
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
+    setLastModelResolutionResult: (result) => set({ lastModelResolutionResult: result }),
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 
     // Background Healing Actions
