@@ -640,7 +640,7 @@ fn build_resource_facets(
     // thumbnail_mode = 'dynamic' forces skip of sidecar
     conn.execute(
         &format!(
-            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override)
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override, guidance_subtype)
                 SELECT '{}', m.name, m.hash,
                     COALESCE(SUM(rc.cnt), 0),
                     CASE 
@@ -653,9 +653,10 @@ fn build_resource_facets(
                     MIN(rc.first_used),
                     CASE WHEN m.thumbnail_path IS NOT NULL OR (m.sidecar_thumbnail_path IS NOT NULL AND m.thumbnail_mode IS NULL) THEN 1 ELSE 0 END,
                     CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
-                    CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
+                    CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
+                    m.guidance_subtype
                 FROM (
-                    SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode
+                    SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(guidance_subtype) as guidance_subtype
                     FROM models 
                     WHERE resource_type = '{}'
                     GROUP BY name

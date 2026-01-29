@@ -506,6 +506,7 @@ pub struct ParameterRanges {
     pub generation_types: Vec<String>,
     pub control_nets: Vec<String>,
     pub ip_adapters: Vec<String>,
+    pub guidance_subtypes: std::collections::HashMap<String, String>,
 }
 
 /// Get parameter ranges and distinct values for dynamic filter UI.
@@ -705,6 +706,21 @@ pub async fn get_parameter_ranges(
             rows.filter_map(|r| r.ok()).collect()
         };
         
+        // Fetch guidance subtypes from facet_cache for all found resources
+        let mut guidance_subtypes = std::collections::HashMap::new();
+        let all_guidance: Vec<&String> = control_nets.iter().chain(ip_adapters.iter()).collect();
+        if !all_guidance.is_empty() {
+             let mut stmt = conn.prepare(
+                 "SELECT resource_name, guidance_subtype FROM facet_cache WHERE guidance_subtype IS NOT NULL AND guidance_subtype != ''"
+             ).map_err(|e| e.to_string())?;
+             let rows = stmt.query_map([], |row| {
+                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+             }).map_err(|e| e.to_string())?;
+             for row in rows.flatten() {
+                 guidance_subtypes.insert(row.0, row.1);
+             }
+        }
+        
         Ok(ParameterRanges {
             steps,
             cfg,
@@ -713,6 +729,7 @@ pub async fn get_parameter_ranges(
             generation_types,
             control_nets,
             ip_adapters,
+            guidance_subtypes,
         })
     }).await.map_err(|e| e.to_string())?
 }

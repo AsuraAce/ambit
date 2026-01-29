@@ -965,6 +965,7 @@ pub fn init_db() -> Vec<Migration> {
         },
         migration38(),
         migration39(),
+        migration40(),
     ]
 }
 
@@ -1138,6 +1139,26 @@ fn migration38() -> Migration {
             -- Update ANALYZE for new tables
             ANALYZE image_controlnets;
             ANALYZE image_ipadapters;
+        ",
+        kind: MigrationKind::Up,
+    }
+}
+/// Migration 40: Add guidance classification columns to support robust filtering
+fn migration40() -> Migration {
+    Migration {
+        version: 40,
+        description: "add_guidance_classification_columns",
+        sql: "
+            -- Classification fields for models (ControlNet, IP-Adapter, etc.)
+            ALTER TABLE models ADD COLUMN guidance_category TEXT;
+            ALTER TABLE models ADD COLUMN guidance_subtype TEXT;
+            
+            -- Indices for fast classification lookups
+            CREATE INDEX IF NOT EXISTS idx_models_guidance_category ON models(guidance_category);
+            CREATE INDEX IF NOT EXISTS idx_models_guidance_subtype ON models(guidance_subtype);
+
+            -- Subtype in facet cache to drive UI icons
+            ALTER TABLE facet_cache ADD COLUMN guidance_subtype TEXT;
         ",
         kind: MigrationKind::Up,
     }
