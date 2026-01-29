@@ -1,6 +1,7 @@
 pub mod a1111;
 pub mod comfyui;
 pub mod invokeai;
+pub mod guidance;
 pub mod models;
 pub mod parsers;
 pub mod resources;

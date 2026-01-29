@@ -1,4 +1,5 @@
 use crate::db::resolve_db_path;
+use crate::metadata::guidance::{GuidanceCategory, GuidanceClassifier};
 use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -513,6 +514,10 @@ pub async fn scan_model_thumbnails(
                 "embeddings"
             } else if path_lower.contains("hypernetwork") {
                 "hypernetworks"
+            } else if path_lower.contains("controlnet") || path_lower.contains("control_") {
+                "control_nets"
+            } else if path_lower.contains("ipadapter") || path_lower.contains("ip-adapter") {
+                "ip_adapters"
             } else {
                 "checkpoint"
             };
@@ -582,6 +587,9 @@ pub async fn scan_model_thumbnails(
             }
         }
     }
+
+    // Classify any newly discovered guidance models
+    let _ = classify_unlabeled_models(&tx);
 
     tx.commit().map_err(|e| e.to_string())?;
 
@@ -687,9 +695,85 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
         params![now],
     )
     .map_err(|e| e.to_string())?;
+    
+    // 5. ControlNets
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            'cnet_' || j.value, 
+            j.value, 
+            'harvest_controlnet', 
+            ?1,
+            'control_nets'
+         FROM images, json_each(metadata_json, '$.controlNets') j
+         WHERE j.value IS NOT NULL AND j.value != ''",
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 6. IP-Adapters
+    conn.execute(
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+         SELECT DISTINCT 
+            'ipad_' || j.value, 
+            j.value, 
+            'harvest_ipadapter', 
+            ?1,
+            'ip_adapters'
+         FROM images, json_each(metadata_json, '$.ipAdapters') j
+         WHERE j.value IS NOT NULL AND j.value != ''",
+        params![now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 7. CLASSIFY: Run guidance classifier on un-classified items
+    classify_unlabeled_models(conn)?;
 
     Ok(())
 }
+
+fn classify_unlabeled_models(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn.prepare(
+        "SELECT hash, name, resource_type FROM models 
+         WHERE guidance_subtype IS NULL 
+         AND resource_type IN ('checkpoint', 'control_nets', 'ip_adapters')"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+    }).map_err(|e| e.to_string())?;
+
+    let mut updates = Vec::new();
+    for row in rows {
+        if let Ok((hash, name, r_type)) = row {
+            // Only try to classify if it's not a checkpoint, OR if it has a suspicious name
+            let should_classify = r_type != "checkpoint" || name.to_lowercase().contains("control") || name.to_lowercase().contains("ip-adapter");
+            
+            if should_classify {
+                let h_param = if hash.starts_with("file:") || hash.starts_with("cnet_") || hash.starts_with("ipad_") { None } else { Some(hash.as_str()) };
+                if let Some((cat, sub)) = GuidanceClassifier::classify(&name, h_param) {
+                    updates.push((hash, cat.as_str().to_string(), sub));
+                } else if r_type != "checkpoint" {
+                    // It's a guidance resource but we couldn't sub-classify it
+                    updates.push((hash, if r_type == "ip_adapters" { "IP-Adapter" } else { "ControlNet" }.to_string(), "other".to_string()));
+                }
+            }
+        }
+    }
+
+    if !updates.is_empty() {
+        let mut update_stmt = conn.prepare(
+            "UPDATE models SET guidance_category = ?1, guidance_subtype = ?2 WHERE hash = ?3"
+        ).map_err(|e| e.to_string())?;
+
+        for (hash, cat, sub) in updates {
+            let _ = update_stmt.execute(params![cat, sub, hash]);
+        }
+    }
+
+    Ok(())
+}
+
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]

@@ -400,7 +400,7 @@ export type NumericRange = { min: number; max: number }
 /**
  * Parameter ranges and distinct values for dynamic filters
  */
-export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[] }
+export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**
