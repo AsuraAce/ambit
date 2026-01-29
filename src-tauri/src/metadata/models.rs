@@ -565,12 +565,15 @@ pub async fn scan_model_thumbnails(
                 "checkpoint"
             };
 
-            // For full discovery, we use the filename as a temporary 'hash' if we don't have one
-            // This is just to ensure it's in the table so it can be matched.
-            let pseudo_hash = format!("file:{}", model_path);
+            // For full discovery, we try to use the real SHA256 hash if possible
+            // This allows online resolution to work for local files.
+            let hash = match calculate_sha256(&model_path_buf) {
+                Ok(h) => h,
+                Err(_) => format!("file:{}", model_path),
+            };
 
             let _ = upsert_stmt.execute(params![
-                pseudo_hash,
+                hash,
                 stem,
                 filename,
                 "disk_scan",
@@ -815,6 +818,27 @@ fn classify_unlabeled_models(conn: &Connection) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn calculate_sha256(path: &std::path::Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::fs::File;
+    use std::io::{BufReader, Read};
+
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 65536];
+
+    loop {
+        let count = reader.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    Ok(hex::encode(hasher.finalize()))
 }
 
 
