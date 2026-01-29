@@ -187,6 +187,9 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     lastModelResolutionResult,
     setLastModelResolutionResult,
     syncState: syncCtx.syncState,
+    startInvokeSync: syncCtx.startInvokeSync,
+    cancelSync: syncCtx.cancelSync,
+    cleanLibrary: syncCtx.cleanLibrary,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
   }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx, isImporting, isRegeneratingThumbnails, isResolvingModels, modelResolutionProgress, lastModelResolutionResult]);
 

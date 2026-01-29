@@ -265,6 +265,7 @@ pub async fn resolve_hashes_online(
     // 1. Collect hashes and do initial harvest
     let hashes_to_resolve = {
         let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
 
         if !skip_harvest {
             // 0. HARVEST: Populate model table from existing image metadata (Layer 0)
@@ -279,9 +280,12 @@ pub async fn resolve_hashes_online(
 
             harvest_count = conn.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-                 SELECT DISTINCT json_extract(metadata_json, '$.modelHash'), json_extract(metadata_json, '$.model'), 'local_metadata', ?1, 'checkpoint'
+                 SELECT DISTINCT 
+                    COALESCE(json_extract(metadata_json, '$.modelHash'), 'name:' || json_extract(metadata_json, '$.model')), 
+                    json_extract(metadata_json, '$.model'), 
+                    'local_metadata', ?1, 'checkpoint'
                  FROM images 
-                 WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+                 WHERE (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
                  AND json_extract(metadata_json, '$.model') IS NOT NULL",
                  params![now]
             ).unwrap_or(0);
@@ -474,6 +478,7 @@ pub async fn resolve_hashes_online(
 pub fn clear_model_cache(app: tauri::AppHandle) -> Result<(), String> {
     let db_path = resolve_db_path(&app)?;
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM models", [])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -517,6 +522,7 @@ pub async fn scan_model_thumbnails(
 
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -730,13 +736,13 @@ fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String>
     conn.execute(
         "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
          SELECT DISTINCT 
-            json_extract(metadata_json, '$.modelHash'), 
+            COALESCE(json_extract(metadata_json, '$.modelHash'), 'name:' || json_extract(metadata_json, '$.model')), 
             json_extract(metadata_json, '$.model'), 
             'harvest_checkpoint', 
             ?1,
             'checkpoint'
          FROM images
-         WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
+         WHERE (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
          AND json_extract(metadata_json, '$.model') IS NOT NULL",
         params![now],
     )
@@ -864,6 +870,7 @@ pub async fn set_model_thumbnail(
     // Perform blocking DB operations on a thread
     tauri::async_runtime::spawn_blocking(move || {
         let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
 
         // 1. Update Models Table (Source of Truth for Manual Thumbnails)
         conn.execute(
