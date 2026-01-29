@@ -32,6 +32,7 @@ The application uses a **Hybrid Architecture**:
 *   **Error Handling**: `thiserror` (Rust error enums in `src-tauri/src/db/error.rs`)
 *   **Type Safety**: `specta` + `tauri-specta` (Rust ↔ TypeScript type generation)
 *   **Filesystem**: `@tauri-apps/plugin-fs` (including native watcher)
+*   **Security & Hashing**: `sha2` + `hex` (Model file identification)
 
 ## 3. Data Architecture (The Hybrid Model)
 
@@ -42,6 +43,8 @@ The application splits its state persistence into two distinct layers based on d
 *   **Table Structure**:
     *   `images`: usage metadata, paths, dimensions, hashes.
     *   `images_fts`: Virtual table for Full-Text Search (FTS5) functionality.
+    *   `models`: Hash resolution for Checkpoints, LoRAs, and Guidance (ControlNet/IP-Adapter).
+        *   Multi-layered Resolution: Local DB -> Hardcoded Signatures -> Civitai (Online) -> Heuristics.
     *   `facet_cache`: Pre-aggregated counts and metadata for fast filtering.
 *   **Location**: Managed by `src/services/db`.
 *   **Configuration** (PRAGMAs):
