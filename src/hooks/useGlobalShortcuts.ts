@@ -23,7 +23,6 @@ interface GlobalShortcutsProps {
     toggleMasking: () => void;
     toggleFavorite: () => void;
     togglePin: () => void;
-    openRename: () => void;
     openCollection: () => void;
     handleRemoveFromCollection: () => void;
 
@@ -53,7 +52,6 @@ export const useGlobalShortcuts = ({
     toggleMasking,
     toggleFavorite,
     togglePin,
-    openRename,
     openCollection,
     isModalOpen,
     closeAllModals,
@@ -158,11 +156,7 @@ export const useGlobalShortcuts = ({
                 return;
             }
 
-            if (e.key === 'F2') {
-                e.preventDefault();
-                openRename();
-                return;
-            }
+
 
             // 7. Selection Shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -249,7 +243,6 @@ export const useGlobalShortcuts = ({
         toggleMasking,
         toggleFavorite,
         togglePin,
-        openRename,
         openCollection,
         closeAllModals
     ]);

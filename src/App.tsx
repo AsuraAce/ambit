@@ -291,7 +291,6 @@ export default function App() {
         toggleMasking: () => actions.handleBulkMask(),
         toggleFavorite: actions.handleShortcutFavorite,
         togglePin: actions.handleShortcutPin,
-        openRename: () => modals.openModal('rename'),
         openCollection: () => handleOpenCollectionModal('add'),
         isModalOpen: modals.isAnyModalOpen,
         closeAllModals: modals.closeAllModals,
@@ -424,7 +423,6 @@ export default function App() {
                         actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
                         setExportIds(new Set());
                     }}
-                    onRename={(pattern: string, startNum: number) => actions.handleRename(pattern, startNum)}
                     onDeleteConfirm={actions.executeDelete}
                     onDeleteCollectionConfirm={() => {
                         if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);

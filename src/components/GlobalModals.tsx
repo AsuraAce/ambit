@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { SettingsModal } from '../features/settings/components/SettingsModal';
 import { ExportModal } from '../features/library/components/ExportModal';
-import { RenameModal } from '../features/library/components/RenameModal';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { SlideshowModal } from '../features/viewer/components/SlideshowModal';
 import { MetadataRecoveryModal } from '../features/library/components/MetadataRecoveryModal';
@@ -20,7 +19,6 @@ interface GlobalModalsProps {
     filteredImages: AIImage[];
     onSettingsSave: (settings: AppSettings) => void;
     onExportConfirm: (name: string, folder: string) => void;
-    onRename: (pattern: string, startNum: number) => void;
     onDeleteConfirm: () => void;
     onDeleteCollectionConfirm: () => void;
     onRecoverMetadata: (options: any) => void;
@@ -63,7 +61,6 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     filteredImages,
     onSettingsSave,
     onExportConfirm,
-    onRename,
     onDeleteConfirm,
     onDeleteCollectionConfirm,
     onRecoverMetadata,
@@ -110,13 +107,6 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 count={exportIds.size > 0 ? exportIds.size : selectedIds.size}
                 onConfirm={onExportConfirm}
                 isExporting={isExporting}
-            />
-
-            <RenameModal
-                isOpen={modals.rename}
-                onClose={() => closeModal('rename')}
-                onRename={(pattern, startNum) => onRename(pattern, startNum)}
-                selectedCount={selectedIds.size}
             />
 
             <ConfirmDialog

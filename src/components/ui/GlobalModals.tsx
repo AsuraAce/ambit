@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AIImage, AppSettings, Collection, FilterState } from '../../types';
 import { SettingsModal } from '../../features/settings/components/SettingsModal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { RenameModal } from '../../features/library/components/RenameModal';
 import { CompareModal } from '../../features/viewer/components/CompareModal';
 import { ShortcutsModal } from './ShortcutsModal';
 import { MetadataRecoveryModal } from '../../features/library/components/MetadataRecoveryModal';
@@ -22,7 +21,6 @@ interface GlobalModalsProps {
     addToCollection: boolean;
     deleteConfirm: boolean;
     deleteCollection: boolean;
-    rename: boolean;
     compare: boolean;
     shortcuts: boolean;
     recovery: boolean;
@@ -42,7 +40,6 @@ interface GlobalModalsProps {
   // Actions
   onSettingsSave?: (s: AppSettings) => void;
   onExportConfirm: (filename: string, folder: string) => void;
-  onRename: (pattern: string, start: number) => void;
   onDeleteConfirm: () => void;
   onDeleteCollectionConfirm: () => void;
   onRecoverMetadata: (style: any) => void;
@@ -83,7 +80,6 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   filteredImages,
   onSettingsSave,
   onExportConfirm,
-  onRename,
   onDeleteConfirm,
   onDeleteCollectionConfirm,
   onRecoverMetadata,
@@ -140,12 +136,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         onCancel={() => close('deleteCollection')}
       />
 
-      <RenameModal
-        isOpen={modals.rename}
-        onClose={() => close('rename')}
-        selectedCount={selectedIds.size}
-        onRename={onRename}
-      />
+
 
       {modals.compare && selectedIds.size === 2 && (
         <CompareModal

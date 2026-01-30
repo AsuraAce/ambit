@@ -5,7 +5,6 @@ export type ModalKey =
     | 'addToCollection'
     | 'deleteConfirm'
     | 'deleteCollection'
-    | 'rename'
     | 'compare'
     | 'shortcuts'
     | 'recovery'
@@ -21,7 +20,6 @@ export const useModalManager = () => {
         addToCollection: false,
         deleteConfirm: false,
         deleteCollection: false,
-        rename: false,
         compare: false,
         shortcuts: false,
         recovery: false,
@@ -49,7 +47,6 @@ export const useModalManager = () => {
         addToCollection: false,
         deleteConfirm: false,
         deleteCollection: false,
-        rename: false,
         compare: false,
         shortcuts: false,
         recovery: false,

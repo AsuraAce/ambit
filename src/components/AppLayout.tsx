@@ -415,7 +415,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     onClearSelection={clearSelection}
                     onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
                     onExport={() => modals.openModal('export')}
-                    onRename={() => modals.openModal('rename')}
+
                     onAddToCollection={() => handleOpenCollectionModal('add')}
                     onToggleFavorite={actions.handleBulkFavorite}
                     onTogglePin={actions.handleBulkPin}

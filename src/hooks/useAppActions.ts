@@ -176,13 +176,6 @@ export const useAppActions = ({
         addToast(next ? "Privacy Mode Enabled" : "Privacy Mode Disabled (Hidden/Blurred items revealed)", "info");
     };
 
-    const handleRename = (pattern: string, start: number) => {
-        let current = start;
-        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, filename: pattern.replace(/#+/g, (m) => String(current++).padStart(m.length, '0')) + '.png' } : img));
-        addToast(`Renamed ${selectedIds.size} images`, 'success');
-        setSelectedIds(new Set());
-    };
-
     const executeMetadataRecovery = async (style: any) => {
         const targetId = viewingImageId || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
         if (!targetId) return;
@@ -249,7 +242,6 @@ export const useAppActions = ({
         handlePinImage,
         handleShortcutFavorite,
         handleShortcutPin,
-        handleRename,
         toggleFavorite,
         runBackfill
     };

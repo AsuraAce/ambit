@@ -15,7 +15,6 @@ describe('useGlobalShortcuts', () => {
         toggleMasking: vi.fn(),
         toggleFavorite: vi.fn(),
         togglePin: vi.fn(),
-        openRename: vi.fn(),
         openCollection: vi.fn(),
         handleRemoveFromCollection: vi.fn(),
         closeAllModals: vi.fn(),
