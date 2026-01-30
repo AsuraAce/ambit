@@ -1,4 +1,4 @@
-use super::graph::{get_node_input_link, get_node_param, get_node_type, ComfyGraph};
+use super::graph::{get_node_input_link, get_node_param, get_node_type, get_source_id, ComfyGraph};
 use super::heuristics::find_wireless_node;
 use super::parse_helper::parse_a1111_parameters;
 use serde_json::Value;
@@ -124,13 +124,22 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             // 1. Check pre-resolved inputs (preferred, covers both API and UI format)
             if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
                 for (key, val) in resolved {
-                    if let Some(source_id) = val.as_str() {
-                        let input_lower = key.to_lowercase();
-                        if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
-                            if input_name == "positive" && input_lower.contains("negative") {
-                                continue;
-                            }
+                    let input_lower = key.to_lowercase();
+                    let is_broadcaster = t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast");
+                    if is_broadcaster || relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                        if !is_broadcaster && input_name == "positive" && input_lower.contains("negative") {
+                            continue;
+                        }
+                        
+                        // Handle both single string and array of strings (multiple inputs with same name)
+                        if let Some(source_id) = val.as_str() {
                             queue.push_back(source_id.to_string());
+                        } else if let Some(arr) = val.as_array() {
+                            for item in arr {
+                                if let Some(source_id) = item.as_str() {
+                                    queue.push_back(source_id.to_string());
+                                }
+                            }
                         }
                     }
                 }
@@ -260,7 +269,27 @@ pub fn find_connected_controlnets(
                 "cond",
                 "c",
             ];
-             if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
+             if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
+                 for (key, val) in resolved {
+                     let input_lower = key.to_lowercase();
+                     if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                         if input_name == "positive" && input_lower.contains("negative") {
+                             continue;
+                         }
+                         
+                         if let Some(source_id) = val.as_str() {
+                             queue.push_back(source_id.to_string());
+                         } else if let Some(arr) = val.as_array() {
+                             for item in arr {
+                                 if let Some(source_id) = item.as_str() {
+                                     queue.push_back(source_id.to_string());
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+             else if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
                  for (input_key, _input_val) in inputs_obj {
                      let input_lower = input_key.to_lowercase();
                       if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
@@ -303,19 +332,6 @@ fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<Stri
     None
 }
 
-/// Helper to resolve links (including wireless)
-fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
-    if let Some(node) = graph.get_node(node_id) {
-        if let Some(link) = get_node_input_link(node, input_name) {
-            return Some(link);
-        }
-        // Wireless fallback
-        if let Some(wireless) = find_wireless_node(graph, node, input_name) {
-            return Some(wireless);
-        }
-    }
-    None
-}
 
 /// Extracts text from a node, executing simple string graph traversal if needed.
 fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
@@ -335,13 +351,15 @@ fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Op
         }
     }
 
-    evaluate_string_node(graph, node_id, 0)
+    let mut visited = HashSet::new();
+    evaluate_string_node(graph, node_id, &mut visited, 0)
 }
 
 fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
     // 1. Link (Priority)
     if let Some(source_id) = get_source_id(graph, node_id, input_name) {
-        if let Some(s) = evaluate_string_node(graph, &source_id, 0) {
+        let mut visited = HashSet::new();
+        if let Some(s) = evaluate_string_node(graph, &source_id, &mut visited, 0) {
             return Some(s);
         }
     }
@@ -351,7 +369,10 @@ fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opti
     // 2. Direct Widget (Fallback)
     if let Some(val) = get_node_param(node, input_name) {
         if let Some(s) = val.as_str() {
-            return Some(s.to_string());
+            let lower = s.to_lowercase();
+            if lower != "undefined" && lower != "null" && lower != "none" {
+                return Some(s.to_string());
+            }
         }
     }
 
@@ -359,8 +380,13 @@ fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opti
 }
 
 // Recursive string evaluator
-pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> Option<String> {
-    if depth > 10 {
+pub fn evaluate_string_node(
+    graph: &ComfyGraph,
+    node_id: &str,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<String> {
+    if depth > 10 || !visited.insert(node_id.to_string()) {
         return None;
     }
     let node = graph.get_node(node_id)?;
@@ -393,6 +419,7 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         || t == "Text Multiline"
         || t == "PrimitiveString"
         || t == "PrimitiveStringMultiline"
+        || t == "smZ CLIPTextEncode"
     {
         if let Some(v) = get_node_param(node, "value").and_then(|v| v.as_str()) {
             return Some(v.to_string());
@@ -423,6 +450,9 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
                     "decrement",
                     "true",
                     "false",
+                    "undefined",
+                    "null",
+                    "none",
                 ];
                 if !exclusions.contains(&lower.as_str()) && s.len() > 2 {
                     return Some(s.to_string());
@@ -445,7 +475,7 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
         let names = ["text", "string", "value", "STRING", "VALUE"];
         for n in names {
             if let Some(source_id) = get_source_id(graph, node_id, n) {
-                if let Some(s) = evaluate_string_node(graph, &source_id, depth + 1) {
+                if let Some(s) = evaluate_string_node(graph, &source_id, visited, depth + 1) {
                     return Some(s);
                 }
             }
@@ -511,12 +541,18 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     // Lora Loader (LoraManager) - Extract text/trigger words
     if t == "Lora Loader (LoraManager)" {
         if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
-            return Some(text.to_string());
+            let lower = text.to_lowercase();
+            if lower != "undefined" && lower != "null" && lower != "none" {
+                return Some(text.to_string());
+            }
         }
         // Check widgets if param didn't catch it
         if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
             if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                return Some(s.to_string());
+                let lower = s.to_lowercase();
+                if lower != "undefined" && lower != "null" && lower != "none" {
+                    return Some(s.to_string());
+                }
             }
         }
     }
@@ -525,7 +561,7 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     let names = ["text", "string", "value", "STRING", "VALUE"];
     for n in names {
         if let Some(source_id) = get_source_id(graph, node_id, n) {
-            if let Some(s) = evaluate_string_node(graph, &source_id, depth + 1) {
+            if let Some(s) = evaluate_string_node(graph, &source_id, visited, depth + 1) {
                 return Some(s);
             }
         }
@@ -533,7 +569,10 @@ pub fn evaluate_string_node(graph: &ComfyGraph, node_id: &str, depth: usize) -> 
     for n in names {
         if let Some(val) = get_node_param(node, n) {
             if let Some(s) = val.as_str() {
-                return Some(s.to_string());
+                let lower = s.to_lowercase();
+                if lower != "undefined" && lower != "null" && lower != "none" {
+                    return Some(s.to_string());
+                }
             }
         }
     }

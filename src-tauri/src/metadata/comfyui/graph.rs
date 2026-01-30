@@ -4,6 +4,7 @@ use std::collections::HashMap;
 /// Normalizes ComfyUI metadata into a graph representation.
 pub struct ComfyGraph {
     pub(crate) nodes: HashMap<String, Value>,
+    pub(crate) broadcasters: Vec<String>,
 }
 
 impl ComfyGraph {
@@ -22,7 +23,11 @@ impl ComfyGraph {
             if let Ok(json) = serde_json::from_str::<Value>(&sanitized) {
                 if let Some(obj) = json.as_object() {
                     for (id, node) in obj {
-                        nodes_map.insert(id.clone(), node.clone());
+                        let mut node_obj = node.clone();
+                        if let Some(n_obj) = node_obj.as_object_mut() {
+                            n_obj.insert("id".to_string(), Value::String(id.clone()));
+                        }
+                        nodes_map.insert(id.clone(), node_obj);
                     }
                 }
             }
@@ -116,10 +121,11 @@ impl ComfyGraph {
                                                 if let Some((source_node_id, _)) =
                                                     link_source_map.get(&link_id)
                                                 {
-                                                    resolved.insert(
-                                                        name.to_string(),
-                                                        Value::String(source_node_id.clone()),
-                                                    );
+                                                    // Handle multiple inputs with same name (like in Prompts Everywhere)
+                                                    let val = resolved.entry(name.to_string()).or_insert(Value::Array(Vec::new()));
+                                                    if let Some(arr) = val.as_array_mut() {
+                                                        arr.push(Value::String(source_node_id.clone()));
+                                                    }
                                                 }
                                             }
                                         }
@@ -173,7 +179,15 @@ impl ComfyGraph {
             }
         }
 
-        Self { nodes: nodes_map }
+        let mut broadcasters = Vec::new();
+        for (id, node) in &nodes_map {
+            let t = get_node_type(node);
+            if t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast") {
+                broadcasters.push(id.clone());
+            }
+        }
+
+        Self { nodes: nodes_map, broadcasters }
     }
 
     #[allow(dead_code)]
@@ -190,33 +204,63 @@ impl ComfyGraph {
 // Helpers
 pub fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
     // 0. Check pre-resolved check inputs
-    if let Some(id) = node
-        .get("_resolved_inputs")
-        .and_then(|m| m.get(key))
-        .and_then(|v| v.as_str())
-    {
-        return Some(id.to_string());
+    if let Some(val) = node.get("_resolved_inputs").and_then(|m| m.get(key)) {
+        if let Some(id) = val.as_str() {
+            return Some(id.to_string());
+        }
+        if let Some(arr) = val.as_array() {
+            if let Some(id) = arr.first().and_then(|v| v.as_str()) {
+                return Some(id.to_string());
+            }
+        }
     }
 
-    if let Some(link) = node
-        .get("inputs")
-        .and_then(|v| v.get(key))
-        .and_then(|v| v.as_array())
-    {
-        if !link.is_empty() {
-            // Handle both string IDs ("123") and numeric IDs (123)
-            if let Some(s) = link[0].as_str() {
+    if let Some(inputs) = node.get("inputs").and_then(|v| v.as_object()) {
+        if let Some(link) = inputs.get(key) {
+            if let Some(arr) = link.as_array() {
+                if !arr.is_empty() {
+                    if let Some(s) = arr[0].as_str() {
+                        return Some(s.to_string());
+                    }
+                    if let Some(n) = arr[0].as_u64() {
+                        return Some(n.to_string());
+                    }
+                }
+            }
+            if let Some(s) = link.as_str() {
                 return Some(s.to_string());
-            }
-            if let Some(n) = link[0].as_i64() {
-                return Some(n.to_string());
-            }
-            if let Some(n) = link[0].as_u64() {
-                return Some(n.to_string());
             }
         }
     }
     None
+}
+
+/// Helper to resolve links (including wireless)
+pub fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
+    if let Some(node) = graph.get_node(node_id) {
+        if let Some(link) = get_node_input_link(node, input_name) {
+            return Some(link);
+        }
+        // Wireless fallback
+        if let Some(wireless) = crate::metadata::comfyui::heuristics::find_wireless_node(graph, node, input_name) {
+            // CRITICAL: Prevent self-reference loops
+            if wireless != node_id {
+                return Some(wireless);
+            }
+        }
+    }
+    None
+}
+
+pub fn get_node_id(node: &Value) -> String {
+    node.get("id")
+        .and_then(|v| {
+            v.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| v.as_u64().map(|n| n.to_string()))
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        })
+        .unwrap_or_default()
 }
 
 pub fn get_node_type(node: &Value) -> &str {
@@ -316,6 +360,32 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 }
                 "model_name" | "ckpt_name" => {
                     if let Some(v) = arr.get(2) {
+                        return Some(v);
+                    }
+                }
+                "positive" => {
+                    if let Some(v) = arr.get(11) {
+                        return Some(v);
+                    }
+                }
+                "negative" => {
+                    if let Some(v) = arr.get(12) {
+                        return Some(v);
+                    }
+                }
+                "extra_info" => {
+                    if let Some(v) = arr.get(20) {
+                        return Some(v);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if t == "smZ CLIPTextEncode" {
+            match key {
+                "text" | "string" | "value" => {
+                    if let Some(v) = arr.first() {
                         return Some(v);
                     }
                 }
@@ -498,7 +568,9 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             "text" => {
                 for val in arr {
                     if let Some(s) = val.as_str() {
-                        if s.len() > 5 {
+                        let lower = s.to_lowercase();
+                        let exclusions = ["undefined", "null", "none", "unknown", "negative prompt:"];
+                        if s.len() > 5 && !exclusions.contains(&lower.as_str()) {
                             return Some(val);
                         }
                     }

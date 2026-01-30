@@ -68,17 +68,12 @@ impl ImageMetadata {
     pub fn is_incomplete(&self) -> bool {
         // Considered incomplete if we are missing key generation data
         (self.model.is_empty() || self.model == "Unknown" || self.model == "None")
-            || (self.positive_prompt.trim().is_empty() && self.negative_prompt.trim().is_empty())
-            || (self
-                .positive_prompt
-                .trim()
-                .eq_ignore_ascii_case("undefined")
-                && self.negative_prompt.trim().is_empty())
-            || (self
-                .positive_prompt
-                .trim()
-                .eq_ignore_ascii_case("negative prompt:")
-                && self.negative_prompt.trim().is_empty())
+            || self.positive_prompt.trim().is_empty()
+            || self.positive_prompt.trim().eq_ignore_ascii_case("undefined")
+            || self.positive_prompt.trim().eq_ignore_ascii_case("null")
+            || self.positive_prompt.trim().eq_ignore_ascii_case("negative prompt:")
+            || self.negative_prompt.trim().eq_ignore_ascii_case("undefined")
+            || self.negative_prompt.trim().eq_ignore_ascii_case("null")
             || self.steps == 0
     }
 
@@ -105,6 +100,7 @@ impl ImageMetadata {
         }
         if self.positive_prompt.trim().is_empty()
             || self.positive_prompt.trim() == "undefined"
+            || self.positive_prompt.trim() == "null"
             || self
                 .positive_prompt
                 .trim()
@@ -112,7 +108,10 @@ impl ImageMetadata {
         {
             self.positive_prompt = other.positive_prompt;
         }
-        if self.negative_prompt.trim().is_empty() || self.negative_prompt.trim() == "undefined" {
+        if self.negative_prompt.trim().is_empty() 
+            || self.negative_prompt.trim() == "undefined"
+            || self.negative_prompt.trim() == "null" 
+        {
             self.negative_prompt = other.negative_prompt;
         }
         if self.generation_type == "unknown" && other.generation_type != "unknown" {
@@ -223,6 +222,7 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
 
     if base.positive_prompt.trim().is_empty()
         || base.positive_prompt.trim() == "undefined"
+        || base.positive_prompt.trim() == "null"
         || base
             .positive_prompt
             .trim()
@@ -231,7 +231,10 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.positive_prompt = secondary.positive_prompt;
     }
 
-    if base.negative_prompt.trim().is_empty() || base.negative_prompt.trim() == "undefined" {
+    if base.negative_prompt.trim().is_empty() 
+        || base.negative_prompt.trim() == "undefined"
+        || base.negative_prompt.trim() == "null" 
+    {
         base.negative_prompt = secondary.negative_prompt;
     }
 
