@@ -1,7 +1,6 @@
-use super::graph::{get_node_input_link, get_node_param, get_node_type, ComfyGraph};
+use super::graph::{get_node_id, get_node_input_link, get_node_param, get_node_type, get_source_id, ComfyGraph};
 
 use super::conditioning::find_reachable_prompts;
-use super::heuristics::find_wireless_node;
 use crate::metadata::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
@@ -53,7 +52,8 @@ impl<'a> ComfyEvaluator<'a> {
                 }
 
                 // Trace back to find a Sampler
-                if let Some(sampler_id) = self.find_upstream_sampler(&output_id, 0) {
+                let mut visited = HashSet::new();
+                if let Some(sampler_id) = self.find_upstream_sampler(&output_id, &mut visited, 0) {
                     if visited_samplers.contains(&sampler_id) {
                         continue;
                     }
@@ -142,8 +142,8 @@ impl<'a> ComfyEvaluator<'a> {
     }
 
     /// Walk upstream from a node input to find a KSampler
-    fn find_upstream_sampler(&self, start_id: &str, depth: u32) -> Option<String> {
-        if depth > 50 {
+    fn find_upstream_sampler(&self, start_id: &str, visited: &mut HashSet<String>, depth: u32) -> Option<String> {
+        if depth > 50 || !visited.insert(start_id.to_string()) {
             return None;
         }
 
@@ -163,7 +163,7 @@ impl<'a> ComfyEvaluator<'a> {
         let image_inputs = ["images", "image", "samples"];
         for input_name in image_inputs {
             if let Some(source_id) = self.get_source_id(node, input_name) {
-                if let Some(found) = self.find_upstream_sampler(&source_id, depth + 1) {
+                if let Some(found) = self.find_upstream_sampler(&source_id, visited, depth + 1) {
                     return Some(found);
                 }
             }
@@ -283,7 +283,10 @@ impl<'a> ComfyEvaluator<'a> {
         // Standard inputs
         let pos = find_reachable_prompts(self.graph, node_id, "positive");
         if !pos.is_empty() {
-            meta.positive_prompt = pos;
+            let lower = pos.to_lowercase();
+            if lower != "undefined" && lower != "null" && lower != "none" {
+                meta.positive_prompt = pos;
+            }
         }
 
         let neg = find_reachable_prompts(self.graph, node_id, "negative");
@@ -330,7 +333,10 @@ impl<'a> ComfyEvaluator<'a> {
             if let Some(guider_id) = self.get_source_id(node, "guider") {
                 let pos_guider = find_reachable_prompts(self.graph, &guider_id, "conditioning");
                 if !pos_guider.is_empty() {
-                    meta.positive_prompt = pos_guider;
+                    let lower = pos_guider.to_lowercase();
+                    if lower != "undefined" && lower != "null" && lower != "none" {
+                        meta.positive_prompt = pos_guider;
+                    }
                 }
             }
         }
@@ -360,19 +366,7 @@ impl<'a> ComfyEvaluator<'a> {
     // --- Tracing Logic ---
 
     fn get_source_id(&self, node: &Value, input_name: &str) -> Option<String> {
-        // 1. Direct Link
-        if let Some(link) = get_node_input_link(node, input_name) {
-            // Handle Reroutes and Bypassed nodes instantly here to flatten the graph
-            return self.resolve_link(link);
-        }
-
-        // 2. Wireless Fallback (Heuristics)
-        // If no link exists, try to find a Wireless Broadcaster
-        if let Some(wireless_id) = find_wireless_node(self.graph, node, input_name) {
-            return Some(wireless_id);
-        }
-
-        None
+        get_source_id(self.graph, &get_node_id(node), input_name)
     }
 
     /// Recursively resolves simple pass-through nodes (Reroute, Bypassed nodes)
@@ -551,13 +545,31 @@ impl<'a> ComfyEvaluator<'a> {
             }
 
             // Pass through generic nodes (ApplyFBCache, FreeU, etc) which modify model but aren't origin
-            let model_inputs = ["model", "ckpt", "base_model"];
+            let model_inputs = ["model", "ckpt", "base_model", "COMBO", "MODEL", "VAE", "CLIP"];
             let mut found_next = false;
-            for input_key in model_inputs {
-                if let Some(next) = self.get_source_id(node, input_key) {
-                    current_id = next;
+            let is_broadcaster = t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast");
+
+            if is_broadcaster {
+                // Try specific types first
+                let mut next = None;
+                for k in ["MODEL", "ckpt", "model", "COMBO"] {
+                    if let Some(s) = self.get_source_id(node, k) {
+                        next = Some(s);
+                        break;
+                    }
+                }
+                
+                if let Some(n) = next.or_else(|| self.get_any_input_link(node)) {
+                    current_id = n;
                     found_next = true;
-                    break;
+                }
+            } else {
+                for input_key in model_inputs {
+                    if let Some(next) = self.get_source_id(node, input_key) {
+                        current_id = next;
+                        found_next = true;
+                        break;
+                    }
                 }
             }
 
@@ -686,7 +698,8 @@ impl<'a> ComfyEvaluator<'a> {
             }
         }
         if let Some(source_id) = self.get_source_id(node, param) {
-            return super::conditioning::evaluate_string_node(self.graph, &source_id, 0);
+            let mut visited = HashSet::new();
+            return super::conditioning::evaluate_string_node(self.graph, &source_id, &mut visited, 0);
         }
         None
     }

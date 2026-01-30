@@ -10,3 +10,4 @@ pub mod ui_format;
 mod repro_ip_adapter;
 pub mod repro_dual_ip_adapter;
 pub mod repro_issue_1024;
+pub mod repro_smz_concat;

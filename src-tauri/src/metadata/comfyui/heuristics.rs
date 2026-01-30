@@ -26,42 +26,21 @@ pub fn find_wireless_node(
     };
 
     // Heuristic: Scan for "Sender" nodes that output this type
-    for (id, node) in graph.nodes() {
+    for id in &graph.broadcasters {
+        let node = match graph.get_node(id) {
+            Some(n) => n,
+            None => continue,
+        };
         let t = get_node_type(node);
 
-        // 1. UE Nodes (Anything with "Everywhere" in name)
-        // They typically broadcast to regex/title/class.
-        // We'll simplisticly assume if a Broadcast Node exists, it MIGHT be the source.
-        // To be safer, we only pick it if it's the ONLY one or seemingly main one?
-        // Actually, matching the 'TYPE' is the strongest signal we have without reimplementing the regex engine.
-        if t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast") {
-            // Check outputs
-            // But UE nodes usually take input and broadcast it.
-            // So we need to trace the INPUT of the UE node to find the source.
-            // Wait, this helper is called `find_wireless_node` -> returns ID of the SOURCE.
-            // If we return the UE node ID, `evaluator` will try to trace *upstream* from it, which is correct!
-
-            // Does this UE node handle the needed type?
-            // "Seed Everywhere" -> INT
-            // "Everything Everywhere" -> All?
-            // "Show Anything" -> Text?
-
-            if (needed_type == "MODEL" || needed_type == "VAE" || needed_type == "CLIP")
-                && t.contains("Checkpoints")
-            {
-                return Some(id.clone());
-            }
-            if t.contains("Everything") {
-                return Some(id.clone());
-            }
+        if (needed_type == "MODEL" || needed_type == "VAE" || needed_type == "CLIP")
+            && t.contains("Checkpoints")
+        {
+            return Some(id.clone());
         }
-
-        // 2. SetNode / GetNode
-        // If we are at a "GetNode" (handled in evaluator traversal usually?),
-        // but if the link IS MISSING on the target node itself?
-        // This helper is for when `target_node.inputs[input_name]` is EMPTY.
-
-        // 3. Special Case: "Reroute" with no outputs linked? No.
+        if t.contains("Everything") || t.contains("Anything Everywhere") {
+            return Some(id.clone());
+        }
     }
 
     // Specific Case: Model/VAE missing -> Find the main CheckpointLoader
@@ -128,8 +107,20 @@ pub fn find_wireless_node(
             }
 
             // 2. Broadcaster Nodes (Fallback)
-            if t == "Prompts Everywhere" || t == "Anything Everywhere" || t == "Everything Everywhere" {
+            if t == "Prompts Everywhere" || t.contains("Anything Everywhere") || t.contains("Everything Everywhere") {
                 best_match = Some(id.clone());
+            }
+        }
+
+        // Also check broadcasters for best_match fallback if not found by title
+        if best_match.is_none() {
+            for id in &graph.broadcasters {
+                if let Some(node) = graph.get_node(id) {
+                    let t = get_node_type(node);
+                    if t == "Prompts Everywhere" || t.contains("Anything Everywhere") || t.contains("Everything Everywhere") {
+                        best_match = Some(id.clone());
+                    }
+                }
             }
         }
         if best_match.is_some() {

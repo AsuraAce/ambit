@@ -4,6 +4,7 @@ use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::ImageMetadata;
 use crate::metadata::guidance::GuidanceClassifier;
 use serde_json::Value;
+use std::collections::HashSet;
 
 /// Layer 2: Explicit Metadata Nodes
 /// Scans for nodes specifically designed to embed metadata.
@@ -66,7 +67,8 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             // let t_lower = t.to_lowercase(); // Already defined above
 
             if title_lower.contains("positive") {
-                if let Some(text) = evaluate_string_node(graph, id, 0) {
+                let mut visited = HashSet::new();
+                if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
                     // Check for A1111 parameter blob first
                     if text.contains("Steps:") && text.contains("Model:") {
                         // This is a parameter dump, NOT a positive prompt!
@@ -84,12 +86,16 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                             }
                         }
                     } else if !text.to_lowercase().starts_with("negative prompt:") {
-                        meta.positive_prompt = text;
-                        found = true;
+                        let lower = text.to_lowercase();
+                        if lower != "undefined" && lower != "null" && lower != "none" {
+                            meta.positive_prompt = text;
+                            found = true;
+                        }
                     }
                 }
             } else if title_lower.contains("negative") {
-                if let Some(text) = evaluate_string_node(graph, id, 0) {
+                let mut visited = HashSet::new();
+                if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
                     meta.negative_prompt = text;
                     found = true;
                 }
@@ -177,14 +183,16 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
         {
             if is_negative {
                 if meta.negative_prompt.trim().is_empty() {
-                    if let Some(text) = evaluate_string_node(graph, id, 0) {
+                    let mut visited = HashSet::new();
+                    if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
                         if text.trim().len() > 2 {
                             meta.negative_prompt = text;
                         }
                     }
                 }
             } else if meta.positive_prompt.trim().is_empty() {
-                if let Some(text) = evaluate_string_node(graph, id, 0) {
+                let mut visited = HashSet::new();
+                if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
                     // Check for A1111 parameter blob
                     if text.contains("Steps:") && text.contains("Sampler:") {
                         // Parse A1111 style parameters
@@ -214,7 +222,10 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                             meta.negative_prompt = text;
                         }
                     } else if text.trim().len() > 2 {
-                        meta.positive_prompt = text;
+                        let lower = text.to_lowercase();
+                        if lower != "undefined" && lower != "null" && lower != "none" {
+                            meta.positive_prompt = text;
+                        }
                     }
                 }
             }
