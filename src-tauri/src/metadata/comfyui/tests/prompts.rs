@@ -485,7 +485,7 @@ fn test_missing_prompt_extraction() {
     // Debug assertion
     assert_eq!(
         meta.positive_prompt,
-        "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1.0> <lora:Asians:0.65>"
+        "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1> <lora:Asians:0.65>"
     );
 }
 

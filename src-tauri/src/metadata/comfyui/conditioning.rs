@@ -545,31 +545,49 @@ pub fn evaluate_string_node(
 
     // Lora Loader (LoraManager) - Extract text/trigger words
     if t == "Lora Loader (LoraManager)" {
-        // Try to build filtered string from active loras first (UI format)
+        let mut potential_lists = Vec::new();
+
+        // 1. Try UI format (widgets_values[1])
         if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-            if let Some(loras_arr) = arr.get(1).and_then(|v| v.as_array()) {
-                let mut active_loras = Vec::new();
-                for lora in loras_arr {
-                    let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
-                    if active {
-                        if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
-                            let strength = lora.get("strength").and_then(|v| {
-                                if let Some(f) = v.as_f64() {
-                                    Some(f)
-                                } else if let Some(s) = v.as_str() {
-                                    s.parse::<f64>().ok()
-                                } else {
-                                    None
-                                }
-                            }).unwrap_or(1.0);
-                            active_loras.push(format!("<lora:{}:{}>", name, strength));
-                        }
+            if let Some(list) = arr.get(1).and_then(|v| v.as_array()) {
+                potential_lists.push(list);
+            }
+        }
+
+        // 2. Try API format (inputs.loras.__value__)
+        if let Some(loras_obj) = node.get("inputs").and_then(|v| v.get("loras")) {
+            if let Some(list) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
+                potential_lists.push(list);
+            }
+        }
+
+        // Collect all active LoRAs from all sources
+        let mut found_structured_data = false;
+        let mut all_active_loras = Vec::new();
+
+        for list in potential_lists {
+            found_structured_data = true;
+            for lora in list {
+                let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
+                if active {
+                    if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
+                        let strength = lora.get("strength").and_then(|v| {
+                            if let Some(f) = v.as_f64() {
+                                Some(f)
+                            } else if let Some(s) = v.as_str() {
+                                s.parse::<f64>().ok()
+                            } else {
+                                None
+                            }
+                        }).unwrap_or(1.0);
+                        all_active_loras.push(format!("<lora:{}:{}>", name, strength));
                     }
                 }
-                if !active_loras.is_empty() {
-                    return Some(active_loras.join(" "));
-                }
             }
+        }
+
+        if found_structured_data {
+            return Some(all_active_loras.join(" "));
         }
 
         // Fallback or API format (if prompt chunk has text param)
