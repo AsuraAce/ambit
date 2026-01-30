@@ -583,39 +583,50 @@ impl<'a> ComfyEvaluator<'a> {
     }
 
     fn extract_lora_manager(&self, node: &Value, loras: &mut Vec<String>) {
+        let mut values = None;
+
         if let Some(loras_obj) = node.get("inputs").and_then(|v| v.get("loras")) {
-            // Handle custom object structure if present
-            if let Some(values) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
-                for lora in values {
-                    if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
-                        let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
-                        if active {
-                            let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
-                            let strength = if let Some(s) = lora.get("strength") {
-                                if let Some(f) = s.as_f64() {
-                                    Some(f)
-                                } else if let Some(s_str) = s.as_str() {
-                                    s_str.parse::<f64>().ok()
-                                } else {
-                                    None
-                                }
+            // API format
+            if let Some(v) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
+                values = Some(v);
+            }
+        } else if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+            // UI format
+            if let Some(v) = arr.get(1).and_then(|v| v.as_array()) {
+                values = Some(v);
+            }
+        }
+
+        if let Some(values) = values {
+            for lora in values {
+                if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
+                    let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
+                    if active {
+                        let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+                        let strength = if let Some(s) = lora.get("strength") {
+                            if let Some(f) = s.as_f64() {
+                                Some(f)
+                            } else if let Some(s_str) = s.as_str() {
+                                s_str.parse::<f64>().ok()
                             } else {
                                 None
-                            };
+                            }
+                        } else {
+                            None
+                        };
 
-                            let entry = if let Some(s) = strength {
-                                if (s - 1.0).abs() > 0.001 {
-                                    format!("{} ({:.2})", cleaned_name, s)
-                                } else {
-                                    cleaned_name
-                                }
+                        let entry = if let Some(s) = strength {
+                            if (s - 1.0).abs() > 0.001 {
+                                format!("{} ({:.2})", cleaned_name, s)
                             } else {
                                 cleaned_name
-                            };
-
-                            if !loras.contains(&entry) {
-                                loras.push(entry);
                             }
+                        } else {
+                            cleaned_name
+                        };
+
+                        if !loras.contains(&entry) {
+                            loras.push(entry);
                         }
                     }
                 }

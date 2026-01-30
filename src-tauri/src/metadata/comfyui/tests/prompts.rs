@@ -488,3 +488,64 @@ fn test_missing_prompt_extraction() {
         "Aiyana Lumiere Nyoka..., <lora:Mystic-XXX:1.0> <lora:Asians:0.65>"
     );
 }
+
+#[test]
+fn test_extract_comfyui_flux_zero_out_negative() {
+    // Reproduction of the issue where ConditioningZeroOut is ignored,
+    // causing the positive prompt to be extracted as negative.
+    let prompt = r#"{
+        "31": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["35", 0],
+                "negative": ["135", 0],
+                "model": ["37", 0],
+                "latent_image": ["124", 0]
+            }
+        },
+        "35": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["177", 0]
+            }
+        },
+        "135": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {
+                "conditioning": ["6", 0]
+            }
+        },
+        "6": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "color the androids hair green, only the hair not the eyes or the explosion"
+            }
+        },
+        "177": {
+            "class_type": "ReferenceLatent",
+            "inputs": {
+                "conditioning": ["6", 0],
+                "latent": ["124", 0]
+            }
+        },
+        "124": { "class_type": "VAEEncode", "inputs": { "pixels": ["42", 0], "vae": ["39", 0] } },
+        "37": { "class_type": "UNETLoader", "inputs": { "unet_name": "flux1.safetensors" } },
+        "39": { "class_type": "VAELoader", "inputs": { "vae_name": "ae.safetensors" } },
+        "42": { "class_type": "FluxKontextImageScale", "inputs": { "image": ["146", 0] } },
+        "146": { "class_type": "ImageStitch", "inputs": { "image1": ["190", 0], "image2": ["191", 0] } },
+        "190": { "class_type": "LoadImage", "inputs": { "image": "img1.png" } },
+        "191": { "class_type": "LoadImage", "inputs": { "image": "img2.png" } }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(
+        meta.positive_prompt,
+        "color the androids hair green, only the hair not the eyes or the explosion"
+    );
+    // This is the critical part: it should NOT be the same as positive_prompt
+    assert_eq!(meta.negative_prompt, "");
+}

@@ -98,6 +98,11 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                 continue;
             }
 
+            // D. Terminators
+            if t == "ConditioningZeroOut" {
+                continue;
+            }
+
             // B. Generic / Pass-through
             // We look for common input names that likely carry the conditioning signal upstream.
             // "Text to Conditioning" nodes take 'text' and 'clip' => output conditioning.
@@ -540,6 +545,34 @@ pub fn evaluate_string_node(
 
     // Lora Loader (LoraManager) - Extract text/trigger words
     if t == "Lora Loader (LoraManager)" {
+        // Try to build filtered string from active loras first (UI format)
+        if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+            if let Some(loras_arr) = arr.get(1).and_then(|v| v.as_array()) {
+                let mut active_loras = Vec::new();
+                for lora in loras_arr {
+                    let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
+                    if active {
+                        if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
+                            let strength = lora.get("strength").and_then(|v| {
+                                if let Some(f) = v.as_f64() {
+                                    Some(f)
+                                } else if let Some(s) = v.as_str() {
+                                    s.parse::<f64>().ok()
+                                } else {
+                                    None
+                                }
+                            }).unwrap_or(1.0);
+                            active_loras.push(format!("<lora:{}:{}>", name, strength));
+                        }
+                    }
+                }
+                if !active_loras.is_empty() {
+                    return Some(active_loras.join(" "));
+                }
+            }
+        }
+
+        // Fallback or API format (if prompt chunk has text param)
         if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
             let lower = text.to_lowercase();
             if lower != "undefined" && lower != "null" && lower != "none" {
