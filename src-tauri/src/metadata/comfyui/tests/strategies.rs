@@ -51,7 +51,7 @@ fn test_extract_comfyui_traversal() {
 
     assert_eq!(meta.tool, "ComfyUI");
     assert_eq!(meta.steps, 25);
-    assert_eq!(meta.model, "v1-5-pruned"); // Should skip LoraLoader and find Checkpoint
+    assert_eq!(meta.model, "v1_5_pruned"); // Should skip LoraLoader and find Checkpoint
     assert_eq!(meta.positive_prompt, "beautiful scenery");
     assert_eq!(meta.negative_prompt, "bad quality");
 }
@@ -87,7 +87,7 @@ fn test_extract_comfyui_wireless_fallback() {
     let meta = extract_comfyui_metadata(&chunks);
 
     assert_eq!(meta.tool, "ComfyUI");
-    assert_eq!(meta.model, "realvis-v3"); // Should be found by linear scan
+    assert_eq!(meta.model, "realvis_v3"); // Should be found by linear scan
     assert_eq!(meta.steps, 30); // Should be found by linear scan
     assert_eq!(meta.sampler, "dpmpp_2m"); // Should be found by linear scan
 }

@@ -434,6 +434,6 @@ mod tests {
         assert_eq!(meta.hypernetworks.len(), 3);
         assert!(meta.hypernetworks.contains(&"style_v1 (0.80)".to_string()));
         assert!(meta.hypernetworks.contains(&"detailer".to_string()));
-        assert!(meta.hypernetworks.contains(&"A1 Extra-600000 (0.15)".to_string()));
+        assert!(meta.hypernetworks.contains(&"a1_extra_600000 (0.15)".to_string()));
     }
 }

@@ -2,7 +2,7 @@ use super::graph::{get_node_input_link, get_node_param, get_node_type, ComfyGrap
 
 use super::conditioning::find_reachable_prompts;
 use super::heuristics::find_wireless_node;
-use crate::metadata::utils::extract_embeddings_from_prompt;
+use crate::metadata::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -265,14 +265,14 @@ impl<'a> ComfyEvaluator<'a> {
 
         // 4. Model (Recursive with Lora collection)
         if let Some(model_name) = self.trace_model_chain(node, "model", &mut meta.loras, &mut meta.ip_adapters) {
-            meta.model = model_name.replace(".safetensors", "").replace(".ckpt", "");
+            meta.model = model_name;
         } else if let Some(guider_id) = self.get_source_id(node, "guider") {
             // Flux Guider logic
             if let Some(guider_node) = self.graph.get_node(&guider_id) {
                 if let Some(model_name) =
                     self.trace_model_chain(guider_node, "model", &mut meta.loras, &mut meta.ip_adapters)
                 {
-                    meta.model = model_name.replace(".safetensors", "").replace(".ckpt", "");
+                    meta.model = model_name;
                 }
             }
         }
@@ -291,7 +291,7 @@ impl<'a> ComfyEvaluator<'a> {
             meta.negative_prompt = neg;
         }
 
-        // 5.1 Extract Embeddings from Prompts
+        // 5.1 Extract Resources from Prompts
         for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
             if !meta.embeddings.contains(&emb) {
                 meta.embeddings.push(emb);
@@ -300,6 +300,28 @@ impl<'a> ComfyEvaluator<'a> {
         for emb in extract_embeddings_from_prompt(&meta.negative_prompt) {
             if !meta.embeddings.contains(&emb) {
                 meta.embeddings.push(emb);
+            }
+        }
+
+        for lora in extract_loras_from_prompt(&meta.positive_prompt) {
+            if !meta.loras.contains(&lora) {
+                meta.loras.push(lora);
+            }
+        }
+        for lora in extract_loras_from_prompt(&meta.negative_prompt) {
+            if !meta.loras.contains(&lora) {
+                meta.loras.push(lora);
+            }
+        }
+
+        for hn in extract_hypernets_from_prompt(&meta.positive_prompt) {
+            if !meta.hypernetworks.contains(&hn) {
+                meta.hypernetworks.push(hn);
+            }
+        }
+        for hn in extract_hypernets_from_prompt(&meta.negative_prompt) {
+            if !meta.hypernetworks.contains(&hn) {
+                meta.hypernetworks.push(hn);
             }
         }
 
@@ -554,11 +576,33 @@ impl<'a> ComfyEvaluator<'a> {
             if let Some(values) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
                 for lora in values {
                     if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
-                        let name = name.replace(".safetensors", "").replace(".ckpt", "");
                         let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
                         if active {
-                            if !loras.contains(&name) {
-                                loras.push(name);
+                            let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+                            let strength = if let Some(s) = lora.get("strength") {
+                                if let Some(f) = s.as_f64() {
+                                    Some(f)
+                                } else if let Some(s_str) = s.as_str() {
+                                    s_str.parse::<f64>().ok()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
+                            let entry = if let Some(s) = strength {
+                                if (s - 1.0).abs() > 0.001 {
+                                    format!("{} ({:.2})", cleaned_name, s)
+                                } else {
+                                    cleaned_name
+                                }
+                            } else {
+                                cleaned_name
+                            };
+
+                            if !loras.contains(&entry) {
+                                loras.push(entry);
                             }
                         }
                     }

@@ -85,7 +85,7 @@ fn test_repro_ip_adapter_lora() {
     
     // IP Adapter check (Should be consolidated name without weight "(0.60)")
     println!("Extracted LoRAs: {:?}", meta.loras);
-    assert!(meta.loras.contains(&"ip-adapter-faceid-plusv2_sd15_lora".to_string()));
+    assert!(meta.loras.contains(&"ip_adapter_faceid_plusv2_sd15_lora".to_string()));
     assert!(!meta.loras.iter().any(|l| l.contains("(")), "LoRA names should not contain weights");
     
     // ControlNet check

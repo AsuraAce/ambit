@@ -329,13 +329,72 @@ export const parseA1111Parameters = (text: string, defaultTool?: GeneratorTool):
     metadata.positivePrompt = positiveParts.join("\n").trim();
     metadata.negativePrompt = negativePrompt.trim();
 
-    const loraRegex = /<lora:([^:>]+)(?::[^>]+)?>/g;
+    // --- Extract LoRAs from Prompts ---
+    const loraRegex = /<lora:([^:>]+)(?::([0-9\.]+))?>/gi;
     const loras = new Set<string>();
-    let match;
-    while ((match = loraRegex.exec(metadata.positivePrompt)) !== null) {
-        loras.add(match[1]);
+    const prompts = [metadata.positivePrompt, metadata.negativePrompt];
+    for (const text of prompts) {
+        if (!text) continue;
+        const matches = Array.from(text.matchAll(loraRegex));
+        for (const match of matches) {
+            const name = match[1].trim();
+            const weightStr = match[2];
+            let entry = name;
+            if (weightStr) {
+                const weight = parseFloat(weightStr);
+                if (!isNaN(weight) && Math.abs(weight - 1.0) > 0.001) {
+                    entry = `${name} (${weight.toFixed(2)})`;
+                }
+            }
+            if (entry) loras.add(entry);
+        }
     }
     if (loras.size > 0) metadata.loras = Array.from(loras);
+
+    // --- Extract Hypernetworks from Prompts ---
+    const hypernetRegex = /<hypernet:([^:>]+)(?::([0-9\.]+))?>/gi;
+    const hypernets = new Set<string>();
+    for (const text of prompts) {
+        if (!text) continue;
+        const matches = Array.from(text.matchAll(hypernetRegex));
+        for (const match of matches) {
+            const name = match[1].trim();
+            const weightStr = match[2];
+            let entry = name;
+            if (weightStr) {
+                const weight = parseFloat(weightStr);
+                if (!isNaN(weight) && Math.abs(weight - 1.0) > 0.001) {
+                    entry = `${name} (${weight.toFixed(2)})`;
+                }
+            }
+            if (entry) hypernets.add(entry);
+        }
+    }
+    if (hypernets.size > 0) metadata.hypernetworks = Array.from(hypernets);
+
+    // --- Extract Embeddings from Prompts ---
+    const embeddingRegex = /(embedding:|<embedding:|<)([a-zA-Z0-9_\-\.]+)([:>])?/gi;
+    const embeddings = new Set<string>();
+    for (const text of prompts) {
+        if (!text) continue;
+        const matches = Array.from(text.matchAll(embeddingRegex));
+        for (const match of matches) {
+            const prefix = match[1].toLowerCase();
+            const name = match[2];
+            const closing = match[3] || '';
+
+            // Stricter check for bare <name> format
+            if (prefix === "<") {
+                if (closing !== ">") continue;
+                const nameLower = name.toLowerCase();
+                if (nameLower === "lora" || nameLower === "hypernet" || nameLower.startsWith("lora:") || nameLower.startsWith("hypernet:")) {
+                    continue;
+                }
+            }
+            if (name && name.length >= 2) embeddings.add(name);
+        }
+    }
+    if (embeddings.size > 0) metadata.embeddings = Array.from(embeddings);
 
     let variationSeed = '';
     let variationStrength = '';
@@ -785,6 +844,26 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
         if (!base.controlNets) base.controlNets = [];
         for (const cn of secondary.controlNets) {
             if (!base.controlNets.includes(cn)) base.controlNets.push(cn);
+        }
+    }
+
+    // Merge other arrays
+    if (secondary.hypernetworks) {
+        if (!base.hypernetworks) base.hypernetworks = [];
+        for (const hn of secondary.hypernetworks) {
+            if (!base.hypernetworks.includes(hn)) base.hypernetworks.push(hn);
+        }
+    }
+    if (secondary.embeddings) {
+        if (!base.embeddings) base.embeddings = [];
+        for (const emb of secondary.embeddings) {
+            if (!base.embeddings.includes(emb)) base.embeddings.push(emb);
+        }
+    }
+    if (secondary.ipAdapters) {
+        if (!base.ipAdapters) base.ipAdapters = [];
+        for (const ipa of secondary.ipAdapters) {
+            if (!base.ipAdapters.includes(ipa)) base.ipAdapters.push(ipa);
         }
     }
 

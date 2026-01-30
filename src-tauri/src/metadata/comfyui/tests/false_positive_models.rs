@@ -20,7 +20,7 @@ fn test_upscale_model_false_positive() {
 
     // Should be the actual checkpoint
     assert!(
-        meta.model.contains("moodyPornMix"),
+        meta.model.contains("moodypornmix"),
         "Should extract the actual checkpoint. Got: {}",
         meta.model
     );

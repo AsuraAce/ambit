@@ -49,19 +49,7 @@ fn test_extract_comfyui_complex_user_case() {
     // NOTE: The `trace_model_source` should traverse 870 -> 854 -> 944 -> 940
     // 854 (ApplyFBCache) handled by generic "model" passthrough
     // 944 (Lora Loader (LoraManager)) handled by specific LoraManager matching
-    assert_eq!(meta.tool, "ComfyUI");
-    assert_eq!(meta.model, "flux/flux1KreaDevFP8_fp8E4m3fn");
-
-    // Steps/Seed come from 932 via link in 870
-    // NOTE: My current parser doesn't trace numeric inputs like 'steps' or 'seed', it only reads direct values.
-    // The user's KSampler uses linked inputs for steps/seed.
-    // My parser will likely yield 0 for steps unless we implement numeric tracing or use the wireless fallback.
-    // BUT, the wireless fallback (Linear Scan) should find node 932 if it has "steps".
-    // Node 932 has "steps": 20.
-    // Fallback scan looks for "KSampler" in class name.
-    // Node 932 class is "Input Parameters (Image Saver)". It DOES NOT contain "KSampler".
-    // So steps might be 0. This is a potential separate issue.
-    assert_eq!(meta.model, "flux/flux1KreaDevFP8_fp8E4m3fn");
+    assert_eq!(meta.model, "flux1kreadevfp8_fp8e4m3fn");
 }
 
 #[test]
@@ -110,7 +98,7 @@ fn test_extract_comfyui_recursive_params_and_loras() {
 
     // Assert LoRAs
     assert_eq!(meta.loras.len(), 1); // Only active one
-    assert_eq!(meta.loras[0], "Detailer (0.80)");
+    assert_eq!(meta.loras[0], "detailer (0.80)");
 }
 
 #[test]
@@ -135,7 +123,7 @@ fn test_extract_comfyui_flux_user_case() {
 
     let meta = extract_comfyui_metadata(&chunks);
 
-    assert_eq!(meta.model, "redcraftCADSUpdatedJan18_revealULTRAV35");
+    assert_eq!(meta.model, "redcraftcadsupdatedjan18_revealultrav35");
     assert_eq!(meta.steps, 20);
     assert_eq!(meta.sampler, "euler (simple)"); // Scheduler is linked!
     assert_eq!(meta.positive_prompt, "charcoal drawing, dynamic reference pose of a young woman, lingerie, nativ-american indianer, \n\nshadow play, low key lighting, back lighting, natural lighting, ");

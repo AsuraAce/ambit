@@ -24,14 +24,14 @@ fn test_repro_dual_ip_adapter() {
     println!("Extracted ControlNets: {:?}", meta.control_nets);
 
     // 1. Check LoraLoaderModelOnly (Should stay in LoRAs)
-    let found_lora_loader = meta.loras.iter().any(|l| l.contains("ip-adapter-faceid-plusv2_sd15_lora"));
+    let found_lora_loader = meta.loras.iter().any(|l| l.contains("ip_adapter_faceid_plusv2_sd15_lora"));
     assert!(found_lora_loader, "Should detect LoraLoaderModelOnly in LoRAs");
 
     // 2. Check IPAdapterModelLoader (Should be in ip_adapters, NOT LoRAs)
-    let found_ip_loader_in_loras = meta.loras.iter().any(|l| l.contains("ip-adapter-full-face_sd15"));
+    let found_ip_loader_in_loras = meta.loras.iter().any(|l| l.contains("ip_adapter_full_face_sd15"));
     assert!(!found_ip_loader_in_loras, "Should NOT detect IPAdapterModelLoader in LoRAs");
 
-    let found_ip_loader_in_ip_adapters = meta.ip_adapters.iter().any(|l| l.contains("ip-adapter-full-face_sd15"));
+    let found_ip_loader_in_ip_adapters = meta.ip_adapters.iter().any(|l| l.contains("ip_adapter_full_face_sd15"));
     assert!(found_ip_loader_in_ip_adapters, "Should detect IPAdapterModelLoader in IP Adapters");
     
     // Debug

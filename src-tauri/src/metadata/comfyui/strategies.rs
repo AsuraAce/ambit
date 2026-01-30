@@ -2,6 +2,7 @@ use super::conditioning::evaluate_string_node;
 use super::graph::{get_node_param, get_node_title, get_node_type, ComfyGraph};
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::ImageMetadata;
+use crate::metadata::guidance::GuidanceClassifier;
 use serde_json::Value;
 
 /// Layer 2: Explicit Metadata Nodes
@@ -52,10 +53,7 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             }
             if let Some(v) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) {
                 if v != "None" {
-                    meta.model = v
-                        .replace(".safetensors", "")
-                        .replace(".ckpt", "")
-                        .replace(".gguf", "");
+                    meta.model = GuidanceClassifier::clean_name(v);
                     found = true;
                 }
             }
@@ -240,11 +238,7 @@ fn extract_model_from_node(node: &Value) -> Option<String> {
 
     if let Some(n) = name {
         if n != "None" && n != "null" {
-            return Some(
-                n.replace(".safetensors", "")
-                    .replace(".ckpt", "")
-                    .replace(".gguf", ""),
-            );
+            return Some(GuidanceClassifier::clean_name(n));
         }
     }
     None

@@ -63,7 +63,7 @@ fn test_gguf_loader_extraction() {
     chunks.insert("workflow".to_string(), workflow.to_string());
     let meta = extract_comfyui_metadata(&chunks);
     assert!(
-        meta.model.contains("qwen-image-edit"),
+        meta.model.contains("qwen_image_edit"),
         "Should extract GGUF model: {}",
         meta.model
     );

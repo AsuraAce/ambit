@@ -48,7 +48,7 @@ fn test_extract_comfyui_easy_loader() {
     chunks.insert("prompt".to_string(), prompt.to_string());
 
     let meta = extract_comfyui_metadata(&chunks);
-    assert_eq!(meta.model, "flux1-dev-fp8");
+    assert_eq!(meta.model, "flux1_dev_fp8");
 }
 
 #[test]
@@ -121,5 +121,5 @@ fn test_extract_comfyui_supir_conflict() {
     let meta = extract_comfyui_metadata(&chunks);
 
     // Should find the actual KSampler model (novaAnimeXL), NOT SUPIR
-    assert_eq!(meta.model, "novaAnimeXL_ilV30HappyNewYear");
+    assert_eq!(meta.model, "novaanimexl_ilv30happynewyear");
 }

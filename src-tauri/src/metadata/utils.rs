@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::sync::OnceLock;
+use crate::metadata::guidance::GuidanceClassifier;
 
 static EMBEDDING_RE: OnceLock<Regex> = OnceLock::new();
 static LORA_RE: OnceLock<Regex> = OnceLock::new();
@@ -44,8 +45,9 @@ pub fn extract_embeddings_from_prompt(text: &str) -> Vec<String> {
             continue;
         }
 
-        if !embeddings.contains(&name_str) {
-            embeddings.push(name_str);
+        let cleaned = GuidanceClassifier::clean_name(&name_str);
+        if !embeddings.contains(&cleaned) {
+            embeddings.push(cleaned);
         }
     }
     embeddings
@@ -64,18 +66,19 @@ pub fn extract_loras_from_prompt(text: &str) -> Vec<String> {
             let name = m.as_str().trim();
             let weight = cap.get(2).map(|w| w.as_str());
 
+            let cleaned_name = GuidanceClassifier::clean_name(name);
             let entry = if let Some(w) = weight {
                 if let Ok(wf) = w.parse::<f32>() {
                     if (wf - 1.0).abs() > 0.001 {
-                        format!("{} ({:.2})", name, wf)
+                        format!("{} ({:.2})", cleaned_name, wf)
                     } else {
-                        name.to_string()
+                        cleaned_name
                     }
                 } else {
-                    name.to_string()
+                    cleaned_name
                 }
             } else {
-                name.to_string()
+                cleaned_name
             };
 
             if !loras.contains(&entry) {
@@ -99,18 +102,19 @@ pub fn extract_hypernets_from_prompt(text: &str) -> Vec<String> {
             let name = m.as_str().trim();
             let weight = cap.get(2).map(|w| w.as_str());
 
+            let cleaned_name = GuidanceClassifier::clean_name(name);
             let entry = if let Some(w) = weight {
                 if let Ok(wf) = w.parse::<f32>() {
                     if (wf - 1.0).abs() > 0.001 {
-                        format!("{} ({:.2})", name, wf)
+                        format!("{} ({:.2})", cleaned_name, wf)
                     } else {
-                        name.to_string()
+                        cleaned_name
                     }
                 } else {
-                    name.to_string()
+                    cleaned_name
                 }
             } else {
-                name.to_string()
+                cleaned_name
             };
 
             if !hypernets.contains(&entry) {

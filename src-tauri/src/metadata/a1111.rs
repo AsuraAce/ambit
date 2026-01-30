@@ -1,4 +1,5 @@
 use super::ImageMetadata;
+use super::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
 use regex::Regex;
 
 fn split_a1111_params(s: &str) -> Vec<String> {
@@ -346,25 +347,42 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
         }
     }
 
-    // Extract LoRAs from positive prompt
-    if let Ok(re) = Regex::new(r"<lora:([^:>]+)(?::([^>]+))?>") {
-        for cap in re.captures_iter(&meta.positive_prompt) {
-            let lora_name = cap[1].to_string();
+    // --- Unified Prompt Extraction (Embeddings, LoRAs, Hypernetworks) ---
+    // This catches everything in the prompts and merges with params
+    
+    // Extract Embeddings
+    for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
+        if !meta.embeddings.contains(&emb) {
+            meta.embeddings.push(emb);
+        }
+    }
+    for emb in extract_embeddings_from_prompt(&meta.negative_prompt) {
+        if !meta.embeddings.contains(&emb) {
+            meta.embeddings.push(emb);
+        }
+    }
 
-            // Extract weight (default 1.0)
-            let weight_str = cap.get(2).map(|m| m.as_str()).unwrap_or("1.0");
-            let weight = weight_str.parse::<f64>().unwrap_or(1.0);
+    // Extract LoRAs
+    for lora in extract_loras_from_prompt(&meta.positive_prompt) {
+        if !meta.loras.contains(&lora) {
+            meta.loras.push(lora);
+        }
+    }
+    for lora in extract_loras_from_prompt(&meta.negative_prompt) {
+        if !meta.loras.contains(&lora) {
+            meta.loras.push(lora);
+        }
+    }
 
-            // Consistency Rule: Hide 1.0, Show 0.0 and everything else
-            let entry = if (weight - 1.0).abs() > f64::EPSILON {
-                format!("{} ({:.2})", lora_name, weight)
-            } else {
-                lora_name
-            };
-
-            if !meta.loras.contains(&entry) {
-                meta.loras.push(entry);
-            }
+    // Extract Hypernetworks
+    for hn in extract_hypernets_from_prompt(&meta.positive_prompt) {
+        if !meta.hypernetworks.contains(&hn) {
+            meta.hypernetworks.push(hn);
+        }
+    }
+    for hn in extract_hypernets_from_prompt(&meta.negative_prompt) {
+        if !meta.hypernetworks.contains(&hn) {
+            meta.hypernetworks.push(hn);
         }
     }
 
@@ -452,7 +470,7 @@ mod tests {
         assert_eq!(meta.steps, 48);
         
         // Should be moved to IP-Adapter by the classifier
-        assert!(meta.ip_adapters.contains(&"ip-adapter_sd15_light".to_string()));
+        assert!(meta.ip_adapters.contains(&"ip_adapter_sd15_light".to_string()));
         assert!(meta.control_nets.is_empty());
     }
 
@@ -519,5 +537,14 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         assert_eq!(meta.steps, 20);
         assert_eq!(meta.cfg, 5.0);
         assert_eq!(meta.seed, 1047146944135898);
+    }
+
+    #[test]
+    fn test_extract_a1111_prompt_hypernets() {
+        let raw = "a cat, <hypernet:style_v1:0.8>, <hypernet:detailer:1.0>\nSteps: 20";
+        let meta = extract_a1111_metadata(raw, None);
+        assert_eq!(meta.hypernetworks.len(), 2);
+        assert!(meta.hypernetworks.contains(&"style_v1 (0.80)".to_string()));
+        assert!(meta.hypernetworks.contains(&"detailer".to_string()));
     }
 }
