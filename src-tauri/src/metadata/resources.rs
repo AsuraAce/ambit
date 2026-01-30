@@ -3,6 +3,7 @@ pub struct Resources {
     pub loras: Vec<String>,
     pub control_nets: Vec<String>,
     pub ip_adapters: Vec<String>,
+    pub embeddings: Vec<String>,
 }
 
 pub fn extract_loras(val: &serde_json::Value, res: &mut Resources) {
@@ -127,17 +128,70 @@ pub fn extract_ipadapters(val: &serde_json::Value, res: &mut Resources) {
     }
 }
 
+pub fn extract_embeddings(val: &serde_json::Value, res: &mut Resources) {
+    let process_item = |item: &serde_json::Value, res: &mut Resources| {
+        let name = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .or_else(|| item.get("model_name").and_then(|v| v.as_str()))
+            .or_else(|| {
+                item.get("model").and_then(|m| {
+                    m.get("model_name")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| m.get("name").and_then(|v| v.as_str()))
+                })
+            })
+            .or_else(|| item.as_str());
+
+        if let Some(n) = name {
+            let cleaned = crate::metadata::guidance::GuidanceClassifier::clean_name(n);
+            if !res.embeddings.contains(&cleaned) {
+                res.embeddings.push(cleaned);
+            }
+        }
+    };
+
+    if let Some(arr) = val.as_array() {
+        for item in arr {
+            process_item(item, res);
+        }
+    } else {
+        process_item(val, res);
+    }
+}
+
 pub fn scan_for_resources(val: &serde_json::Value, res: &mut Resources) {
     match val {
         serde_json::Value::Object(map) => {
             if let Some(loras) = map.get("loras") {
                 extract_loras(loras, res);
             }
-            if let Some(cns) = map.get("controlnets").or(map.get("control_adapters")).or(map.get("control_model")) {
+            if let Some(cns) = map.get("controlnets") {
                 extract_controlnets(cns, res);
             }
-            if let Some(ips) = map.get("ip_adapters").or(map.get("ip_adapter")).or(map.get("ip_adapter_model")) {
+            if let Some(cns) = map.get("control_adapters") {
+                extract_controlnets(cns, res);
+            }
+            if let Some(cns) = map.get("control_model") {
+                extract_controlnets(cns, res);
+            }
+            if let Some(ips) = map.get("ip_adapters") {
                 extract_ipadapters(ips, res);
+            }
+            if let Some(ips) = map.get("ip_adapter") {
+                extract_ipadapters(ips, res);
+            }
+            if let Some(ips) = map.get("ip_adapter_model") {
+                extract_ipadapters(ips, res);
+            }
+            if let Some(embs) = map.get("embeddings") {
+                extract_embeddings(embs, res);
+            }
+            if let Some(embs) = map.get("ti") {
+                extract_embeddings(embs, res);
+            }
+            if let Some(embs) = map.get("textual_inversion") {
+                extract_embeddings(embs, res);
             }
 
             for (_, v) in map {

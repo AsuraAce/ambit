@@ -5,6 +5,7 @@ pub mod guidance;
 pub mod models;
 pub mod parsers;
 pub mod resources;
+pub mod utils;
 
 pub use a1111::extract_a1111_metadata;
 pub use comfyui::extract_comfyui_metadata;

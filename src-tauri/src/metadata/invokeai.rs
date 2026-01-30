@@ -1,4 +1,5 @@
 use super::resources::{scan_for_resources, Resources};
+use super::utils::{extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt};
 use super::ImageMetadata;
 
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
@@ -55,6 +56,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     } else if let Some(neg) = root.get("negative_conditioning").and_then(|s| s.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
     }
+
 
     if let Some(steps) = root.get("steps").and_then(|v| v.as_u64()) {
         meta.steps = steps as u32;
@@ -141,6 +143,43 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     meta.loras = resources.loras;
     meta.control_nets = resources.control_nets;
     meta.ip_adapters = resources.ip_adapters;
+    meta.embeddings = resources.embeddings;
+
+    // --- Extract Embeddings from Prompts (Post-scan to avoid overwrites) ---
+    for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
+        if !meta.embeddings.contains(&emb) {
+            meta.embeddings.push(emb);
+        }
+    }
+    for emb in extract_embeddings_from_prompt(&meta.negative_prompt) {
+        if !meta.embeddings.contains(&emb) {
+            meta.embeddings.push(emb);
+        }
+    }
+
+    // --- Extract LoRAs from Prompts ---
+    for lora in extract_loras_from_prompt(&meta.positive_prompt) {
+        if !meta.loras.contains(&lora) {
+            meta.loras.push(lora);
+        }
+    }
+    for lora in extract_loras_from_prompt(&meta.negative_prompt) {
+        if !meta.loras.contains(&lora) {
+            meta.loras.push(lora);
+        }
+    }
+
+    // --- Extract Hypernetworks from Prompts ---
+    for hn in extract_hypernets_from_prompt(&meta.positive_prompt) {
+        if !meta.hypernetworks.contains(&hn) {
+            meta.hypernetworks.push(hn);
+        }
+    }
+    for hn in extract_hypernets_from_prompt(&meta.negative_prompt) {
+        if !meta.hypernetworks.contains(&hn) {
+            meta.hypernetworks.push(hn);
+        }
+    }
 
     // Extract embedded workflow/graph if present
     if let Some(wf) = root.get("workflow").or_else(|| root.get("graph")) {
@@ -356,5 +395,45 @@ mod tests {
         });
         let meta = extract_invokeai_metadata(&payload);
         assert!(meta.is_favorite);
+    }
+
+    #[test]
+    fn test_extract_invokeai_prompt_embeddings() {
+        let payload = json!({
+            "positive_prompt": "a beautiful forest, <easynegative>, <style1>, <<<<full body shot, <lora:methurlant:1>",
+            "negative_prompt": "<bad_quality>, ugly, <hypernet:A1 Extra:0.15>",
+            "steps": 20
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.embeddings.len(), 3);
+        assert!(meta.embeddings.contains(&"easynegative".to_string()));
+        assert!(meta.embeddings.contains(&"style1".to_string()));
+        assert!(meta.embeddings.contains(&"bad_quality".to_string()));
+        assert!(!meta.embeddings.contains(&"full".to_string()));
+    }
+
+    #[test]
+    fn test_extract_invokeai_prompt_loras() {
+        let payload = json!({
+            "positive_prompt": "a cat, <lora:style_v1:0.8>, <lora:detailer:1.0>",
+            "negative_prompt": "low quality"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.loras.len(), 2);
+        assert!(meta.loras.contains(&"style_v1 (0.80)".to_string()));
+        assert!(meta.loras.contains(&"detailer".to_string()));
+    }
+
+    #[test]
+    fn test_extract_invokeai_prompt_hypernetworks() {
+        let payload = json!({
+            "positive_prompt": "a cat, <hypernet:style_v1:0.8>, <hypernet:detailer:1.0>",
+            "negative_prompt": "<hypernet:A1 Extra-600000:0.15>"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.hypernetworks.len(), 3);
+        assert!(meta.hypernetworks.contains(&"style_v1 (0.80)".to_string()));
+        assert!(meta.hypernetworks.contains(&"detailer".to_string()));
+        assert!(meta.hypernetworks.contains(&"A1 Extra-600000 (0.15)".to_string()));
     }
 }

@@ -79,4 +79,60 @@ describe('metadataMapper', () => {
         expect(result.loras).toContain('style1 (0.80)');
         expect(result.loras).toContain('detailer');
     });
+
+    it('should extract embeddings (textual inversions) from various field names and formats', () => {
+        const row = {
+            metadata_json: JSON.stringify({
+                embeddings: [
+                    { name: 'easynegative.safetensors' },
+                    { model_name: 'bad-artist-v2' }
+                ],
+                ti: { name: 'deep_negative' },
+                nodes: {
+                    'ti-node': {
+                        textual_inversion: 'another_emb.ckpt'
+                    }
+                }
+            })
+        };
+
+        const result = mapInvokeMetadata(row, 'metadata_json', 0);
+        expect(result.embeddings).toContain('easynegative');
+        expect(result.embeddings).toContain('bad-artist-v2');
+        expect(result.embeddings).toContain('deep_negative');
+        expect(result.embeddings).toContain('another_emb');
+        expect(result.embeddings.length).toBe(4);
+    });
+
+    it('should extract embeddings from prompt text and avoid false positives', () => {
+        const row = {
+            metadata_json: JSON.stringify({
+                positive_prompt: 'a cat, <style1>, <<<<full body shot',
+                negative_prompt: '<easynegative>, bad, <lora:some_lora:0.8>, <hypernet:A1 Extra-600000:0.15>'
+            })
+        };
+
+        const result = mapInvokeMetadata(row, 'metadata_json', 0);
+        expect(result.embeddings).toContain('style1');
+        expect(result.embeddings).toContain('easynegative');
+        expect(result.embeddings).not.toContain('full');
+        expect(result.embeddings).not.toContain('lora');
+        expect(result.embeddings).not.toContain('hypernet');
+        expect(result.embeddings.length).toBe(2);
+    });
+
+    it('should extract loras and hypernetworks from prompt text', () => {
+        const row = {
+            metadata_json: JSON.stringify({
+                positive_prompt: 'a cat, <lora:style_v1:0.8>, <lora:detailer:1.0>, <hypernet:my-hn:0.5>',
+                negative_prompt: '<hypernet:A1 Extra:0.15>'
+            })
+        };
+
+        const result = mapInvokeMetadata(row, 'metadata_json', 0);
+        expect(result.loras).toContain('style_v1 (0.80)');
+        expect(result.loras).toContain('detailer');
+        expect(result.hypernetworks).toContain('my-hn (0.50)');
+        expect(result.hypernetworks).toContain('A1 Extra (0.15)');
+    });
 });

@@ -59,6 +59,38 @@ fn test_extract_comfyui_complex_prompt() {
         meta.positive_prompt,
         "trigger_abc, A battle-hardened mercenary captain..."
     );
+    assert_eq!(meta.embeddings.len(), 0);
+}
+
+#[test]
+fn test_extract_comfyui_embeddings() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["10", 0],
+                "negative": ["11", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "a cute cat, (embedding:very_cute:1.2), <embedding:cat_style>" }
+        },
+        "11": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "embedding:bad_quality, lowres" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.embeddings.len(), 3);
+    assert!(meta.embeddings.contains(&"very_cute".to_string()));
+    assert!(meta.embeddings.contains(&"cat_style".to_string()));
+    assert!(meta.embeddings.contains(&"bad_quality".to_string()));
 }
 
 #[test]

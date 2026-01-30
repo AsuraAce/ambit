@@ -2,6 +2,7 @@ use super::graph::{get_node_input_link, get_node_param, get_node_type, ComfyGrap
 
 use super::conditioning::find_reachable_prompts;
 use super::heuristics::find_wireless_node;
+use crate::metadata::utils::extract_embeddings_from_prompt;
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -288,6 +289,18 @@ impl<'a> ComfyEvaluator<'a> {
         let neg = find_reachable_prompts(self.graph, node_id, "negative");
         if !neg.is_empty() {
             meta.negative_prompt = neg;
+        }
+
+        // 5.1 Extract Embeddings from Prompts
+        for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
+            if !meta.embeddings.contains(&emb) {
+                meta.embeddings.push(emb);
+            }
+        }
+        for emb in extract_embeddings_from_prompt(&meta.negative_prompt) {
+            if !meta.embeddings.contains(&emb) {
+                meta.embeddings.push(emb);
+            }
         }
 
         // Flux Guider inputs
