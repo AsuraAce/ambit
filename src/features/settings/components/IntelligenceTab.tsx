@@ -4,6 +4,7 @@ import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { verifyApiKey } from '../../../services/geminiService';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
+import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 
 interface TabProps {
     settings: AppSettings;
@@ -15,6 +16,8 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
     const [isVerifying, setIsVerifying] = React.useState(false);
     const [verificationStatus, setVerificationStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const [verificationError, setVerificationError] = React.useState<string | null>(null);
+
+    const isEnvKey = !!process.env.API_KEY;
 
     const handleAIToggle = () => {
         const newValue = !settings.enableAI;
@@ -95,44 +98,48 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
 
                     {settings.enableAI && (
                         <div className="animate-in fade-in slide-in-from-top-2 space-y-4">
-                            <div>
-                                <label className="text-sm font-bold text-gray-900 dark:text-white block mb-2 flex items-center gap-2">
-                                    <Key className="w-4 h-4 text-gray-400" /> Google Gemini API Key
-                                </label>
-                                <div className="relative group">
-                                    <input
-                                        type="password"
-                                        value={settings.googleGeminiApiKey || ''}
-                                        onChange={handleApiKeyChange}
-                                        placeholder="AIzaSy..."
-                                        className={`w-full bg-gray-50 dark:bg-black/20 border ${verificationStatus === 'success' ? 'border-sage-500/50' : verificationStatus === 'error' ? 'border-red-500/50' : 'border-gray-200 dark:border-white/10'} rounded-xl p-3 pr-24 text-sm focus:border-sage-500 outline-none text-gray-700 dark:text-gray-300 font-mono transition-colors`}
-                                    />
-                                    <div className="absolute right-2 top-1.5 flex items-center gap-2">
-                                        {verificationStatus === 'success' && (
-                                            <Check className="w-4 h-4 text-sage-500 animate-in fade-in zoom-in" />
-                                        )}
-                                        {verificationStatus === 'error' && (
-                                            <XCircle className="w-4 h-4 text-red-500 animate-in fade-in zoom-in" />
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={handleVerifyKey}
-                                            disabled={isVerifying || !settings.googleGeminiApiKey}
-                                            className="px-3 py-1.5 bg-gray-900 dark:bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-gray-800 dark:hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-                                        >
-                                            {isVerifying ? (
-                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                            ) : null}
-                                            {isVerifying ? 'Testing...' : 'Test Key'}
-                                        </button>
-                                    </div>
-                                </div>
-                                {verificationError && (
-                                    <p className="text-[10px] text-red-500 mt-1.5 ml-1 animate-in slide-in-from-top-1">
-                                        {verificationError}
-                                    </p>
-                                )}
-                            </div>
+                            <ApiKeyInput
+                                value={settings.googleGeminiApiKey || ''}
+                                onChange={(val) => {
+                                    setSettings(prev => ({ ...prev, googleGeminiApiKey: val }));
+                                    setVerificationStatus('idle');
+                                    setVerificationError(null);
+                                }}
+                                onVerify={handleVerifyKey}
+                                isVerifying={isVerifying}
+                                status={verificationStatus}
+                                error={verificationError}
+                                isEnvKey={isEnvKey}
+                                onTestEnvKey={() => {
+                                    const keyToTest = process.env.API_KEY || '';
+                                    if (keyToTest) {
+                                        // We need handleVerifyKey to optionally take a key, 
+                                        // but currently it uses settings.googleGeminiApiKey.
+                                        // Let's modify handleVerifyKey slightly if needed, 
+                                        // or just set the setting temporarily.
+                                        // Actually, let's just make a local verify call.
+                                        (async () => {
+                                            setIsVerifying(true);
+                                            setVerificationStatus('idle');
+                                            try {
+                                                const result = await verifyApiKey(keyToTest, settings.aiModel || DEFAULT_AI_MODEL);
+                                                if (result.valid) {
+                                                    setVerificationStatus('success');
+                                                    addToast('Environment API Key verified', 'success');
+                                                } else {
+                                                    setVerificationStatus('error');
+                                                    setVerificationError(result.error || 'Verification failed');
+                                                }
+                                            } catch (e) {
+                                                setVerificationStatus('error');
+                                                setVerificationError(e instanceof Error ? e.message : 'Unknown error');
+                                            } finally {
+                                                setIsVerifying(false);
+                                            }
+                                        })();
+                                    }
+                                }}
+                            />
 
                             {settings.devMode && (
                                 <div className="pt-2 animate-in fade-in slide-in-from-top-2">
