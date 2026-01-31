@@ -634,15 +634,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                 if (onClose) onClose();
                                                 addToast("Resolving unknown hashes...", "info");
 
-                                                let unlisten: (() => void) | undefined;
-
                                                 try {
                                                     const { invoke } = await import('@tauri-apps/api/core');
-                                                    const { listen } = await import('@tauri-apps/api/event');
-
-                                                    unlisten = await listen<{ current: number, total: number, message: string }>('model_resolution_progress', (event) => {
-                                                        setResolutionProgress(event.payload);
-                                                    });
 
                                                     const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: false });
 
@@ -667,7 +660,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                                         addToast("Lookup failed", "error");
                                                     }
                                                 } finally {
-                                                    if (unlisten) unlisten();
                                                     setIsResolving(false);
                                                     setResolutionProgress(null);
                                                 }

@@ -11,7 +11,12 @@ export const ActivityDock: React.FC = () => {
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
         isActivityDockMinimized, setIsActivityDockMinimized, // Added
+        lastModelResolutionResult,
         isPopulatingThumbnails,
+        isScanningDiscovery,
+        discoveryScanProgress,
+        cancelDiscoveryScan,
+        setIsResolvingModels,
         isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
         cancelImport,
         cancelThumbnailRegeneration
@@ -20,7 +25,7 @@ export const ActivityDock: React.FC = () => {
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
 
     // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing
-    const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails;
+    const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     const active = isHighPriorityActive || isBackgroundActive;
@@ -42,6 +47,9 @@ export const ActivityDock: React.FC = () => {
     } else if (isResolvingModels) {
         progress = modelResolutionProgress;
         label = "Resolving Models";
+    } else if (isScanningDiscovery) {
+        progress = discoveryScanProgress;
+        label = "Discovery Scan";
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: "Matching images to models..." };
         label = "Smart Fill";
@@ -161,9 +169,19 @@ export const ActivityDock: React.FC = () => {
                                     <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header.</span>
                                 </div>
 
-                                {(isImporting || isRegeneratingThumbnails) && (
+                                {(isImporting || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery) && (
                                     <button
-                                        onClick={isImporting ? cancelImport : cancelThumbnailRegeneration}
+                                        onClick={() => {
+                                            if (isImporting) cancelImport();
+                                            if (isRegeneratingThumbnails) cancelThumbnailRegeneration();
+                                            if (isResolvingModels) {
+                                                import('@tauri-apps/api/core').then(({ invoke }) => {
+                                                    invoke('cancel_model_resolution').catch(console.error);
+                                                });
+                                                setIsResolvingModels(false);
+                                            }
+                                            if (isScanningDiscovery) cancelDiscoveryScan();
+                                        }}
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"
                                     >
                                         Cancel

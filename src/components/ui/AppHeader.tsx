@@ -61,16 +61,17 @@ export const AppHeader = React.memo(({
         isImporting, importProgress,
         isLiveSyncing, syncStatus, syncProgress,
         isResolvingModels, modelResolutionProgress,
+        isScanningDiscovery, discoveryScanProgress, // Added
         isBackgroundHealingActive, backgroundHealingProgress // Added
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
-    const isHighPriority = isImporting || isSyncing || isResolvingModels;
+    const isHighPriority = isImporting || isSyncing || isResolvingModels || isScanningDiscovery;
     const active = isHighPriority || isBackgroundHealingActive;
 
     const progress = (isImporting && importProgress)
         ? importProgress
-        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null)));
+        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null))));
 
     // Determine color
     const isBackgroundOnly = isBackgroundHealingActive && !isHighPriority;

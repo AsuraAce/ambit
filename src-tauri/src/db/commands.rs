@@ -686,7 +686,7 @@ pub async fn get_parameter_ranges(
 
         // Distinct ControlNets (REACTIVE: respect filters)
         let control_nets: Vec<String> = {
-            let sql = format!(
+            format!(
                 "SELECT DISTINCT controlnet_name 
                  FROM image_controlnets
                  JOIN images ON images.id = image_controlnets.image_id
@@ -876,7 +876,7 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
         let mut missing_count = 0;
-        let mut recovered_count = 0; // Not explicitly tracking previously-missing
+        let mut _recovered_count = 0; // Not explicitly tracking previously-missing
         let mut thumb_count = 0;
 
         {

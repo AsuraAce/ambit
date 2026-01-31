@@ -1,6 +1,5 @@
 use super::ImageMetadata;
 use super::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
-use regex::Regex;
 
 fn split_a1111_params(s: &str) -> Vec<String> {
     let mut result = Vec::new();

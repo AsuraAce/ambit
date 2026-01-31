@@ -20,6 +20,7 @@ import { useSearch } from '../contexts/SearchContext';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
+import { useProgressListeners } from '../hooks/useProgressListeners';
 
 interface AppLayoutProps {
     // Sidebar Props
@@ -92,6 +93,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     handleRemoveFromCollection, handleOpenCollectionModal, onEditCollection
 }) => {
+    // Hooks
+    useProgressListeners();
+
     // Stores
     const settings = useSettingsStore(s => s.settings);
 

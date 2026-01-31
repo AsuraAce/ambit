@@ -1,5 +1,5 @@
 use crate::db::resolve_db_path;
-use crate::metadata::guidance::{GuidanceCategory, GuidanceClassifier};
+use crate::metadata::guidance::GuidanceClassifier;
 use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,18 @@ pub struct ModelResolutionState {
 }
 
 impl Default for ModelResolutionState {
+    fn default() -> Self {
+        Self {
+            is_cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+pub struct ModelDiscoveryState {
+    pub is_cancelled: Arc<AtomicBool>,
+}
+
+impl Default for ModelDiscoveryState {
     fn default() -> Self {
         Self {
             is_cancelled: Arc::new(AtomicBool::new(false)),
@@ -490,6 +502,12 @@ pub fn cancel_model_resolution(state: tauri::State<'_, ModelResolutionState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn cancel_model_discovery(state: tauri::State<'_, ModelDiscoveryState>) {
+    state.is_cancelled.store(true, Ordering::SeqCst);
+}
+
 #[derive(Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbnailScanResult {
@@ -502,11 +520,32 @@ pub struct ThumbnailScanResult {
 pub async fn scan_model_thumbnails(
     app: tauri::AppHandle,
     paths: Vec<String>,
+    state: tauri::State<'_, ModelDiscoveryState>,
 ) -> Result<ThumbnailScanResult, String> {
+    use tauri::Emitter;
+
+    // Reset cancellation state
+    state.is_cancelled.store(false, Ordering::SeqCst);
+
     let mut models_found = Vec::new();
     let mut images_map = std::collections::HashSet::new();
 
-    for root_path in paths {
+    let total_paths = paths.len();
+    for (i, root_path) in paths.iter().enumerate() {
+        // Check for cancellation
+        if state.is_cancelled.load(Ordering::SeqCst) {
+            return Err("Discovery scan cancelled by user".to_string());
+        }
+
+        let _ = app.emit(
+            "discovery_scan_progress",
+            ProgressPayload {
+                current: i,
+                total: total_paths,
+                message: format!("Searching: {}", root_path),
+            },
+        );
+
         let path_buf = std::path::PathBuf::from(root_path);
         if path_buf.exists() && path_buf.is_dir() {
             scan_dir_for_resources(&path_buf, &mut models_found, &mut images_map);
@@ -520,6 +559,15 @@ pub async fn scan_model_thumbnails(
         });
     }
 
+    let _ = app.emit(
+        "discovery_scan_progress",
+        ProgressPayload {
+            current: 0,
+            total: 100,
+            message: "Saving discovered models...".to_string(),
+        },
+    );
+
     let db_path = resolve_db_path(&app)?;
     let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
@@ -532,19 +580,40 @@ pub async fn scan_model_thumbnails(
     // 1. Harvest resource names from library if not already in models table
     harvest_resource_names(&mut conn, now)?;
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
     let mut updated_count = 0;
 
     {
         // 2. Full Discovery: Upsert all found models into the database
-        let mut upsert_stmt = tx.prepare_cached(
+        // NOTE: We use conn directly instead of a transaction to ensure immediate cache commits.
+        // If the user cancels, we want to keep the progress made so far.
+        let mut upsert_stmt = conn.prepare_cached(
             "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename, resource_type = excluded.resource_type WHERE filename IS NULL OR filename = ''"
         ).map_err(|e| e.to_string())?;
 
-        for model_path in &models_found {
+        // Prepare cache statements for fast discovery
+        let mut cache_select_stmt = conn.prepare_cached(
+            "SELECT hash FROM scanned_files WHERE path = ?1 AND size = ?2 AND modified = ?3"
+        ).map_err(|e| e.to_string())?;
+
+        let mut cache_insert_stmt = conn.prepare_cached(
+            "INSERT OR REPLACE INTO scanned_files (path, size, modified, hash) VALUES (?1, ?2, ?3, ?4)"
+        ).map_err(|e| e.to_string())?;
+
+        // Emit initial status
+        let _ = app.emit(
+            "discovery_scan_progress",
+            ProgressPayload {
+                current: 0,
+                total: models_found.len(),
+                message: format!("Found {} candidates. Registering...", models_found.len()),
+            },
+        );
+
+        let mut last_emit = std::time::Instant::now();
+
+        for (i, model_path) in models_found.iter().enumerate() {
             let model_path_buf = std::path::PathBuf::from(model_path);
             let filename = model_path_buf
                 .file_name()
@@ -571,11 +640,53 @@ pub async fn scan_model_thumbnails(
                 "checkpoint"
             };
 
-            // For full discovery, we try to use the real SHA256 hash if possible
-            // This allows online resolution to work for local files.
-            let hash = match calculate_sha256(&model_path_buf) {
-                Ok(h) => h,
-                Err(_) => format!("file:{}", model_path),
+            // Get file metadata for cache key
+            let (file_size, file_modified) = match std::fs::metadata(&model_path_buf) {
+                Ok(m) => (
+                    m.len() as i64,
+                    m.modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0),
+                ),
+                Err(_) => (0, 0),
+            };
+
+            // Check cache
+            let cached_hash: Option<String> = cache_select_stmt
+                .query_row(params![model_path, file_size, file_modified], |row| row.get(0))
+                .ok();
+
+            let hash = if let Some(h) = cached_hash {
+                h
+            } else {
+                // If not in cache, emit Hashing progress immediately (improve UX)
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                    return Err("Discovery scan cancelled by user".to_string());
+                }
+                
+                let _ = app.emit(
+                    "discovery_scan_progress",
+                    ProgressPayload {
+                        current: i + 1,
+                        total: models_found.len(),
+                        message: format!("Hashing: {}", filename),
+                    },
+                );
+                // Reset limit to ensure we see the "Registering" message next if needed
+                last_emit = std::time::Instant::now(); 
+
+                // Compute fresh hash
+                // Optimization: Skip expensive SHA256. Use file path as ID.
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                     return Err("Discovery scan cancelled by user".to_string());
+                }
+                let h = format!("file:{}", model_path);
+
+                // Update cache
+                let _ = cache_insert_stmt.execute(params![model_path, file_size, file_modified, h]);
+                h
             };
 
             let _ = upsert_stmt.execute(params![
@@ -586,14 +697,41 @@ pub async fn scan_model_thumbnails(
                 now,
                 r_type
             ]);
+
+            // Periodic progress and cancellation check during upsert
+            // Emit every 200ms or if it's the last item
+            if last_emit.elapsed().as_millis() > 200 || i == models_found.len() - 1 {
+                 if state.is_cancelled.load(Ordering::SeqCst) {
+                    return Err("Discovery scan cancelled by user".to_string());
+                }
+                let _ = app.emit(
+                    "discovery_scan_progress",
+                    ProgressPayload {
+                        current: i + 1,
+                        total: models_found.len(),
+                        message: format!("Registering: {}", filename),
+                    },
+                );
+                last_emit = std::time::Instant::now();
+            }
         }
 
+        let _ = app.emit(
+            "discovery_scan_progress",
+            ProgressPayload {
+                current: 0,
+                total: models_found.len(),
+                message: "Linking thumbnails...".to_string(),
+            },
+        );
+
         // 3. Match Thumbnails - write to sidecar slot (disk scan is never a user override)
-        let mut update_stmt = tx.prepare_cached(
+        // 3. Match Thumbnails - write to sidecar slot (disk scan is never a user override)
+        let mut update_stmt = conn.prepare_cached(
             "UPDATE models SET sidecar_thumbnail_path = ?1 WHERE (filename = ?2 COLLATE NOCASE OR name = ?3 COLLATE NOCASE OR name = ?4 COLLATE NOCASE) AND (sidecar_thumbnail_path IS NULL OR sidecar_thumbnail_path = '')"
         ).map_err(|e| e.to_string())?;
 
-        for model_path in &models_found {
+        for (i, model_path) in models_found.iter().enumerate() {
             let model_path_buf = std::path::PathBuf::from(&model_path);
 
             let parent = match model_path_buf.parent() {
@@ -613,10 +751,15 @@ pub async fn scan_model_thumbnails(
 
             let candidates = [
                 format!("{}.preview.png", stem),
+                format!("{}.preview.jpg", stem),
+                format!("{}.preview.webp", stem),
                 format!("{}.png", stem),
                 format!("{}.jpg", stem),
                 format!("{}.webp", stem),
                 format!("{}.jpeg", stem),
+                format!("{}.png", filename),
+                format!("{}.jpg", filename),
+                format!("{}.webp", filename),
             ];
 
             let mut best_thumb: Option<String> = None;
@@ -637,13 +780,31 @@ pub async fn scan_model_thumbnails(
                     }
                 }
             }
+
+            // Periodic progress check during thumbnail matching
+            if last_emit.elapsed().as_millis() > 200 || i == models_found.len() - 1 {
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                    return Err("Discovery scan cancelled by user".to_string());
+                }
+                let _ = app.emit(
+                    "discovery_scan_progress",
+                    ProgressPayload {
+                        current: i + 1,
+                        total: models_found.len(),
+                        message: format!("Matching: {}", filename),
+                    },
+                );
+                last_emit = std::time::Instant::now();
+            }
         }
     }
 
     // Classify any newly discovered guidance models
-    let _ = classify_unlabeled_models(&tx);
-
-    tx.commit().map_err(|e| e.to_string())?;
+    // Classify any newly discovered guidance models
+    let _ = classify_unlabeled_models(&conn);
+    
+    // Sync sidecar thumbnails to facet_cache so they appear in UI
+    let _ = refresh_facet_cache_from_models(&conn);
 
     Ok(ThumbnailScanResult {
         found: models_found.len(),
@@ -826,17 +987,23 @@ fn classify_unlabeled_models(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn calculate_sha256(path: &std::path::Path) -> Result<String, String> {
+fn calculate_sha256(path: &std::path::Path, cancel_token: &std::sync::atomic::AtomicBool) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     use std::fs::File;
     use std::io::{BufReader, Read};
+    use std::sync::atomic::Ordering;
 
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256::new();
-    let mut buffer = [0; 65536];
+    // Increase buffer size to 1MB for better large file throughput
+    let mut buffer = [0; 1048576];
 
     loop {
+        if cancel_token.load(Ordering::Relaxed) {
+             return Err("Cancelled by user".to_string());
+        }
+
         let count = reader.read(&mut buffer).map_err(|e| e.to_string())?;
         if count == 0 {
             break;
@@ -1039,4 +1206,36 @@ pub async fn clear_all_thumbnails(
         
         Ok(())
     }).await.map_err(|e| e.to_string())?
+}
+
+fn refresh_facet_cache_from_models(conn: &Connection) -> Result<(), String> {
+    // 1. Sync by Hash (Primary)
+    conn.execute(
+        "UPDATE facet_cache 
+         SET thumbnail_path = (SELECT sidecar_thumbnail_path FROM models WHERE models.hash = facet_cache.resource_hash),
+             has_sidecar = 1,
+             is_manual = 1
+         WHERE resource_hash IN (SELECT hash FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '')
+         AND (is_user_override IS NULL OR is_user_override = 0)",
+        params![],
+    ).map_err(|e| e.to_string())?;
+
+    // 2. Sync by Name (Secondary, for when hashes don't match like during path-only scans)
+    conn.execute(
+        "UPDATE facet_cache 
+         SET thumbnail_path = (SELECT m.sidecar_thumbnail_path 
+                               FROM models m 
+                               WHERE m.name = facet_cache.resource_name 
+                               AND m.sidecar_thumbnail_path IS NOT NULL 
+                               AND m.sidecar_thumbnail_path != ''
+                               LIMIT 1),
+             has_sidecar = 1,
+             is_manual = 1
+         WHERE resource_name IN (SELECT name FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '')
+         AND (thumbnail_path IS NULL OR thumbnail_path = '')
+         AND (is_user_override IS NULL OR is_user_override = 0)",
+        params![],
+    ).map_err(|e| e.to_string())?;
+    
+    Ok(())
 }

@@ -149,8 +149,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         }
     };
 
+    const { isScanningDiscovery, setIsScanningDiscovery, discoveryScanProgress, isPopulatingThumbnails } = useLibraryStore();
     const [newResourcePath, setNewResourcePath] = useState('');
-    const [isScanningResources, setIsScanningResources] = useState(false);
     const resourceInputRef = useRef<HTMLInputElement>(null);
 
     // Debounced auto-scan for newly added folders
@@ -232,18 +232,18 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         addToast(`Added resource folder: ${pathToAdd}`, 'success');
 
         // Trigger scan immediately for the new list
-        setIsScanningResources(true);
+        setIsScanningDiscovery(true);
         try {
             const currentList = [...(settings.resourceFolders || []), pathToAdd];
             await scanResourceThumbnails(currentList);
         } finally {
-            setIsScanningResources(false);
+            setIsScanningDiscovery(false);
         }
     };
 
     const handleScanNow = async () => {
         if (!settings.resourceFolders || settings.resourceFolders.length === 0) return;
-        setIsScanningResources(true);
+        setIsScanningDiscovery(true);
         addToast('Scanning resource folders...', 'info');
         try {
             const res = await scanResourceThumbnails(settings.resourceFolders);
@@ -253,13 +253,12 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             console.error(e);
             addToast('Resource scan failed', 'error');
         } finally {
-            setIsScanningResources(false);
+            setIsScanningDiscovery(false);
         }
     };
 
 
     const queryClient = useQueryClient();
-    const { isPopulatingThumbnails } = useLibraryStore();
 
     const removeFolder = (id: string) => {
         setSettings(prev => ({
@@ -457,15 +456,22 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
                     <div className="flex gap-2">
                         {settings.resourceFolders && settings.resourceFolders.length > 0 && (
-                            <button
-                                type="button"
-                                onClick={handleScanNow}
-                                disabled={isScanningResources || isPopulatingThumbnails}
-                                className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningResources || isPopulatingThumbnails ? 'opacity-70 cursor-wait' : ''}`}
-                            >
-                                <RefreshCw className={`w-3.5 h-3.5 ${isScanningResources ? 'animate-spin' : ''}`} />
-                                {isScanningResources ? 'Scanning...' : 'Scan Now'}
-                            </button>
+                            <div className="flex flex-col items-end gap-2">
+                                {isScanningDiscovery && discoveryScanProgress?.message && (
+                                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium animate-pulse truncate max-w-[200px]">
+                                        {discoveryScanProgress.message}
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleScanNow}
+                                    disabled={isScanningDiscovery || isPopulatingThumbnails}
+                                    className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isScanningDiscovery || isPopulatingThumbnails ? 'opacity-70 cursor-wait' : ''}`}
+                                >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isScanningDiscovery ? 'animate-spin' : ''}`} />
+                                    {isScanningDiscovery ? 'Scanning...' : 'Scan Now'}
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -519,11 +525,11 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                             </button>
                             <button
                                 type="submit"
-                                disabled={!newResourcePath.trim() || isScanningResources}
+                                disabled={!newResourcePath.trim() || isScanningDiscovery}
                                 className="px-4 py-2 bg-blue-600 disabled:bg-gray-300 disabled:text-gray-500 text-white rounded-lg hover:bg-blue-500 transition-colors font-medium text-sm flex items-center gap-1"
                             >
-                                {isScanningResources ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                {isScanningResources ? 'Scanning...' : 'Add Path'}
+                                {isScanningDiscovery ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                {isScanningDiscovery ? 'Scanning...' : 'Add Path'}
                             </button>
                         </form>
                     </div>

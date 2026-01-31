@@ -966,6 +966,7 @@ pub fn init_db() -> Vec<Migration> {
         migration38(),
         migration39(),
         migration40(),
+        migration41(),
     ]
 }
 
@@ -1160,6 +1161,23 @@ fn migration40() -> Migration {
             -- Subtype in facet cache to drive UI icons
             ALTER TABLE facet_cache ADD COLUMN guidance_subtype TEXT;
         ",
+        kind: MigrationKind::Up,
+    }
+}
+
+/// Migration 41: Create scanned_files cache for fast discovery
+/// Maps path + size + modified -> hash to skip expensive SHA256 calc
+fn migration41() -> Migration {
+    Migration {
+        version: 41,
+        description: "create_scanned_files_cache",
+        sql: "CREATE TABLE IF NOT EXISTS scanned_files (
+            path TEXT PRIMARY KEY,
+            size INTEGER,
+            modified INTEGER,
+            hash TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_scanned_files_lookup ON scanned_files(path, size, modified);",
         kind: MigrationKind::Up,
     }
 }

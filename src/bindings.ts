@@ -292,6 +292,9 @@ async clearModelCache() : Promise<Result<null, string>> {
 async cancelModelResolution() : Promise<void> {
     await TAURI_INVOKE("cancel_model_resolution");
 },
+async cancelModelDiscovery() : Promise<void> {
+    await TAURI_INVOKE("cancel_model_discovery");
+},
 async scanModelThumbnails(paths: string[]) : Promise<Result<ThumbnailScanResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_model_thumbnails", { paths }) };

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { commands } from '../bindings';
 
 export interface SyncProgress {
     current: number;
@@ -41,6 +42,10 @@ interface LibraryState {
     isPopulatingThumbnails: boolean;
     lastModelResolutionResult: { success: boolean; message: string } | null;
 
+    // Discovery Scan State
+    isScanningDiscovery: boolean;
+    discoveryScanProgress: SyncProgress | null;
+
     // Background Auto-Healing State
     isBackgroundHealingActive: boolean;
     backgroundHealingProgress: SyncProgress | null;
@@ -71,6 +76,9 @@ interface LibraryState {
     setIsActivityDockMinimized: (val: boolean) => void;
     setIsPopulatingThumbnails: (val: boolean) => void;
     setLastModelResolutionResult: (result: { success: boolean; message: string } | null) => void;
+    setIsScanningDiscovery: (val: boolean) => void;
+    setDiscoveryScanProgress: (progress: SyncProgress | null) => void;
+    cancelDiscoveryScan: () => void;
     incrementFacetCacheVersion: () => void;
 
     // Background Healing Actions
@@ -107,6 +115,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isActivityDockMinimized: false,
     isPopulatingThumbnails: false,
     lastModelResolutionResult: null,
+    isScanningDiscovery: false,
+    discoveryScanProgress: null,
     facetCacheVersion: 0,
 
     // Background Healing State
@@ -149,6 +159,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsActivityDockMinimized: (m) => set({ isActivityDockMinimized: m }),
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setLastModelResolutionResult: (result) => set({ lastModelResolutionResult: result }),
+    setIsScanningDiscovery: (val) => set({ isScanningDiscovery: val, isActivityDockDismissed: val ? false : undefined }),
+    setDiscoveryScanProgress: (progress) => set({ discoveryScanProgress: progress }),
+    cancelDiscoveryScan: () => {
+        commands.cancelModelDiscovery().catch(console.error);
+        set({ isScanningDiscovery: false, discoveryScanProgress: null });
+    },
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 
     // Background Healing Actions

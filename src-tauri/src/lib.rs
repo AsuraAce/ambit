@@ -5,7 +5,7 @@ mod scanner;
 mod thumb;
 mod watcher;
 
-use metadata::models::ModelResolutionState;
+use metadata::models::{ModelDiscoveryState, ModelResolutionState};
 use watcher::WatcherState;
 
 /// Create the Specta builder with all commands registered.
@@ -51,6 +51,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         metadata::models::resolve_hashes_online,
         metadata::models::clear_model_cache,
         metadata::models::cancel_model_resolution,
+        metadata::models::cancel_model_discovery,
         metadata::models::scan_model_thumbnails,
         metadata::models::set_model_thumbnail,
         metadata::models::unset_model_thumbnail,
@@ -93,6 +94,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(WatcherState::default())
         .manage(ModelResolutionState::default())
+        .manage(ModelDiscoveryState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             // Run auto-backup check in background
