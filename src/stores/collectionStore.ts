@@ -40,6 +40,12 @@ export const useCollectionStore = create<CollectionState>()(
 
             refreshSmartCounts: async () => {
                 try {
+                    const { useLibraryStore } = await import('./libraryStore');
+                    if (useLibraryStore.getState().isImporting) {
+                        console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
+                        return;
+                    }
+
                     const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
                     const currentCols = get().collections;
                     const smartCols = currentCols.filter(c => !!c.filters);

@@ -491,3 +491,41 @@ export const updateThumbnailPathsBatch = async (updates: {
     }
 };
 
+
+export interface ExistingMetadata {
+    timestamp: number;
+    fileSize: number;
+    metadataJson: string;
+}
+
+export const getExistingMetadata = async (ids: string[]): Promise<Map<string, ExistingMetadata>> => {
+    if (ids.length === 0) return new Map();
+
+    const db = await getDb();
+    const map = new Map<string, ExistingMetadata>();
+    const CHUNK_SIZE = 900;
+
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+
+        try {
+            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string }[]>(
+                `SELECT id, timestamp, file_size, metadata_json FROM images WHERE id IN (${placeholders})`,
+                chunk
+            );
+
+            rows.forEach(r => {
+                map.set(r.id, {
+                    timestamp: r.timestamp,
+                    fileSize: r.file_size,
+                    metadataJson: r.metadata_json
+                });
+            });
+        } catch (e) {
+            console.error('[DB] Failed to fetch existing metadata', e);
+        }
+    }
+
+    return map;
+};

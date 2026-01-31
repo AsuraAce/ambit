@@ -126,14 +126,26 @@ pub async fn save_images_batch(
                             timestamp=excluded.timestamp, 
                             file_size=excluded.file_size,
                             metadata_json=excluded.metadata_json,
-                            thumbnail_path=excluded.thumbnail_path,
+                            /* 
+                               FIX: Use NULLIF to prevent overwriting existing thumbnail with empty string
+                               if we skipped thumbnail generation (common in rescan)
+                            */
+                            thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
+                            /* 
+                                MERGE STRATEGY: 
+                                - Micro-thumbnail: Keep existing if new one is null (e.g. metadata-only scan)
+                                - Thumbnail Source: Keep existing if new one is null
+                                - User Fields (Favorite, Pinned, Boards, Notes): PRESERVE existing DB value if present. 
+                                  This allows re-scanning to update technical metadata (prompt, model) without wiping user curation.
+                            */
                             micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
                             thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
-                            is_favorite=excluded.is_favorite,
-                            is_pinned=excluded.is_pinned,
-                            group_id=excluded.group_id,
-                            board_id=excluded.board_id,
-                            notes=excluded.notes,
+                            is_favorite=COALESCE(images.is_favorite, excluded.is_favorite),
+                            is_pinned=COALESCE(images.is_pinned, excluded.is_pinned),
+                            group_id=COALESCE(images.group_id, excluded.group_id),
+                            board_id=COALESCE(images.board_id, excluded.board_id),
+                            notes=COALESCE(images.notes, excluded.notes),
+                            
                             original_metadata_json=excluded.original_metadata_json,
                             original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
                             is_corrupt=excluded.is_corrupt,
@@ -144,7 +156,14 @@ pub async fn save_images_batch(
                             steps=excluded.steps,
                             cfg=excluded.cfg,
                             sampler=excluded.sampler,
-                            generation_type=excluded.generation_type"
+                            generation_type=excluded.generation_type
+                         WHERE 
+                            /* OPTIMIZATION: Only update if the content actually changed.
+                               This prevents massive IO/Index thrashing on re-scans where 99% of files are identical.
+                            */
+                            images.metadata_json != excluded.metadata_json OR 
+                            images.timestamp != excluded.timestamp OR
+                            images.file_size != excluded.file_size"
                     ).map_err(|e| e.to_string())?;
 
 
@@ -209,7 +228,7 @@ pub async fn save_images_batch(
                     ").map_err(|e| e.to_string())?;
 
                     for img in &images {
-                        stmt.execute(params![
+                        let rows_affected = stmt.execute(params![
                             img.id,
                             img.path,
                             img.width,
@@ -234,16 +253,30 @@ pub async fn save_images_batch(
                         ])
                         .map_err(|e| e.to_string())?;
 
-                        // Populate junction tables
-                        lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                        emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                        hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                        cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                        ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        // Only populate junction tables if the record was actually inserted or updated.
+                        // If rows_affected is 0, it means the ON CONFLICT DO UPDATE SET ... WHERE ... 
+                        // condition was false (no technical metadata changed).
+                        if rows_affected > 0 {
+                            lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                            emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                            hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                            cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                            ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                        }
                     }
                 }
 
                 tx.commit().map_err(|e| e.to_string())?;
+
+                /*
+                   OPTIMIZATION: Prevent "Checkpoint Starvation" in WAL mode.
+                   By forcing a checkpoint after a large batch commit, we ensure the WAL file 
+                   doesn't grow unboundedly, which would otherwise slow down subsequent writes 
+                   to a crawl (the 4-minute hang).
+                   TRUNCATE is aggressive but ensures clean slate. PASSIVE might be safer but less effective.
+                */
+                let _ = conn.execute("PRAGMA wal_checkpoint(PASSIVE);", []);
+
                 Ok(images.len())
             })();
             

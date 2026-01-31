@@ -160,6 +160,13 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const activeFolders = monitoredFolders.filter(f => f.isActive);
         if (activeFolders.length === 0) return;
 
+        // CRITICAL: If an import is already running (e.g. manual re-scan), DO NOT start another scan.
+        // This prevents lock contention on the database (Read lock vs Write lock).
+        if (useLibraryStore.getState().isImporting) {
+            console.log('[FolderMonitor] Skipping live scan check - Import already in progress');
+            return;
+        }
+
         // Condition 1: Turning ON (Catch-up)
         const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
 

@@ -108,13 +108,26 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
     };
 };
 
+// Helper for deep equality check ignoring key order
+function canonicalStringify(obj: any): string {
+    if (obj === null || typeof obj !== 'object') {
+        return JSON.stringify(obj);
+    }
+    if (Array.isArray(obj)) {
+        return '[' + obj.map(canonicalStringify).join(',') + ']';
+    }
+    const keys = Object.keys(obj).sort();
+    return '{' + keys.map(key => JSON.stringify(key) + ':' + canonicalStringify(obj[key])).join(',') + '}';
+}
+
 export const processNativePaths = async (
     paths: string[],
-    thumbnailDir: string | undefined,
+    thumbDir?: string,
     onProgress?: (current: number, total: number, message?: string) => void,
-    defaultTool?: GeneratorTool, // Added argument
+    defaultTool?: GeneratorTool,
     abortSignal?: AbortSignal,
-    isStartup: boolean = false // Added flag
+    isStartup: boolean = false,
+    forceRescan: boolean = false
 ): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
     let skipped = 0;
@@ -179,19 +192,27 @@ export const processNativePaths = async (
     const allPaths = allEntries.map(e => e.path);
 
     // 2. Pre-filter: Remove already-imported paths (optimization for rescan)
-    if (onProgress) {
-        if (isStartup) {
-            onProgress(0, 0, 'Checking for new files...');
-        } else {
-            onProgress(0, allPaths.length, `Checking ${allPaths.length} files for duplicates...`);
-        }
-    }
-    const existingPaths = await getExistingPaths(allPaths);
-    const newPaths = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
+    // Only check for duplicates if NOT forcing a rescan
+    let newPaths = allPaths;
+    let skippedExisting = 0;
 
-    const skippedExisting = allPaths.length - newPaths.length;
-    if (skippedExisting > 0) {
-        console.log(`[Import] Skipping ${skippedExisting} already-imported files`);
+    if (!forceRescan) {
+        if (onProgress) {
+            if (isStartup) {
+                onProgress(0, 0, 'Checking for new files...');
+            } else {
+                onProgress(0, allPaths.length, `Checking ${allPaths.length} files for duplicates...`);
+            }
+        }
+        const existingPaths = await getExistingPaths(allPaths);
+        newPaths = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
+        skippedExisting = allPaths.length - newPaths.length;
+
+        if (skippedExisting > 0) {
+            console.log(`[Import] Skipping ${skippedExisting} already-imported files`);
+        }
+    } else {
+        console.log(`[Import] Force Rescan enabled. Processing all ${allPaths.length} paths.`);
     }
 
     // 3. Batch size for bulk scanning
@@ -216,90 +237,159 @@ export const processNativePaths = async (
             break;
         }
         const chunk = newPaths.slice(i, i + BATCH_SIZE);
+        console.log(`[Import] Processing batch ${i / BATCH_SIZE + 1} (${chunk.length} files)`);
 
-        // Generate thumbnails for first batch, skip rest for speed (lazy generation later)
-        // const isFirstBatch = i < FIRST_BATCH_WITH_THUMBS; // REMOVED: Inconsistent behavior
-        // const skipThumbnail = !isFirstBatch;
-
-        // STREAMLINED: Always skip valid thumbnail generation during import. 
-        // We rely 100% on the background queue which starts immediately after import.
-        // This ensures the import process is consistently fast (metadata only).
+        // Default behavior: Skip generation on Import.
         const skipThumbnail = true;
 
         try {
-            const results = await scanImagesBulk(chunk, thumbnailDir || '', skipThumbnail, true, defaultTool);
+            console.time(`scanBatch-${i}`);
+            // true for extractWorkflow (always want this for full metadata)
+            const results = await scanImagesBulk(chunk, thumbDir || '', skipThumbnail, true, defaultTool);
+            console.timeEnd(`scanBatch-${i}`);
+
             const batchImages: AIImage[] = [];
 
             for (let j = 0; j < results.length; j++) {
-                const result = results[j];
+                const info = results[j];
                 const path = chunk[j];
 
-                if (!result || (result as any).error) {
-                    if ((result as any).error) {
-                        if (!(result as any).is_directory) {
-                            console.error(`Error importing ${path}`);
-                            errors++;
-                        }
-                    }
-                    continue;
+                if (info.errorReason) {
+                    errors++;
+                    console.warn(`Scan error for ${path}:`, info.errorReason);
                 }
 
-                // Intermediates are now imported but hidden by default in UI
-                // Previously they were skipped here.
-
-                const filename = path.split(/[\\/]/).pop() || 'unknown.png';
-                const normPath = normalizePath(path);
-                const assetUrl = convertFileSrc(normPath);
-                const thumbPath = result.thumbnail || normPath;
-
-                // Apply Folder Variant Logic
-                // If the tool is "Automatic1111" (generic) or "Unknown", and we have a specific folder variant (e.g. Forge),
-                // we upgrade the tool type to the specific variant.
-                let finalTool = result.metadata.tool || GeneratorTool.UNKNOWN;
-                if ((finalTool === GeneratorTool.AUTOMATIC1111 || finalTool === GeneratorTool.UNKNOWN) &&
-                    defaultTool && defaultTool !== GeneratorTool.UNKNOWN && (defaultTool as string) !== 'Unknown') {
-                    finalTool = defaultTool;
-                }
-
-                const newImg: AIImage = {
-                    id: normPath,
-                    url: assetUrl,
-                    thumbnailUrl: thumbPath,
-                    microThumbnail: result.microThumbnail || undefined,
-                    thumbnailSource: result.thumbnailSource || undefined,
-                    filename: filename,
-                    fileSize: result.fileSize || 0,
-                    timestamp: result.timestamp || Date.now(),
-                    width: result.width || 0,
-                    height: result.height || 0,
-                    isFavorite: !!result.metadata.isFavorite || !!result.extra.isFavorite,
+                const img: AIImage = {
+                    id: normalizePath(path),
+                    ...mapMetadata(info.metadata), // merges tool, model, etc
+                    timestamp: info.timestamp,
+                    width: info.width || 0,
+                    height: info.height || 0,
+                    fileSize: info.fileSize,
+                    thumbnailUrl: info.thumbnail ? convertFileSrc(info.thumbnail) : '', // Rust returns absolute path
+                    isFavorite: false, // Default for object, DB COALESCE will overwrite with existing
+                    isPinned: false,
                     isDeleted: false,
-                    isMissing: false,
-                    metadata: {
-                        ...mapMetadata(result.metadata),
-                        tool: finalTool,
-                        hasWorkflowHint: !!result.metadata.workflowJson
-                    }
+                    isIntermediate: info.isIntermediate || false,
+                    metadata: info.metadata, // Full JSON
+                    url: convertFileSrc(path), // For frontend display
+                    thumbnailSource: info.thumbnailSource,
+                    microThumbnail: info.microThumbnail
                 };
 
-                batchImages.push(newImg);
-                newImages.push(newImg);
+                batchImages.push(img);
             }
 
-            // Sync Database in batches to ensure progress bar reflects completion
-            const { insertImagesBatch } = await import('./db/imageRepo');
-            await insertImagesBatch(batchImages);
-        } catch (e) {
-            console.error("Bulk scan failed for chunk", e);
-            errors += chunk.length;
-        }
+            if (batchImages.length > 0) {
+                // OPTIMIZATION: Read-First Check
+                // Query DB for existing timestamps/sizes to avoid unnecessary write transactions.
+                // This prevents lock contention by skipping the INSERT entirely for unchanged files.
+                const ids = batchImages.map(img => img.id);
+                const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
+                const existingMeta = await getExistingMetadata(ids);
+                let mismatchCount = 0;
 
-        if (onProgress) {
-            const current = Math.min(i + BATCH_SIZE, totalToProcess);
-            onProgress(current, totalToProcess, `Importing: ${current} / ${totalToProcess}`);
+                const imagesToUpdate = batchImages.filter(img => {
+                    const existing = existingMeta.get(img.id);
+                    if (!existing) {
+                        // console.log(`[Import-Diff] New file detected: ${img.id}`); 
+                        return true;
+                    }
+
+                    // Check if changed
+                    if (existing.timestamp !== img.timestamp) {
+                        console.log(`[Import-Diff] Update reason: TIMESTAMP ${existing.timestamp} vs ${img.timestamp} for ${img.id}`);
+                        return true;
+                    }
+                    if (existing.fileSize !== img.fileSize) {
+                        console.log(`[Import-Diff] Update reason: SIZE ${existing.fileSize} vs ${img.fileSize} for ${img.id}`);
+                        return true;
+                    }
+
+                    // Metadata Check: Use Canonical Stringify to ignore key order
+                    const newMetaStr = canonicalStringify(img.metadata);
+
+                    // Existing is string, parse it first to sort keys, then re-stringify
+                    // This is slightly expensive but way cheaper than a DB write
+                    let oldMetaCanonical = existing.metadataJson;
+                    try {
+                        const oldObj = JSON.parse(existing.metadataJson);
+                        oldMetaCanonical = canonicalStringify(oldObj);
+                    } catch (e) {
+                        // if parse fails, fallback to strict string comparison
+                    }
+
+                    if (newMetaStr !== oldMetaCanonical) {
+                        mismatchCount++;
+                        if (mismatchCount <= 5) {
+                            console.log(`[Import-Diff] Update reason: METADATA mismatch for ${img.id}`);
+                        }
+
+                        // LOG ACTUAL DIFF FOR FIRST MISMATCH IN BATCH
+                        if (mismatchCount === 1) {
+                            try {
+                                const oldObj = JSON.parse(existing.metadataJson);
+                                const newObj = img.metadata as any;
+
+                                // Check for value mismatches or new keys
+                                const addedOrChangedKeys = Object.keys(newObj).filter(k =>
+                                    canonicalStringify(newObj[k]) !== canonicalStringify(oldObj[k])
+                                );
+
+                                // Check for removed keys (present in OLD but missing in NEW)
+                                const removedKeys = Object.keys(oldObj).filter(k => !(k in newObj));
+
+                                if (addedOrChangedKeys.length > 0 || removedKeys.length > 0) {
+                                    console.log(`[Import-Diff] Diff Report for ${img.id}`);
+
+                                    if (addedOrChangedKeys.length > 0) {
+                                        console.log(`  CHANGED/ADDED keys:`, addedOrChangedKeys.slice(0, 3));
+                                        addedOrChangedKeys.slice(0, 1).forEach(k => {
+                                            console.log(`    Key: ${k}`);
+                                            console.log(`    OLD:`, oldObj[k]);
+                                            console.log(`    NEW:`, newObj[k]);
+                                        });
+                                    }
+
+                                    if (removedKeys.length > 0) {
+                                        console.log(`  REMOVED keys (in DB but not in Scan):`, removedKeys.slice(0, 3));
+                                        removedKeys.slice(0, 1).forEach(k => {
+                                            console.log(`    Key: ${k}`);
+                                            console.log(`    Value was:`, oldObj[k]);
+                                        });
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('[Import-Diff] Failed to diff', e);
+                            }
+                        }
+
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if (imagesToUpdate.length > 0) {
+                    console.log(`[Import] updating ${imagesToUpdate.length}/${batchImages.length} images in batch`);
+                    console.time(`insertBatch-${i}`);
+                    await insertImagesBatch(imagesToUpdate);
+                    console.timeEnd(`insertBatch-${i}`);
+                } else {
+                    console.log(`[Import] Batch ${i / BATCH_SIZE + 1} skipped (no changes)`);
+                }
+            }
+
+            newImages.push(...batchImages);
+
+            const currentProgress = Math.min(i + BATCH_SIZE, totalToProcess);
+            if (onProgress) onProgress(currentProgress, totalToProcess, `Processed ${currentProgress}/${totalToProcess}`);
+
+        } catch (e) {
+            console.error('Import batch error:', e);
+            errors += chunk.length; // Approximate
         }
     }
-
     // Rebuild facet cache once after all batches are processed
     try {
         const { rebuildFacetCache } = await import('./db/imageRepo');
