@@ -33,9 +33,20 @@ describe('geminiService: verifyApiKey', () => {
         const result = await verifyApiKey('valid-key');
 
         expect(result.valid).toBe(true);
-        // Verify we are calling with the correct model
+        // Verify we are calling with the default model
         expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gemini-2.5-flash'
+            model: 'gemini-2.5-flash-lite'
+        }));
+    });
+
+    it('should use a custom model if provided', async () => {
+        mockGenerateContent.mockResolvedValue({ text: 'pong' });
+
+        const result = await verifyApiKey('valid-key', 'gemini-2.0-pro-exp');
+
+        expect(result.valid).toBe(true);
+        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
+            model: 'gemini-2.0-pro-exp'
         }));
     });
 

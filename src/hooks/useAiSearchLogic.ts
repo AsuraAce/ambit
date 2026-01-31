@@ -76,7 +76,7 @@ export const useAiSearchLogic = ({
       setIsSearchingAi(true);
       addToast("Gemini is analyzing your request...", "info");
       try {
-        const aiFilters = await generateFiltersFromQuery(trimmed, apiKey!);
+        const aiFilters = await generateFiltersFromQuery(trimmed, apiKey!, settings.aiModel);
         setFilters(prev => ({
           ...prev,
           searchQuery: aiFilters.searchQuery || '',

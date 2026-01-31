@@ -123,6 +123,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const { addToast } = useToast();
     const ai = useImageAI({
         apiKey: settings.googleGeminiApiKey,
+        aiModel: settings.aiModel,
         enableAI: settings.enableAI,
         prompts: settings.systemPrompts,
         onError: (msg) => addToast(msg, 'error')

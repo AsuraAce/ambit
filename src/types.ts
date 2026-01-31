@@ -209,6 +209,7 @@ export interface AppSettings {
   maskingMode: 'blur' | 'hide';
   enableAI: boolean;
   googleGeminiApiKey?: string;
+  aiModel?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   a1111Path?: string; // New: Root path to Stable Diffusion WebUI (A1111)
   comfyUiPath?: string; // New: Root path to ComfyUI output (used for output discovery)

@@ -97,6 +97,11 @@ export const useSettingsStore = create<SettingsState>()(
                         const envKey = (process.env as any).API_KEY;
                         if (envKey) mergedSettings.googleGeminiApiKey = envKey;
 
+                        // NEW: Enable devMode by default in development environment if not already set
+                        if (import.meta.env.DEV && mergedSettings.devMode === undefined) {
+                            mergedSettings.devMode = true;
+                        }
+
                         set({ settings: mergedSettings, isLoaded: true });
                     } else {
                         set({ isLoaded: true });

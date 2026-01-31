@@ -11,16 +11,18 @@ import {
     isValidGeneratorTool
 } from "../utils/validation";
 
+import { DEFAULT_AI_MODEL } from "../constants/aiModels";
+
 const getAIClient = (apiKey: string) => {
     const key = apiKey || process.env.API_KEY;
-    if (!key) throw new Error("API Key is missing. Please add it in Settings > Experiments.");
+    if (!key) throw new Error("API Key is missing. Please add it in Settings > Intelligence.");
     return new GoogleGenAI({ apiKey: key });
 };
 
 /**
  * Verifies the validity of an API key by attempting a minimal operation.
  */
-export const verifyApiKey = async (apiKey: string): Promise<{ valid: boolean; error?: string }> => {
+export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_MODEL): Promise<{ valid: boolean; error?: string }> => {
     try {
         if (!apiKey) return { valid: false, error: "API Key is required" };
         const ai = new GoogleGenAI({ apiKey });
@@ -28,7 +30,7 @@ export const verifyApiKey = async (apiKey: string): Promise<{ valid: boolean; er
         // Minimal operation: generate content with 1 token output
         // We use a very simple prompt to minimize cost/tokens
         const result = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: modelId,
             contents: 'ping',
             config: {
                 maxOutputTokens: 1
@@ -75,6 +77,7 @@ const resolvePrompt = (key: AIPromptKey, overrides?: Record<string, string>): st
 export const analyzePromptAndSuggest = async (
     currentPrompt: string,
     apiKey: string,
+    modelId: string = DEFAULT_AI_MODEL,
     prompts?: Record<string, string>
 ): Promise<string> => {
     try {
@@ -83,7 +86,7 @@ export const analyzePromptAndSuggest = async (
         const prompt = template.replace('{{prompt}}', currentPrompt);
 
         const response: GenerateContentResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: modelId,
             contents: prompt,
             config: {
                 thinkingConfig: { thinkingBudget: 0 }
@@ -103,6 +106,7 @@ export const analyzePromptAndSuggest = async (
 export const generatePromptVariations = async (
     currentPrompt: string,
     apiKey: string,
+    modelId: string = DEFAULT_AI_MODEL,
     prompts?: Record<string, string>
 ): Promise<string[]> => {
     try {
@@ -111,7 +115,7 @@ export const generatePromptVariations = async (
         const prompt = template.replace('{{prompt}}', currentPrompt);
 
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: modelId,
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -139,6 +143,7 @@ export const generatePromptVariations = async (
 export const generateTitleFromPrompt = async (
     promptText: string,
     apiKey: string,
+    modelId: string = DEFAULT_AI_MODEL,
     prompts?: Record<string, string>
 ): Promise<string> => {
     try {
@@ -147,7 +152,7 @@ export const generateTitleFromPrompt = async (
         const prompt = template.replace('{{prompt}}', promptText);
 
         const response: GenerateContentResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: modelId,
             contents: prompt,
         });
         return response.text?.trim() || "Untitled Creation";
@@ -162,6 +167,7 @@ export const generateTitleFromPrompt = async (
 export const generateFiltersFromQuery = async (
     query: string,
     apiKey: string,
+    modelId: string = DEFAULT_AI_MODEL,
     prompts?: Record<string, string>
 ): Promise<Partial<FilterState>> => {
     try {
@@ -171,7 +177,7 @@ export const generateFiltersFromQuery = async (
         const prompt = template.replace('{{query}}', query);
 
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: modelId,
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -211,6 +217,7 @@ export const recoverImageMetadata = async (
     base64Image: string,
     style: RecoveryStyle,
     apiKey: string,
+    modelId: string = DEFAULT_AI_MODEL,
     prompts?: Record<string, string>
 ): Promise<Partial<ImageMetadata>> => {
     const ai = getAIClient(apiKey);
@@ -230,7 +237,7 @@ export const recoverImageMetadata = async (
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: modelId,
         contents: {
             parts: [
                 { inlineData: { mimeType: 'image/png', data: cleanBase64 } },
