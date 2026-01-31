@@ -395,55 +395,65 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
         .as_secs();
 
     // Harvest Checkpoints
+    // OPTIMIZATION: Use the `model_hash` and `resolved_model_name` columns directly
+    // instead of parsing metadata_json.
     conn.execute(
         "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
             SELECT DISTINCT 
-            json_extract(metadata_json, '$.modelHash'), 
-            json_extract(metadata_json, '$.model'), 
+            model_hash, 
+            resolved_model_name, 
             'harvest_checkpoint', 
             ?1,
             'checkpoint'
             FROM images
-            WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
-            AND json_extract(metadata_json, '$.model') IS NOT NULL",
+            WHERE model_hash IS NOT NULL 
+            AND resolved_model_name IS NOT NULL",
         params![now],
     )
     .map_err(|e| format!("Harvest Checkpoints failed: {}", e))?;
 
     // Helper for generic harvests (LoRAs, Embeddings, Hypernetworks)
+    // OPTIMIZATION: Use Junction Tables which are already populated
     let types = [
-        ("loras", "harvest_lora"),
-        ("embeddings", "harvest_embedding"),
-        ("hypernetworks", "harvest_hypernet"),
+        ("loras", "harvest_lora", "image_loras", "lora_name"),
+        ("embeddings", "harvest_embedding", "image_embeddings", "embedding_name"),
+        ("hypernetworks", "harvest_hypernet", "image_hypernetworks", "hypernetwork_name"),
+        ("control_nets", "harvest_controlnet", "image_controlnets", "controlnet_name"),
+         ("ip_adapters", "harvest_ip_adapter", "image_ipadapters", "ipadapter_name"),
     ];
-    for (json_key, source) in types {
+    
+    for (json_key, source, table, col) in types {
         let prefix = match json_key {
             "loras" => "lora_",
             "embeddings" => "emb_",
             "hypernetworks" => "hyper_",
-            _ => "",
+            _ => "", // ControlNets/IPAdapters don't typically use prefixes in 'models' table but let's check legacy
         };
-
+        
+        // Note: 'clean_name' logic (removing version/suffix) is duplicated here.
+        // Ideally the junction tables would store cleaned names, or we handle it here.
+        // The junction creation in `save_images_batch` ALREADY cleans the name!
+        // "CASE WHEN instr(value, ...)..." is used in save_images_batch.
+        // So the values in `image_loras` ARE ALREADY CLEANED.
+        // We can just select them directly.
+        
         conn.execute(
             &format!(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
                 SELECT DISTINCT 
-                '{}' || clean_name, 
-                clean_name, 
+                '{}' || {}, 
+                {}, 
                 '{}', 
                 ?1,
                 '{}'
-                FROM (
-                    SELECT 
-                        CASE 
-                            WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
-                            WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
-                            ELSE j.value 
-                        END as clean_name
-                    FROM images, json_each(metadata_json, '$.{}') j
-                ) 
-                WHERE clean_name IS NOT NULL AND clean_name != ''",
-                prefix, source, json_key, json_key
+                FROM {}
+                WHERE {} IS NOT NULL AND {} != ''",
+                prefix, col, 
+                col, 
+                source, 
+                json_key,
+                table,
+                col, col
             ),
             params![now]
         ).map_err(|e| format!("Harvest {} failed: {}", json_key, e))?;

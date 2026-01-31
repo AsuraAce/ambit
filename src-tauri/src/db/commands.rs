@@ -268,14 +268,7 @@ pub async fn save_images_batch(
 
                 tx.commit().map_err(|e| e.to_string())?;
 
-                /*
-                   OPTIMIZATION: Prevent "Checkpoint Starvation" in WAL mode.
-                   By forcing a checkpoint after a large batch commit, we ensure the WAL file 
-                   doesn't grow unboundedly, which would otherwise slow down subsequent writes 
-                   to a crawl (the 4-minute hang).
-                   TRUNCATE is aggressive but ensures clean slate. PASSIVE might be safer but less effective.
-                */
-                let _ = conn.execute("PRAGMA wal_checkpoint(PASSIVE);", []);
+
 
                 Ok(images.len())
             })();

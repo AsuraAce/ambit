@@ -36,8 +36,17 @@ export class TauriFsRepository implements IRepository {
                 const saved = JSON.parse(content);
 
                 // Migration/Merge logic from LocalStorageRepository
+                // OPTIMIZATION: If we find images in the JSON, it means we have a legacy bloated file.
+                // We should strip them (since we use SQLite now) and re-save to fix startup time.
+                if (saved.images && Array.isArray(saved.images) && saved.images.length > 0) {
+                    console.log('[TauriFsRepository] Detected legacy images in library.json. Cleaning up to improve startup...');
+                    // We don't await this so we don't block the return, but it will fix the file for next time.
+                    this.save({ ...saved, images: [] }).catch(e => console.error('Failed to cleanup library.json', e));
+                }
+
                 return {
                     ...saved,
+                    images: [], // Always return empty images from JSON, we rely on SQLite
                     settings: {
                         theme: 'dark',
                         thumbnailSize: 200,
@@ -65,7 +74,10 @@ export class TauriFsRepository implements IRepository {
     async save(state: AppState): Promise<void> {
         try {
             await this.ensureDirectory();
-            const serializedState = JSON.stringify(state, null, 2); // Pretty print for debuggability
+            // OPTIMIZATION: Do not save images to JSON. They are in SQLite.
+            // This prevents the file from growing to MBs/GBs and blocking startup.
+            const stateToSave = { ...state, images: [] };
+            const serializedState = JSON.stringify(stateToSave, null, 2); // Pretty print for debuggability
             await writeTextFile(this.fileName, serializedState, { baseDir: this.baseDir });
         } catch (err) {
             console.error('Failed to save state to filesystem:', err);
