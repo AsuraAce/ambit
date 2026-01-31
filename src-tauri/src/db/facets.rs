@@ -504,19 +504,21 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
                 CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
             FROM (
-                SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode
+                SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode
                 FROM models 
                 WHERE resource_type = 'checkpoint'
-                GROUP BY name
+                GROUP BY LOWER(name)
             ) m
             LEFT JOIN cp_counts cc ON (
                 cc.mh = m.hash OR
-                cc.mn = m.name
+                cc.mn = m.name OR
+                LOWER(cc.mn) = LOWER(m.name)
             )
             LEFT JOIN cp_thumbs ct ON (
-                ct.mn = m.name
+                ct.mn = m.name OR
+                LOWER(ct.mn) = LOWER(m.name)
             )
-            GROUP BY m.name",
+            GROUP BY LOWER(m.name)",
         []
     ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
 
@@ -529,10 +531,10 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             WHERE NOT EXISTS (
                 SELECT 1 FROM facet_cache fc 
                 WHERE fc.facet_type = 'checkpoint' 
-                AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn)
+                AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn OR LOWER(fc.resource_name) = LOWER(cc.mn))
             )
             AND cc.mn IS NOT NULL AND cc.mn != ''
-            GROUP BY cc.mn",
+            GROUP BY LOWER(cc.mn)",
         []
     ).map_err(|e| format!("Failed to insert orphan checkpoints: {}", e))?;
 
@@ -656,19 +658,22 @@ fn build_resource_facets(
                     CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
                     m.guidance_subtype
                 FROM (
-                    SELECT name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(guidance_subtype) as guidance_subtype
+                    SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(guidance_subtype) as guidance_subtype
                     FROM models 
                     WHERE resource_type = '{}'
-                    GROUP BY name
+                    GROUP BY LOWER(name)
                 ) m
                 LEFT JOIN {} rc ON (
                     rc.ref_name = m.name OR 
-                    rc.clean_ref = m.name
+                    rc.clean_ref = m.name OR
+                    LOWER(rc.ref_name) = LOWER(m.name) OR
+                    LOWER(rc.clean_ref) = LOWER(m.name)
                 )
                 LEFT JOIN {} rt ON (
-                    rt.clean_ref = m.name
+                    rt.clean_ref = m.name OR
+                    LOWER(rt.clean_ref) = LOWER(m.name)
                 )
-                GROUP BY m.name",
+                GROUP BY LOWER(m.name)",
             facet_type, facet_type, temp_table, temp_thumbs
         ),
         []
@@ -684,10 +689,10 @@ fn build_resource_facets(
                 WHERE NOT EXISTS (
                     SELECT 1 FROM facet_cache fc 
                     WHERE fc.facet_type = '{}' 
-                    AND (fc.resource_name = rc.clean_ref OR fc.resource_name = rc.ref_name)
+                    AND (fc.resource_name = rc.clean_ref OR fc.resource_name = rc.ref_name OR LOWER(fc.resource_name) = LOWER(rc.clean_ref))
                 )
                 AND rc.clean_ref IS NOT NULL AND rc.clean_ref != ''
-                GROUP BY rc.clean_ref",
+                GROUP BY LOWER(rc.clean_ref)",
             facet_type, temp_table, temp_thumbs, facet_type
         ),
         []

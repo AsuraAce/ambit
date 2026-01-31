@@ -93,7 +93,7 @@ export const buildSqlWhereClause = (
                 return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
             }
             params.push(m);
-            return `resolved_model_name = ?`;
+            return `resolved_model_name = ? COLLATE NOCASE`;
         });
         conditions.push(`(${modelConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
@@ -106,7 +106,7 @@ export const buildSqlWhereClause = (
                 return `(tool = 'Unknown' OR tool IS NULL)`;
             }
             params.push(t);
-            return `tool = ?`;
+            return `tool = ? COLLATE NOCASE`;
         });
         conditions.push(`(${toolConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
@@ -120,7 +120,7 @@ export const buildSqlWhereClause = (
         } else if (filters.loras.length > 0) {
             const loraConditions = filters.loras.map(l => {
                 params.push(l);
-                return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ?)`;
+                return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ? COLLATE NOCASE)`;
             });
             conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
         }
@@ -131,7 +131,7 @@ export const buildSqlWhereClause = (
     if (filters.embeddings.length > 0 && !excludeCategories.includes('embeddings')) {
         const embConditions = filters.embeddings.map(e => {
             params.push(e);
-            return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)`;
+            return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)`;
         });
         conditions.push(`(${embConditions.join(embMode === 'all' ? ' AND ' : ' OR ')})`);
     }
@@ -141,7 +141,7 @@ export const buildSqlWhereClause = (
     if (filters.hypernetworks.length > 0 && !excludeCategories.includes('hypernetworks')) {
         const hnConditions = filters.hypernetworks.map(h => {
             params.push(h);
-            return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)`;
+            return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)`;
         });
         conditions.push(`(${hnConditions.join(hnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
@@ -151,7 +151,7 @@ export const buildSqlWhereClause = (
     if (filters.controlNets && filters.controlNets.length > 0 && !excludeCategories.includes('controlNets')) {
         const cnConditions = filters.controlNets.map(c => {
             params.push(c);
-            return `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ?)`;
+            return `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ? COLLATE NOCASE)`;
         });
         conditions.push(`(${cnConditions.join(cnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
@@ -161,7 +161,7 @@ export const buildSqlWhereClause = (
     if (filters.ipAdapters && filters.ipAdapters.length > 0 && !excludeCategories.includes('ipAdapters')) {
         const ipConditions = filters.ipAdapters.map(i => {
             params.push(i);
-            return `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ?)`;
+            return `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ? COLLATE NOCASE)`;
         });
         conditions.push(`(${ipConditions.join(ipMode === 'all' ? ' AND ' : ' OR ')})`);
     }
