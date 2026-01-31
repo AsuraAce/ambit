@@ -18,6 +18,51 @@ const getAIClient = (apiKey: string) => {
 };
 
 /**
+ * Verifies the validity of an API key by attempting a minimal operation.
+ */
+export const verifyApiKey = async (apiKey: string): Promise<{ valid: boolean; error?: string }> => {
+    try {
+        if (!apiKey) return { valid: false, error: "API Key is required" };
+        const ai = new GoogleGenAI({ apiKey });
+
+        // Minimal operation: generate content with 1 token output
+        // We use a very simple prompt to minimize cost/tokens
+        const result = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: 'ping',
+            config: {
+                maxOutputTokens: 1
+            }
+        });
+
+        if (result) {
+            return { valid: true };
+        }
+        return { valid: false, error: "Invalid response from Gemini API" };
+    } catch (error: any) {
+        // Log error but be selective about what we expose to UI
+        console.error("Gemini Verification Error:", error);
+
+        let message = "Verification failed";
+        const errorStr = String(error).toLowerCase();
+
+        if (errorStr.includes("api_key_invalid") || errorStr.includes("invalid api key")) {
+            message = "Invalid API Key";
+        } else if (errorStr.includes("quota") || errorStr.includes("rate limit")) {
+            message = "Quota exceeded";
+        } else if (errorStr.includes("network") || errorStr.includes("fetch")) {
+            message = "Network error";
+        } else if (errorStr.includes("permission") || errorStr.includes("not found")) {
+            message = "Model not found or access denied";
+        } else {
+            message = error.message || "Unknown error";
+        }
+
+        return { valid: false, error: message };
+    }
+};
+
+/**
  * Helper to resolve prompt (user override vs default)
  */
 const resolvePrompt = (key: AIPromptKey, overrides?: Record<string, string>): string => {

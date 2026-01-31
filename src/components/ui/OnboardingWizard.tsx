@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History } from 'lucide-react';
+import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
+import { verifyApiKey } from '../../services/geminiService';
+import { useToast } from '../../hooks/useToast';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
@@ -23,6 +25,41 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const [enableAI, setEnableAI] = useState(!!initialApiKey);
     const [blurNsfw, setBlurNsfw] = useState(true);
     const [showOnStartup, setShowOnStartup] = useState(false);
+
+    // Toast for feedback
+    const { addToast } = useToast();
+
+    // Verification states
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [verificationError, setVerificationError] = useState<string | null>(null);
+
+    const handleVerifyKey = async (overrideKey?: string) => {
+        const keyToVerify = overrideKey || apiKey;
+        if (!keyToVerify) return;
+
+        setIsVerifying(true);
+        setVerificationStatus('idle');
+        setVerificationError(null);
+        try {
+            const result = await verifyApiKey(keyToVerify);
+            if (result.valid) {
+                setVerificationStatus('success');
+                addToast('API Key verified successfully', 'success');
+            } else {
+                setVerificationStatus('error');
+                setVerificationError(result.error || 'Verification failed');
+                addToast(result.error || 'Verification failed', 'error');
+            }
+        } catch (error) {
+            setVerificationStatus('error');
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            setVerificationError(msg);
+            addToast(msg, 'error');
+        } finally {
+            setIsVerifying(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -241,19 +278,91 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             </div>
 
                                             {isEnvKey ? (
-                                                <div className="flex items-center gap-3 p-4 bg-sage-500/10 border border-sage-500/20 rounded-xl text-sm text-sage-700 dark:text-sage-300">
-                                                    <Key className="w-5 h-5 text-sage-500" />
-                                                    <span className="font-medium">Detected Key in Environment</span>
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center gap-3 p-4 bg-sage-500/10 border border-sage-500/20 rounded-xl text-sm text-sage-700 dark:text-sage-300">
+                                                        <Key className="w-5 h-5 text-sage-500" />
+                                                        <span className="font-medium">Detected Key in Environment</span>
+                                                        <div className="flex-1" />
+                                                        {verificationStatus === 'success' && (
+                                                            <Check className="w-4 h-4 text-sage-500 animate-in fade-in zoom-in" />
+                                                        )}
+                                                        {verificationStatus === 'error' && (
+                                                            <XCircle className="w-4 h-4 text-red-500 animate-in fade-in zoom-in" />
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                // Use the env key (which we don't have access to explicitly here as a string if it's not exposed, 
+                                                                // but verifyApiKey checks process.env if arg is missing/empty, or we can assume we need to pass it if we have it.
+                                                                // Actually, verifyApiKey takes a string. If process.env.API_KEY is defined in build, it should be available.
+                                                                // Let's passed 'initialApiKey' if available, or just empty string and let service handle it?
+                                                                // Better: The OnboardingWizard receives `initialApiKey`.
+                                                                const keyToTest = initialApiKey || process.env.API_KEY || ''; // fallback
+                                                                if (keyToTest) {
+                                                                    // We need to set apiKey state temporarily for the handleVerifyKey to work? 
+                                                                    // No, handleVerifyKey uses `apiKey` state.
+                                                                    // Let's make handleVerifyKey accept an optional argument.
+                                                                    handleVerifyKey(keyToTest);
+                                                                }
+                                                            }}
+                                                            disabled={isVerifying}
+                                                            className="px-3 py-1.5 bg-sage-500 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-sage-600 transition-all flex items-center gap-2"
+                                                        >
+                                                            {isVerifying ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                                            {isVerifying ? 'Checking' : 'Test Env Key'}
+                                                        </button>
+                                                    </div>
+                                                    {verificationError && (
+                                                        <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in slide-in-from-top-1">
+                                                            <XCircle className="w-3 h-3" />
+                                                            <span>{verificationError}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ) : (
-                                                <div className="relative group">
-                                                    <input
-                                                        type="password"
-                                                        placeholder="Paste your API Key here..."
-                                                        value={apiKey}
-                                                        onChange={(e) => setApiKey(e.target.value)}
-                                                        className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-4 text-sm focus:border-sage-500/50 focus:ring-4 focus:ring-sage-500/5 outline-none dark:text-white transition-all"
-                                                    />
+                                                <div className="space-y-2">
+                                                    <div className="relative group">
+                                                        <input
+                                                            type="password"
+                                                            placeholder="Paste your API Key here..."
+                                                            value={apiKey}
+                                                            onChange={(e) => {
+                                                                setApiKey(e.target.value);
+                                                                setVerificationStatus('idle');
+                                                                setVerificationError(null);
+                                                            }}
+                                                            className={`w-full bg-gray-50 dark:bg-white/5 border ${verificationStatus === 'success' ? 'border-sage-500/50 text-sage-500' : verificationStatus === 'error' ? 'border-red-500/50' : 'border-gray-200 dark:border-white/10'} rounded-xl px-4 py-4 pr-32 text-sm focus:border-sage-500/50 focus:ring-4 focus:ring-sage-500/5 outline-none dark:text-white transition-all`}
+                                                        />
+                                                        <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
+                                                            {verificationStatus === 'success' && (
+                                                                <Check className="w-5 h-5 text-sage-500 animate-in fade-in zoom-in" />
+                                                            )}
+                                                            {verificationStatus === 'error' && (
+                                                                <XCircle className="w-5 h-5 text-red-500 animate-in fade-in zoom-in" />
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleVerifyKey()}
+                                                                disabled={isVerifying || !apiKey}
+                                                                className="h-full px-4 bg-gray-900 dark:bg-white/10 text-white text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-800 dark:hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                                                            >
+                                                                {isVerifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 text-sage-400" />}
+                                                                {isVerifying ? 'Checking...' : 'Verify'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    {verificationError && (
+                                                        <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in slide-in-from-top-1">
+                                                            <XCircle className="w-3 h-3" />
+                                                            <span>{verificationError}</span>
+                                                        </div>
+                                                    )}
+                                                    {verificationStatus === 'success' && (
+                                                        <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-500 animate-in slide-in-from-top-1">
+                                                            <Check className="w-3 h-3" />
+                                                            <span>API Key Validated</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </motion.div>

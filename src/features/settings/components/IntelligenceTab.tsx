@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { FlaskConical, Key } from 'lucide-react';
+import { FlaskConical, Key, Check, XCircle, Loader2 } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
+import { verifyApiKey } from '../../../services/geminiService';
 
 interface TabProps {
     settings: AppSettings;
@@ -10,6 +11,9 @@ interface TabProps {
 
 export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const { addToast } = useToast();
+    const [isVerifying, setIsVerifying] = React.useState(false);
+    const [verificationStatus, setVerificationStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
+    const [verificationError, setVerificationError] = React.useState<string | null>(null);
 
     const handleAIToggle = () => {
         const newValue = !settings.enableAI;
@@ -19,11 +23,37 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
 
     const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSettings(prev => ({ ...prev, googleGeminiApiKey: e.target.value }));
+        setVerificationStatus('idle');
+        setVerificationError(null);
     };
 
-    const handleApiKeyBlur = () => {
-        if (settings.googleGeminiApiKey) {
-            addToast('API key saved', 'success');
+    const handleVerifyKey = async () => {
+        if (!settings.googleGeminiApiKey) {
+            addToast('Please enter an API key first', 'error');
+            return;
+        }
+
+        setIsVerifying(true);
+        setVerificationStatus('idle');
+        setVerificationError(null);
+
+        try {
+            const result = await verifyApiKey(settings.googleGeminiApiKey);
+            if (result.valid) {
+                setVerificationStatus('success');
+                addToast('API Key verified successfully', 'success');
+            } else {
+                setVerificationStatus('error');
+                setVerificationError(result.error || 'Verification failed');
+                addToast(result.error || 'Verification failed', 'error');
+            }
+        } catch (error) {
+            setVerificationStatus('error');
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            setVerificationError(msg);
+            addToast(msg, 'error');
+        } finally {
+            setIsVerifying(false);
         }
     };
 
@@ -56,14 +86,39 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             <label className="text-sm font-bold text-gray-900 dark:text-white block mb-2 flex items-center gap-2">
                                 <Key className="w-4 h-4 text-gray-400" /> Google Gemini API Key
                             </label>
-                            <input
-                                type="password"
-                                value={settings.googleGeminiApiKey || ''}
-                                onChange={handleApiKeyChange}
-                                onBlur={handleApiKeyBlur}
-                                placeholder="AIzaSy..."
-                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl p-3 text-sm focus:border-sage-500 outline-none text-gray-700 dark:text-gray-300 font-mono"
-                            />
+                            <div className="relative group">
+                                <input
+                                    type="password"
+                                    value={settings.googleGeminiApiKey || ''}
+                                    onChange={handleApiKeyChange}
+                                    placeholder="AIzaSy..."
+                                    className={`w-full bg-gray-50 dark:bg-black/20 border ${verificationStatus === 'success' ? 'border-sage-500/50' : verificationStatus === 'error' ? 'border-red-500/50' : 'border-gray-200 dark:border-white/10'} rounded-xl p-3 pr-24 text-sm focus:border-sage-500 outline-none text-gray-700 dark:text-gray-300 font-mono transition-colors`}
+                                />
+                                <div className="absolute right-2 top-1.5 flex items-center gap-2">
+                                    {verificationStatus === 'success' && (
+                                        <Check className="w-4 h-4 text-sage-500 animate-in fade-in zoom-in" />
+                                    )}
+                                    {verificationStatus === 'error' && (
+                                        <XCircle className="w-4 h-4 text-red-500 animate-in fade-in zoom-in" />
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleVerifyKey}
+                                        disabled={isVerifying || !settings.googleGeminiApiKey}
+                                        className="px-3 py-1.5 bg-gray-900 dark:bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-gray-800 dark:hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+                                    >
+                                        {isVerifying ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : null}
+                                        {isVerifying ? 'Testing...' : 'Test Key'}
+                                    </button>
+                                </div>
+                            </div>
+                            {verificationError && (
+                                <p className="text-[10px] text-red-500 mt-1.5 ml-1 animate-in slide-in-from-top-1">
+                                    {verificationError}
+                                </p>
+                            )}
                             <p className="text-xs text-gray-500 mt-2">
                                 Your key is stored locally. Get one at{' '}
                                 <button
