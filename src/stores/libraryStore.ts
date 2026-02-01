@@ -23,6 +23,7 @@ interface LibraryState {
     syncStatus: SyncStatus;
     syncProgress: SyncProgress;
     isLiveSyncing: boolean;
+    syncAbortController: AbortController | null; // Added
 
     // Watcher State
     isLiveWatching: boolean;
@@ -58,6 +59,8 @@ interface LibraryState {
     setSyncStatus: (status: SyncStatus) => void;
     setSyncProgress: (progress: SyncProgress) => void;
     setIsLiveSyncing: (isLive: boolean) => void;
+    setSyncAbortController: (ctrl: AbortController | null) => void; // Added
+    cancelSync: () => void; // Added
 
     setIsLiveWatching: (isWatching: boolean) => void;
     setMaintenanceCounts: (counts: MaintenanceCounts) => void;
@@ -92,6 +95,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     syncStatus: 'idle',
     syncProgress: { current: 0, total: 0, message: '' },
     isLiveSyncing: false,
+    syncAbortController: null,
 
     isLiveWatching: false,
     maintenanceCounts: {
@@ -128,6 +132,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setSyncStatus: (status) => set({ syncStatus: status }),
     setSyncProgress: (progress) => set({ syncProgress: progress }),
     setIsLiveSyncing: (isLive) => set({ isLiveSyncing: isLive }),
+    setSyncAbortController: (ctrl) => set({ syncAbortController: ctrl }),
+    cancelSync: () => set((state) => {
+        if (state.syncAbortController) {
+            state.syncAbortController.abort();
+            return { syncStatus: 'idle', syncProgress: { current: 0, total: 0, message: 'Cancelled' }, syncAbortController: null };
+        }
+        return {};
+    }),
 
     setIsLiveWatching: (isWatching) => set({ isLiveWatching: isWatching }),
     setMaintenanceCounts: (counts) => set({ maintenanceCounts: counts }),

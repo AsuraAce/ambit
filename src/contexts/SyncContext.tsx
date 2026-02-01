@@ -37,8 +37,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     const setSyncProgress = useLibraryStore(s => s.setSyncProgress);
     const isLiveSyncing = useLibraryStore(s => s.isLiveSyncing);
     const setIsLiveSyncing = useLibraryStore(s => s.setIsLiveSyncing);
+    const setSyncAbortController = useLibraryStore(s => s.setSyncAbortController);
+    const cancelSyncAction = useLibraryStore(s => s.cancelSync);
 
-    const abortControllerRef = useRef<AbortController | null>(null);
     const isLiveSyncingRef = useRef(false);
 
     const startInvokeSync = useCallback(async (optionsInput?: any) => {
@@ -63,7 +64,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
         }
         setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
 
-        abortControllerRef.current = new AbortController();
+        const ctrl = new AbortController();
+        setSyncAbortController(ctrl);
 
         try {
             const { syncImages } = await import('../services/invoke/syncService');
@@ -74,7 +76,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
                 settingsRef.current.invokeAiPath!,
                 (c, t, msg) => setSyncProgress({ current: c, total: t, message: msg }),
-                abortControllerRef.current.signal,
+                ctrl.signal,
                 {
                     syncFavorites: options.syncFavorites,
                     syncBoards: options.syncBoards,
@@ -155,6 +157,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             if (onSyncComplete) onSyncComplete();
 
+            if (totalProcessed > 0 && options.mode === 'manual') {
+                addToast(`Synchronization complete: ${totalProcessed} items processed.`, 'success');
+            } else if (totalProcessed === 0 && options.mode === 'manual') {
+                addToast('Synchronization complete: No new changes.', 'info');
+            }
+
         } catch (e: any) {
             if (e.message === 'Aborted') setSyncStatus('idle');
             else {
@@ -163,7 +171,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                 if (options.mode === 'manual') addToast('Sync failed: ' + e.message, 'error');
             }
         } finally {
-            abortControllerRef.current = null;
+            setSyncAbortController(null);
             if (options.mode === 'live') {
                 isLiveSyncingRef.current = false;
                 setIsLiveSyncing(false);
@@ -172,8 +180,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing]);
 
     const cancelSync = useCallback(() => {
-        abortControllerRef.current?.abort();
-    }, []);
+        cancelSyncAction();
+    }, [cancelSyncAction]);
 
     const cleanLibrary = useCallback(async () => {
         try {

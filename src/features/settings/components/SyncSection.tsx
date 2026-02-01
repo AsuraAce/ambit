@@ -44,6 +44,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
     const handleSync = () => {
         if (!settings.invokeAiPath) return;
+        addToast('Synchronization started...', 'success');
         startInvokeSync({
             syncFavorites,
             syncBoards,
@@ -158,6 +159,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                             <button
                                 onClick={handleSync}
                                 className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3"
+                                title="Start synchronization with InvokeAI"
                             >
                                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}
@@ -167,6 +169,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <button
                             onClick={cancelSync}
                             className="px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-black transition-all flex items-center gap-3 active:scale-95"
+                            title="Abort the current synchronization"
                         >
                             <XCircle className="w-5 h-5" /> Terminate Sync
                         </button>
@@ -175,45 +178,6 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
 
 
-                {status === 'syncing' && (
-                    <div className="p-5 bg-sage-50 dark:bg-sage-500/5 rounded-xl border border-sage-500/10 space-y-3 animate-in fade-in zoom-in-95 duration-500">
-                        <div className="flex justify-between items-end">
-                            <div>
-                                <div className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-1">{progress.message || 'Processing...'}</div>
-                                <div className="text-xs text-gray-500 font-medium">Synchronizing InvokeAI repository...</div>
-                            </div>
-                            <div className="text-xl font-black text-gray-900 dark:text-white font-mono tabular-nums">
-                                {Math.round((progress.current / Math.max(progress.total, 1)) * 100)}<span className="text-xs opacity-40 ml-0.5">%</span>
-                            </div>
-                        </div>
-                        <div className="w-full h-3 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden p-0.5 border border-gray-200 dark:border-white/5 relative ring-1 ring-sage-500/10 animate-pulse-glow">
-                            <div
-                                className="h-full bg-sage-500 rounded-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(110,121,107,0.3)] relative overflow-hidden"
-                                style={{ width: `${Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%` }}
-                            >
-                                {/* Pulsing shimmer effect */}
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-full animate-shimmer"
-                                    style={{ backgroundSize: '200% 100%' }} />
-                            </div>
-                        </div>
-                        <div className="flex justify-between text-[10px] font-bold text-gray-400 tabular-nums">
-                            <span className="flex items-center gap-2"><Boxes className="w-3 h-3" /> {progress.current.toLocaleString()} units</span>
-                            <span>Total: {progress.total.toLocaleString()}</span>
-                        </div>
-                    </div>
-                )}
-
-                {status === 'complete' && (
-                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-[11px] font-bold text-emerald-600 dark:text-emerald-400 animate-in fade-in slide-in-from-top-2 flex items-center gap-3 shadow-lg shadow-emerald-500/5">
-                        <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/40 text-white">
-                            <CheckCircle2 className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <div className="uppercase tracking-widest text-[9px] mb-0.5">Library Updated</div>
-                            Repository successfully synchronized with {APP_NAME}.
-                        </div>
-                    </div>
-                )}
             </div>
         </section>
     );

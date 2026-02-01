@@ -19,7 +19,8 @@ export const ActivityDock: React.FC = () => {
         setIsResolvingModels,
         isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
         cancelImport,
-        cancelThumbnailRegeneration
+        cancelThumbnailRegeneration,
+        cancelSync
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -169,10 +170,11 @@ export const ActivityDock: React.FC = () => {
                                     <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header.</span>
                                 </div>
 
-                                {(isImporting || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery) && (
+                                {(isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery) && (
                                     <button
                                         onClick={() => {
                                             if (isImporting) cancelImport();
+                                            if (isSyncing) cancelSync();
                                             if (isRegeneratingThumbnails) cancelThumbnailRegeneration();
                                             if (isResolvingModels) {
                                                 import('@tauri-apps/api/core').then(({ invoke }) => {
