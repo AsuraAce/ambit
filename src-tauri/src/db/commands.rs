@@ -876,7 +876,7 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
         let mut missing_count = 0;
-        let mut _recovered_count = 0; // Not explicitly tracking previously-missing
+        let mut recovered_count = 0; // Tracking previously-missing images that are now found
         let mut thumb_count = 0;
 
         {

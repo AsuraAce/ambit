@@ -57,7 +57,6 @@ pub fn start_native_folder_watcher(
                     | notify::EventKind::Access(notify::event::AccessKind::Close(_)) => true,
                     notify::EventKind::Any => true, // Catch-all for some OSs
                     // Handle Rename/Move - essential for windows drag/drop
-                    notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => true,
                     _ => false,
                 };
 
