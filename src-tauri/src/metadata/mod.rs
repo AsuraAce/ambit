@@ -8,11 +8,17 @@ pub mod thumbs_scan;
 pub mod parsers;
 pub mod resources;
 pub mod utils;
+pub mod reparse;
 
 pub use a1111::extract_a1111_metadata;
 pub use comfyui::extract_comfyui_metadata;
 pub use invokeai::extract_invokeai_metadata;
 pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
+
+/// Current parser version. Increment when any parser logic changes.
+/// Images with parser_version < CURRENT_PARSER_VERSION will be queued
+/// for background re-parsing from their stored original_metadata_json.
+pub const CURRENT_PARSER_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, Clone, Debug, specta::Type)]
 pub struct ImageMetadata {

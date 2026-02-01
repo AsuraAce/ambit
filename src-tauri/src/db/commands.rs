@@ -109,8 +109,10 @@ pub async fn save_images_batch(
                 let tx = conn.transaction().map_err(|e| e.to_string())?;
 
                 {
+                    use crate::metadata::CURRENT_PARSER_VERSION;
+                    
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type)
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
@@ -119,7 +121,8 @@ pub async fn save_images_batch(
                              CAST(json_extract(?7, '$.steps') AS INTEGER),
                              CAST(json_extract(?7, '$.cfg') AS REAL),
                              REPLACE(REPLACE(LOWER(json_extract(?7, '$.sampler')), '_', ' '), '-', ' '),
-                             json_extract(?7, '$.generationType')
+                             json_extract(?7, '$.generationType'),
+                             ?22
                          )
                          ON CONFLICT(id) DO UPDATE SET 
                             path=excluded.path,
@@ -156,7 +159,8 @@ pub async fn save_images_batch(
                             steps=excluded.steps,
                             cfg=excluded.cfg,
                             sampler=excluded.sampler,
-                            generation_type=excluded.generation_type
+                            generation_type=excluded.generation_type,
+                            parser_version=excluded.parser_version
                          WHERE 
                             /* OPTIMIZATION: Only update if the content actually changed.
                                This prevents massive IO/Index thrashing on re-scans where 99% of files are identical.
@@ -249,7 +253,8 @@ pub async fn save_images_batch(
                             img.notes,
                             img.original_metadata_json,
                             img.original_state_json,
-                            img.is_corrupt
+                            img.is_corrupt,
+                            CURRENT_PARSER_VERSION
                         ])
                         .map_err(|e| e.to_string())?;
 
@@ -924,6 +929,204 @@ pub async fn verify_library_integrity(app: tauri::AppHandle) -> Result<Integrity
             recovered: recovered_count,
             broken_thumbs: thumb_count,
         })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// =====================
+// Metadata Re-parsing
+// =====================
+
+/// Image needing re-parse: minimal data for efficient batch processing.
+#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageToReparse {
+    pub id: String,
+    pub tool: String,
+    pub original_metadata_json: String,
+}
+
+/// Get count and batch of images needing metadata re-parsing.
+/// Returns images where parser_version < CURRENT_PARSER_VERSION.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn get_images_needing_reparse(
+    app: tauri::AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<ImageToReparse>, String> {
+    use crate::metadata::CURRENT_PARSER_VERSION;
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        let limit = limit.unwrap_or(1000);
+        
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json 
+             FROM images 
+             WHERE (parser_version IS NULL OR parser_version < {}) 
+               AND is_deleted = 0 
+               AND original_metadata_json IS NOT NULL
+               AND original_metadata_json != ''
+             LIMIT {}",
+            CURRENT_PARSER_VERSION, limit
+        )).map_err(|e| e.to_string())?;
+        
+        let rows = stmt.query_map([], |row| {
+            Ok(ImageToReparse {
+                id: row.get(0)?,
+                tool: row.get(1)?,
+                original_metadata_json: row.get(2)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        
+        let images: Vec<ImageToReparse> = rows.filter_map(|r| r.ok()).collect();
+        Ok(images)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Get count of images needing re-parsing (for progress display).
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn get_reparse_count(app: tauri::AppHandle) -> Result<i64, String> {
+    use crate::metadata::CURRENT_PARSER_VERSION;
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        let count: i64 = conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM images 
+                 WHERE (parser_version IS NULL OR parser_version < {}) 
+                   AND is_deleted = 0 
+                   AND original_metadata_json IS NOT NULL
+                   AND original_metadata_json != ''",
+                CURRENT_PARSER_VERSION
+            ),
+            [],
+            |r| r.get(0)
+        ).unwrap_or(0);
+        
+        Ok(count)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Result of a batch re-parse operation.
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReparseBatchResult {
+    pub processed: usize,
+    pub updated: usize,
+    pub errors: usize,
+}
+
+/// Re-parse a batch of images from their stored original_metadata_json.
+/// Updates metadata_json, denormalized columns, and parser_version.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reparse_metadata_batch(
+    app: tauri::AppHandle,
+    images: Vec<ImageToReparse>,
+) -> Result<ReparseBatchResult, String> {
+    use crate::metadata::reparse::reparse_from_json;
+    use crate::metadata::CURRENT_PARSER_VERSION;
+    
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        
+        let mut processed = 0;
+        let mut updated = 0;
+        let mut errors = 0;
+        
+        {
+            let mut update_stmt = tx.prepare_cached(
+                "UPDATE images SET 
+                    metadata_json = ?1,
+                    model_hash = json_extract(?1, '$.modelHash'),
+                    model_name = json_extract(?1, '$.model'),
+                    tool = json_extract(?1, '$.tool'),
+                    resolved_model_name = COALESCE(
+                        (SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), 
+                        json_extract(?1, '$.model')
+                    ),
+                    steps = CAST(json_extract(?1, '$.steps') AS INTEGER),
+                    cfg = CAST(json_extract(?1, '$.cfg') AS REAL),
+                    sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '),
+                    generation_type = json_extract(?1, '$.generationType'),
+                    parser_version = ?2
+                 WHERE id = ?3"
+            ).map_err(|e| e.to_string())?;
+            
+            for img in &images {
+                processed += 1;
+                
+                match reparse_from_json(&img.original_metadata_json, &img.tool) {
+                    Some(result) => {
+                        match update_stmt.execute(params![
+                            result.metadata_json,
+                            CURRENT_PARSER_VERSION,
+                            img.id
+                        ]) {
+                            Ok(_) => updated += 1,
+                            Err(e) => {
+                                log::warn!("[Reparse] Failed to update image {}: {}", img.id, e);
+                                errors += 1;
+                            }
+                        }
+                    }
+                    None => {
+                        // Couldn't parse - still mark as processed to avoid infinite loops
+                        let _ = tx.execute(
+                            "UPDATE images SET parser_version = ?1 WHERE id = ?2",
+                            params![CURRENT_PARSER_VERSION, img.id]
+                        );
+                        errors += 1;
+                    }
+                }
+            }
+        }
+        
+        tx.commit().map_err(|e| e.to_string())?;
+        
+        log::info!("[Reparse] Batch complete: {} processed, {} updated, {} errors", 
+            processed, updated, errors);
+        
+        Ok(ReparseBatchResult { processed, updated, errors })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Force re-parse all images by resetting parser_version to 0.
+/// Dev tool for testing parser improvements.
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reset_parser_versions(app: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        
+        let updated = conn.execute(
+            "UPDATE images SET parser_version = 0 WHERE is_deleted = 0",
+            []
+        ).map_err(|e| e.to_string())?;
+        
+        log::info!("[Reparse] Reset parser_version for {} images", updated);
+        Ok(updated)
     })
     .await
     .map_err(|e| e.to_string())?
