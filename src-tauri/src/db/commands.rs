@@ -70,14 +70,14 @@ pub async fn get_image_count_for_path_prefix(
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
         // Ensure path ends with a separator to avoid matching sibling folders with similar names
-        // e.g. "C:/Images" shouldn't match "C:/ImagesBackup"
-        // But we need to handle both slash types or rely on normalization.
-        // For now, we trust the input is normalized, but we append % for the LIKE query.
-
+        // e.g. "C:/Images/txt2img" shouldn't match "C:/Images/txt2img-images"
+        // We normalize the path and ensure it ends with a separator before the % wildcard
+        let normalized = path.trim_end_matches(['/', '\\']);
+        
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
-                params![format!("{}%", path), format!("{}\\%", path)], // Match forward or backslash just in case
+                params![format!("{}/%", normalized), format!("{}\\%", normalized)],
                 |r| r.get(0),
             )
             .unwrap_or(0);

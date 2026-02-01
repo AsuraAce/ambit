@@ -3,12 +3,14 @@ import { useRef, useState } from 'react';
 import { Monitor, Folder, Plus, Trash2, FolderSearch, RefreshCw } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
-import { scanResourceThumbnails } from '../../../services/importService';
+import { scanResourceThumbnails, processNativePaths } from '../../../services/importService';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { normalizePath } from '../../../utils/pathUtils';
+import { unwrap } from '../../../utils/spectaUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 // Helper to detect generator from path
 const detectGeneratorVariant = (path: string): GeneratorTool => {
@@ -61,6 +63,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { addToast } = useToast();
     const [scanningIds, setScanningIds] = useState<Set<string>>(new Set()); // Track scanning folders
+    const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
 
     // Fetch counts logic extracted for reuse
     const fetchCounts = async () => {
@@ -133,8 +136,61 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 await onInvokeSync();
                 addToast('InvokeAI database sync complete', 'success');
             } else if (onScanFolder) {
-                await onScanFolder([{ path, variant }]);
-                addToast(`Rescan complete for ${path}`, 'success');
+                // Find the folder to check for lastScanned timestamp
+                const folder = settings.monitoredFolders.find(f => f.id === id);
+                const lastScanned = folder?.lastScanned;
+
+                if (lastScanned && lastScanned > 0) {
+                    // Incremental resync: Only scan files modified since lastScanned
+                    console.log(`[Resync] Incremental scan for ${path} since ${new Date(lastScanned).toISOString()}`);
+
+                    const newFiles = await unwrap(commands.scanDirectorySince(path, lastScanned));
+
+                    if (newFiles.length > 0) {
+                        // Process ONLY the changed files - don't trigger full folder scan
+                        const changedPaths = newFiles.map(f => f.path);
+                        console.log(`[Resync] Found ${changedPaths.length} modified files, processing only these`);
+
+                        // Set import state to show activity dock
+                        const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                        setIsImporting(true);
+                        setImportProgress({ current: 0, total: changedPaths.length, message: 'Syncing changed files...' });
+
+                        try {
+                            // Get thumbnail directory and process just the changed files
+                            const { getThumbnailDir } = await import('../../../services/thumbnailService');
+                            const thumbDir = await getThumbnailDir();
+                            const result = await processNativePaths(
+                                changedPaths,
+                                thumbDir,
+                                (current, total, message) => {
+                                    setImportProgress({ current, total, message });
+                                },
+                                variant as GeneratorTool | undefined,
+                                undefined, // No abort signal
+                                false      // Not startup
+                            );
+
+                            addToast(`Synced ${result.images.length} new files from ${path.split(/[\\/]/).pop()}`, 'success');
+                        } finally {
+                            // Always clear import state
+                            setIsImporting(false);
+                            setImportProgress(null);
+                        }
+                    } else {
+                        console.log(`[Resync] No changes detected in ${path}`);
+                        addToast(`No changes detected - folder is up to date`, 'info');
+                    }
+
+                    // Update lastScanned timestamp
+                    updateFolderLastScanned(id, Date.now());
+                } else {
+                    // Full scan: First time or no timestamp
+                    console.log(`[Resync] Full scan for ${path} (no previous timestamp)`);
+                    await onScanFolder([{ path, variant }]);
+                    updateFolderLastScanned(id, Date.now());
+                    addToast(`Rescan complete for ${path}`, 'success');
+                }
             }
             await fetchCounts(); // Refresh counts
         } catch (e) {
