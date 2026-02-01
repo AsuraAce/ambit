@@ -3,6 +3,8 @@ pub mod comfyui;
 pub mod invokeai;
 pub mod guidance;
 pub mod models;
+pub mod civitai;
+pub mod thumbs_scan;
 pub mod parsers;
 pub mod resources;
 pub mod utils;
