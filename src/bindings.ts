@@ -319,9 +319,6 @@ async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * "Use Dynamic" - forces dynamic thumbnail selection without destroying sidecar data
- */
 async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName }) };
