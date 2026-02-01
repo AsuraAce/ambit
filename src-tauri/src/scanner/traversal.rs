@@ -210,28 +210,32 @@ pub fn collect_images_with_stats_since_recursive(
                         .unwrap_or(false);
 
                     if !is_thumbnail {
-                        // Now check timestamp
-                        let (size, modified) = match entry.metadata() {
-                            Ok(m) => (
-                                m.len(),
-                                m.modified()
+                        // Now check timestamps - we check BOTH mtime AND ctime
+                        // Copied files often retain their original mtime but have new ctime
+                        let (size, modified, created) = match entry.metadata() {
+                            Ok(m) => {
+                                let mtime = m.modified()
                                     .ok()
                                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                                     .map(|d| d.as_millis() as u64)
-                                    .unwrap_or(0),
-                            ),
-                            Err(_) => (0, 0),
+                                    .unwrap_or(0);
+                                let ctime = m.created()
+                                    .ok()
+                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|d| d.as_millis() as u64)
+                                    .unwrap_or(0);
+                                (m.len(), mtime, ctime)
+                            },
+                            Err(_) => (0, 0, 0),
                         };
 
-                        // FILTER: Only add if modified > since_timestamp
-                        // We add a small buffer (e.g. >=) to be safe, or just >.
-                        // Since `since_timestamp` is likely the last scan time, we want things strictly newer?
-                        // If exact match, it was likely picked up last time.
-                        if modified > since_timestamp {
+                        // FILTER: Include if EITHER modified > since_timestamp OR created > since_timestamp
+                        // This catches both edited files (mtime changes) and copied files (ctime changes)
+                        if modified > since_timestamp || created > since_timestamp {
                             files.push(super::models::FileEntry {
                                 path: p.to_string_lossy().replace("\\", "/"),
                                 size,
-                                modified,
+                                modified: modified.max(created), // Use the more recent timestamp
                             });
                         }
                     }

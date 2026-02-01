@@ -12,6 +12,9 @@ import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearch } from '../contexts/SearchContext';
+import { commands } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
+import { MonitoredFolder } from '../types';
 
 // Added ImportOptions interface
 interface ImportOptions {
@@ -401,6 +404,85 @@ export const useFileOperations = ({
         }
     }, [images, setImages, addToast, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController]);
 
+    /**
+     * Incremental resync for a monitored folder.
+     * Uses scanDirectorySince to only process files modified since lastScanned.
+     * Falls back to full scan if no lastScanned timestamp exists.
+     */
+    const resyncFolder = useCallback(async (
+        folder: MonitoredFolder,
+        updateLastScanned: (folderId: string, timestamp: number) => void
+    ): Promise<{ newFiles: number; totalScanned: number }> => {
+        const { path, variant, lastScanned, id } = folder;
+
+        setIsImporting(true);
+        const abortCtrl = new AbortController();
+        setImportAbortController(abortCtrl);
+
+        try {
+            // Determine which files to scan
+            let filesToScan: string[] = [];
+            let isIncremental = false;
+
+            if (lastScanned && lastScanned > 0) {
+                // Incremental: Only get files modified since last scan
+                console.log(`[Resync] Incremental scan for ${path} since ${new Date(lastScanned).toISOString()}`);
+                const newFiles = await unwrap(commands.scanDirectorySince(path, lastScanned));
+                filesToScan = newFiles.map(f => f.path);
+                isIncremental = true;
+                console.log(`[Resync] Found ${filesToScan.length} modified files`);
+            } else {
+                // Full scan: First time or no timestamp
+                console.log(`[Resync] Full scan for ${path} (no previous timestamp)`);
+                const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
+                filesToScan = allFiles.map(f => f.path);
+                console.log(`[Resync] Found ${filesToScan.length} total files`);
+            }
+
+            // Update timestamp immediately (before scan) so even a cancelled scan marks progress
+            updateLastScanned(id, Date.now());
+
+            if (filesToScan.length === 0) {
+                setImportProgress({ current: 0, total: 0, message: 'No changes detected' });
+                return { newFiles: 0, totalScanned: 0 };
+            }
+
+            // Progress message based on scan type
+            const scanTypeMsg = isIncremental ? 'Syncing new files' : 'Full scan';
+            setImportProgress({ current: 0, total: filesToScan.length, message: `${scanTypeMsg}...` });
+
+            // Process the files using existing infrastructure
+            const { getThumbnailDir } = await import('../services/thumbnailService');
+            const thumbDir = await getThumbnailDir();
+
+            const result = await processNativePaths(
+                filesToScan,
+                thumbDir,
+                (current, total, message) => {
+                    setImportProgress({ current, total, message });
+                },
+                variant,
+                abortCtrl.signal,
+                false, // isStartup
+                false  // forceRescan - we've already filtered to only changed files
+            );
+
+            // Commit results
+            if (result.images.length > 0) {
+                await commitImportResult(result, true);
+            }
+
+            return { newFiles: result.images.length, totalScanned: filesToScan.length };
+        } catch (e) {
+            console.error(`[Resync] Failed for ${path}`, e);
+            throw e;
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportAbortController(null);
+        }
+    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult]);
+
     return {
         isImporting,
         isExporting,
@@ -416,6 +498,7 @@ export const useFileOperations = ({
         deleteImages,
         recoverMetadata,
         regenerateThumbnails,
-        handleInvokeSync
+        handleInvokeSync,
+        resyncFolder
     };
 };
