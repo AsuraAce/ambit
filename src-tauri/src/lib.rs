@@ -47,12 +47,12 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // watcher commands
         watcher::start_native_folder_watcher,
         // metadata commands
-        metadata::models::import_a1111_cache,
-        metadata::models::resolve_hashes_online,
+        metadata::civitai::import_a1111_cache,
+        metadata::civitai::resolve_hashes_online,
         metadata::models::clear_model_cache,
         metadata::models::cancel_model_resolution,
         metadata::models::cancel_model_discovery,
-        metadata::models::scan_model_thumbnails,
+        metadata::thumbs_scan::scan_model_thumbnails,
         metadata::models::set_model_thumbnail,
         metadata::models::unset_model_thumbnail,
         metadata::models::clear_all_thumbnails,

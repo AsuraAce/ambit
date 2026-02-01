@@ -3,6 +3,8 @@ use std::collections::HashMap;
 
 mod conditioning;
 mod evaluator;
+mod eval_core;
+mod eval_utils;
 mod graph;
 mod heuristics;
 mod parse_helper;
