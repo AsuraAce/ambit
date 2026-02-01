@@ -97,7 +97,17 @@ pub fn run() {
         .manage(ModelDiscoveryState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
-            // Run auto-backup check in background
+            // 1. Initialize DB settings (WAL mode, etc.)
+            let handle_for_db = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = db::init_db_connection(&handle_for_db) {
+                    log::error!("[DB] Failed to initialize database settings: {}", e);
+                } else {
+                    log::info!("[DB] Database initialized and optimized (WAL=ON)");
+                }
+            });
+
+            // 2. Run auto-backup check in background
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Wait a bit for app to settle
@@ -110,8 +120,15 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Err(e) = db::optimize_on_shutdown(app_handle) {
+                    log::error!("[DB] Failed to run shutdown optimization: {}", e);
+                }
+            }
+        });
 }
 
 /// Check for and execute any pending database purge request.

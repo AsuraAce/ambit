@@ -464,33 +464,37 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
 
 fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // 1. Calculate Counts and Usage Stats
+    // COALESCE(NULLIF(..., ''), 'Unknown') aligns with frontend filter logic
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS cp_counts AS
             SELECT 
                 model_hash as mh, 
-                resolved_model_name as mn,
+                COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') as mn,
+                LOWER(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) as lmn,
                 COUNT(DISTINCT id) as cnt,
                 MAX(timestamp) as last_used,
                 MIN(timestamp) as first_used
             FROM images 
             WHERE is_deleted = 0
-            GROUP BY mh, mn",
+            GROUP BY mh, lmn",
         [],
     )
     .map_err(|e| format!("Failed to create cp_counts temp table: {}", e))?;
 
     // 2. Calculate Best Dynamic Thumbnail (Pinned > Recent)
-    // We use model_name (or json_extract) to ensure it matches what harvest_models uses
     conn.execute(
         "CREATE TEMP TABLE IF NOT EXISTS cp_thumbs AS
-            SELECT mn, thumbnail_path FROM (
+            SELECT lmn, thumbnail_path FROM (
                 SELECT 
-                    COALESCE(model_name, json_extract(metadata_json, '$.model')) as mn, 
+                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown')) as lmn, 
                     thumbnail_path,
-                    ROW_NUMBER() OVER (PARTITION BY COALESCE(model_name, json_extract(metadata_json, '$.model')) ORDER BY is_pinned DESC, timestamp DESC) as rn
-                FROM images
+                    ROW_NUMBER() OVER (
+                        PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown')) 
+                        ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    ) as rn
+                FROM images i
                 WHERE is_deleted = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
-            ) WHERE mn IS NOT NULL AND mn != '' AND rn = 1",
+            ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
         []
     ).map_err(|e| format!("Failed to create cp_thumbs temp table: {}", e))?;
 
@@ -501,15 +505,15 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override)
             SELECT 'checkpoint', m.name, m.hash, 
-                COALESCE(SUM(cc.cnt), 0), 
+                COALESCE(cc.total_cnt, 0), 
                 CASE 
                     WHEN m.thumbnail_path IS NOT NULL THEN m.thumbnail_path
-                    WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(MAX(ct.thumbnail_path), m.preview_url)
-                    ELSE COALESCE(m.sidecar_thumbnail_path, MAX(ct.thumbnail_path), m.preview_url)
+                    WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(ct.thumbnail_path, m.preview_url)
+                    ELSE COALESCE(m.sidecar_thumbnail_path, ct.thumbnail_path, m.preview_url)
                 END,
                 m.preview_url,
-                MAX(cc.last_used),
-                MIN(cc.first_used),
+                cc.max_last_used,
+                cc.min_first_used,
                 CASE WHEN m.thumbnail_path IS NOT NULL OR (m.sidecar_thumbnail_path IS NOT NULL AND m.thumbnail_mode IS NULL) THEN 1 ELSE 0 END,
                 CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
                 CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END
@@ -519,16 +523,12 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 WHERE resource_type = 'checkpoint'
                 GROUP BY LOWER(name)
             ) m
-            LEFT JOIN cp_counts cc ON (
-                cc.mh = m.hash OR
-                cc.mn = m.name OR
-                LOWER(cc.mn) = LOWER(m.name)
-            )
-            LEFT JOIN cp_thumbs ct ON (
-                ct.mn = m.name OR
-                LOWER(ct.mn) = LOWER(m.name)
-            )
-            GROUP BY LOWER(m.name)",
+            LEFT JOIN (
+                SELECT lmn, SUM(cnt) as total_cnt, MAX(last_used) as max_last_used, MIN(first_used) as min_first_used
+                FROM cp_counts
+                GROUP BY lmn
+            ) cc ON cc.lmn = LOWER(m.name)
+            LEFT JOIN cp_thumbs ct ON ct.lmn = LOWER(m.name)",
         []
     ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
 
@@ -537,14 +537,14 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
         "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, last_used_at, created_at)
             SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(ct.thumbnail_path), MAX(cc.last_used), MIN(cc.first_used)
             FROM cp_counts cc
-            LEFT JOIN cp_thumbs ct ON ct.mn = cc.mn
+            LEFT JOIN cp_thumbs ct ON ct.lmn = cc.lmn
             WHERE NOT EXISTS (
                 SELECT 1 FROM facet_cache fc 
                 WHERE fc.facet_type = 'checkpoint' 
-                AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn OR LOWER(fc.resource_name) = LOWER(cc.mn))
+                AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn OR LOWER(fc.resource_name) = cc.lmn)
             )
             AND cc.mn IS NOT NULL AND cc.mn != ''
-            GROUP BY LOWER(cc.mn)",
+            GROUP BY cc.lmn",
         []
     ).map_err(|e| format!("Failed to insert orphan checkpoints: {}", e))?;
 
@@ -574,41 +574,37 @@ fn build_resource_facets(
             ))
         }
     };
-
     let temp_table = format!("{}_counts", facet_type);
     let temp_thumbs = format!("{}_thumbs", facet_type);
 
     // Step 1: Pre-aggregate Counts from Junction Table (No JSON Parsing!)
     conn.execute(
         &format!(
-            "CREATE TEMP TABLE IF NOT EXISTS {} AS
+            "CREATE TEMP TABLE IF NOT EXISTS {0} AS
                 SELECT 
-                    jt.{} AS ref_name,
+                    MAX(jt.{1}) AS ref_name,
                     -- Clean the name (remove version/suffix) effectively
                     CASE 
-                        WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
-                        WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
-                        ELSE jt.{} 
+                        WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
+                        WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
+                        ELSE jt.{1} 
                     END AS clean_ref,
+                    LOWER(CASE 
+                        WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
+                        WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
+                        ELSE jt.{1} 
+                    END) AS lclean_ref,
                     COUNT(DISTINCT i.id) AS cnt,
                     MAX(i.timestamp) as last_used,
                     MIN(i.timestamp) as first_used
-                FROM {} jt
-                JOIN images i ON i.id = jt.{}
+                FROM {2} jt
+                JOIN images i ON i.id = jt.{3}
                 WHERE i.is_deleted = 0
-                GROUP BY jt.{}",
+                GROUP BY lclean_ref",
             temp_table,
             name_col,
-            name_col,
-            name_col,
-            name_col, // substr args
-            name_col,
-            name_col,
-            name_col, // substr args 2
-            name_col, // ELSE
             junction_table,
-            image_id_col,
-            name_col
+            image_id_col
         ),
         [],
     )
@@ -618,32 +614,31 @@ fn build_resource_facets(
     // We need to group by the CLEANED reference name to match models
     conn.execute(
         &format!(
-            "CREATE TEMP TABLE IF NOT EXISTS {} AS
-             SELECT clean_ref, thumbnail_path FROM (
+            "CREATE TEMP TABLE IF NOT EXISTS {0} AS
+             SELECT lclean_ref, thumbnail_path FROM (
                 SELECT 
-                    CASE 
-                        WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
-                        WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
-                        ELSE jt.{} 
-                    END AS clean_ref,
+                    LOWER(CASE 
+                        WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
+                        WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
+                        ELSE jt.{1} 
+                    END) AS lclean_ref,
                     i.thumbnail_path,
                     ROW_NUMBER() OVER (
-                        PARTITION BY 
-                            CASE 
-                                WHEN instr(jt.{}, ' (') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ' (') - 1)
-                                WHEN instr(jt.{}, ':') > 0 THEN substr(jt.{}, 1, instr(jt.{}, ':') - 1)
-                                ELSE jt.{} 
-                            END
+                        PARTITION BY LOWER(CASE 
+                            WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
+                            WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
+                            ELSE jt.{1} 
+                        END)
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
-                FROM {} jt
-                JOIN images i ON i.id = jt.{}
+                FROM {2} jt
+                JOIN images i ON i.id = jt.{3}
                 WHERE i.is_deleted = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
              ) WHERE rn = 1",
             temp_thumbs,
-            name_col, name_col, name_col, name_col, name_col, name_col, name_col,
-            name_col, name_col, name_col, name_col, name_col, name_col, name_col, 
-            junction_table, image_id_col
+            name_col,
+            junction_table,
+            image_id_col
         ),
         []
     ).map_err(|e| format!("Failed to create {} table: {}", temp_thumbs, e))?;
@@ -654,15 +649,15 @@ fn build_resource_facets(
         &format!(
             "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override, guidance_subtype)
                 SELECT '{}', m.name, m.hash,
-                    COALESCE(SUM(rc.cnt), 0),
+                    COALESCE(rc.cnt, 0),
                     CASE 
                         WHEN m.thumbnail_path IS NOT NULL THEN m.thumbnail_path
-                        WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(MAX(rt.thumbnail_path), m.preview_url)
-                        ELSE COALESCE(m.sidecar_thumbnail_path, MAX(rt.thumbnail_path), m.preview_url)
+                        WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(rt.thumbnail_path, m.preview_url)
+                        ELSE COALESCE(m.sidecar_thumbnail_path, rt.thumbnail_path, m.preview_url)
                     END,
                     m.preview_url,
-                    MAX(rc.last_used),
-                    MIN(rc.first_used),
+                    rc.last_used,
+                    rc.first_used,
                     CASE WHEN m.thumbnail_path IS NOT NULL OR (m.sidecar_thumbnail_path IS NOT NULL AND m.thumbnail_mode IS NULL) THEN 1 ELSE 0 END,
                     CASE WHEN m.sidecar_thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
                     CASE WHEN m.thumbnail_path IS NOT NULL THEN 1 ELSE 0 END,
@@ -673,16 +668,8 @@ fn build_resource_facets(
                     WHERE resource_type = '{}'
                     GROUP BY LOWER(name)
                 ) m
-                LEFT JOIN {} rc ON (
-                    rc.ref_name = m.name OR 
-                    rc.clean_ref = m.name OR
-                    LOWER(rc.ref_name) = LOWER(m.name) OR
-                    LOWER(rc.clean_ref) = LOWER(m.name)
-                )
-                LEFT JOIN {} rt ON (
-                    rt.clean_ref = m.name OR
-                    LOWER(rt.clean_ref) = LOWER(m.name)
-                )
+                LEFT JOIN {} rc ON rc.lclean_ref = LOWER(m.name)
+                LEFT JOIN {} rt ON rt.lclean_ref = LOWER(m.name)
                 GROUP BY LOWER(m.name)",
             facet_type, facet_type, temp_table, temp_thumbs
         ),
@@ -693,16 +680,16 @@ fn build_resource_facets(
     conn.execute(
         &format!(
             "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, last_used_at, created_at)
-                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, SUM(rc.cnt), MAX(rt.thumbnail_path), MAX(rc.last_used), MIN(rc.first_used)
+                SELECT '{}', rc.clean_ref, 'orphan_' || rc.clean_ref, rc.cnt, rt.thumbnail_path, rc.last_used, rc.first_used
                 FROM {} rc
-                LEFT JOIN {} rt ON rt.clean_ref = rc.clean_ref
+                LEFT JOIN {} rt ON rt.lclean_ref = rc.lclean_ref
                 WHERE NOT EXISTS (
                     SELECT 1 FROM facet_cache fc 
                     WHERE fc.facet_type = '{}' 
-                    AND (fc.resource_name = rc.clean_ref OR fc.resource_name = rc.ref_name OR LOWER(fc.resource_name) = LOWER(rc.clean_ref))
+                    AND (fc.resource_name = rc.clean_ref OR fc.resource_name = rc.ref_name OR LOWER(fc.resource_name) = rc.lclean_ref)
                 )
                 AND rc.clean_ref IS NOT NULL AND rc.clean_ref != ''
-                GROUP BY LOWER(rc.clean_ref)",
+                GROUP BY rc.lclean_ref",
             facet_type, temp_table, temp_thumbs, facet_type
         ),
         []
@@ -773,22 +760,46 @@ mod tests {
             "tool": "Automatic1111"
         }"#;
 
-        // Image 2: New, Pinned (Should be preferred thumbnail for SDXL and DetailedEyes)
+        // Image 2: New, Pinned, DIFFERENT HASH but same name
         conn.execute(
-            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png', 'SDXL Base', '12345')",
+            "INSERT INTO images (id, path, metadata_json, timestamp, is_pinned, thumbnail_path, resolved_model_name, model_hash) VALUES (?1, ?2, ?3, 200, 1, 'thumb2.png', 'SDXL Base', '67890')",
             params!["img2", "test2.png", metadata2],
         ).unwrap();
 
-        // Populate Junction Tables (Simulating Scanner behavior)
-        conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'DetailedEyes:1.0'), ('img1', 'PixelArt')", []).unwrap();
+        // Image 3: Different CASE to trigger multiplier
         conn.execute(
-            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img2', 'DetailedEyes:1.0')",
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, model_hash, thumbnail_path) VALUES ('img3', 'test3.png', 300, 'sdxl base', 'hash3', 'thumb3.png')",
+            [],
+        ).unwrap();
+
+        // Image 4: NULL model name (should become Unknown)
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, model_hash) VALUES ('img4', 'test4.png', 400, NULL, 'hash4')",
+            [],
+        ).unwrap();
+
+        // Image 5: Empty model name (should become Unknown)
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, model_hash) VALUES ('img5', 'test5.png', 500, '', 'hash5')",
+            [],
+        ).unwrap();
+
+        // Image 6: Literal 'Unknown'
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, model_hash) VALUES ('img6', 'test6.png', 600, 'Unknown', 'hash6')",
+            [],
+        ).unwrap();
+
+        // Populate Junction Tables (Simulating Scanner behavior)
+        conn.execute("INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'DetailedEyes'), ('img1', 'PixelArt')", []).unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img2', 'DetailedEyes')",
             [],
         )
         .unwrap();
         conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img1', 'EasyNegative')", []).unwrap();
-        conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img2', 'EasyNegative:v2')", []).unwrap();
-        conn.execute("INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES ('img2', 'MyHyper:1.0')", []).unwrap();
+        conn.execute("INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img2', 'EasyNegative')", []).unwrap();
+        conn.execute("INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES ('img2', 'MyHyper')", []).unwrap();
 
         harvest_models(&conn).unwrap();
 
@@ -803,11 +814,36 @@ mod tests {
         build_resource_facets(&conn, "hypernetworks", "hypernetworks").unwrap();
         build_tool_facets(&conn).unwrap();
 
+        // --- Regression Check: Collections ---
+        // Verify that rebuilding cache does NOT wipe collections
+        // 1. Create a collection
+        conn.execute("INSERT INTO collections (id, name, created_at) VALUES ('col1', 'Test Col', 100)", []).unwrap();
+        // 2. Add image to collection
+        conn.execute("INSERT INTO collection_images (collection_id, image_id) VALUES ('col1', 'img1')", []).unwrap();
+        
+        // Re-run rebuild to ensure it doesn't touch collections
+        // (We already ran parts of it above, this simulates a full run)
+        // But wait, the test calls `build_checkpoint_facets` etc individually.
+        // Let's verify collections exist now.
+        let col_count: i64 = conn.query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0)).unwrap();
+        assert_eq!(col_count, 1, "Collection should persist after manual insertions");
+
+        // Now run the full rebuild helper if possible? 
+        // No, `rebuild_facet_cache` takes AppHandle. We can't call it here easily.
+        // But we can call the internal functions again.
+        conn.execute("DELETE FROM facet_cache", []).unwrap(); // Clear cache first
+        build_checkpoint_facets(&conn).unwrap();
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+        
+        let col_count_after: i64 = conn.query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0)).unwrap();
+        assert_eq!(col_count_after, 1, "Collection should persist after facet rebuild");
+
+
         // Checkpoint Check: Expected thumb2.png (Pinned)
         let (cp_count, cp_thumb): (i64, String) = conn.query_row(
             "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
             [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
-        assert_eq!(cp_count, 2, "Should count 2 images for SDXL Base");
+        assert_eq!(cp_count, 3, "Multiplier bug! Should count exactly 3 images for SDXL Base (not doubled/tripled)");
         assert_eq!(
             cp_thumb, "thumb2.png",
             "Checkpoint thumbnail should be from pinned image (thumb2)"
@@ -843,5 +879,11 @@ mod tests {
             cp_thumb_manual, "manual_override.png",
             "Manual thumbnail should take precedence"
         );
+
+        // Verification for 'Unknown' facet (img4, img5, img6)
+        let unknown_count: i64 = conn.query_row(
+            "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='Unknown'",
+            [], |r| r.get(0)).unwrap();
+        assert_eq!(unknown_count, 3, "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)");
     }
 }

@@ -133,45 +133,49 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                         {/* Backup Settings Component */}
                         <BackupSettings />
 
-                        {/* Optimization */}
-                        <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Optimize Database</div>
-                                    <div className="text-xs text-gray-500 mt-1 max-w-sm">
-                                        Runs <code>VACUUM</code> and <code>ANALYZE</code> to reclaim unused space and update query statistics. Recommended after deleting large amounts of data.
+                        {/* Optimization - Hidden unless Dev Mode */}
+                        {settings.devMode && (
+                            <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Optimize Database</div>
+                                        <div className="text-xs text-gray-500 mt-1 max-w-sm">
+                                            Runs <code>VACUUM</code> and <code>ANALYZE</code> to reclaim unused space and update query statistics. Recommended after deleting large amounts of data.
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={handleOptimize}
+                                        disabled={isOptimizing}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                                    >
+                                        {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+                                        {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={handleOptimize}
-                                    disabled={isOptimizing}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
-                                >
-                                    {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
-                                    {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
-                                </button>
-                            </div>
-                        </section>
+                            </section>
+                        )}
 
-                        {/* Rebuild Facet Cache */}
-                        <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
-                                    <div className="text-xs text-gray-500 mt-1 max-w-sm">
-                                        Re-calculates all metadata facets (tags, older/newer, etc). Run this if filtering seems incorrect or after bulk external changes.
+                        {/* Rebuild Facet Cache - Hidden unless Dev Mode */}
+                        {settings.devMode && (
+                            <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
+                                        <div className="text-xs text-gray-500 mt-1 max-w-sm">
+                                            Re-calculates all metadata facets (tags, older/newer, etc). Run this if filtering seems incorrect or after bulk external changes.
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={handleRebuildCache}
+                                        disabled={isRebuilding}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                                    >
+                                        {isRebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                        {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={handleRebuildCache}
-                                    disabled={isRebuilding}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
-                                >
-                                    {isRebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                    {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
-                                </button>
-                            </div>
-                        </section>
+                            </section>
+                        )}
 
                         {/* Purge Database - Moved here but kept red */}
                         <div className="bg-rose-50/50 dark:bg-rose-900/5 border border-rose-100 dark:border-rose-500/10 rounded-xl overflow-hidden p-6 flex items-center justify-between">

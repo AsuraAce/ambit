@@ -34,6 +34,50 @@ pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
+/// One-time database initialization on app startup.
+/// Opens a connection to set PERSISTENT settings like WAL mode.
+pub fn init_db_connection(app: &tauri::AppHandle) -> Result<(), String> {
+    let db_path = resolve_db_path(app)?;
+    log::info!("[DB] Initializing database connection preferences at {:?}", db_path);
+
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    
+    // 1. Set WAL mode (This is persistent in the DB file itself)
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    log::info!("[DB] WAL Mode set to: {}", journal_mode);
+
+    // 2. Set other persistent/startup-sensitive settings
+    conn.execute_batch(
+        "
+        PRAGMA synchronous = NORMAL;
+        PRAGMA mmap_size = 268435456;
+        PRAGMA busy_timeout = 60000;
+        ",
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Runs PRAGMA optimize just before shutdown.
+/// This updates the query planner statistics for improved performance on next launch.
+pub fn optimize_on_shutdown(app: &tauri::AppHandle) -> Result<(), String> {
+    let db_path = resolve_db_path(app)?;
+    log::info!("[DB] Running shutdown optimization (PRAGMA optimize)...");
+
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    
+    // 0x10002 is the recommended flag for shutdown (limit work to reasonable time)
+    // and analyze tables that need it.
+    match conn.execute("PRAGMA optimize(0x10002)", []) {
+        Ok(_) => log::info!("[DB] Shutdown optimization complete"),
+        Err(e) => log::error!("[DB] Shutdown optimization failed: {}", e),
+    }
+
+    Ok(())
+}
+
 #[derive(serde::Deserialize, Clone, specta::Type)]
 pub struct ImageRecord {
     pub id: String,
