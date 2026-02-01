@@ -437,275 +437,278 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                 </div>
             </section >
 
-            <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
-                <div className="flex items-center justify-between mb-6">
-                    <h4 className="text-[10px] font-black text-white px-4 py-2 bg-blue-600 rounded-lg inline-flex items-center gap-3 uppercase tracking-widest shadow-lg shadow-blue-500/20">
-                        <FolderSearch className="w-4 h-4" /> Model Hash Resolution
-                    </h4>
-                    {isResolving ? (
-                        <div
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all bg-blue-600/10 text-blue-500`}
-                            title="Resolution in progress"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2">
-                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                    <span>Hashing...</span>
-                                </div>
-                                <div className="w-[1px] h-3 bg-blue-500/30" />
-                                <button
-                                    onClick={async (e) => {
-                                        e.stopPropagation();
-                                        const { invoke } = await import('@tauri-apps/api/core');
-                                        await invoke('cancel_model_resolution');
-                                    }}
-                                    className="hover:bg-blue-500/20 p-0.5 rounded transition-colors"
-                                    title="Stop Hashing"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmState({
-                                    isOpen: true,
-                                    title: "Re-run Hashing?",
-                                    message: "This will clear all currently resolved model names and re-trigger the resolution process. Continue?",
-                                    confirmLabel: "Re-run Hashing",
-                                    onConfirm: async () => {
-                                        setConfirmState(prev => ({ ...prev, isOpen: false }));
-                                        setResolutionResult(null);
-                                        setResolutionProgress(null);
-                                        setIsResolving(true);
-                                        // Auto-close modal for better UX (User Request)
-                                        if (onClose) onClose();
-                                        addToast("Starting model resolution...", "info");
-
-                                        try {
-                                            const { invoke } = await import('@tauri-apps/api/core');
-                                            const { listen } = await import('@tauri-apps/api/event');
-
-                                            await invoke('clear_model_cache');
-
-                                            let unlisten: (() => void) | undefined;
-                                            unlisten = await listen<{ current: number, total: number, message: string }>('model_resolution_progress', (event) => {
-                                                setResolutionProgress(event.payload);
-                                            });
-
-                                            const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: true });
-
-                                            // Determine success state based on "unknown_count" (user impact), not just technical "failed_count"
-                                            const isSafe = res.unknownCount === 0;
-                                            setResolutionResult({
-                                                success: isSafe,
-                                                message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
-                                            });
-
-                                            if (isSafe) {
-                                                addToast(`Resolution finished: ${res.resolvedCount} verified`, "success");
-                                            } else {
-                                                addToast(`Resolution finished with ${res.unknownCount} unknown models`, "warning");
-                                            }
-                                            if (unlisten) unlisten();
-                                        } catch (e: any) {
-                                            if (e.includes("cancelled")) {
-                                                addToast("Resolution cancelled", "info");
-                                            } else {
-                                                console.error(e);
-                                                setResolutionResult({ success: false, message: `Re-run failed: ${e.message || e}` });
-                                                addToast("Resolution failed", "error");
-                                            }
-                                        } finally {
-                                            setIsResolving(false);
-                                            setResolutionProgress(null);
-                                        }
-                                    }
-                                });
-                            }}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all text-gray-400 hover:text-blue-600 hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed group/btn"
-                            title="Clear cache and re-run resolution"
-                        >
-                            <RefreshCw className="w-3.5 h-3.5 group-hover/btn:rotate-180 transition-transform duration-500" />
-                            <span>Re-run Hashing</span>
-                        </button>
-                    )}
-                </div>
-
-                <div className="space-y-4">
-                    <div className="px-1">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Resolve unknown model hashes from image metadata using local caches or CivitAI.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 1: Local Cache</h5>
-                                <span className="text-[10px] font-mono bg-gray-200 dark:bg-white/10 px-2 py-0.5 rounded text-gray-500">Fast & Offline</span>
-                            </div>
-                            <p className="text-[11px] text-gray-500">
-                                Import <code className="text-xs bg-gray-200 dark:bg-white/10 px-1 rounded mx-0.5">cache.json</code> from your A1111 installation.
-                            </p>
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        const { open } = await import('@tauri-apps/plugin-dialog');
-                                        const { invoke } = await import('@tauri-apps/api/core');
-
-                                        const selected = await open({
-                                            multiple: false,
-                                            filters: [{ name: 'JSON', extensions: ['json'] }],
-                                            defaultPath: settings.a1111Path
-                                        });
-
-                                        if (selected && typeof selected === 'string') {
-                                            const res = await invoke<{ added: number, totalFound: number, message: string }>('import_a1111_cache', { cachePath: selected });
-                                            // More explicit message: "X new imported (Y total found)"
-                                            setResolutionResult({ success: (res.added > 0 || res.totalFound > 0), message: `${res.added} new models imported (${res.totalFound} found in file).` });
-                                        }
-                                    } catch (e: any) {
-                                        console.error(e);
-                                        setResolutionResult({ success: false, message: `Import failed: ${e.message || e}` });
-                                    }
-                                }}
-                                className="mt-auto w-full py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 rounded-lg text-xs font-bold transition-all text-gray-700 dark:text-gray-200 mb-1"
+            {/* 3. Model Hash Resolution - Hidden for V1 */}
+            {false && (
+                <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-6">
+                        <h4 className="text-[10px] font-black text-white px-4 py-2 bg-blue-600 rounded-lg inline-flex items-center gap-3 uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                            <FolderSearch className="w-4 h-4" /> Model Hash Resolution
+                        </h4>
+                        {isResolving ? (
+                            <div
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all bg-blue-600/10 text-blue-500`}
+                                title="Resolution in progress"
                             >
-                                Import cache.json
-                            </button>
-                        </div>
-
-                        <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 2: External API</h5>
-                                <span className="text-[10px] font-mono bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded">CivitAI Lookup</span>
-                            </div>
-                            <p className="text-[11px] text-gray-500">
-                                Query CivitAI for unknown hashes. Required for deleted/archived models.
-                            </p>
-                            {isResolving ? (
-                                <div
-                                    className={`mt-auto w-full h-9 border rounded-lg text-xs font-bold transition-all relative overflow-hidden bg-blue-600/10 border-blue-500/20 text-blue-600`}
-                                >
-                                    <div className="relative z-10 flex items-center justify-between px-3 h-full gap-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                                            <span className="truncate">{resolutionProgress ? resolutionProgress.message : 'Starting...'}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-[1px] h-3 bg-blue-500/30" />
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const { invoke } = await import('@tauri-apps/api/core');
-                                                    await invoke('cancel_model_resolution');
-                                                }}
-                                                className="hover:bg-blue-500/20 p-1 rounded-md transition-colors pointer-events-auto"
-                                                title="Stop Resolution"
-                                            >
-                                                <X className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Hashing...</span>
                                     </div>
-                                    {resolutionProgress && (
-                                        <div
-                                            className="absolute top-0 left-0 h-full bg-blue-500/10 transition-all duration-300 pointer-events-none"
-                                            style={{ width: `${(resolutionProgress.current / (resolutionProgress.total || 100)) * 100}%` }}
-                                        />
-                                    )}
+                                    <div className="w-[1px] h-3 bg-blue-500/30" />
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const { invoke } = await import('@tauri-apps/api/core');
+                                            await invoke('cancel_model_resolution');
+                                        }}
+                                        className="hover:bg-blue-500/20 p-0.5 rounded transition-colors"
+                                        title="Stop Hashing"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
                                 </div>
-                            ) : (
-                                <button
-                                    onClick={(e) => {
-                                        setConfirmState({
-                                            isOpen: true,
-                                            title: "Resolve Online?",
-                                            message: "Search CivitAI for metadata for all images with unknown models? This may take some time and requires internet access.",
-                                            confirmLabel: "Resolve Online",
-                                            onConfirm: async () => {
-                                                setConfirmState(prev => ({ ...prev, isOpen: false }));
-                                                setIsResolving(true);
-                                                setResolutionProgress(null);
-                                                setResolutionResult(null);
-                                                // Auto-close modal for better UX
-                                                if (onClose) onClose();
-                                                addToast("Resolving unknown hashes...", "info");
+                            </div>
+                        ) : (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmState({
+                                        isOpen: true,
+                                        title: "Re-run Hashing?",
+                                        message: "This will clear all currently resolved model names and re-trigger the resolution process. Continue?",
+                                        confirmLabel: "Re-run Hashing",
+                                        onConfirm: async () => {
+                                            setConfirmState(prev => ({ ...prev, isOpen: false }));
+                                            setResolutionResult(null);
+                                            setResolutionProgress(null);
+                                            setIsResolving(true);
+                                            // Auto-close modal for better UX (User Request)
+                                            if (onClose) onClose();
+                                            addToast("Starting model resolution...", "info");
 
-                                                try {
-                                                    const { invoke } = await import('@tauri-apps/api/core');
+                                            try {
+                                                const { invoke } = await import('@tauri-apps/api/core');
+                                                const { listen } = await import('@tauri-apps/api/event');
 
-                                                    const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: false });
+                                                await invoke('clear_model_cache');
 
-                                                    // Determine success state based on "unknownCount" (user impact), not just technical "failedCount"
-                                                    const isSafe = res.unknownCount === 0;
-                                                    setResolutionResult({
-                                                        success: isSafe,
-                                                        message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
-                                                    });
+                                                let unlisten: (() => void) | undefined;
+                                                unlisten = await listen<{ current: number, total: number, message: string }>('model_resolution_progress', (event) => {
+                                                    setResolutionProgress(event.payload);
+                                                });
 
-                                                    if (isSafe) {
-                                                        addToast(`Lookup finished: ${res.resolvedCount} verified`, "success");
-                                                    } else {
-                                                        addToast(`Lookup finished with ${res.unknownCount} unknown models`, "warning");
-                                                    }
-                                                } catch (e: any) {
-                                                    if (e.includes("cancelled")) {
-                                                        addToast("Resolution cancelled", "info");
-                                                    } else {
-                                                        console.error(e);
-                                                        setResolutionResult({ success: false, message: `Lookup failed: ${e.message || e}` });
-                                                        addToast("Lookup failed", "error");
-                                                    }
-                                                } finally {
-                                                    setIsResolving(false);
-                                                    setResolutionProgress(null);
+                                                const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: true });
+
+                                                // Determine success state based on "unknown_count" (user impact), not just technical "failed_count"
+                                                const isSafe = res.unknownCount === 0;
+                                                setResolutionResult({
+                                                    success: isSafe,
+                                                    message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
+                                                });
+
+                                                if (isSafe) {
+                                                    addToast(`Resolution finished: ${res.resolvedCount} verified`, "success");
+                                                } else {
+                                                    addToast(`Resolution finished with ${res.unknownCount} unknown models`, "warning");
                                                 }
+                                                if (unlisten) unlisten();
+                                            } catch (e: any) {
+                                                if (e.includes("cancelled")) {
+                                                    addToast("Resolution cancelled", "info");
+                                                } else {
+                                                    console.error(e);
+                                                    setResolutionResult({ success: false, message: `Re-run failed: ${e.message || e}` });
+                                                    addToast("Resolution failed", "error");
+                                                }
+                                            } finally {
+                                                setIsResolving(false);
+                                                setResolutionProgress(null);
                                             }
-                                        });
+                                        }
+                                    });
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all text-gray-400 hover:text-blue-600 hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed group/btn"
+                                title="Clear cache and re-run resolution"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5 group-hover/btn:rotate-180 transition-transform duration-500" />
+                                <span>Re-run Hashing</span>
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="px-1">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Resolve unknown model hashes from image metadata using local caches or CivitAI.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
+                                <div className="flex items-center justify-between">
+                                    <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 1: Local Cache</h5>
+                                    <span className="text-[10px] font-mono bg-gray-200 dark:bg-white/10 px-2 py-0.5 rounded text-gray-500">Fast & Offline</span>
+                                </div>
+                                <p className="text-[11px] text-gray-500">
+                                    Import <code className="text-xs bg-gray-200 dark:bg-white/10 px-1 rounded mx-0.5">cache.json</code> from your A1111 installation.
+                                </p>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const { open } = await import('@tauri-apps/plugin-dialog');
+                                            const { invoke } = await import('@tauri-apps/api/core');
+
+                                            const selected = await open({
+                                                multiple: false,
+                                                filters: [{ name: 'JSON', extensions: ['json'] }],
+                                                defaultPath: settings.a1111Path
+                                            });
+
+                                            if (selected && typeof selected === 'string') {
+                                                const res = await invoke<{ added: number, totalFound: number, message: string }>('import_a1111_cache', { cachePath: selected });
+                                                // More explicit message: "X new imported (Y total found)"
+                                                setResolutionResult({ success: (res.added > 0 || res.totalFound > 0), message: `${res.added} new models imported (${res.totalFound} found in file).` });
+                                            }
+                                        } catch (e: any) {
+                                            console.error(e);
+                                            setResolutionResult({ success: false, message: `Import failed: ${e.message || e}` });
+                                        }
                                     }}
-                                    disabled={isResolving && !resolutionProgress}
-                                    className={`mt-auto w-full h-9 border rounded-lg text-xs font-bold transition-all relative overflow-hidden bg-blue-600 hover:bg-blue-500 border-transparent text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    className="mt-auto w-full py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 rounded-lg text-xs font-bold transition-all text-gray-700 dark:text-gray-200 mb-1"
                                 >
-                                    <span className="w-full text-center">Resolve Online</span>
+                                    Import cache.json
                                 </button>
-                            )}
-                        </div>
-                    </div>
-                </div >
+                            </div>
 
-                {localTestResult && (
-                    <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
-                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${localTestResult.success
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
-                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
-                            }`}>
-                            {localTestResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
-                            <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{localTestResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
-                                <span className="text-sm truncate">{localTestResult.message}</span>
+                            <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/5 flex flex-col gap-3">
+                                <div className="flex items-center justify-between">
+                                    <h5 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">Layer 2: External API</h5>
+                                    <span className="text-[10px] font-mono bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded">CivitAI Lookup</span>
+                                </div>
+                                <p className="text-[11px] text-gray-500">
+                                    Query CivitAI for unknown hashes. Required for deleted/archived models.
+                                </p>
+                                {isResolving ? (
+                                    <div
+                                        className={`mt-auto w-full h-9 border rounded-lg text-xs font-bold transition-all relative overflow-hidden bg-blue-600/10 border-blue-500/20 text-blue-600`}
+                                    >
+                                        <div className="relative z-10 flex items-center justify-between px-3 h-full gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                                                <span className="truncate">{resolutionProgress ? resolutionProgress.message : 'Starting...'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-[1px] h-3 bg-blue-500/30" />
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const { invoke } = await import('@tauri-apps/api/core');
+                                                        await invoke('cancel_model_resolution');
+                                                    }}
+                                                    className="hover:bg-blue-500/20 p-1 rounded-md transition-colors pointer-events-auto"
+                                                    title="Stop Resolution"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {resolutionProgress && (
+                                            <div
+                                                className="absolute top-0 left-0 h-full bg-blue-500/10 transition-all duration-300 pointer-events-none"
+                                                style={{ width: `${(resolutionProgress.current / (resolutionProgress.total || 100)) * 100}%` }}
+                                            />
+                                        )}
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={(e) => {
+                                            setConfirmState({
+                                                isOpen: true,
+                                                title: "Resolve Online?",
+                                                message: "Search CivitAI for metadata for all images with unknown models? This may take some time and requires internet access.",
+                                                confirmLabel: "Resolve Online",
+                                                onConfirm: async () => {
+                                                    setConfirmState(prev => ({ ...prev, isOpen: false }));
+                                                    setIsResolving(true);
+                                                    setResolutionProgress(null);
+                                                    setResolutionResult(null);
+                                                    // Auto-close modal for better UX
+                                                    if (onClose) onClose();
+                                                    addToast("Resolving unknown hashes...", "info");
+
+                                                    try {
+                                                        const { invoke } = await import('@tauri-apps/api/core');
+
+                                                        const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: false });
+
+                                                        // Determine success state based on "unknownCount" (user impact), not just technical "failedCount"
+                                                        const isSafe = res.unknownCount === 0;
+                                                        setResolutionResult({
+                                                            success: isSafe,
+                                                            message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
+                                                        });
+
+                                                        if (isSafe) {
+                                                            addToast(`Lookup finished: ${res.resolvedCount} verified`, "success");
+                                                        } else {
+                                                            addToast(`Lookup finished with ${res.unknownCount} unknown models`, "warning");
+                                                        }
+                                                    } catch (e: any) {
+                                                        if (e.includes("cancelled")) {
+                                                            addToast("Resolution cancelled", "info");
+                                                        } else {
+                                                            console.error(e);
+                                                            setResolutionResult({ success: false, message: `Lookup failed: ${e.message || e}` });
+                                                            addToast("Lookup failed", "error");
+                                                        }
+                                                    } finally {
+                                                        setIsResolving(false);
+                                                        setResolutionProgress(null);
+                                                    }
+                                                }
+                                            });
+                                        }}
+                                        disabled={isResolving && !resolutionProgress}
+                                        className={`mt-auto w-full h-9 border rounded-lg text-xs font-bold transition-all relative overflow-hidden bg-blue-600 hover:bg-blue-500 border-transparent text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    >
+                                        <span className="w-full text-center">Resolve Online</span>
+                                    </button>
+                                )}
                             </div>
                         </div>
-                    </div>
-                )}
+                    </div >
 
-                {resolutionResult && (
-                    <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
-                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${resolutionResult.success
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
-                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
-                            }`}>
-                            {resolutionResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
-                            <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{resolutionResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
-                                <span className="text-sm truncate">{resolutionResult.message}</span>
+                    {localTestResult && (
+                        <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
+                            <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${localTestResult.success
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
+                                }`}>
+                                {localTestResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
+                                <div className="flex flex-col gap-0.5 min-w-0">
+                                    <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{localTestResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
+                                    <span className="text-sm truncate">{localTestResult.message}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </section >
+                    )}
+
+                    {resolutionResult && (
+                        <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-white/5">
+                            <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${resolutionResult.success
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5'
+                                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-sm shadow-amber-500/5'
+                                }`}>
+                                {resolutionResult.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <Info className="w-5 h-5 flex-shrink-0" />}
+                                <div className="flex flex-col gap-0.5 min-w-0">
+                                    <span className="text-[10px] uppercase tracking-wider opacity-60 font-black">{resolutionResult.success ? 'Operation Successful' : 'Attention Needed'}</span>
+                                    <span className="text-sm truncate">{resolutionResult.message}</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </section >
+            )}
 
             <ConfirmDialog
                 isOpen={confirmState.isOpen}
