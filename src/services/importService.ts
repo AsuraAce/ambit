@@ -274,7 +274,8 @@ export const processNativePaths = async (
                     metadata: info.metadata, // Full JSON
                     url: convertFileSrc(path), // For frontend display
                     thumbnailSource: info.thumbnailSource,
-                    microThumbnail: info.microThumbnail
+                    microThumbnail: info.microThumbnail,
+                    originalChunks: info.originalChunks
                 };
 
                 batchImages.push(img);

@@ -126,6 +126,53 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Get count and batch of images needing metadata re-parsing.
+ * Returns images where parser_version < CURRENT_PARSER_VERSION.
+ */
+async getImagesNeedingReparse(limit: number | null) : Promise<Result<ImageToReparse[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_images_needing_reparse", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get count of images needing re-parsing (for progress display).
+ */
+async getReparseCount() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_reparse_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-parse a batch of images from their stored original_metadata_json.
+ * Updates metadata_json, denormalized columns, and parser_version.
+ */
+async reparseMetadataBatch(images: ImageToReparse[]) : Promise<Result<ReparseBatchResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reparse_metadata_batch", { images }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Force re-parse all images by resetting parser_version to 0.
+ * Dev tool for testing parser improvements.
+ */
+async resetParserVersions() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_parser_versions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getBackups() : Promise<Result<BackupInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_backups") };
@@ -369,6 +416,10 @@ microThumbnail: string | null;
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
 thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+/**
+ * Image needing re-parse: minimal data for efficient batch processing.
+ */
+export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 /**
  * Verify integrity of the entire library.
@@ -385,6 +436,10 @@ export type NumericRange = { min: number; max: number }
  * Parameter ranges and distinct values for dynamic filters
  */
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
+/**
+ * Result of a batch re-parse operation.
+ */
+export type ReparseBatchResult = { processed: number; updated: number; errors: number }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**

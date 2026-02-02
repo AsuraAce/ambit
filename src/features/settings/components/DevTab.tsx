@@ -1,11 +1,14 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench } from 'lucide-react';
+import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench, RefreshCw } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { commands } from '../../../bindings';
+import { useToast } from '../../../hooks/useToast';
+import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
 
@@ -14,12 +17,14 @@ type DevTabId = 'prompts' | 'tools';
 export const DevTab: React.FC = () => {
     const { fetchData } = useLibraryContext();
     const { settings, setSettings } = useSettingsStore();
+    const { addToast } = useToast();
 
     const [activeTab, setActiveTab] = useState<DevTabId>('prompts');
 
     const [isGenerating, setIsGenerating] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [targetCount, setTargetCount] = useState(10000);
+    const [isReparsing, setIsReparsing] = useState(false);
 
     // Prompt Editing State
     const [openPrompt, setOpenPrompt] = useState<AIPromptKey | null>(null);
@@ -69,6 +74,24 @@ export const DevTab: React.FC = () => {
 
     const handleDevModeToggle = () => {
         setSettings((prev) => ({ ...prev, devMode: !prev.devMode }));
+    };
+
+    const handleForceReparse = async () => {
+        setIsReparsing(true);
+        try {
+            const result = await commands.resetParserVersions();
+            if (result.status === 'ok') {
+                addToast(`Reset ${result.data.toLocaleString()} images for re-parsing`, 'success');
+                // Trigger the background reparse loop
+                useLibraryStore.getState().triggerReparse();
+            } else {
+                addToast(`Failed to reset: ${result.error}`, 'error');
+            }
+        } catch (err) {
+            addToast('Failed to reset parser versions', 'error');
+        } finally {
+            setIsReparsing(false);
+        }
     };
 
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
@@ -232,6 +255,33 @@ export const DevTab: React.FC = () => {
                                         className={`w-10 h-6 rounded-full relative transition-colors ${settings.devMode ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                                     >
                                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.devMode ? 'left-5' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Force Re-parse All Metadata */}
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Force Re-parse All Metadata</div>
+                                        <div className="text-xs text-gray-500">Re-analyze all images with latest parser (no file I/O)</div>
+                                    </div>
+                                    <button
+                                        onClick={handleForceReparse}
+                                        disabled={isReparsing}
+                                        className="flex items-center gap-2 px-4 py-2 bg-amethyst-600 hover:bg-amethyst-500 disabled:bg-gray-300 dark:disabled:bg-white/5 text-white rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-amethyst-500/20"
+                                    >
+                                        {isReparsing ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Resetting...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RefreshCw className="w-4 h-4" />
+                                                Re-parse All
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </div>

@@ -81,7 +81,8 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             timestamp: info.modified,
             thumbnail: info.thumbnail,
             microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource
+            thumbnailSource: info.thumbnailSource,
+            originalChunks: info.chunks as Record<string, string>
         };
     }
 
@@ -110,6 +111,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             thumbnail: info.thumbnail,
             microThumbnail: info.microThumbnail,
             thumbnailSource: info.thumbnailSource,
+            originalChunks: info.chunks as Record<string, string>,
             errorReason: (info as any).error
         };
     } catch (workerError) {

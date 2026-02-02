@@ -82,6 +82,7 @@ export interface ParseResult {
   microThumbnail?: string;
   /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
   thumbnailSource?: string;
+  originalChunks?: Record<string, string>; // Raw chunks for re-parsing
   error?: boolean;
   errorReason?: string;
 }
@@ -118,6 +119,7 @@ export interface AIImage {
   notes?: string;
   metadata: ImageMetadata;
   originalMetadata?: ImageMetadata; // Snapshot for undo/revert
+  originalChunks?: Record<string, string>; // Raw chunks for re-parsing (persisted to DB)
   originalState?: OriginalState; // Snapshot of image-level state at import (for sync)
 }
 

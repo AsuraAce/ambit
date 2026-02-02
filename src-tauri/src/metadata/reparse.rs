@@ -65,9 +65,23 @@ fn reparse_comfyui(original_json: &str) -> Option<ImageMetadata> {
     Some(metadata)
 }
 
-/// Re-parse InvokeAI metadata from stored JSON.
 fn reparse_invokeai(original_json: &str) -> Option<ImageMetadata> {
     let parsed: serde_json::Value = serde_json::from_str(original_json).ok()?;
+
+    // Check if the JSON is a "chunks" map containing the metadata as a string
+    if let Some(inner) = parsed
+        .get("invokeai_metadata")
+        .or_else(|| parsed.get("sd-metadata"))
+        .or_else(|| parsed.get("dream_metadata"))
+    {
+        if let Some(inner_str) = inner.as_str() {
+            if let Ok(inner_parsed) = serde_json::from_str::<serde_json::Value>(inner_str) {
+                return Some(extract_invokeai_metadata(&inner_parsed));
+            }
+        }
+    }
+
+    // Fallback: Assume the JSON is the metadata itself (legacy/direct support)
     let metadata = extract_invokeai_metadata(&parsed);
     Some(metadata)
 }
