@@ -48,6 +48,7 @@ export const generateSingleThumbnail = async (imagePath: string): Promise<string
 
         // Force generation: skipThumbnail=false, extractWorkflow=false (speed)
         const result = await scanImageNative(imagePath, thumbDir, false, false);
+
         return result.thumbnail || null;
     } catch (e) {
         console.error(`[Thumb] Failed to generate for ${imagePath}:`, e);

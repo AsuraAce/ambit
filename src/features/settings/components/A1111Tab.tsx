@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen, RefreshCw, X } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
+import { useSearch } from '../../../contexts/SearchContext'; // Added
 import { A1111FolderType, DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -25,6 +26,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         lastModelResolutionResult: resolutionResult,
         setLastModelResolutionResult: setResolutionResult
     } = useLibraryContext() as any;
+    const { refreshMetadata } = useSearch(); // Added hook usage
     const { addToast } = useToast();
     const [localTestResult, setLocalTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [confirmState, setConfirmState] = useState<{
@@ -97,95 +99,85 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         const toLink = candidates.filter(c => selectedPaths.has(c.path));
         if (toLink.length === 0) return;
 
-        // Separate new folders from already linked ones
-        const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
-        const brandNew = toLink.filter(c => !c.isAlreadyLinked);
+        setIsDiscovering(true);
+        setIsImporting(true); // Ref-counting: +1
 
-        if (brandNew.length > 0) {
-            setSettings(prev => {
-                const newFolders = brandNew.map(c => {
-                    let variant: GeneratorTool | undefined = undefined;
+        try {
+            const { processFoldersUnified } = await import('../../../services/importService');
+            const { GeneratorTool } = await import('../../../types');
+            const { WebUIVariant } = await import('../../../services/a1111/types');
+
+            // 1. Prepare New Folders (with lastScanned set to NOW to bypass auto-monitor)
+            const brandNew = toLink.filter(c => !c.isAlreadyLinked);
+            const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
+
+            const now = Date.now();
+            const newFolderObjects = brandNew.map(c => {
+                let variant: GeneratorTool | undefined = undefined;
+                if (c.variant === WebUIVariant.FORGE) variant = GeneratorTool.FORGE;
+                else if (c.variant === WebUIVariant.SDNEXT) variant = GeneratorTool.SDNEXT;
+                else if (c.variant === WebUIVariant.ANAPNOE) variant = GeneratorTool.ANAPNOE;
+                else if (c.variant === WebUIVariant.A1111) variant = GeneratorTool.AUTOMATIC1111;
+
+                return {
+                    id: `a1111_${c.inferredType}_${now}_${Math.random().toString(36).substr(2, 5)}`,
+                    path: c.path,
+                    isActive: true,
+                    imageCount: c.imageCount,
+                    variant: variant,
+                    lastScanned: now // CRITICAL: Prevents useFolderMonitor from scanning this again immediately
+                };
+            });
+
+            // 2. Update Settings (UI will show them immediately)
+            if (newFolderObjects.length > 0) {
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: [...prev.monitoredFolders, ...newFolderObjects]
+                }));
+            }
+
+            // 3. Build Unified Task List
+            const foldersToSync = [
+                ...alreadyLinked.map(c => {
+                    let variant = GeneratorTool.UNKNOWN;
                     if (c.variant === WebUIVariant.FORGE) variant = GeneratorTool.FORGE;
                     else if (c.variant === WebUIVariant.SDNEXT) variant = GeneratorTool.SDNEXT;
                     else if (c.variant === WebUIVariant.ANAPNOE) variant = GeneratorTool.ANAPNOE;
                     else if (c.variant === WebUIVariant.A1111) variant = GeneratorTool.AUTOMATIC1111;
+                    return { path: c.path, variant };
+                }),
+                ...newFolderObjects.map(f => ({ path: f.path, variant: f.variant }))
+            ];
 
-                    return {
-                        id: `a1111_${c.inferredType}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                        path: c.path,
-                        isActive: true,
-                        imageCount: c.imageCount,
-                        variant: variant
-                    };
+            // 4. Run Unified Import
+            if (foldersToSync.length > 0) {
+                await processFoldersUnified(foldersToSync, {
+                    onProgress: (current, total, message) => {
+                        setImportProgress({ current, total, message });
+                    },
+                    forceRescan: false
                 });
-                return {
-                    ...prev,
-                    monitoredFolders: [...prev.monitoredFolders, ...newFolders]
-                };
-            });
-        }
-
-        // If there are already linked folders, trigger a manual scan for them
-        if (alreadyLinked.length > 0) {
-            try {
-                const { processNativePaths } = await import('../../../services/importService');
-                const { getThumbnailDir } = await import('../../../services/thumbnailService');
-                const { GeneratorTool } = await import('../../../types');
-                const { WebUIVariant } = await import('../../../services/a1111/types');
-
-                const thumbDir = await getThumbnailDir();
-
-                setIsDiscovering(true);
-                setIsImporting(true);
-                setImportProgress({ current: 0, total: alreadyLinked.length, message: 'Starting sync...' });
-
-                // Group by variant to pass the correct defaultTool
-                const groups = new Map<string, typeof alreadyLinked>();
-                for (const c of alreadyLinked) {
-                    const v = c.variant || 'Unknown';
-                    if (!groups.has(v)) groups.set(v, []);
-                    groups.get(v)!.push(c);
-                }
-
-                let processedCount = 0;
-                for (const [variant, group] of groups) {
-                    let defaultTool = GeneratorTool.UNKNOWN;
-                    if (variant === WebUIVariant.FORGE) defaultTool = GeneratorTool.FORGE;
-                    else if (variant === WebUIVariant.SDNEXT) defaultTool = GeneratorTool.SDNEXT;
-                    else if (variant === WebUIVariant.ANAPNOE) defaultTool = GeneratorTool.ANAPNOE;
-                    else if (variant === WebUIVariant.A1111) defaultTool = GeneratorTool.AUTOMATIC1111;
-
-                    await processNativePaths(group.map(c => c.path), thumbDir, (curr, tot, msg) => {
-                        // curr is for this batch
-                        const actualCurrent = processedCount + curr;
-                        const actualTotal = alreadyLinked.length; // Approximate if batched weirdly, but total passed to us is usually total for that batch. 
-                        // Check processNativePaths implementation, it calls onProgress with (current, total, msg).
-                        // Wait, processNativePaths total is the batch size? No, totalToProcess.
-                        // So we should just map it relative to total
-                        setImportProgress({ current: actualCurrent, total: alreadyLinked.length, message: msg });
-                    }, defaultTool);
-
-                    processedCount += group.length;
-                }
 
                 if (refreshCollections) refreshCollections();
-                setLocalTestResult({ success: true, message: `Successfully synced ${alreadyLinked.length} folders!` });
-            } catch (e) {
-                console.error("Manual sync failed", e);
-                setLocalTestResult({ success: false, message: "Sync failed. See console for details." });
-            } finally {
-                setIsDiscovering(false);
-                setIsImporting(false);
-                setImportProgress(null);
-            }
-        } else {
-            setLocalTestResult({ success: true, message: `Successfully linked ${brandNew.length} folders!` });
-            if (brandNew.length > 0) {
-                addToast(`Linked ${brandNew.length} folders. Import started in background...`, 'info');
-            }
-        }
+                if (refreshMetadata) await refreshMetadata(); // Force full gallery refresh
 
-        setCandidates([]);
+                const totalCount = foldersToSync.length;
+                const msg = `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
+                setLocalTestResult({ success: true, message: msg });
+                addToast(msg, 'success');
+            }
+
+        } catch (e) {
+            console.error("Link/Import failed", e);
+            setLocalTestResult({ success: false, message: "Use Check Console for details" });
+            addToast("Import failed", "error");
+        } finally {
+            setIsDiscovering(false);
+            setIsImporting(false); // Ref-counting: -1
+            setImportProgress(null);
+            setCandidates([]); // Clear selection
+        }
     };
 
     const displayedCandidates = showAllFolders

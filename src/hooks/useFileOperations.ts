@@ -7,7 +7,7 @@ import { recoverImageMetadata } from '../services/geminiService';
 import { useToast } from './useToast';
 import { open } from '@tauri-apps/plugin-dialog';
 import { remove } from '@tauri-apps/plugin-fs';
-import { processWebFiles, processNativePaths, ImportResult } from '../services/importService';
+import { processWebFiles, processNativePaths, processFoldersUnified, ImportResult } from '../services/importService';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -63,10 +63,13 @@ export const useFileOperations = ({
 
         if (uniqueNewImages.length > 0) {
             // Optimization: If importing a huge number of images (e.g. > 500), 
+            // OR if specifically requested (for "Folder Import" consistency),
             // directly updating the state causes React DevTools to crash (DataCloneError) or freezes the UI.
             // In these cases, we skip the optimistic update and just trigger a full refresh.
-            if (uniqueNewImages.length > 500) {
-                console.log(`[FileOps] Large import detected (${uniqueNewImages.length} images). Skipping incremental state update.`);
+            if (uniqueNewImages.length > 500 || (result.stats.processed > 0 && result.stats.imported > 0)) {
+                // Changed logic: Always refresh metadata for non-trivial imports to ensure Facet Cache & Gallery are 100% in sync
+                // Optimistic updates are great for drag-drop single files, but for batches, a hard refresh is safer for consistency.
+                console.log(`[FileOps] Batch import detected. Triggering full metadata refresh.`);
                 await refreshMetadata();
             } else {
                 setImages(prev => {
@@ -171,19 +174,53 @@ export const useFileOperations = ({
     }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult, addToast]);
 
     const handleImportFolders = useCallback(async (folders: { path: string, variant?: string }[], isStartup = false) => {
-        // Group by variant to optimize bulk processing
-        const byVariant: Record<string, string[]> = {};
-        for (const { path, variant } of folders) {
-            const v = variant || 'Unknown';
-            if (!byVariant[v]) byVariant[v] = [];
-            byVariant[v].push(path);
-        }
+        // FIX: Use unified processor to prevent double-scanning and ensure consistent progress
+        setIsImporting(true);
+        const abortCtrl = new AbortController();
+        setImportAbortController(abortCtrl);
 
-        for (const [variant, paths] of Object.entries(byVariant)) {
-            const v = variant === 'Unknown' ? undefined : (variant as GeneratorTool);
-            await handleImportPaths(paths, v, { isStartup });
+        try {
+            // Map string variant back to GeneratorTool enum if needed
+            const typedFolders = folders.map(f => ({
+                path: f.path,
+                variant: f.variant as GeneratorTool | undefined
+            }));
+
+            // Unified Process: Scans, batches, and imports efficiently
+            const result = await processFoldersUnified(typedFolders, {
+                onProgress: (current, total, message) => {
+                    setImportProgress({ current, total, message });
+                },
+                abortSignal: abortCtrl.signal,
+                isStartup,
+                forceRescan: false // Standard import skips existing
+            });
+
+            // Commit results to state (UI Update)
+            if (result.images.length > 0) {
+                await commitImportResult(result, isStartup);
+            }
+
+            if (!isStartup) {
+                if (result.images.length > 0) {
+                    addToast(`Imported ${result.images.length} images from ${folders.length} folder(s)`, 'success');
+                } else if (result.stats.skipped > 0) {
+                    addToast(`Scan complete. No new images found.`, 'info');
+                } else if (result.stats.errors > 0) {
+                    addToast(`Scan complete with ${result.stats.errors} errors.`, 'warning');
+                } else {
+                    addToast('No images found in selected folders', 'info');
+                }
+            }
+        } catch (error) {
+            console.error('[ImportFolders] Error:', error);
+            if (!isStartup) addToast('Import failed', 'error');
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportAbortController(null);
         }
-    }, [handleImportPaths]);
+    }, [setIsImporting, setImportProgress, setImportAbortController, addToast, commitImportResult]);
 
     const scanDirectory = useCallback(async (dirPath: string) => {
         setIsImporting(true);
