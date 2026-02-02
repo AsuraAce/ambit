@@ -52,6 +52,11 @@ interface LibraryState {
     backgroundHealingProgress: SyncProgress | null;
     backgroundHealingPaused: boolean;
 
+    // Background Metadata Re-parsing State
+    isReparsingMetadata: boolean;
+    reparseProgress: SyncProgress | null;
+    reparseTrigger: number; // Incremented to signal manual trigger
+
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
 
@@ -88,6 +93,12 @@ interface LibraryState {
     setBackgroundHealingActive: (val: boolean) => void;
     setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
     setBackgroundHealingPaused: (val: boolean) => void;
+
+    // Background Metadata Re-parsing Actions
+    setIsReparsingMetadata: (val: boolean) => void;
+    setReparseProgress: (progress: SyncProgress | null) => void;
+    triggerReparse: () => void;
+    cancelReparse: () => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -127,6 +138,11 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isBackgroundHealingActive: false,
     backgroundHealingProgress: null,
     backgroundHealingPaused: false,
+
+    // Background Metadata Re-parsing State
+    isReparsingMetadata: false,
+    reparseProgress: null,
+    reparseTrigger: 0,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -183,4 +199,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setBackgroundHealingActive: (val) => set({ isBackgroundHealingActive: val }),
     setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
     setBackgroundHealingPaused: (val) => set({ backgroundHealingPaused: val }),
+
+    // Background Metadata Re-parsing Actions
+    setIsReparsingMetadata: (val) => set({ isReparsingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
+    setReparseProgress: (progress) => set({ reparseProgress: progress }),
+    triggerReparse: () => set((state) => ({ reparseTrigger: state.reparseTrigger + 1 })),
+    cancelReparse: () => set({ isReparsingMetadata: false, reparseProgress: null }),
 }));

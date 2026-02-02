@@ -9,6 +9,7 @@ pub mod m39_fix_backfill;
 pub mod m40_guidance;
 pub mod m41_cache;
 pub mod m42_facet_guidance;
+pub mod m43_parser_version;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -27,6 +28,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m40_guidance::migration40());
     migrations.push(m41_cache::migration41());
     migrations.push(m42_facet_guidance::migration42());
+    migrations.push(m43_parser_version::migration43());
     
     // Ensure migrations are sorted by version (tauri-plugin-sql needs this?)
     // Actually, pushing in order is usually enough, but let's be safe if needed.
@@ -34,3 +36,4 @@ pub fn get_migrations() -> Vec<Migration> {
     
     migrations
 }
+

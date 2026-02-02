@@ -381,6 +381,21 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
     };
 };
 
+/**
+ * Canonical stringify to ignore key order for metadata comparison
+ */
+function canonicalStringify(obj: any): string {
+    if (obj === null || typeof obj !== 'object') {
+        return JSON.stringify(obj);
+    }
+    const allKeys = Object.keys(obj).sort();
+    const result: any = {};
+    for (const key of allKeys) {
+        result[key] = canonicalStringify(obj[key]);
+    }
+    return JSON.stringify(result);
+}
+
 // Legacy Wrapper - maintains backward compatibility for file-list imports
 export const processNativePaths = async (
     paths: string[],

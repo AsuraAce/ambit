@@ -26,6 +26,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::facets::get_valid_facet_names,
         db::commands::mark_images_corrupt,
         db::commands::verify_library_integrity,
+        // db reparse commands
+        db::commands::get_images_needing_reparse,
+        db::commands::get_reparse_count,
+        db::commands::reparse_metadata_batch,
+        db::commands::reset_parser_versions,
         // db backup commands
         db::backup::get_backups,
         db::backup::backup_database,
