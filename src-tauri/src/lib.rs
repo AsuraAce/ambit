@@ -30,7 +30,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // db reparse commands (single-pass backend)
         db::reparse::start_reparse_job,
         db::reparse::cancel_reparse_job,
-        db::reparse::force_reparse_all,
+
         db::commands::get_metadata_stats,
         // db backup commands
         db::backup::get_backups,

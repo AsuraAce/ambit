@@ -74,7 +74,7 @@ export function useMetadataReparse() {
         setIsReparsingMetadata(true);
 
         try {
-            const result = await invoke<ReparseResult>('start_reparse_job');
+            const result = await invoke<ReparseResult>('start_reparse_job', { forceReparse: false });
             console.log('[Reparse] Job returned:', result);
             // Note: completion handling happens via event listener above
         } catch (err) {
@@ -100,12 +100,7 @@ export function useMetadataReparse() {
         setIsReparsingMetadata(true);
 
         try {
-            // First, reset all parser versions
-            const resetCount = await invoke<number>('force_reparse_all');
-            addToast(`Marked ${resetCount.toLocaleString()} images for re-parsing`, 'info');
-
-            // Then start the reparse job
-            const result = await invoke<ReparseResult>('start_reparse_job');
+            const result = await invoke<ReparseResult>('start_reparse_job', { forceReparse: true });
             console.log('[Reparse] Job returned:', result);
             // Note: completion handling happens via event listener above
         } catch (err) {

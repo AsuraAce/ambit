@@ -137,9 +137,9 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
  * 
  * NOTE: Uses batch fetching to avoid memory exhaustion on large libraries.
  */
-async startReparseJob() : Promise<Result<ReparseJobResult, string>> {
+async startReparseJob(forceReparse: boolean) : Promise<Result<ReparseJobResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job") };
+    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -150,19 +150,6 @@ async startReparseJob() : Promise<Result<ReparseJobResult, string>> {
  */
 async cancelReparseJob() : Promise<void> {
     await TAURI_INVOKE("cancel_reparse_job");
-},
-/**
- * Force reset all parser versions to trigger a full re-parse.
- * This is a dev tool - sets all images to parser_version = 0.
- * Uses batched updates to avoid blocking.
- */
-async forceReparseAll() : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("force_reparse_all") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
 },
 async getMetadataStats() : Promise<Result<MetadataStats, string>> {
     try {

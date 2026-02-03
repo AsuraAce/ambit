@@ -59,6 +59,7 @@ pub struct ReparseJobResult {
 pub async fn start_reparse_job(
     app: tauri::AppHandle,
     state: tauri::State<'_, ReparseState>,
+    force_reparse: bool,
 ) -> Result<ReparseJobResult, String> {
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
@@ -87,15 +88,24 @@ pub async fn start_reparse_job(
         });
 
         // Count total work upfront
-        let total: usize = conn.query_row(
-            &format!(
+        let count_query = if force_reparse {
+            "SELECT COUNT(*) FROM images 
+             WHERE is_deleted = 0 
+               AND original_metadata_json IS NOT NULL 
+               AND original_metadata_json != ''".to_string()
+        } else {
+            format!(
                 "SELECT COUNT(*) FROM images 
                  WHERE (parser_version IS NULL OR parser_version < {}) 
                    AND is_deleted = 0 
                    AND original_metadata_json IS NOT NULL 
                    AND original_metadata_json != ''",
                 CURRENT_PARSER_VERSION
-            ),
+            )
+        };
+
+        let total: usize = conn.query_row(
+            &count_query,
             [],
             |r| r.get::<_, i64>(0)
         ).unwrap_or(0) as usize;
@@ -130,8 +140,8 @@ pub async fn start_reparse_job(
         let mut updated = 0;
         let mut errors = 0;
         let mut skipped_no_metadata = 0;
-        let batch_size = 100; // Efficient batch size
-        let progress_interval = 10; // Check interval
+        let batch_size = 2000; // Efficient batch size (increased from 100)
+        let progress_interval = 50; // Check interval (increased from 10)
         let mut last_emit_time = std::time::Instant::now();
         let min_emit_interval = std::time::Duration::from_millis(100); // Max ~10 updates/sec
         let mut was_cancelled = false;
@@ -156,16 +166,30 @@ pub async fn start_reparse_job(
 
             // SERIAL PHASE: Fetch batch
             let batch: Vec<(String, String, String, String)> = {
-                let mut stmt = conn.prepare_cached(&format!(
-                    "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                     FROM images 
-                     WHERE (parser_version IS NULL OR parser_version < {}) 
-                       AND is_deleted = 0 
-                       AND original_metadata_json IS NOT NULL 
-                       AND original_metadata_json != ''
-                     LIMIT {}",
-                    CURRENT_PARSER_VERSION, batch_size
-                )).map_err(|e| e.to_string())?;
+                let query = if force_reparse {
+                    format!(
+                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                         FROM images 
+                         WHERE is_deleted = 0 
+                           AND original_metadata_json IS NOT NULL 
+                           AND original_metadata_json != ''
+                         LIMIT {} OFFSET {}",
+                        batch_size, processed
+                    )
+                } else {
+                    format!(
+                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                         FROM images 
+                         WHERE (parser_version IS NULL OR parser_version < {}) 
+                           AND is_deleted = 0 
+                           AND original_metadata_json IS NOT NULL 
+                           AND original_metadata_json != ''
+                         LIMIT {}",
+                        CURRENT_PARSER_VERSION, batch_size
+                    )
+                };
+
+                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
                 
                 let rows = stmt.query_map([], |row| {
                     Ok((
@@ -396,94 +420,3 @@ pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 
-/// Force reset all parser versions to trigger a full re-parse.
-/// This is a dev tool - sets all images to parser_version = 0.
-/// Uses batched updates to avoid blocking.
-#[tauri::command(rename_all = "camelCase")]
-#[specta::specta]
-pub async fn force_reparse_all(app: tauri::AppHandle) -> Result<usize, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        log::info!("[Reparse] Force re-parse all requested");
-        
-        let db_path = resolve_db_path(&app)?;
-        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-        configure_connection(&conn).map_err(|e| e.to_string())?;
-        
-        // Count total eligible images (simplified check for speed)
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM images 
-             WHERE is_deleted = 0 
-               AND (parser_version != 0 OR parser_version IS NULL)",
-            [],
-            |r| r.get(0)
-        ).unwrap_or(0);
-        
-        if total == 0 {
-            log::info!("[Reparse] No images eligible for re-parsing found");
-            return Ok(0);
-        }
-        
-        log::info!("[Reparse] Resetting parser version for {} images", total);
-        
-        // Signal start of reset phase
-        let _ = app.emit("reparse-progress", ReparseProgress {
-            current: 0,
-            total: total as usize,
-            phase: "resetting".to_string(),
-            message: format!("Resetting database for {} images...", total),
-        });
-        
-        // Batch the updates to avoid locking the DB for too long
-        // Optimization: Removed original_metadata_json check to avoid reading large blobs during reset
-        let batch_size = 1000;
-        let mut updated_total = 0;
-        
-        loop {
-            let loop_start = std::time::Instant::now();
-            let tx = conn.transaction().map_err(|e| e.to_string())?;
-            
-            let count = tx.execute(
-                &format!(
-                    "UPDATE images SET parser_version = 0 
-                     WHERE id IN (
-                         SELECT id FROM images 
-                         WHERE (parser_version != 0 OR parser_version IS NULL)
-                           AND is_deleted = 0 
-                         LIMIT {}
-                     )", 
-                    batch_size
-                ),
-                []
-            ).map_err(|e| e.to_string())?;
-            
-            tx.commit().map_err(|e| e.to_string())?;
-            
-            if count == 0 {
-                break;
-            }
-            
-            updated_total += count;
-            let loop_dur = loop_start.elapsed();
-            
-            // Log every batch to debug speed
-            log::info!("[Reparse] Reset batch: {} items in {:.2}ms. Total: {}/{}. Progress emit...", 
-                count, loop_dur.as_secs_f64() * 1000.0, updated_total, total);
-
-            // Emit progress EVERY batch to ensure UI moves
-            let _ = app.emit("reparse-progress", ReparseProgress {
-                current: updated_total,
-                total: total as usize,
-                phase: "resetting".to_string(),
-                message: format!("Resetting: {} / {}", updated_total, total),
-            });
-            
-            // Cooperative sleep
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        
-        log::info!("[Reparse] Reset complete: {} images", updated_total);
-        Ok(updated_total)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
