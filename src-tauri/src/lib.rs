@@ -15,23 +15,27 @@ use watcher::WatcherState;
 pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         // db commands
-        db::commands::save_images_batch,
-        db::commands::get_db_diagnostics,
-        db::commands::refresh_boards_native,
-        db::commands::get_image_count_for_path_prefix,
-        db::commands::optimize_database,
-        db::commands::purge_database,
-        db::commands::get_parameter_ranges,
-        db::commands::backfill_parameter_columns,
+        db::commands::image_commands::save_images_batch,
+        db::commands::maintenance::get_db_diagnostics,
+        db::commands::image_commands::refresh_boards_native,
+        db::commands::image_commands::get_image_count_for_path_prefix,
+        db::commands::maintenance::optimize_database,
+        db::commands::maintenance::purge_database,
+        db::commands::filter_commands::get_parameter_ranges,
+        db::commands::filter_commands::backfill_parameter_columns,
         db::facets::rebuild_facet_cache,
         db::facets::get_valid_facet_names,
-        db::commands::mark_images_corrupt,
-        db::commands::verify_library_integrity,
-        // db reparse commands (single-pass backend)
+        db::commands::image_commands::mark_images_corrupt,
+        db::commands::image_commands::verify_library_integrity,
+        // db reparse commands
         db::reparse::start_reparse_job,
         db::reparse::cancel_reparse_job,
+        db::commands::reparse_commands::get_images_needing_reparse,
+        db::commands::reparse_commands::get_reparse_count,
+        db::commands::reparse_commands::reparse_metadata_batch,
+        db::commands::reparse_commands::reset_parser_versions,
 
-        db::commands::get_metadata_stats,
+        db::commands::filter_commands::get_metadata_stats,
         // db backup commands
         db::backup::get_backups,
         db::backup::backup_database,

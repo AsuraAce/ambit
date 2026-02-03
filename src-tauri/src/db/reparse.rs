@@ -73,8 +73,8 @@ pub async fn start_reparse_job(
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         
-        // Configure for maximum write performance
-        configure_connection(&conn).map_err(|e| e.to_string())?;
+        // Use shared configuration
+        crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;").map_err(|e| e.to_string())?;
         conn.busy_timeout(std::time::Duration::from_secs(60)).map_err(|e| e.to_string())?; // Longer timeout
         
@@ -198,9 +198,11 @@ pub async fn start_reparse_job(
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
                     ))
-                }).map_err(|e| e.to_string())?;
+                }).map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, rusqlite::Error>>()
+                .map_err(|e| e.to_string())?;
                 
-                rows.filter_map(|r| r.ok()).collect()
+                rows
             };
             
             if batch.is_empty() {
