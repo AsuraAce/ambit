@@ -74,6 +74,9 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         }));
 
         const CHUNK_SIZE = 5000;
+        if (records.length > 0) {
+            console.log(`[RepoDebug] Saving batch. First record originalMetadataJson:`, records[0].originalMetadataJson ? records[0].originalMetadataJson.substring(0, 100) : 'NULL');
+        }
         for (let i = 0; i < records.length; i += CHUNK_SIZE) {
             const chunk = records.slice(i, i + CHUNK_SIZE);
             try {

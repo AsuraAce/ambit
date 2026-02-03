@@ -1115,18 +1115,106 @@ pub async fn reparse_metadata_batch(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn reset_parser_versions(app: tauri::AppHandle) -> Result<usize, String> {
+    use tauri::Emitter;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        log::info!("[Reparse] reset_parser_versions command received");
+        let db_path = resolve_db_path(&app)?;
+        
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        
+        log::info!("[Reparse] Configuring connection (WAL + Busy Timeout)...");
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+        conn.busy_timeout(std::time::Duration::from_secs(2)).map_err(|e| e.to_string())?;
+        
+        // Count total to work on
+        let total_to_reset: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM images WHERE is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL)",
+            [],
+            |r| r.get(0)
+        ).unwrap_or(0);
+        
+        log::info!("[Reparse] Total rows to reset: {}", total_to_reset);
+        let _ = app.emit("reset-progress", format!("Found {} images to reset...", total_to_reset));
+
+        let mut total_updated = 0;
+        let batch_size = 1000; // Smaller batch for smoother UI and less locking
+        
+        loop {
+            // Check for cancellation or just emit progress
+            let _ = app.emit("reset-progress", format!("Resetting... {} / {}", total_updated, total_to_reset));
+            log::info!("[Reparse] Starting batch update (Batch size: {})", batch_size);
+            
+            let start = std::time::Instant::now();
+            let updated = conn.execute(
+                "UPDATE images 
+                 SET parser_version = 0 
+                 WHERE id IN (
+                     SELECT id FROM images 
+                     WHERE is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL)
+                     LIMIT ?
+                 )",
+                [batch_size]
+            ).map_err(|e| e.to_string())?;
+            
+            let duration = start.elapsed();
+            log::info!("[Reparse] Batch finished in {:?}. Updated: {}", duration, updated);
+            
+            total_updated += updated;
+            
+            if updated == 0 {
+                break;
+            }
+            
+            // Allow other readers/writers
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        
+        let _ = app.emit("reset-progress", "Reset complete. Starting re-parse...".to_string());
+        log::info!("[Reparse] Successfully reset parser_version for {} images total", total_updated);
+        Ok(total_updated)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, specta::Type)]
+pub struct MetadataStats {
+    pub total: i64,
+    pub with_raw: i64,
+    pub with_pv: i64,
+    pub v0: i64,
+    pub v1: i64,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn get_metadata_stats(app: tauri::AppHandle) -> Result<MetadataStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-        configure_connection(&conn).map_err(|e| e.to_string())?;
         
-        let updated = conn.execute(
-            "UPDATE images SET parser_version = 0 WHERE is_deleted = 0",
-            []
-        ).map_err(|e| e.to_string())?;
-        
-        log::info!("[Reparse] Reset parser_version for {} images", updated);
-        Ok(updated)
+        let mut stmt = conn.prepare("
+            SELECT 
+                COUNT(*) as total, 
+                COUNT(original_metadata_json) as with_raw, 
+                COUNT(parser_version) as with_pv,
+                SUM(CASE WHEN parser_version = 0 THEN 1 ELSE 0 END) as v0,
+                SUM(CASE WHEN parser_version = 1 THEN 1 ELSE 0 END) as v1
+            FROM images WHERE is_deleted = 0
+        ").map_err(|e| e.to_string())?;
+
+        let stats = stmt.query_row([], |row| {
+            Ok(MetadataStats {
+                total: row.get(0)?,
+                with_raw: row.get(1)?,
+                with_pv: row.get(2)?,
+                v0: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                v1: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+            })
+        }).map_err(|e| e.to_string())?;
+
+        Ok(stats)
     })
     .await
     .map_err(|e| e.to_string())?

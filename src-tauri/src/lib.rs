@@ -5,6 +5,7 @@ mod scanner;
 mod thumb;
 mod watcher;
 
+use db::reparse::ReparseState;
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
 use watcher::WatcherState;
 
@@ -26,11 +27,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::facets::get_valid_facet_names,
         db::commands::mark_images_corrupt,
         db::commands::verify_library_integrity,
-        // db reparse commands
-        db::commands::get_images_needing_reparse,
-        db::commands::get_reparse_count,
-        db::commands::reparse_metadata_batch,
-        db::commands::reset_parser_versions,
+        // db reparse commands (single-pass backend)
+        db::reparse::start_reparse_job,
+        db::reparse::cancel_reparse_job,
+        db::reparse::force_reparse_all,
+        db::commands::get_metadata_stats,
         // db backup commands
         db::backup::get_backups,
         db::backup::backup_database,
@@ -100,6 +101,7 @@ pub fn run() {
         .manage(WatcherState::default())
         .manage(ModelResolutionState::default())
         .manage(ModelDiscoveryState::default())
+        .manage(ReparseState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             // 1. Initialize DB settings (WAL mode, etc.)

@@ -226,11 +226,7 @@ pub fn scan_image_internal(
         }
     }
 
-    let chunks_to_return = if parsed_metadata.workflow_json.is_some() {
-        HashMap::new()
-    } else {
-        chunks
-    };
+    let chunks_to_return = chunks;
 
     let metadata_obj = if found_metadata {
         Some(parsed_metadata)

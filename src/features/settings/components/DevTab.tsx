@@ -7,6 +7,7 @@ import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
+import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
@@ -76,22 +77,31 @@ export const DevTab: React.FC = () => {
         setSettings((prev) => ({ ...prev, devMode: !prev.devMode }));
     };
 
-    const handleForceReparse = async () => {
+    // Event listener for reset progress
+    React.useEffect(() => {
+        let unlisten: (() => void) | undefined;
+
+        const setupListener = async () => {
+            const { listen } = await import('@tauri-apps/api/event');
+            unlisten = await listen<string>('reset-progress', (event) => {
+                addToast(event.payload, 'info');
+            });
+        };
+
+        setupListener();
+
+        return () => {
+            if (unlisten) unlisten();
+        };
+    }, [addToast]);
+
+    const handleForceReparse = () => {
+        console.log('[DevTab] handleForceReparse clicked');
         setIsReparsing(true);
-        try {
-            const result = await commands.resetParserVersions();
-            if (result.status === 'ok') {
-                addToast(`Reset ${result.data.toLocaleString()} images for re-parsing`, 'success');
-                // Trigger the background reparse loop
-                useLibraryStore.getState().triggerReparse();
-            } else {
-                addToast(`Failed to reset: ${result.error}`, 'error');
-            }
-        } catch (err) {
-            addToast('Failed to reset parser versions', 'error');
-        } finally {
-            setIsReparsing(false);
-        }
+        // Trigger the reparse via store - the hook handles the full flow
+        useLibraryStore.getState().triggerReparse();
+        // Reset local state after a brief delay (actual progress tracked via events)
+        setTimeout(() => setIsReparsing(false), 500);
     };
 
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
@@ -282,6 +292,32 @@ export const DevTab: React.FC = () => {
                                                 Re-parse All
                                             </>
                                         )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Metadata Diagnostics */}
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Metadata Diagnostics</div>
+                                        <div className="text-xs text-gray-500">Check raw metadata storage status</div>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const res = await invoke<{ total: number, with_raw: number, with_pv: number, v0: number, v1: number }>('get_metadata_stats');
+                                                const msg = `Total: ${res.total}, With Raw: ${res.with_raw}, V0: ${res.v0}, V1: ${res.v1}`;
+                                                addToast(msg, 'info');
+                                                await navigator.clipboard.writeText(msg);
+                                                addToast('Stats copied to clipboard', 'success');
+                                            } catch (e: any) {
+                                                addToast(`Error: ${e.message || e}`, 'error');
+                                            }
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-gray-500/20"
+                                    >
+                                        Run Check
                                     </button>
                                 </div>
                             </div>

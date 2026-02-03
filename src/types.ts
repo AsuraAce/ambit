@@ -110,6 +110,7 @@ export interface AIImage {
   isFavorite: boolean;
   isPinned?: boolean;
   isDeleted?: boolean; // Soft delete flag
+  isIntermediate?: boolean;
   isMissing?: boolean; // File system link broken
   isCorrupt?: boolean; // File scan failed permanently
   userMasked?: boolean; // Explicit manual mask

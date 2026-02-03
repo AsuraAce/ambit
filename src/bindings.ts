@@ -127,47 +127,46 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
 }
 },
 /**
- * Get count and batch of images needing metadata re-parsing.
- * Returns images where parser_version < CURRENT_PARSER_VERSION.
+ * Start the single-pass metadata re-parsing job.
+ * 
+ * This command:
+ * 1. Opens a dedicated database connection
+ * 2. Streams all images needing reparse (parser_version < CURRENT)
+ * 3. Parses metadata in memory and batches updates
+ * 4. Emits progress events for UI updates
+ * 
+ * NOTE: Uses batch fetching to avoid memory exhaustion on large libraries.
  */
-async getImagesNeedingReparse(limit: number | null) : Promise<Result<ImageToReparse[], string>> {
+async startReparseJob() : Promise<Result<ReparseJobResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_images_needing_reparse", { limit }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Get count of images needing re-parsing (for progress display).
+ * Cancel the currently running reparse job.
  */
-async getReparseCount() : Promise<Result<number, string>> {
+async cancelReparseJob() : Promise<void> {
+    await TAURI_INVOKE("cancel_reparse_job");
+},
+/**
+ * Force reset all parser versions to trigger a full re-parse.
+ * This is a dev tool - sets all images to parser_version = 0.
+ * Uses batched updates to avoid blocking.
+ */
+async forceReparseAll() : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_reparse_count") };
+    return { status: "ok", data: await TAURI_INVOKE("force_reparse_all") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Re-parse a batch of images from their stored original_metadata_json.
- * Updates metadata_json, denormalized columns, and parser_version.
- */
-async reparseMetadataBatch(images: ImageToReparse[]) : Promise<Result<ReparseBatchResult, string>> {
+async getMetadataStats() : Promise<Result<MetadataStats, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("reparse_metadata_batch", { images }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Force re-parse all images by resetting parser_version to 0.
- * Dev tool for testing parser improvements.
- */
-async resetParserVersions() : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("reset_parser_versions") };
+    return { status: "ok", data: await TAURI_INVOKE("get_metadata_stats") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -416,10 +415,6 @@ microThumbnail: string | null;
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
 thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
-/**
- * Image needing re-parse: minimal data for efficient batch processing.
- */
-export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 /**
  * Verify integrity of the entire library.
@@ -428,6 +423,7 @@ export type ImportResult = { added: number; totalFound: number; message: string 
  * Returns (missing_files_count, recovered_files_count, broken_thumbs_count)
  */
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
+export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 /**
  * Numeric range for a parameter
  */
@@ -437,9 +433,9 @@ export type NumericRange = { min: number; max: number }
  */
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
 /**
- * Result of a batch re-parse operation.
+ * Result of a reparse job.
  */
-export type ReparseBatchResult = { processed: number; updated: number; errors: number }
+export type ReparseJobResult = { processed: number; updated: number; errors: number; wasCancelled: boolean }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**

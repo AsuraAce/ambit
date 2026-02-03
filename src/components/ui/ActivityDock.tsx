@@ -22,7 +22,8 @@ export const ActivityDock: React.FC = () => {
         cancelImport,
         cancelThumbnailRegeneration,
         cancelSync,
-        cancelReparse
+        cancelReparse,
+        reparseTrigger
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -30,7 +31,9 @@ export const ActivityDock: React.FC = () => {
     // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing
     const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
-    const isReparseActive = isReparsingMetadata && !isHighPriorityActive && !isBackgroundActive;
+
+    // Show reparse if active AND (no high priority OR it was manually triggered)
+    const isReparseActive = isReparsingMetadata && (!isHighPriorityActive || reparseTrigger > 0) && !isBackgroundActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isReparseActive;
 
@@ -63,8 +66,8 @@ export const ActivityDock: React.FC = () => {
         isLowPriority = true;
     } else if (isReparseActive) {
         progress = reparseProgress;
-        label = "Refreshing Metadata";
-        isLowPriority = true;
+        label = reparseTrigger > 0 ? "Re-parsing Metadata" : "Refreshing Metadata";
+        isLowPriority = reparseTrigger === 0;
     }
 
     const current = progress?.current || 0;

@@ -148,8 +148,12 @@ async function processFileEntries(
                     metadata: info.metadata,
                     url: convertFileSrc(path),
                     thumbnailSource: info.thumbnailSource,
-                    microThumbnail: info.microThumbnail
+                    microThumbnail: info.microThumbnail,
+                    originalChunks: info.originalChunks,
                 };
+                if (j === 0) {
+                    console.log(`[ImportDebug] Img ${path} - OrigChunks keys:`, info.originalChunks ? Object.keys(info.originalChunks) : 'undefined');
+                }
                 batchImages.push(img);
             }
 

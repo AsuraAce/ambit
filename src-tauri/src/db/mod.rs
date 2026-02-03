@@ -7,6 +7,7 @@ pub mod commands;
 pub mod error;
 pub mod facets;
 pub mod migrations;
+pub mod reparse;
 
 /// Apply performance-optimized PRAGMAs to a SQLite connection.
 /// Should be called immediately after opening any rusqlite connection.
