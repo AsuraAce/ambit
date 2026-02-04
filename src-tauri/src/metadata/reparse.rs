@@ -47,17 +47,30 @@ fn reparse_comfyui(original_json: &str) -> Option<ImageMetadata> {
     
     // Try to parse as JSON to see if it's a workflow or prompt structure
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(original_json) {
-        // If it has "workflow" key, it's already structured correctly
-        if parsed.get("workflow").is_some() {
-            chunks.insert("workflow".to_string(), parsed["workflow"].to_string());
-        } else if parsed.get("prompt").is_some() {
-            chunks.insert("prompt".to_string(), parsed["prompt"].to_string());
-        } else {
-            // Assume the whole thing is the prompt/workflow
-            chunks.insert("prompt".to_string(), original_json.to_string());
+        let mut found_any = false;
+        // Collect both if present
+        if let Some(wf) = parsed.get("workflow") {
+            let val = if let Some(s) = wf.as_str() { s.to_string() } else { wf.to_string() };
+            chunks.insert("workflow".to_string(), val);
+            found_any = true;
+        }
+        if let Some(prompt) = parsed.get("prompt") {
+            let val = if let Some(s) = prompt.as_str() { s.to_string() } else { prompt.to_string() };
+            chunks.insert("prompt".to_string(), val);
+            found_any = true;
+        }
+        
+        // Fallback: If neither was found, assume the whole thing is the JSON
+        if !found_any {
+             // Check if it's a string type (double encoded)
+             if let Some(s) = parsed.as_str() {
+                chunks.insert("prompt".to_string(), s.to_string());
+             } else {
+                chunks.insert("prompt".to_string(), original_json.to_string());
+             }
         }
     } else {
-        // If it's not valid JSON, treat it as a raw workflow string
+        // If it's not valid JSON, treat it as a raw workflow/prompt string
         chunks.insert("prompt".to_string(), original_json.to_string());
     }
     
@@ -137,12 +150,13 @@ mod tests {
     }
     
     #[test]
-    fn test_reparse_comfyui() {
-        // Minimal ComfyUI prompt structure
-        let original = r#"{"1": {"class_type": "KSampler", "inputs": {"seed": 42, "steps": 25}}}"#;
+    fn test_reparse_comfyui_both_chunks() {
+        let original = r#"{"workflow": {"nodes": []}, "prompt": {"1": {"class_type": "KSampler"}}}"#;
         let result = reparse_from_json(original, "ComfyUI").unwrap();
         
         assert_eq!(result.metadata.tool, "ComfyUI");
-        // ComfyUI parsing is complex, just verify it doesn't panic
+        // We can't easily check extract_comfyui_metadata's internal state here without mocking,
+        // but we can verify it doesn't return None and tool is set.
+        // The fix was specifically about populating the chunks map.
     }
 }

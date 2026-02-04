@@ -220,11 +220,11 @@ pub async fn start_reparse_job(
             }
 
             // PARALLEL PHASE: Parse metadata on all cores
-            let batch_results: Vec<(String, String, Option<crate::metadata::reparse::ReparseResult>)> = batch
+            let batch_results: Vec<(String, String, String, String, Option<crate::metadata::reparse::ReparseResult>)> = batch
                 .par_iter()
                 .map(|(id, tool, original_json, old_meta_json)| {
                     let result = reparse_from_json(original_json, tool);
-                    (id.clone(), old_meta_json.clone(), result)
+                    (id.clone(), tool.clone(), original_json.clone(), old_meta_json.clone(), result)
                 })
                 .collect();
             
@@ -316,11 +316,9 @@ pub async fn start_reparse_job(
                     WHERE value IS NOT NULL AND value != ''
                 ").map_err(|e| e.to_string())?;
                 
-                for (id, old_meta_json, parse_result) in batch_results {
+                for (id, tool, original_json, old_meta_json, parse_result) in batch_results {
                     processed += 1;
                     
-                    match parse_result {
-                        Some(result) => {
                             // OPTIMIZATION: If metadata haven't changed, only update parser_version
                             // This skips expensive triggers and junction table updates
                             if result.metadata_json == old_meta_json {
