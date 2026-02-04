@@ -78,13 +78,13 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     <button
                         type="button"
                         onClick={(e) => {
-                            // Debug modifier key
-                            console.log('[FolderItem] Reparse clicked. Shift:', e.shiftKey, 'Force:', !e.shiftKey);
-                            onReparse(path, !e.shiftKey);
+                            // Click = Resume (force=false), Shift+Click = Force (force=true)
+                            console.log('[FolderItem] Reparse clicked. Shift:', e.shiftKey, 'Force:', e.shiftKey);
+                            onReparse(path, e.shiftKey);
                         }}
                         disabled={isScanning}
                         className="p-1.5 text-gray-400 hover:text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20 rounded-lg transition-all"
-                        title="Force Reparse Metadata (Shift+Click to Resume/Scan Only)"
+                        title="Resume Smart Reparse (Shift+Click to Force Reparse All)"
                     >
                         <FileJson className="w-4 h-4" />
                     </button>

@@ -98,7 +98,7 @@ export function useMetadataReparse() {
     }, []);
 
     // Force re-parse all (dev tool) - resets parser versions then starts job
-    const forceReparseAll = useCallback(async (rootPath?: string, force: boolean = true) => {
+    const forceReparseAll = useCallback(async (rootPath?: string, force: boolean = false) => {
         console.log(`[Reparse] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}`);
         setIsReparsingMetadata(true);
 
