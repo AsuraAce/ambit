@@ -20,7 +20,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 /// for background re-parsing from their stored original_metadata_json.
 pub const CURRENT_PARSER_VERSION: u32 = 2;
 
-#[derive(serde::Serialize, Clone, Debug, specta::Type)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type)]
 pub struct ImageMetadata {
     pub tool: String,
     pub model: String,
