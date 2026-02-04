@@ -102,8 +102,11 @@ pub async fn start_reparse_job(
             }
 
             if let Some(r) = root {
-                clauses.push("path LIKE ? || '%'".to_string());
-                params.push(Box::new(r.clone()));
+                let normalized = r.trim_end_matches(['/', '\\']);
+                clauses.push("(path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
+                params.push(Box::new(normalized.to_string()));
+                params.push(Box::new(normalized.to_string()));
+                params.push(Box::new(normalized.to_string()));
             }
 
             (clauses.join(" AND "), params)
@@ -191,6 +194,7 @@ pub async fn start_reparse_job(
                     "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
                      FROM images 
                      WHERE {}
+                     ORDER BY id ASC
                      LIMIT {} OFFSET {}",
                     where_sql, batch_size, processed
                 );
