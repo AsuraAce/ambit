@@ -151,12 +151,21 @@ mod tests {
     
     #[test]
     fn test_reparse_comfyui_both_chunks() {
-        let original = r#"{"workflow": {"nodes": []}, "prompt": {"1": {"class_type": "KSampler"}}}"#;
+        let original = r#"{"workflow": "workflow_content", "prompt": "prompt_content"}"#;
         let result = reparse_from_json(original, "ComfyUI").unwrap();
         
         assert_eq!(result.metadata.tool, "ComfyUI");
-        // We can't easily check extract_comfyui_metadata's internal state here without mocking,
-        // but we can verify it doesn't return None and tool is set.
-        // The fix was specifically about populating the chunks map.
+        // Verify that workflow_json is populated from the actual workflow chunk
+        assert_eq!(result.metadata.workflow_json, Some("workflow_content".to_string()));
+    }
+
+    #[test]
+    fn test_reparse_comfyui_prompt_only() {
+        let original = r#"{"prompt": "prompt_content"}"#;
+        let result = reparse_from_json(original, "ComfyUI").unwrap();
+        
+        assert_eq!(result.metadata.tool, "ComfyUI");
+        // Fallback to prompt if workflow is missing
+        assert_eq!(result.metadata.workflow_json, Some("prompt_content".to_string()));
     }
 }

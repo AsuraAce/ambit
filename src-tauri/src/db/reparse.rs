@@ -112,14 +112,7 @@ pub async fn start_reparse_job(
             (clauses.join(" AND "), params)
         };
 
-        log::info!("[Reparse] Connection ready, counting total images...");
-        // Signal FE that we are actually in the backend
-        let _ = app.emit("reparse-progress", ReparseProgress {
-            current: 0,
-            total: 0,
-            phase: "counting".to_string(),
-            message: "Calculating total images...".to_string(),
-        });
+
 
         // Count total work upfront
         let (where_sql, count_params) = build_filters(force_reparse, filter_root.as_ref());
@@ -319,11 +312,19 @@ pub async fn start_reparse_job(
                 for (id, tool, original_json, old_meta_json, parse_result) in batch_results {
                     processed += 1;
                     
+                    match parse_result {
+                        Some(result) => {
                             // OPTIMIZATION: If metadata haven't changed, only update parser_version
                             // This skips expensive triggers and junction table updates
                             if result.metadata_json == old_meta_json {
+                                if processed % 100 == 0 {
+                                   log::debug!("[Reparse] Image {} metadata unchanged. JSON length: {}", id, result.metadata_json.len());
+                                }
                                 let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
                             } else {
+                                if updated < 5 {
+                                    log::info!("[Reparse] Updating image {}. Diff: old={} new={}", id, old_meta_json.len(), result.metadata_json.len());
+                                }
                                 let meta = &result.metadata;
                                 let sampler_normalized = meta.sampler
                                     .to_lowercase()
