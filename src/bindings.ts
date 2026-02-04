@@ -45,10 +45,6 @@ async optimizeDatabase() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Request a database purge on next app startup.
- * Creates a marker file and immediately restarts the application.
- */
 async purgeDatabase() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("purge_database") };
@@ -57,10 +53,6 @@ async purgeDatabase() : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Get parameter ranges and distinct values for dynamic filter UI.
- * Only returns non-null/non-default values to show what data actually exists.
- */
 async getParameterRanges(whereClause: string | null, paramsJson: string | null, collectionId: string | null, loraName: string | null) : Promise<Result<ParameterRanges, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_parameter_ranges", { whereClause, paramsJson, collectionId, loraName }) };
@@ -69,11 +61,6 @@ async getParameterRanges(whereClause: string | null, paramsJson: string | null, 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
- * This runs in batches to avoid blocking the database and can be called after app startup.
- * Returns the number of rows updated.
- */
 async backfillParameterColumns() : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("backfill_parameter_columns") };
@@ -106,10 +93,6 @@ async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: 
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Mark a batch of images as corrupt to prevent further processing attempts.
- * This clears any partial thumbnail data and sets is_corrupt = 1.
- */
 async markImagesCorrupt(ids: string[]) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mark_images_corrupt", { ids }) };
@@ -137,9 +120,9 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
  * 
  * NOTE: Uses batch fetching to avoid memory exhaustion on large libraries.
  */
-async startReparseJob(forceReparse: boolean) : Promise<Result<ReparseJobResult, string>> {
+async startReparseJob(forceReparse: boolean, filterRoot: string | null) : Promise<Result<ReparseJobResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse, filterRoot }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -150,6 +133,38 @@ async startReparseJob(forceReparse: boolean) : Promise<Result<ReparseJobResult, 
  */
 async cancelReparseJob() : Promise<void> {
     await TAURI_INVOKE("cancel_reparse_job");
+},
+async getImagesNeedingReparse(limit: number | null) : Promise<Result<ImageToReparse[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_images_needing_reparse", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getReparseCount() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_reparse_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reparseMetadataBatch(images: ImageToReparse[]) : Promise<Result<ReparseBatchResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reparse_metadata_batch", { images }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetParserVersions() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_parser_versions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 async getMetadataStats() : Promise<Result<MetadataStats, string>> {
     try {
@@ -402,23 +417,13 @@ microThumbnail: string | null;
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
 thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
-/**
- * Verify integrity of the entire library.
- * 1. Checks if source file exists -> Updates is_missing
- * 2. If source exists, checks if thumbnail exists -> Clears thumbnail_path if missing (triggers regen)
- * Returns (missing_files_count, recovered_files_count, broken_thumbs_count)
- */
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
-/**
- * Numeric range for a parameter
- */
 export type NumericRange = { min: number; max: number }
-/**
- * Parameter ranges and distinct values for dynamic filters
- */
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
+export type ReparseBatchResult = { processed: number; updated: number; errors: number }
 /**
  * Result of a reparse job.
  */

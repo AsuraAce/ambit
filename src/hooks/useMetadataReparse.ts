@@ -74,7 +74,10 @@ export function useMetadataReparse() {
         setIsReparsingMetadata(true);
 
         try {
-            const result = await invoke<ReparseResult>('start_reparse_job', { forceReparse: false });
+            const result = await invoke<ReparseResult>('start_reparse_job', {
+                forceReparse: false,
+                filterRoot: null
+            });
             console.log('[Reparse] Job returned:', result);
             // Note: completion handling happens via event listener above
         } catch (err) {
@@ -95,12 +98,15 @@ export function useMetadataReparse() {
     }, []);
 
     // Force re-parse all (dev tool) - resets parser versions then starts job
-    const forceReparseAll = useCallback(async () => {
-        console.log('[Reparse] Force re-parse all requested');
+    const forceReparseAll = useCallback(async (rootPath?: string, force: boolean = true) => {
+        console.log(`[Reparse] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}`);
         setIsReparsingMetadata(true);
 
         try {
-            const result = await invoke<ReparseResult>('start_reparse_job', { forceReparse: true });
+            const result = await invoke<ReparseResult>('start_reparse_job', {
+                forceReparse: force,
+                filterRoot: rootPath || null
+            });
             console.log('[Reparse] Job returned:', result);
             // Note: completion handling happens via event listener above
         } catch (err) {

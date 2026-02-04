@@ -60,6 +60,7 @@ pub async fn start_reparse_job(
     app: tauri::AppHandle,
     state: tauri::State<'_, ReparseState>,
     force_reparse: bool,
+    filter_root: Option<String>,
 ) -> Result<ReparseJobResult, String> {
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
@@ -67,7 +68,7 @@ pub async fn start_reparse_job(
     
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
-        log::info!("[Reparse] Starting optimized reparse job");
+        log::info!("[Reparse] Starting optimized reparse job. Force: {}, Filter: {:?}", force_reparse, filter_root);
         
         log::info!("[Reparse] Thread started, opening connection...");
         let db_path = resolve_db_path(&app)?;
@@ -87,26 +88,44 @@ pub async fn start_reparse_job(
             message: "Calculating total images...".to_string(),
         });
 
-        // Count total work upfront
-        let count_query = if force_reparse {
-            "SELECT COUNT(*) FROM images 
-             WHERE is_deleted = 0 
-               AND original_metadata_json IS NOT NULL 
-               AND original_metadata_json != ''".to_string()
-        } else {
-            format!(
-                "SELECT COUNT(*) FROM images 
-                 WHERE (parser_version IS NULL OR parser_version < {}) 
-                   AND is_deleted = 0 
-                   AND original_metadata_json IS NOT NULL 
-                   AND original_metadata_json != ''",
-                CURRENT_PARSER_VERSION
-            )
+        // Helper to build WHERE clause and params
+        let build_filters = |force: bool, root: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+            let mut clauses = vec![
+                "is_deleted = 0".to_string(),
+                "original_metadata_json IS NOT NULL".to_string(),
+                "original_metadata_json != ''".to_string()
+            ];
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+            if !force {
+                clauses.push(format!("(parser_version IS NULL OR parser_version < {})", CURRENT_PARSER_VERSION));
+            }
+
+            if let Some(r) = root {
+                clauses.push("path LIKE ? || '%'".to_string());
+                params.push(Box::new(r.clone()));
+            }
+
+            (clauses.join(" AND "), params)
         };
+
+        log::info!("[Reparse] Connection ready, counting total images...");
+        // Signal FE that we are actually in the backend
+        let _ = app.emit("reparse-progress", ReparseProgress {
+            current: 0,
+            total: 0,
+            phase: "counting".to_string(),
+            message: "Calculating total images...".to_string(),
+        });
+
+        // Count total work upfront
+        let (where_sql, count_params) = build_filters(force_reparse, filter_root.as_ref());
+        log::info!("[Reparse] Query Filters: {}", where_sql);
+        let count_query = format!("SELECT COUNT(*) FROM images WHERE {}", where_sql);
 
         let total: usize = conn.query_row(
             &count_query,
-            [],
+            rusqlite::params_from_iter(count_params.iter()),
             |r| r.get::<_, i64>(0)
         ).unwrap_or(0) as usize;
         
@@ -166,32 +185,19 @@ pub async fn start_reparse_job(
 
             // SERIAL PHASE: Fetch batch
             let batch: Vec<(String, String, String, String)> = {
-                let query = if force_reparse {
-                    format!(
-                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                         FROM images 
-                         WHERE is_deleted = 0 
-                           AND original_metadata_json IS NOT NULL 
-                           AND original_metadata_json != ''
-                         LIMIT {} OFFSET {}",
-                        batch_size, processed
-                    )
-                } else {
-                    format!(
-                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                         FROM images 
-                         WHERE (parser_version IS NULL OR parser_version < {}) 
-                           AND is_deleted = 0 
-                           AND original_metadata_json IS NOT NULL 
-                           AND original_metadata_json != ''
-                         LIMIT {}",
-                        CURRENT_PARSER_VERSION, batch_size
-                    )
-                };
+                let (where_sql, fetch_params) = build_filters(force_reparse, filter_root.as_ref());
+                
+                let query = format!(
+                    "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                     FROM images 
+                     WHERE {}
+                     LIMIT {} OFFSET {}",
+                    where_sql, batch_size, processed
+                );
 
                 let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
                 
-                let rows = stmt.query_map([], |row| {
+                let rows = stmt.query_map(rusqlite::params_from_iter(fetch_params.iter()), |row| {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,

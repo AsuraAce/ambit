@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Folder, Monitor, RefreshCw, Trash2 } from 'lucide-react';
+import { Folder, Monitor, RefreshCw, Trash2, FileJson } from 'lucide-react';
 import { GeneratorTool } from '../../../types';
 
 interface FolderItemProps {
@@ -7,6 +7,8 @@ interface FolderItemProps {
     scanningIds: Set<string>;
     onRescan: (id: string, path: string, variant?: string, isManaged?: boolean) => void;
     onRemove: (id: string) => void;
+    showDevTools?: boolean;
+    onReparse?: (path: string, force: boolean) => void;
 }
 
 const getVariantIcon = (variant?: GeneratorTool) => {
@@ -28,7 +30,7 @@ const getVariantIcon = (variant?: GeneratorTool) => {
     }
 };
 
-export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove }) => {
+export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, showDevTools, onReparse }) => {
     const isScanning = scanningIds.has(folder.id);
     const path = folder.isManaged ? folder.pathRaw : folder.path;
 
@@ -71,6 +73,22 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                 >
                     <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
                 </button>
+
+                {showDevTools && onReparse && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            // Debug modifier key
+                            console.log('[FolderItem] Reparse clicked. Shift:', e.shiftKey, 'Force:', !e.shiftKey);
+                            onReparse(path, !e.shiftKey);
+                        }}
+                        disabled={isScanning}
+                        className="p-1.5 text-gray-400 hover:text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20 rounded-lg transition-all"
+                        title="Force Reparse Metadata (Shift+Click to Resume/Scan Only)"
+                    >
+                        <FileJson className="w-4 h-4" />
+                    </button>
+                )}
 
                 {!folder.isManaged && (
                     <button

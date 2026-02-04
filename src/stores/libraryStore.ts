@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { commands } from '../bindings';
 
 export interface SyncProgress {
@@ -204,5 +205,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsReparsingMetadata: (val) => set({ isReparsingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
     setReparseProgress: (progress) => set({ reparseProgress: progress }),
     triggerReparse: () => set((state) => ({ reparseTrigger: state.reparseTrigger + 1 })),
-    cancelReparse: () => set({ isReparsingMetadata: false, reparseProgress: null }),
+    cancelReparse: () => {
+        invoke('cancel_reparse_job').catch(console.error);
+        set({ isReparsingMetadata: false, reparseProgress: null });
+    },
 }));
