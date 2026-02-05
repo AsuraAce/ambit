@@ -3,7 +3,7 @@
 //! Single-pass backend-driven re-parsing of image metadata.
 //! Replaces the inefficient two-phase approach (reset → process).
 
-use crate::db::{configure_connection, resolve_db_path};
+use crate::db::resolve_db_path; 
 use crate::metadata::reparse::reparse_from_json;
 use crate::metadata::{ImageMetadata, CURRENT_PARSER_VERSION};
 use rusqlite::params;
@@ -149,64 +149,20 @@ pub async fn start_reparse_job(
         let mut processed = 0;
         let mut updated = 0;
         let mut errors = 0;
-        let batch_size = 100; // Small batch size for responsiveness and lower contention
-        let progress_interval = 25; 
+        let batch_size = 500;
+        let progress_interval = 50; 
         let mut last_emit_time = std::time::Instant::now();
         let min_emit_interval = std::time::Duration::from_millis(50);
         let mut was_cancelled = false;
         
-        // Keyset Pagination State
-        let mut last_seen_id: String = String::new();
+        let should_use_prefetch = filter_root.is_some();
 
-        loop {
-            if is_cancelled.load(Ordering::SeqCst) {
-                log::info!("[Reparse] Job cancelled by user");
-                was_cancelled = true;
-                break;
-            }
-
-            // SERIAL PHASE: Fetch batch using Keyset Pagination
-            // WHERE (normal_filters) AND id > last_seen_id ORDER BY id ASC LIMIT N
-            let batch: Vec<(String, String, String, String)> = {
-                let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref());
-                
-                // Add keyset condition
-                params.push(Box::new(last_seen_id.clone()));
-                
-                let query = format!(
-                    "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                     FROM images 
-                     WHERE {} AND id > ?
-                     ORDER BY id ASC
-                     LIMIT {}",
-                    base_filters, batch_size
-                );
-
-                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-                
-                let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                    ))
-                }).map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| e.to_string())?;
-                
-                rows
-            };
+        // SHARED UPDATE LOGIC CLOSURE
+        // We define this locally to avoid borrowing issues or duplicating complex update code.
+        // It takes a batch of rows, processes them, and updates the DB.
+        let mut process_and_update_batch = |conn: &mut rusqlite::Connection, batch: Vec<(String, String, String, String)>, fetch_ms: u128| -> Result<(), String> {
+            let parse_start = std::time::Instant::now();
             
-            if batch.is_empty() {
-                break;
-            }
-
-            // Update last_seen_id for next iteration
-            if let Some(last) = batch.last() {
-                last_seen_id = last.0.clone();
-            }
-
             // PARALLEL PHASE: Parse structure on all cores
             let batch_results: Vec<(String, String, String, String, Option<crate::metadata::reparse::ReparseResult>)> = batch
                 .par_iter()
@@ -216,6 +172,9 @@ pub async fn start_reparse_job(
                 })
                 .collect();
             
+            let parse_duration = parse_start.elapsed();
+            let update_start = std::time::Instant::now();
+
             // SERIAL PHASE: Update database in a single transaction
             let tx = conn.transaction().map_err(|e| e.to_string())?;
             {
@@ -230,8 +189,10 @@ pub async fn start_reparse_job(
                         cfg = ?6,
                         sampler = ?7,
                         generation_type = ?8,
-                        parser_version = ?9
-                     WHERE id = ?10"
+                        parser_version = ?9,
+                        positive_prompt = ?10,
+                        negative_prompt = ?11
+                     WHERE id = ?12"
                 ).map_err(|e| e.to_string())?;
                 
                 let mut skip_stmt = tx.prepare_cached(
@@ -241,9 +202,6 @@ pub async fn start_reparse_job(
                 // Helpers for diffing lists
                 fn lists_changed(old: &[String], new: &[String]) -> bool {
                     if old.len() != new.len() { return true; }
-                    // Simple check: iterate and compare. Assuming strict ordering isn't guaranteed, 
-                    // but usually parses return stable order. If parser changes order, it's a change.
-                    // For sidecars, let's treat order as important for simplicity.
                     old != new
                 }
 
@@ -268,17 +226,22 @@ pub async fn start_reparse_job(
                     
                     match parse_result {
                         Some(result) => {
-                            // 1. Try to deserialize OLD metadata to perform smart diffing
-                            let old_meta: Option<ImageMetadata> = serde_json::from_str(&old_meta_json).ok();
+                            // 1. Efficient Diffing: Check string equality first!
+                            let mut meta_changed = result.metadata_json != *old_meta_json;
                             
-                            // 2. Diffing Logic
-                            let meta_changed = result.metadata_json != old_meta_json;
-                            
+                            // 2. Deep Object Diffing
+                            if meta_changed {
+                                if let Ok(old_meta) = serde_json::from_str::<ImageMetadata>(&old_meta_json) {
+                                    if old_meta == result.metadata {
+                                        meta_changed = false;
+                                    }
+                                }
+                            }
+
                             if !meta_changed {
-                                // Zero-cost update (thanks to smart FTS trigger in m45)
                                 let _ = skip_stmt.execute(params![CURRENT_PARSER_VERSION, id]);
                             } else {
-                                // Metadata changed, apply full update
+                                let old_meta: Option<ImageMetadata> = serde_json::from_str(&old_meta_json).ok();
                                 updated += 1;
                                 let meta = &result.metadata;
                                 let sampler_normalized = meta.sampler
@@ -296,11 +259,12 @@ pub async fn start_reparse_job(
                                     sampler_normalized,
                                     meta.generation_type,
                                     CURRENT_PARSER_VERSION,
+                                    meta.positive_prompt,
+                                    meta.negative_prompt,
                                     id
                                 ]).map_err(|e| e.to_string())?;
 
                                 // Smart Sidecar Diffing
-                                // Only touch junction tables if the specific list actually changed
                                 let mut update_loras = true;
                                 let mut update_embs = true;
                                 let mut update_hns = true;
@@ -345,28 +309,131 @@ pub async fn start_reparse_job(
 
                     // Emit progress periodically
                     if processed % progress_interval == 0 && last_emit_time.elapsed() >= min_emit_interval {
+                        let update_ms = update_start.elapsed().as_millis();
                         let _ = app.emit("reparse-progress", ReparseProgress {
                             current: processed,
                             total,
                             phase: "processing".to_string(),
-                            message: format!("Processed {} / {} images", processed, total),
+                            message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms", 
+                                processed, total, updated, fetch_ms, parse_duration.as_millis(), update_ms),
                         });
                         last_emit_time = std::time::Instant::now();
-                    }
-
-                    if is_cancelled.load(Ordering::SeqCst) {
-                        was_cancelled = true;
-                        break;
                     }
                 }
             }
             tx.commit().map_err(|e| e.to_string())?;
+            Ok(())
+        };
+
+        if should_use_prefetch {
+            // === STRATEGY 1: ID PRE-FETCHING (Filtered) ===
+            log::info!("[Reparse] Strategy: ID Pre-fetching (Targeted)");
+            let prefetch_start = std::time::Instant::now();
             
-            if was_cancelled {
-                break;
+            // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
+            // Windows: sqlite uses \ by default, normalize if needed
+            let normalized_root = filter_root.as_ref().map(|r| r.replace('/', "\\"));
+            let (where_sql, params_vec) = build_filters(force_reparse, normalized_root.as_ref());
+
+             let query = format!("SELECT id FROM images WHERE {}", where_sql);
+             
+             let ids: Vec<String> = {
+                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| row.get(0))
+                    .map_err(|e| e.to_string())?;
+                rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+             };
+             
+             let prefetch_duration = prefetch_start.elapsed();
+             log::info!("[Reparse] Pre-fetched {} IDs in {:.2}ms. Starting batched processing...", 
+                ids.len(), prefetch_duration.as_millis());
+
+             // 2. Loop through chunks
+             for chunk in ids.chunks(batch_size) {
+                 if is_cancelled.load(Ordering::SeqCst) {
+                     break;
+                 }
+                 
+                 let fetch_start = std::time::Instant::now();
+                 let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
+                 let batch_query = format!(
+                    "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                     FROM images 
+                     WHERE id IN ({})", 
+                    placeholders
+                 );
+                 
+                 let batch: Vec<(String, String, String, String)> = {
+                     let mut stmt = conn.prepare(&batch_query).map_err(|e| e.to_string())?;
+                     let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                        ))
+                     }).map_err(|e| e.to_string())?
+                     .collect::<Result<Vec<_>, rusqlite::Error>>()
+                     .map_err(|e| e.to_string())?;
+                     rows
+                 };
+                 let fetch_duration = fetch_start.elapsed();
+
+                 process_and_update_batch(&mut conn, batch, fetch_duration.as_millis())?;
+             }
+
+        } else {
+            // === STRATEGY 2: KEYSET PAGINATION (Global) ===
+            log::info!("[Reparse] Strategy: Keyset Pagination (Global)");
+            let mut last_seen_id: String = String::new();
+
+            loop {
+                if is_cancelled.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let fetch_start = std::time::Instant::now();
+                let batch: Vec<(String, String, String, String)> = {
+                    let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref());
+                    params.push(Box::new(last_seen_id.clone()));
+                    
+                    let query = format!(
+                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                         FROM images 
+                         WHERE {} AND id > ?
+                         ORDER BY id ASC
+                         LIMIT {}",
+                        base_filters, batch_size
+                    );
+
+                    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                        ))
+                    }).map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()
+                    .map_err(|e| e.to_string())?;
+                    
+                    rows
+                };
+                let fetch_duration = fetch_start.elapsed();
+                
+                if batch.is_empty() { break; }
+                if let Some(last) = batch.last() { last_seen_id = last.0.clone(); }
+
+                process_and_update_batch(&mut conn, batch, fetch_duration.as_millis())?;
             }
         }
         
+        if is_cancelled.load(Ordering::SeqCst) {
+            log::info!("[Reparse] Job cancelled by user");
+            was_cancelled = true;
+        }
+
         // Final progress update
         let _ = app.emit("reparse-progress", ReparseProgress {
             current: processed,

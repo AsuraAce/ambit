@@ -313,7 +313,8 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             'timestamp', 'thumbnail_path', 'is_favorite', 'is_pinned', 'is_missing',
             'user_masked', 'group_id', 'board_id', 'notes', 'original_metadata_json',
             // New denormalized columns
-            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'sampler', 'generation_type'
+            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'sampler', 'generation_type',
+            'positive_prompt', 'negative_prompt'
         ];
 
         // Improved Regex:
@@ -338,7 +339,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
          * But since we have a LIMIT, SQLite can sometimes optimize.
          * For a word cloud, we need a diverse sample.
          */
-        let joinClause = "JOIN images_fts ON images_fts.id = images.id";
+        let joinClause = "JOIN images_fts ON images_fts.rowid = images.rowid";
 
         // Prioritize Collection/LoRA filtering with INNER JOIN if present
         // Prioritize Collection/LoRA filtering with INNER JOIN if present
@@ -346,22 +347,22 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             joinClause = `
                 JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
                 JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
-                JOIN images_fts ON images_fts.id = images.id
+                JOIN images_fts ON images_fts.rowid = images.rowid
             `;
         } else if (collectionId) {
             joinClause = `
                 JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
-                JOIN images_fts ON images_fts.id = images.id
+                JOIN images_fts ON images_fts.rowid = images.rowid
             `;
         } else if (loraName) {
             joinClause = `
                 JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
-                JOIN images_fts ON images_fts.id = images.id
+                JOIN images_fts ON images_fts.rowid = images.rowid
             `;
         }
 
         const promptQuery = `
-            SELECT positive_prompt 
+            SELECT images.positive_prompt 
             FROM images
             ${joinClause}
             ${safeWhere}

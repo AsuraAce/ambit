@@ -1,6 +1,6 @@
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use tauri::AppHandle;
-use super::{run_blocking, configure_connection, resolve_db_path};
+use super::run_blocking;
 use crate::db::ImageRecord;
 
 #[tauri::command(rename_all = "camelCase")]

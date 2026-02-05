@@ -114,11 +114,9 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
  * 
  * This command:
  * 1. Opens a dedicated database connection
- * 2. Streams all images needing reparse (parser_version < CURRENT)
- * 3. Parses metadata in memory and batches updates
- * 4. Emits progress events for UI updates
- * 
- * NOTE: Uses batch fetching to avoid memory exhaustion on large libraries.
+ * 2. Streams all images using Keyset Pagination (WHERE id > last_id)
+ * 3. Parses using Rayon
+ * 4. Updates DB with Smart Diffing (skipping unchanged prompts/junctions)
  */
 async startReparseJob(forceReparse: boolean, filterRoot: string | null) : Promise<Result<ReparseJobResult, string>> {
     try {
