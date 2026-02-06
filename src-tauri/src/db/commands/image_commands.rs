@@ -61,7 +61,9 @@ pub async fn save_images_batch(
                             parser_version=excluded.parser_version
                          WHERE images.metadata_json != excluded.metadata_json 
                             OR images.timestamp != excluded.timestamp 
-                            OR images.file_size != excluded.file_size"
+                            OR images.file_size != excluded.file_size
+                            OR images.original_metadata_json IS NULL
+                            OR images.original_metadata_json != excluded.original_metadata_json"
                     ).map_err(|e| e.to_string())?;
 
                     let mut lora_stmt = tx.prepare_cached("
