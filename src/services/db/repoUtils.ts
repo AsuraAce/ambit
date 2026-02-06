@@ -1,6 +1,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage } from '../../types';
+import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
 
 // Lightweight column set for grid/listing views
 // Lightweight column set for grid/listing views
@@ -9,6 +10,7 @@ import { AIImage } from '../../types';
 export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source,
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
+    images.original_metadata_json,
     images.model_name, images.model_hash, images.tool, images.resolved_model_name,
     json_extract(images.metadata_json, '$.positivePrompt') as positive_prompt,
     json_extract(images.metadata_json, '$.negativePrompt') as negative_prompt,
@@ -64,7 +66,11 @@ export function mapRowToImage(row: any): AIImage {
         notes: row.notes,
         metadata: metadata,
         // Only parse these if they were requested (SELECT *)
-        originalMetadata: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined,
+        originalMetadata: row.original_metadata_json ? (
+            row.tool === 'InvokeAI'
+                ? mapRawInvokeMetadata(JSON.parse(row.original_metadata_json))
+                : JSON.parse(row.original_metadata_json)
+        ) : undefined,
         originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
     };
 }

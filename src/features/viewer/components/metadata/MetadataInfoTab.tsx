@@ -88,7 +88,7 @@ export const MetadataInfoTab = ({
         : [];
 
     const handleCopyPrompt = () => {
-        navigator.clipboard.writeText(image.metadata.positivePrompt);
+        navigator.clipboard.writeText(promptValue);
         setCopiedPrompt(true);
         setTimeout(() => setCopiedPrompt(false), 2000);
     };
@@ -171,8 +171,8 @@ export const MetadataInfoTab = ({
                                 </button>
                             </div>
                         </div>
-                        <div className={`p-4 bg-white dark:bg-zinc-950/50 rounded-xl border text-sm font-sans leading-relaxed max-h-48 overflow-y-auto shadow-inner transition-colors ${isModified('positivePrompt') ? 'border-amber-300 dark:border-amber-500/30 text-gray-800 dark:text-gray-200' : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300'}`}>
-                            {promptValue || <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI.</span>}
+                        <div className={`p-4 bg-white dark:bg-zinc-950/50 rounded-xl border text-sm font-sans leading-relaxed max-h-48 overflow-y-auto shadow-inner transition-colors ${promptValue !== (image.originalMetadata?.positivePrompt ?? image.metadata.positivePrompt) ? 'border-amber-300 dark:border-amber-500/30 text-gray-800 dark:text-gray-200' : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300'}`}>
+                            {promptValue || <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI or refresh from folder.</span>}
                         </div>
                     </div>
 

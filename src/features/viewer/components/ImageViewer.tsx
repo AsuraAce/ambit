@@ -147,7 +147,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         setNegativePromptValue(displayImage.metadata.negativePrompt || '');
         resetZoom();
         ai.closeModal();
-    }, [displayImage.id, displayImage.metadata.positivePrompt, displayImage.metadata.negativePrompt, resetZoom]);
+    }, [
+        displayImage.id,
+        displayImage.metadata.positivePrompt,
+        displayImage.metadata.negativePrompt,
+        displayImage.originalMetadata,
+        resetZoom
+    ]);
 
     // Theater Mode Controls Auto-Hide
     useEffect(() => {

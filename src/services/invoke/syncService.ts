@@ -4,7 +4,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
-import { getDb } from '../db/client';
+import { getDb } from '../db/connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage } from '../../types';
 
@@ -271,12 +271,34 @@ export const syncImages = async (
                 if (!existing) {
                     needsUpdate = true;
                 } else {
+                    // CRITICAL: If image is missing raw original chunks, we NEED to update it 
+                    // to backfill the data required for Refresh Metadata to work.
+                    // Also check if existing originalMetadata looks like it was accidentally mapped already
+                    // (Raw InvokeAI uses positive_prompt, while mapped uses positivePrompt)
+                    const isMissingRaw = !existing.originalMetadata && !existing.originalChunks;
+
+                    // We can inspect the raw chunks if they exist
+                    let formatLooksMapped = false;
+                    const rawChunks = existing.originalChunks as any;
+                    if (rawChunks?.invokeai_metadata) {
+                        const meta = typeof rawChunks.invokeai_metadata === 'string'
+                            ? JSON.parse(rawChunks.invokeai_metadata)
+                            : rawChunks.invokeai_metadata;
+
+                        // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
+                        // Check for both snake_case and camelCase to determine if it's already mapped
+                        if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
+                            (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
+                            formatLooksMapped = true;
+                        }
+                    }
+
+                    if (isMissingRaw || formatLooksMapped) needsUpdate = true;
+
                     // Only update if favorite, pin, or board changed
                     if (isFavorite !== existing.isFavorite) needsUpdate = true;
                     if (isPinned !== (existing.isPinned || false)) needsUpdate = true;
                     if (boardId !== existing.boardId) needsUpdate = true;
-                    // Note: We don't check metadata updates here to keep it simple and performance-oriented
-                    // but since InvokeAI metadata is usually immutable after creation, this is safe.
                 }
 
                 if (!needsUpdate) {
@@ -303,7 +325,12 @@ export const syncImages = async (
                 const finalMetadata = existing ? existing.metadata : metadata;
                 const finalOriginalMetadata = existing?.originalMetadata || (existing ? existing.metadata : metadata);
 
-                const newImg: any = {
+                // Ensure we store the RAW object, not a string, to avoid double-stringification
+                const rawInvokeMeta = row.metadata_blob
+                    ? (typeof row.metadata_blob === 'string' ? JSON.parse(row.metadata_blob) : row.metadata_blob)
+                    : {};
+
+                const newImg: AIImage = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
                     thumbnailUrl: thumbnailPath,
@@ -320,6 +347,9 @@ export const syncImages = async (
                     notes: existing?.notes, // Preserve user notes
                     metadata: finalMetadata,
                     originalMetadata: finalOriginalMetadata,
+                    originalChunks: {
+                        'invokeai_metadata': rawInvokeMeta
+                    },
                     originalState: originalState
                 };
 

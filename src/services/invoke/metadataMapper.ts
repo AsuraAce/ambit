@@ -228,7 +228,7 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     }
 }
 
-// Helper to map InvokeAI metadata to Ambit's format
+// Helper to map InvokeAI metadata to Ambit's format using a database row
 export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): any {
     const rawVal = row[metaCol];
 
@@ -249,26 +249,54 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
     // Even if metadata is empty, we still know this is an InvokeAI image
     if (!rawVal) return baseMetadata;
 
-    let meta: any = {};
     try {
-        meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
-    } catch (e) { meta = {}; }
+        const meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        const mapped = mapRawInvokeMetadata(meta);
+        // Overwrite hints from higher-level row if present
+        if (row.has_workflow !== undefined) mapped.hasWorkflowHint = row.has_workflow === 1 || row.has_workflow === true;
+        return mapped;
+    } catch (e) {
+        return baseMetadata;
+    }
+}
 
-    // Use base metadata and extend with parsed values
-    const mapped = { ...baseMetadata };
-    if (meta.is_intermediate === true) mapped.isIntermediate = true;
+/**
+ * Standard mapper for raw InvokeAI metadata objects.
+ * Used both during sync and when displaying "Original" metadata in the UI.
+ */
+export function mapRawInvokeMetadata(meta: any): any {
+    // Base metadata - always includes tool: 'InvokeAI' since we know the source
+    const mapped: any = {
+        tool: 'InvokeAI',
+        positivePrompt: '',
+        negativePrompt: '',
+        loras: [],
+        controlNets: [],
+        ipAdapters: [],
+        embeddings: [],
+        hypernetworks: [],
+        hasWorkflowHint: false, // Will be set if workflow found
+        isIntermediate: meta?.is_intermediate === 1 || meta?.is_intermediate === true
+    };
+
+    if (!meta) return mapped;
 
     const root = meta.image || meta.generation || meta;
 
-    if (root.positive_prompt) mapped.positivePrompt = root.positive_prompt;
-    if (root.negative_prompt) mapped.negativePrompt = root.negative_prompt;
+    // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
+    if (root.positive_prompt || root.positivePrompt) mapped.positivePrompt = root.positive_prompt || root.positivePrompt;
+    if (root.negative_prompt || root.negativePrompt) mapped.negativePrompt = root.negative_prompt || root.negativePrompt;
     if (root.steps) mapped.steps = root.steps;
-    if (root.cfg_scale) mapped.cfg = root.cfg_scale;
+    if (root.cfg_scale || root.cfg) mapped.cfg = root.cfg_scale || root.cfg;
     if (root.seed) mapped.seed = root.seed;
-    if (root.scheduler) mapped.sampler = root.scheduler;
+    if (root.scheduler || root.sampler) mapped.sampler = root.scheduler || root.sampler;
 
-    if (!mapped.positivePrompt && root.prompt && Array.isArray(root.prompt)) {
-        mapped.positivePrompt = root.prompt.map((p: any) => p.prompt).join(' ');
+    if (!mapped.positivePrompt && root.prompt) {
+        if (Array.isArray(root.prompt)) {
+            mapped.positivePrompt = root.prompt.map((p: any) => p.prompt).join(' ');
+        } else if (typeof root.prompt === 'string') {
+            mapped.positivePrompt = root.prompt.trim();
+        }
     }
 
     if (root.model) {

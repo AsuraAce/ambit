@@ -81,16 +81,21 @@ fn reparse_comfyui(original_json: &str) -> Option<ImageMetadata> {
 fn reparse_invokeai(original_json: &str) -> Option<ImageMetadata> {
     let parsed: serde_json::Value = serde_json::from_str(original_json).ok()?;
 
-    // Check if the JSON is a "chunks" map containing the metadata as a string
+    // Check if the JSON is a "chunks" map containing the metadata
     if let Some(inner) = parsed
         .get("invokeai_metadata")
         .or_else(|| parsed.get("sd-metadata"))
         .or_else(|| parsed.get("dream_metadata"))
     {
+        // Case 1: Inner is a string (stringified JSON)
         if let Some(inner_str) = inner.as_str() {
             if let Ok(inner_parsed) = serde_json::from_str::<serde_json::Value>(inner_str) {
                 return Some(extract_invokeai_metadata(&inner_parsed));
             }
+        }
+        // Case 2: Inner is already an object
+        else if inner.is_object() {
+            return Some(extract_invokeai_metadata(inner));
         }
     }
 
@@ -136,6 +141,18 @@ mod tests {
         assert_eq!(result.metadata.tool, "InvokeAI");
         assert_eq!(result.metadata.positive_prompt, "a cat");
         assert_eq!(result.metadata.steps, 20);
+    }
+
+    #[test]
+    fn test_reparse_invokeai_mapped() {
+        // Test handling of our internal format (camelCase) accidentally stored as raw
+        let original = r#"{"positivePrompt": "a dog", "steps": 30, "cfg": 8.0}"#;
+        let result = reparse_from_json(original, "InvokeAI").unwrap();
+        
+        assert_eq!(result.metadata.tool, "InvokeAI");
+        assert_eq!(result.metadata.positive_prompt, "a dog");
+        assert_eq!(result.metadata.steps, 30);
+        assert_eq!(result.metadata.cfg, 8.0);
     }
     
     #[test]

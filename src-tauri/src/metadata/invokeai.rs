@@ -26,7 +26,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
-    // Prompt extraction - v2.x uses array format inside root.prompt
+    // Prompt extraction - v2.x uses array format or simple string inside root.prompt
     if let Some(prompt) = root.get("prompt") {
         if let Some(arr) = prompt.as_array() {
             // Old v2.x format: [{"prompt": "...", "weight": 1.0}, ...]
@@ -39,21 +39,28 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
             if !prompt_parts.is_empty() {
                 meta.positive_prompt = prompt_parts.join(" ");
             }
+        } else if let Some(s) = prompt.as_str() {
+            // Fallback for prompt as string
+            meta.positive_prompt = s.trim().to_string();
         }
     }
 
-    // Try new InvokeAI Graph format / Metadata (v3.x)
+    // Try new InvokeAI Graph format / Metadata (v3.x / v5.x)
     if meta.positive_prompt.is_empty() {
-        if let Some(pos) = root.get("positive_prompt").and_then(|s| s.as_str()) {
+        if let Some(pos) = root.get("positive_prompt").and_then(|v| v.as_str()) {
             meta.positive_prompt = pos.trim().to_string();
-        } else if let Some(pos) = root.get("positive_conditioning").and_then(|s| s.as_str()) {
+        } else if let Some(pos) = root.get("positivePrompt").and_then(|v| v.as_str()) {
+            meta.positive_prompt = pos.trim().to_string();
+        } else if let Some(pos) = root.get("positive_conditioning").and_then(|v| v.as_str()) {
             meta.positive_prompt = pos.trim().to_string();
         }
     }
 
-    if let Some(neg) = root.get("negative_prompt").and_then(|s| s.as_str()) {
+    if let Some(neg) = root.get("negative_prompt").and_then(|v| v.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
-    } else if let Some(neg) = root.get("negative_conditioning").and_then(|s| s.as_str()) {
+    } else if let Some(neg) = root.get("negativePrompt").and_then(|v| v.as_str()) {
+        meta.negative_prompt = neg.trim().to_string();
+    } else if let Some(neg) = root.get("negative_conditioning").and_then(|v| v.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
     }
 
@@ -435,5 +442,16 @@ mod tests {
         assert!(meta.hypernetworks.contains(&"style_v1 (0.80)".to_string()));
         assert!(meta.hypernetworks.contains(&"detailer".to_string()));
         assert!(meta.hypernetworks.contains(&"a1_extra_600000 (0.15)".to_string()));
+    }
+    #[test]
+    fn test_extract_invokeai_metadata_prompt_string() {
+        let payload = json!({
+            "prompt": "a professional portrait, soft lighting",
+            "steps": 30,
+            "cfg_scale": 7.5
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "a professional portrait, soft lighting");
+        assert_eq!(meta.steps, 30);
     }
 }
