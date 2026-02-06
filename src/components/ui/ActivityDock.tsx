@@ -18,12 +18,12 @@ export const ActivityDock: React.FC = () => {
         cancelDiscoveryScan,
         setIsResolvingModels,
         isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
-        isReparsingMetadata, reparseProgress,
+        isRefreshingMetadata, refreshProgress,
         cancelImport,
         cancelThumbnailRegeneration,
         cancelSync,
-        cancelReparse,
-        reparseTrigger
+        cancelRefresh,
+        refreshTrigger
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -32,10 +32,10 @@ export const ActivityDock: React.FC = () => {
     const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
-    // Show reparse if active AND (no high priority OR it was manually triggered)
-    const isReparseActive = isReparsingMetadata && (!isHighPriorityActive || reparseTrigger > 0) && !isBackgroundActive;
+    // Show refresh if active AND (no high priority OR it was manually triggered)
+    const isRefreshActive = isRefreshingMetadata && (!isHighPriorityActive || refreshTrigger > 0) && !isBackgroundActive;
 
-    const active = isHighPriorityActive || isBackgroundActive || isReparseActive;
+    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive;
 
     // Determine current task details
     let progress = null;
@@ -64,10 +64,10 @@ export const ActivityDock: React.FC = () => {
         progress = backgroundHealingProgress;
         label = "Auto-Optimizing";
         isLowPriority = true;
-    } else if (isReparseActive) {
-        progress = reparseProgress;
-        label = reparseTrigger > 0 ? "Re-parsing Metadata" : "Refreshing Metadata";
-        isLowPriority = reparseTrigger === 0;
+    } else if (isRefreshActive) {
+        progress = refreshProgress;
+        label = refreshTrigger > 0 ? "Refreshing Metadata" : "Refreshing Metadata";
+        isLowPriority = refreshTrigger === 0;
     }
 
     const current = progress?.current || 0;
@@ -180,7 +180,7 @@ export const ActivityDock: React.FC = () => {
                                     <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header.</span>
                                 </div>
 
-                                {(isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isReparseActive) && (
+                                {(isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isRefreshActive) && (
                                     <button
                                         onClick={() => {
                                             if (isImporting) cancelImport();
@@ -193,7 +193,7 @@ export const ActivityDock: React.FC = () => {
                                                 setIsResolvingModels(false);
                                             }
                                             if (isScanningDiscovery) cancelDiscoveryScan();
-                                            if (isReparseActive) cancelReparse();
+                                            if (isRefreshActive) cancelRefresh();
                                         }}
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"
                                     >

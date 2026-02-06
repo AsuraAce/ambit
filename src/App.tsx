@@ -33,7 +33,7 @@ import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
-import { useMetadataReparse } from './hooks/useMetadataReparse';
+import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -107,8 +107,8 @@ export default function App() {
     // --- Background Processes ---
     // Initialize background thumbnail auto-healing (runs after app startup delay)
     useThumbnailQueue(addToast);
-    // Initialize background metadata re-parsing (runs after app startup delay)
-    useMetadataReparse();
+    // Initialize background metadata refresh (runs after app startup delay)
+    useMetadataRefresh();
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
