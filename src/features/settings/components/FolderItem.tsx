@@ -8,7 +8,7 @@ interface FolderItemProps {
     onRescan: (id: string, path: string, variant?: string, isManaged?: boolean) => void;
     onRemove: (id: string) => void;
     showDevTools?: boolean;
-    onReparse?: (path: string, force: boolean) => void;
+    onRefresh?: (path: string, force: boolean) => void;
 }
 
 const getVariantIcon = (variant?: GeneratorTool) => {
@@ -30,7 +30,7 @@ const getVariantIcon = (variant?: GeneratorTool) => {
     }
 };
 
-export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, showDevTools, onReparse }) => {
+export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, showDevTools, onRefresh }) => {
     const isScanning = scanningIds.has(folder.id);
     const path = folder.isManaged ? folder.pathRaw : folder.path;
 
@@ -74,17 +74,17 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
                 </button>
 
-                {showDevTools && onReparse && (
+                {showDevTools && onRefresh && (
                     <button
                         type="button"
                         onClick={(e) => {
                             // Click = Resume (force=false), Shift+Click = Force (force=true)
-                            console.log('[FolderItem] Reparse clicked. Shift:', e.shiftKey, 'Force:', e.shiftKey);
-                            onReparse(path, e.shiftKey);
+                            console.log('[FolderItem] Refresh clicked. Shift:', e.shiftKey, 'Force:', e.shiftKey);
+                            onRefresh(path, e.shiftKey);
                         }}
                         disabled={isScanning}
                         className="p-1.5 text-gray-400 hover:text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20 rounded-lg transition-all"
-                        title="Resume Smart Reparse (Shift+Click to Force Reparse All)"
+                        title="Resume Smart Refresh (Shift+Click to Force Refresh All)"
                     >
                         <FileJson className="w-4 h-4" />
                     </button>

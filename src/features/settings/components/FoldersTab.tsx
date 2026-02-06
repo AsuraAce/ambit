@@ -5,7 +5,7 @@ import { useFoldersTabLogic } from '../hooks/useFoldersTabLogic';
 import { FolderItem } from './FolderItem';
 import { AddFolderForm } from './AddFolderForm';
 import { ResourceDiscoverySection } from './ResourceDiscoverySection';
-import { useMetadataReparse } from '../../../hooks/useMetadataReparse';
+import { useMetadataRefresh } from '../../../hooks/useMetadataRefresh';
 
 interface TabProps {
     settings: AppSettings;
@@ -39,7 +39,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         handleScanNow
     } = useFoldersTabLogic({ settings, setSettings, onScanFolder, onInvokeSync });
 
-    const { forceReparseAll } = useMetadataReparse();
+    const { forceRefresh } = useMetadataRefresh();
 
     return (
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -63,7 +63,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                 onRescan={handleRescan}
                                 onRemove={removeFolder}
                                 showDevTools={settings.devMode}
-                                onReparse={forceReparseAll}
+                                onRefresh={forceRefresh}
                             />
                         ))}
                         {combinedFolders.length === 0 && (

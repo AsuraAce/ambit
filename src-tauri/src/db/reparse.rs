@@ -66,12 +66,15 @@ pub async fn start_reparse_job(
     
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
-        log::info!("[Reparse] Starting optimized reparse job. Force: {}, Filter: {:?}", force_reparse, filter_root);
+        log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}", force_reparse, filter_root);
         
         log::info!("[Reparse] Thread started, opening connection...");
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         
+        // Normalize filter_root to forward slashes for consistency with frontend/DB
+        let normalized_filter_root = filter_root.as_ref().map(|r| r.replace('\\', "/"));
+
         // Use shared configuration
         crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;").map_err(|e| e.to_string())?;
@@ -79,7 +82,7 @@ pub async fn start_reparse_job(
         
         log::info!("[Reparse] Connection ready, counting total images...");
         // Signal FE that we are actually in the backend
-        let _ = app.emit("reparse-progress", ReparseProgress {
+        let _ = app.emit("refresh-progress", ReparseProgress {
             current: 0,
             total: 0,
             phase: "counting".to_string(),
@@ -100,18 +103,25 @@ pub async fn start_reparse_job(
             }
 
             if let Some(r) = root {
-                let normalized = r.trim_end_matches(['/', '\\']);
-                clauses.push("(path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
-                params.push(Box::new(normalized.to_string()));
-                params.push(Box::new(normalized.to_string()));
-                params.push(Box::new(normalized.to_string()));
+                // Already normalized to forward slashes at the start of the thread
+                let r_fwd = r.replace('\\', "/").trim_end_matches('/').to_string();
+                let r_back = r.replace('/', "\\").trim_end_matches('\\').to_string();
+                
+                // Match exact path OR subfolders with either slash type
+                clauses.push("(path = ? OR path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%' OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
+                params.push(Box::new(r_fwd.clone()));
+                params.push(Box::new(r_back.clone()));
+                params.push(Box::new(r_fwd.clone()));
+                params.push(Box::new(r_fwd.clone()));
+                params.push(Box::new(r_back.clone()));
+                params.push(Box::new(r_back.clone()));
             }
 
             (clauses.join(" AND "), params)
         };
 
         // Count total work upfront
-        let (where_sql, count_params) = build_filters(force_reparse, filter_root.as_ref());
+        let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref());
         let count_query = format!("SELECT COUNT(*) FROM images WHERE {}", where_sql);
 
         let total: usize = conn.query_row(
@@ -123,8 +133,8 @@ pub async fn start_reparse_job(
         log::info!("[Reparse] Total query complete: {}", total);
         
         if total == 0 {
-            log::info!("[Reparse] No images need re-parsing");
-            let _ = app.emit("reparse-complete", ReparseJobResult {
+            log::info!("[Reparse] No images need refreshing");
+            let _ = app.emit("refresh-complete", ReparseJobResult {
                 processed: 0,
                 updated: 0,
                 errors: 0,
@@ -138,12 +148,12 @@ pub async fn start_reparse_job(
             });
         }
         
-        log::info!("[Reparse] Found {} images to process", total);
-        let _ = app.emit("reparse-progress", ReparseProgress {
+        log::info!("[Refresh] Found {} images to process", total);
+        let _ = app.emit("refresh-progress", ReparseProgress {
             current: 0,
             total,
             phase: "starting".to_string(),
-            message: format!("Found {} images to re-parse", total),
+            message: format!("Found {} images to refresh", total),
         });
         
         let mut processed = 0;
@@ -226,11 +236,12 @@ pub async fn start_reparse_job(
                     
                     match parse_result {
                         Some(result) => {
-                            // 1. Efficient Diffing: Check string equality first!
-                            let mut meta_changed = result.metadata_json != *old_meta_json;
+                            // Smart Diffing: skip updates if metadata is identical
+                            // BUT: if filter_root and force_reparse are both set, we bypass this to force update
+                            let mut meta_changed = force_reparse || result.metadata_json != *old_meta_json;
                             
-                            // 2. Deep Object Diffing
-                            if meta_changed {
+                            // Deep Object Diffing (only if not forced)
+                            if meta_changed && !force_reparse {
                                 if let Ok(old_meta) = serde_json::from_str::<ImageMetadata>(&old_meta_json) {
                                     if old_meta == result.metadata {
                                         meta_changed = false;
@@ -271,12 +282,14 @@ pub async fn start_reparse_job(
                                 let mut update_cns = true;
                                 let mut update_ips = true;
 
-                                if let Some(old) = &old_meta {
-                                    if !lists_changed(&old.loras, &meta.loras) { update_loras = false; }
-                                    if !lists_changed(&old.embeddings, &meta.embeddings) { update_embs = false; }
-                                    if !lists_changed(&old.hypernetworks, &meta.hypernetworks) { update_hns = false; }
-                                    if !lists_changed(&old.control_nets, &meta.control_nets) { update_cns = false; }
-                                    if !lists_changed(&old.ip_adapters, &meta.ip_adapters) { update_ips = false; }
+                                if !force_reparse {
+                                    if let Some(old) = &old_meta {
+                                        if !lists_changed(&old.loras, &meta.loras) { update_loras = false; }
+                                        if !lists_changed(&old.embeddings, &meta.embeddings) { update_embs = false; }
+                                        if !lists_changed(&old.hypernetworks, &meta.hypernetworks) { update_hns = false; }
+                                        if !lists_changed(&old.control_nets, &meta.control_nets) { update_cns = false; }
+                                        if !lists_changed(&old.ip_adapters, &meta.ip_adapters) { update_ips = false; }
+                                    }
                                 }
 
                                 if update_loras {
@@ -310,7 +323,7 @@ pub async fn start_reparse_job(
                     // Emit progress periodically
                     if processed % progress_interval == 0 && last_emit_time.elapsed() >= min_emit_interval {
                         let update_ms = update_start.elapsed().as_millis();
-                        let _ = app.emit("reparse-progress", ReparseProgress {
+                        let _ = app.emit("refresh-progress", ReparseProgress {
                             current: processed,
                             total,
                             phase: "processing".to_string(),
@@ -331,17 +344,15 @@ pub async fn start_reparse_job(
             let prefetch_start = std::time::Instant::now();
             
             // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
-            // Windows: sqlite uses \ by default, normalize if needed
-            let normalized_root = filter_root.as_ref().map(|r| r.replace('/', "\\"));
-            let (where_sql, params_vec) = build_filters(force_reparse, normalized_root.as_ref());
+            let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref());
 
              let query = format!("SELECT id FROM images WHERE {}", where_sql);
              
              let ids: Vec<String> = {
-                let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-                let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| row.get(0))
-                    .map_err(|e| e.to_string())?;
-                rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+                 let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                 let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| row.get(0))
+                     .map_err(|e| e.to_string())?;
+                 rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
              };
              
              let prefetch_duration = prefetch_start.elapsed();
@@ -384,7 +395,7 @@ pub async fn start_reparse_job(
 
         } else {
             // === STRATEGY 2: KEYSET PAGINATION (Global) ===
-            log::info!("[Reparse] Strategy: Keyset Pagination (Global)");
+            log::info!("[Refresh] Strategy: Keyset Pagination (Global)");
             let mut last_seen_id: String = String::new();
 
             loop {
@@ -430,12 +441,12 @@ pub async fn start_reparse_job(
         }
         
         if is_cancelled.load(Ordering::SeqCst) {
-            log::info!("[Reparse] Job cancelled by user");
+            log::info!("[Refresh] Job cancelled by user");
             was_cancelled = true;
         }
 
         // Final progress update
-        let _ = app.emit("reparse-progress", ReparseProgress {
+        let _ = app.emit("refresh-progress", ReparseProgress {
             current: processed,
             total,
             phase: "complete".to_string(),
@@ -444,7 +455,7 @@ pub async fn start_reparse_job(
         
         let duration = start_time.elapsed();
         log::info!(
-            "[Reparse] Job complete in {:.2}s: {} processed, {} updated, {} errors, cancelled: {}",
+            "[Refresh] Job complete in {:.2}s: {} processed, {} updated, {} errors, cancelled: {}",
             duration.as_secs_f64(), processed, updated, errors, was_cancelled
         );
         
@@ -455,7 +466,7 @@ pub async fn start_reparse_job(
             was_cancelled,
         };
         
-        let _ = app.emit("reparse-complete", result.clone());
+        let _ = app.emit("refresh-complete", result.clone());
         
         Ok(result)
     })
@@ -467,7 +478,7 @@ pub async fn start_reparse_job(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
-    log::info!("[Reparse] Cancellation requested");
+    log::info!("[Refresh] Cancellation requested");
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
 

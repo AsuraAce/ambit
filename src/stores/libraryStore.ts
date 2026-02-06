@@ -53,10 +53,10 @@ interface LibraryState {
     backgroundHealingProgress: SyncProgress | null;
     backgroundHealingPaused: boolean;
 
-    // Background Metadata Re-parsing State
-    isReparsingMetadata: boolean;
-    reparseProgress: SyncProgress | null;
-    reparseTrigger: number; // Incremented to signal manual trigger
+    // Background Metadata Refresh State
+    isRefreshingMetadata: boolean;
+    refreshProgress: SyncProgress | null;
+    refreshTrigger: number; // Incremented to signal manual trigger
 
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
@@ -95,11 +95,11 @@ interface LibraryState {
     setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
     setBackgroundHealingPaused: (val: boolean) => void;
 
-    // Background Metadata Re-parsing Actions
-    setIsReparsingMetadata: (val: boolean) => void;
-    setReparseProgress: (progress: SyncProgress | null) => void;
-    triggerReparse: () => void;
-    cancelReparse: () => void;
+    // Background Metadata Refresh Actions
+    setIsRefreshingMetadata: (val: boolean) => void;
+    setRefreshProgress: (progress: SyncProgress | null) => void;
+    triggerRefresh: () => void;
+    cancelRefresh: () => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -140,10 +140,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     backgroundHealingProgress: null,
     backgroundHealingPaused: false,
 
-    // Background Metadata Re-parsing State
-    isReparsingMetadata: false,
-    reparseProgress: null,
-    reparseTrigger: 0,
+    // Background Metadata Refresh State
+    isRefreshingMetadata: false,
+    refreshProgress: null,
+    refreshTrigger: 0,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -201,12 +201,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
     setBackgroundHealingPaused: (val) => set({ backgroundHealingPaused: val }),
 
-    // Background Metadata Re-parsing Actions
-    setIsReparsingMetadata: (val) => set({ isReparsingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
-    setReparseProgress: (progress) => set({ reparseProgress: progress }),
-    triggerReparse: () => set((state) => ({ reparseTrigger: state.reparseTrigger + 1 })),
-    cancelReparse: () => {
+    // Background Metadata Refresh Actions
+    setIsRefreshingMetadata: (val) => set({ isRefreshingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
+    setRefreshProgress: (progress) => set({ refreshProgress: progress }),
+    triggerRefresh: () => set((state) => ({ refreshTrigger: state.refreshTrigger + 1 })),
+    cancelRefresh: () => {
         invoke('cancel_reparse_job').catch(console.error);
-        set({ isReparsingMetadata: false, reparseProgress: null });
+        set({ isRefreshingMetadata: false, refreshProgress: null });
     },
 }));
