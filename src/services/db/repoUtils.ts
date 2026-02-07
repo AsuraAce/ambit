@@ -85,6 +85,8 @@ export function mapRowToImage(row: any): AIImage {
         boardId: row.board_id,
         notes: row.notes,
         metadata: metadata,
+        // Populate raw chunks for re-parsing (CRITICAL for Force Refresh logic)
+        originalChunks: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined,
         // Only parse these if they were requested (SELECT *)
         originalMetadata: (() => {
             const pre = (row as any)._preparsedOriginal;

@@ -6,8 +6,29 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
     meta.tool = "InvokeAI".to_string();
 
+    // 1. Root-Aware Resolution: Unwrap specific InvokeAI metadata containers
+    // This handles the "original_metadata_json" blob from DB which might be wrapped or escaped.
+    let mut current_root = json;
+    let mut temp_val: Option<serde_json::Value> = None;
+
+    if let Some(inner) = json.get("invokeai_metadata")
+        .or_else(|| json.get("sd-metadata"))
+        .or_else(|| json.get("dream_metadata"))
+    {
+        if let Some(s) = inner.as_str() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                temp_val = Some(parsed);
+            }
+        }
+        if temp_val.is_none() {
+            current_root = inner;
+        }
+    }
+
+    let root_ref = temp_val.as_ref().unwrap_or(current_root);
+
     // Handle root vs image wrapped (v2.x has metadata in "image" object)
-    let root = json.get("image").unwrap_or(json);
+    let root = root_ref.get("image").unwrap_or(root_ref);
 
     // ===== V2.x Format Support =====
     // model_weights is at the TOP level in v2.x, not inside "image"
@@ -51,6 +72,9 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
             meta.positive_prompt = pos.trim().to_string();
         } else if let Some(pos) = root.get("positivePrompt").and_then(|v| v.as_str()) {
             meta.positive_prompt = pos.trim().to_string();
+        } else if let Some(pos) = json.get("positivePrompt").and_then(|v| v.as_str()) {
+            // Recovery for flat JSON
+            meta.positive_prompt = pos.trim().to_string();
         } else if let Some(pos) = root.get("positive_conditioning").and_then(|v| v.as_str()) {
             meta.positive_prompt = pos.trim().to_string();
         }
@@ -59,6 +83,9 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     if let Some(neg) = root.get("negative_prompt").and_then(|v| v.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
     } else if let Some(neg) = root.get("negativePrompt").and_then(|v| v.as_str()) {
+        meta.negative_prompt = neg.trim().to_string();
+    } else if let Some(neg) = json.get("negativePrompt").and_then(|v| v.as_str()) {
+        // Recovery for flat JSON
         meta.negative_prompt = neg.trim().to_string();
     } else if let Some(neg) = root.get("negative_conditioning").and_then(|v| v.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
@@ -189,7 +216,12 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     }
 
     // Extract embedded workflow/graph if present
-    if let Some(wf) = root.get("workflow").or_else(|| root.get("graph")) {
+    // Check both the unwrapped root and the original input (for sibling chunks)
+    if let Some(wf) = root.get("workflow")
+        .or_else(|| root.get("graph"))
+        .or_else(|| json.get("workflow"))
+        .or_else(|| json.get("graph")) 
+    {
         meta.workflow_json = Some(if wf.is_string() {
             wf.as_str().unwrap().to_string()
         } else {
@@ -197,14 +229,33 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         });
     }
 
+    // Helper for bool or numeric (1/0) boolean check
+    fn is_true(v: &serde_json::Value) -> bool {
+        if let Some(b) = v.as_bool() {
+            return b;
+        }
+        if let Some(n) = v.as_u64() {
+            return n == 1;
+        }
+        if let Some(n) = v.as_i64() {
+            return n == 1;
+        }
+        false
+    }
+
     // Aggressive Workflow Hint Detection (parity with TS)
     // 1. Check if we already found a workflow/graph above
     // 2. Check for the has_workflow field (which we inject into original_metadata_json during sync)
     // 3. Check for the has_workflow_data flag
+    // 4. Fallback for "corrupted" camelCase files (hasWorkflowHint)
     if meta.workflow_json.is_some() 
-        || root.get("has_workflow").and_then(|v| v.as_bool()) == Some(true)
-        || json.get("has_workflow").and_then(|v| v.as_bool()) == Some(true)
-        || root.get("has_workflow_data").and_then(|v| v.as_bool()) == Some(true)
+        || root.get("has_workflow").map(is_true).unwrap_or(false)
+        || json.get("has_workflow").map(is_true).unwrap_or(false)
+        || root_ref.get("has_workflow").map(is_true).unwrap_or(false)
+        || root.get("has_workflow_data").map(is_true).unwrap_or(false)
+        || json.get("has_workflow_data").map(is_true).unwrap_or(false)
+        || json.get("hasWorkflowHint").map(is_true).unwrap_or(false)
+        || root.get("hasWorkflowHint").map(is_true).unwrap_or(false)
     {
         meta.has_workflow_hint = true;
     }
@@ -465,5 +516,63 @@ mod tests {
         let meta = extract_invokeai_metadata(&payload);
         assert_eq!(meta.positive_prompt, "a professional portrait, soft lighting");
         assert_eq!(meta.steps, 30);
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_wrapped_with_hint() {
+        // Test case: Wrapped metadata with a top-level has_workflow hint
+        let payload = json!({
+            "invokeai_metadata": {
+                "positive_prompt": "a cat",
+                "steps": 20
+            },
+            "has_workflow": true
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "a cat");
+        assert_eq!(meta.steps, 20);
+        assert!(meta.has_workflow_hint);
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_sibling_workflow() {
+        // Test case: Metadata and workflow are siblings in a chunk map
+        let payload = json!({
+            "invokeai_metadata": {
+                "positive_prompt": "a cat",
+                "steps": 20
+            },
+            "workflow": "{\"nodes\": []}"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "a cat");
+        assert_eq!(meta.workflow_json, Some("{\"nodes\": []}".to_string()));
+        assert!(meta.has_workflow_hint);
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_numeric_hint() {
+        // Test case: numeric has_workflow (common in SQLite row maps)
+        let payload = json!({
+            "positive_prompt": "a cat",
+            "has_workflow": 1
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert!(meta.has_workflow_hint);
+    }
+
+    #[test]
+    fn test_extract_invokeai_metadata_corrupted_recovery() {
+        // Test case: "Corrupted" flat camelCase JSON (saved by faulty frontend logic before edit)
+        let payload = json!({
+            "positivePrompt": "recovered cat",
+            "negativePrompt": "dog",
+            "hasWorkflowHint": true,
+            "tool": "InvokeAI"
+        });
+        let meta = extract_invokeai_metadata(&payload);
+        assert_eq!(meta.positive_prompt, "recovered cat");
+        assert_eq!(meta.negative_prompt, "dog");
+        assert!(meta.has_workflow_hint);
     }
 }
