@@ -102,9 +102,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     const displayImage = useMemo(() => {
         // Use full image if available, else fallback to partial
-        // CRITICAL FIX: Merge dynamic store state (image) over fullImage to catch updates like metadata recovery
-        // that happen without a full re-fetch.
-        const base = fullImage ? {
+        // CRITICAL FIX: Only use fullImage if its ID matches the current target ID.
+        // This avoids merging metadata from two different images during a navigation transition.
+        const targetId = activeVersionId || image.id;
+        const isCorrectImage = fullImage && fullImage.id === targetId;
+
+        const base = isCorrectImage ? {
             ...fullImage,
             ...image, // Prioritize reactive props (isFavorite, notes, etc)
             metadata: {
@@ -116,6 +119,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         if (!activeVersionId) return base;
         return versions.find(v => v.id === activeVersionId) || base;
     }, [image, fullImage, versions, activeVersionId]);
+
+    // Derive loading state synchronously to avoid flash
+    const isReallyLoading = isLoadingFull || (activeVersionId ? (fullImage?.id !== activeVersionId) : (fullImage?.id !== image.id));
 
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, handlers } = useZoomPan();
@@ -310,7 +316,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onOpenAIResult={ai.result ? ai.openModal : undefined}
                     palette={palette}
                     isPaletteLoading={isPaletteLoading}
-                    isLoading={isLoadingFull}
+                    isLoading={isReallyLoading}
                 />
             </div>
 
