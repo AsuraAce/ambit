@@ -14,7 +14,8 @@ export const IMAGE_FIELDS_LIGHT = `
     images.model_name, images.model_hash, images.tool, images.resolved_model_name,
     json_extract(images.metadata_json, '$.positivePrompt') as positive_prompt,
     json_extract(images.metadata_json, '$.negativePrompt') as negative_prompt,
-    json_extract(images.metadata_json, '$.overrideModel') as override_model
+    json_extract(images.metadata_json, '$.overrideModel') as override_model,
+    json_extract(images.metadata_json, '$.hasWorkflowHint') as has_workflow_hint
 `;
 
 // Helper to keep mapping consistent
@@ -36,7 +37,8 @@ export function mapRowToImage(row: any): AIImage {
             tool: row.tool || 'Unknown',
             overrideModel: row.override_model,
             positivePrompt: row.positive_prompt || '',
-            negativePrompt: row.negative_prompt || ''
+            negativePrompt: row.negative_prompt || '',
+            hasWorkflowHint: row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true'
         };
     }
 
@@ -84,11 +86,22 @@ export function mapRowToImage(row: any): AIImage {
         notes: row.notes,
         metadata: metadata,
         // Only parse these if they were requested (SELECT *)
-        originalMetadata: (row as any)._preparsedOriginal || (row.original_metadata_json ? (
-            row.tool === 'InvokeAI'
-                ? mapRawInvokeMetadata(JSON.parse(row.original_metadata_json))
-                : JSON.parse(row.original_metadata_json)
-        ) : undefined),
+        originalMetadata: (() => {
+            const pre = (row as any)._preparsedOriginal;
+            if (pre) {
+                if (row.has_workflow_hint !== undefined) pre.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
+                return pre;
+            }
+            if (row.original_metadata_json) {
+                const parsed = row.tool === 'InvokeAI'
+                    ? mapRawInvokeMetadata(JSON.parse(row.original_metadata_json))
+                    : JSON.parse(row.original_metadata_json);
+
+                if (row.has_workflow_hint !== undefined) parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
+                return parsed;
+            }
+            return undefined;
+        })(),
         originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
     };
 }

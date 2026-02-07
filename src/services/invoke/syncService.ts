@@ -330,6 +330,11 @@ export const syncImages = async (
                     ? (typeof row.metadata_blob === 'string' ? JSON.parse(row.metadata_blob) : row.metadata_blob)
                     : {};
 
+                // Inject the hint status so it survives in original chunks/originalMetadata
+                if (hasHasWorkflow && row.has_workflow !== undefined) {
+                    rawInvokeMeta.has_workflow = !!row.has_workflow;
+                }
+
                 const newImg: AIImage = {
                     id: fullPath,
                     url: convertFileSrc(fullPath),
