@@ -319,8 +319,8 @@ export function mapRawInvokeMetadata(meta: any): any {
     };
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
-    if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = actualRoot.positive_prompt || actualRoot.positivePrompt;
-    if (actualRoot.negative_prompt || actualRoot.negativePrompt) mapped.negativePrompt = actualRoot.negative_prompt || actualRoot.negativePrompt;
+    if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = (actualRoot.positive_prompt || actualRoot.positivePrompt).toString().trim();
+    if (actualRoot.negative_prompt || actualRoot.negativePrompt) mapped.negativePrompt = (actualRoot.negative_prompt || actualRoot.negativePrompt).toString().trim();
     if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
     if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
     if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;

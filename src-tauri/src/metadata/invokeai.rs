@@ -197,6 +197,18 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         });
     }
 
+    // Aggressive Workflow Hint Detection (parity with TS)
+    // 1. Check if we already found a workflow/graph above
+    // 2. Check for the has_workflow field (which we inject into original_metadata_json during sync)
+    // 3. Check for the has_workflow_data flag
+    if meta.workflow_json.is_some() 
+        || root.get("has_workflow").and_then(|v| v.as_bool()) == Some(true)
+        || json.get("has_workflow").and_then(|v| v.as_bool()) == Some(true)
+        || root.get("has_workflow_data").and_then(|v| v.as_bool()) == Some(true)
+    {
+        meta.has_workflow_hint = true;
+    }
+
     // Detect postprocessing-only images (upscales, face fixes, etc.)
     // These have postprocessing data but no generation data (no prompt, no steps, no model)
     // Note: generation_type defaults to "unknown", so check for both empty and unknown

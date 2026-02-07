@@ -29,8 +29,10 @@ pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetada
     // Layer 1: Archival (Workflow JSON)
     if let Some(workflow) = chunks.get("workflow") {
         meta.workflow_json = Some(workflow.clone());
+        meta.has_workflow_hint = true;
     } else if let Some(prompt) = chunks.get("prompt") {
         meta.workflow_json = Some(prompt.clone());
+        meta.has_workflow_hint = true;
     }
 
     // Normalize graph

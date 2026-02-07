@@ -18,7 +18,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 2;
+pub const CURRENT_PARSER_VERSION: u32 = 3;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]
 pub struct ImageMetadata {
@@ -70,6 +70,8 @@ pub struct ImageMetadata {
     pub generation_type: String,
     #[serde(rename = "isFavorite", default)]
     pub is_favorite: bool,
+    #[serde(rename = "hasWorkflowHint", default)]
+    pub has_workflow_hint: bool,
 }
 
 impl ImageMetadata {
@@ -191,6 +193,7 @@ impl Default for ImageMetadata {
             model_hash: None,
             generation_type: "unknown".to_string(),
             is_favorite: false,
+            has_workflow_hint: false,
         }
     }
 }
@@ -248,6 +251,10 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
 
     if base.workflow_json.is_none() {
         base.workflow_json = secondary.workflow_json;
+    }
+
+    if !base.has_workflow_hint && secondary.has_workflow_hint {
+        base.has_workflow_hint = true;
     }
 
     if base.vae.is_none() {
