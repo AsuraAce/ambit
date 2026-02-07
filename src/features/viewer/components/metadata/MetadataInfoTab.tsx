@@ -93,9 +93,10 @@ export const MetadataInfoTab = ({
 
     const isGenDataModified = () => {
         if (!image.originalMetadata) return false;
+        // Technical parameters only (excludes prompts)
         const keys = [
             'steps', 'cfg', 'seed', 'sampler', 'model', 'overrideModel', 'tool',
-            'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale'
+            'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale', 'hiresSteps', 'hiresUpscaler'
         ] as const;
         return keys.some(k => isModified(k));
     };
@@ -206,7 +207,7 @@ export const MetadataInfoTab = ({
                     {image.metadata.negativePrompt && (
                         <div>
                             <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider mb-2">Negative Prompt</h3>
-                            <div className="p-4 bg-white dark:bg-zinc-950/30 rounded-xl border border-gray-200 dark:border-white/5 text-xs text-red-600/80 dark:text-red-200/60 font-sans leading-relaxed max-h-32 overflow-y-auto">
+                            <div className={`p-4 bg-white dark:bg-zinc-950/30 rounded-xl border text-xs leading-relaxed max-h-32 overflow-y-auto transition-colors ${isModified('negativePrompt') ? 'border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-200/80 shadow-inner bg-amber-50/10' : 'border-gray-200 dark:border-white/5 text-red-600/80 dark:text-red-200/60 font-sans'}`}>
                                 {image.metadata.negativePrompt}
                             </div>
                         </div>
