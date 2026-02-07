@@ -310,6 +310,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onOpenAIResult={ai.result ? ai.openModal : undefined}
                     palette={palette}
                     isPaletteLoading={isPaletteLoading}
+                    isLoading={isLoadingFull}
                 />
             </div>
 

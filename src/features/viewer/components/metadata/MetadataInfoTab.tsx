@@ -26,6 +26,7 @@ interface MetadataInfoTabProps {
     onGenerateVariations: () => void;
     isAnalyzing: boolean;
     onOpenAIResult?: () => void;
+    isLoading?: boolean;
 }
 
 export const MetadataInfoTab = ({
@@ -44,7 +45,8 @@ export const MetadataInfoTab = ({
     onAIAnalysis,
     onGenerateVariations,
     isAnalyzing,
-    onOpenAIResult
+    onOpenAIResult,
+    isLoading
 }: MetadataInfoTabProps) => {
     // Local UI State
     const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
@@ -70,8 +72,23 @@ export const MetadataInfoTab = ({
     };
 
     const isModified = (key: keyof typeof image.metadata) => {
-        if (!image.originalMetadata) return false;
-        return image.metadata[key] !== image.originalMetadata[key];
+        if (!image.originalMetadata || isLoading) return false;
+        const cur = image.metadata[key];
+        const orig = image.originalMetadata[key];
+
+        if (cur === orig) return false;
+
+        // Handle equivalent empty values (null, undefined, empty string)
+        const isEmptyA = cur === null || cur === undefined || cur === '';
+        const isEmptyB = orig === null || orig === undefined || orig === '';
+        if (isEmptyA && isEmptyB) return false;
+
+        // Handle trimmed string comparison to avoid whitespace flicker
+        if (typeof cur === 'string' && typeof orig === 'string') {
+            if (cur.trim() === orig.trim()) return false;
+        }
+
+        return true;
     };
 
     const isGenDataModified = () => {
@@ -80,7 +97,16 @@ export const MetadataInfoTab = ({
             'steps', 'cfg', 'seed', 'sampler', 'model', 'overrideModel', 'tool',
             'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale'
         ] as const;
-        return keys.some(k => image.metadata[k] !== image.originalMetadata![k]);
+        return keys.some(k => isModified(k));
+    };
+
+    const hasModifications = () => {
+        if (!image.originalMetadata || isLoading) return false;
+        return (
+            isModified('positivePrompt') ||
+            isModified('negativePrompt') ||
+            isGenDataModified()
+        );
     };
 
     const smartTags = (typeof image.metadata.positivePrompt === 'string')
@@ -160,7 +186,7 @@ export const MetadataInfoTab = ({
                                         <Wand2 className="w-3.5 h-3.5" />
                                     </button>
                                 )}
-                                {image.originalMetadata && onRevertMetadata && (
+                                {image.originalMetadata && hasModifications() && onRevertMetadata && (
                                     <button onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20" title="Revert all metadata to original">
                                         <Undo2 className="w-3 h-3" />
                                     </button>
@@ -211,7 +237,7 @@ export const MetadataInfoTab = ({
                             <div className="flex items-center gap-2">
                                 <Settings2 className="w-3.5 h-3.5 text-gray-500" />
                                 <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Generation Data</h3>
-                                {isGenDataModified() && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 ml-1" />}
+                                {isGenDataModified() && !isLoading && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 ml-1" />}
                             </div>
                         </button>
 

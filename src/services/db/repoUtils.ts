@@ -1,7 +1,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage } from '../../types';
-import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
+import { mapRawInvokeMetadata, cleanModelName } from '../invoke/metadataMapper';
 
 // Lightweight column set for grid/listing views
 // Lightweight column set for grid/listing views
@@ -42,7 +42,25 @@ export function mapRowToImage(row: any): AIImage {
 
     // Ensure model is set if we have the resolved column (priority)
     if (row.resolved_model_name) {
+        // We clean before comparison to be safe
+        const currentModel = cleanModelName(metadata.model);
+        const resolvedModel = cleanModelName(row.resolved_model_name);
+
         metadata.model = row.resolved_model_name;
+
+        // Propagation: If the original metadata model also matches the current raw model, 
+        // we update IT as well to prevent a "modification" flag for system-level resolution.
+        if (row.original_metadata_json && row.tool === 'InvokeAI') {
+            // Need to parse original metadata early to compare
+            const originalMeta = mapRawInvokeMetadata(JSON.parse(row.original_metadata_json));
+            const originalModel = cleanModelName(originalMeta.model);
+
+            if (originalModel === currentModel || originalModel === resolvedModel) {
+                originalMeta.model = row.resolved_model_name;
+                // We'll pass this cached version to the return block below
+                (row as any)._preparsedOriginal = originalMeta;
+            }
+        }
     }
 
     return {
@@ -66,11 +84,11 @@ export function mapRowToImage(row: any): AIImage {
         notes: row.notes,
         metadata: metadata,
         // Only parse these if they were requested (SELECT *)
-        originalMetadata: row.original_metadata_json ? (
+        originalMetadata: (row as any)._preparsedOriginal || (row.original_metadata_json ? (
             row.tool === 'InvokeAI'
                 ? mapRawInvokeMetadata(JSON.parse(row.original_metadata_json))
                 : JSON.parse(row.original_metadata_json)
-        ) : undefined,
+        ) : undefined),
         originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
     };
 }

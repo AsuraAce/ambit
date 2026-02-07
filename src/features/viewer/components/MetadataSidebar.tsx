@@ -43,6 +43,7 @@ interface MetadataSidebarProps {
     // Palette
     palette: string[];
     isPaletteLoading: boolean;
+    isLoading?: boolean;
 }
 
 export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
@@ -72,7 +73,8 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     isAnalyzing,
     onOpenAIResult,
     palette,
-    isPaletteLoading
+    isPaletteLoading,
+    isLoading
 }) => {
     return (
         <div className="w-[420px] flex flex-col h-full bg-white dark:bg-zinc-900/95 backdrop-blur-xl border-l border-gray-200 dark:border-white/10 shadow-2xl">
@@ -144,6 +146,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         onGenerateVariations={onGenerateVariations}
                         isAnalyzing={isAnalyzing}
                         onOpenAIResult={onOpenAIResult}
+                        isLoading={isLoading}
                     />
                 )}
 

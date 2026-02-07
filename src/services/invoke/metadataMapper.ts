@@ -1,5 +1,5 @@
 // Helper to clean model names consistent with backend logic
-function cleanModelName(name: string): string {
+export function cleanModelName(name: string): string {
     if (!name || typeof name !== 'string') return '';
     return name
         .replace(".safetensors", "")
@@ -265,8 +265,7 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
  * Used both during sync and when displaying "Original" metadata in the UI.
  */
 export function mapRawInvokeMetadata(meta: any): any {
-    // Base metadata - always includes tool: 'InvokeAI' since we know the source
-    const mapped: any = {
+    if (!meta) return {
         tool: 'InvokeAI',
         positivePrompt: '',
         negativePrompt: '',
@@ -275,40 +274,86 @@ export function mapRawInvokeMetadata(meta: any): any {
         ipAdapters: [],
         embeddings: [],
         hypernetworks: [],
-        hasWorkflowHint: false, // Will be set if workflow found
-        isIntermediate: meta?.is_intermediate === 1 || meta?.is_intermediate === true
+        hasWorkflowHint: false,
+        isIntermediate: false
     };
 
-    if (!meta) return mapped;
-
-    const root = meta.image || meta.generation || meta;
-
-    // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
-    if (root.positive_prompt || root.positivePrompt) mapped.positivePrompt = root.positive_prompt || root.positivePrompt;
-    if (root.negative_prompt || root.negativePrompt) mapped.negativePrompt = root.negative_prompt || root.negativePrompt;
-    if (root.steps) mapped.steps = root.steps;
-    if (root.cfg_scale || root.cfg) mapped.cfg = root.cfg_scale || root.cfg;
-    if (root.seed) mapped.seed = root.seed;
-    if (root.scheduler || root.sampler) mapped.sampler = root.scheduler || root.sampler;
-
-    if (!mapped.positivePrompt && root.prompt) {
-        if (Array.isArray(root.prompt)) {
-            mapped.positivePrompt = root.prompt.map((p: any) => p.prompt).join(' ');
-        } else if (typeof root.prompt === 'string') {
-            mapped.positivePrompt = root.prompt.trim();
+    // Check if the input is wrapped in our internal DB structure
+    let root = meta;
+    if (meta.invokeai_metadata || meta['sd-metadata'] || meta.dream_metadata) {
+        root = meta.invokeai_metadata || meta['sd-metadata'] || meta.dream_metadata;
+        // If the wrapper contains a string (double-encoded legacy case), parse it
+        if (typeof root === 'string') {
+            try {
+                root = JSON.parse(root);
+            } catch (e) {
+                root = meta; // Fallback
+            }
         }
     }
 
-    if (root.model) {
-        if (typeof root.model === 'string') mapped.model = root.model;
-        else if (root.model.model_name) mapped.model = root.model.model_name;
-        else if (root.model.name) mapped.model = root.model.name;
-        else if (root.model.default) mapped.model = root.model.default;
+    // Base metadata - always includes tool: 'InvokeAI' since we know the source
+    // Initialize with EXACT SAME DEFAULTS as Rust ImageMetadata struct to avoid comparison discrepancies
+    const mapped: any = {
+        tool: 'InvokeAI',
+        model: 'Unknown',
+        steps: 0,
+        cfg: 0,
+        seed: 0,
+        sampler: 'Unknown',
+        positivePrompt: '',
+        negativePrompt: '',
+        loras: [],
+        controlNets: [],
+        ipAdapters: [],
+        embeddings: [],
+        hypernetworks: [],
+        hasWorkflowHint: !!(root.workflow || root.graph || meta.has_workflow),
+        isIntermediate: root?.is_intermediate === 1 || root?.is_intermediate === true || meta?.is_intermediate === 1 || meta?.is_intermediate === true,
+        generationType: 'unknown',
+        workflowJson: root.workflow || meta.workflow || root.graph || meta.graph ? JSON.stringify(root.workflow || meta.workflow || root.graph || meta.graph) : undefined
+    };
+
+    const actualRoot = root.image || root.generation || root;
+
+    // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
+    if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = actualRoot.positive_prompt || actualRoot.positivePrompt;
+    if (actualRoot.negative_prompt || actualRoot.negativePrompt) mapped.negativePrompt = actualRoot.negative_prompt || actualRoot.negativePrompt;
+    if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
+    if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
+    if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;
+    if (actualRoot.scheduler || actualRoot.sampler) mapped.sampler = actualRoot.scheduler || actualRoot.sampler;
+
+    // Additional fields for parity with Rust ImageMetadata
+    if (actualRoot.clip_skip !== undefined || actualRoot.clipSkip !== undefined) mapped.clipSkip = actualRoot.clip_skip !== undefined ? actualRoot.clip_skip : actualRoot.clipSkip;
+    if (actualRoot.hrf_strength !== undefined || actualRoot.denoisingStrength !== undefined) mapped.denoisingStrength = actualRoot.hrf_strength !== undefined ? actualRoot.hrf_strength : actualRoot.denoisingStrength;
+    if (actualRoot.hrf_method || actualRoot.hiresUpscaler) mapped.hiresUpscaler = actualRoot.hrf_method || actualRoot.hiresUpscaler;
+    if (actualRoot.generation_mode || actualRoot.generationType || actualRoot.type) mapped.generationType = actualRoot.generation_mode || actualRoot.generationType || actualRoot.type;
+
+    // Check for favorite status in legacy formats
+    if (actualRoot.subject === 'favorite' || actualRoot.isFavorite) mapped.isFavorite = true;
+
+    if (!mapped.positivePrompt && actualRoot.prompt) {
+        if (Array.isArray(actualRoot.prompt)) {
+            mapped.positivePrompt = actualRoot.prompt.map((p: any) => p.prompt).join(' ');
+        } else if (typeof actualRoot.prompt === 'string') {
+            mapped.positivePrompt = actualRoot.prompt.trim();
+        }
+    }
+
+    if (actualRoot.model) {
+        let modelFull = '';
+        if (typeof actualRoot.model === 'string') modelFull = actualRoot.model;
+        else if (actualRoot.model.model_name) modelFull = actualRoot.model.model_name;
+        else if (actualRoot.model.name) modelFull = actualRoot.model.name;
+        else if (actualRoot.model.default) modelFull = actualRoot.model.default;
+
+        if (modelFull) mapped.model = cleanModelName(modelFull);
     }
 
     // Deep scan for resources (LoRAs, ControlNets, IP-Adapters, Embeddings, Hypernets)
     const resources: Resources = { loras: [], controlNets: [], ipAdapters: [], embeddings: [], hypernetworks: [] };
-    scanForResources(meta, resources);
+    scanForResources(actualRoot, resources);
 
     mapped.loras = resources.loras;
     mapped.controlNets = resources.controlNets;
