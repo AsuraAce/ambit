@@ -292,8 +292,12 @@ export function mapRawInvokeMetadata(meta: any): any {
         }
     }
 
-    // Base metadata - always includes tool: 'InvokeAI' since we know the source
-    // Initialize with EXACT SAME DEFAULTS as Rust ImageMetadata struct to avoid comparison discrepancies
+    const actualRoot = root.image || root.generation || root;
+
+    // Aggressive Workflow Detection - searches all potential storage locations
+    const workflow = root.workflow || meta.workflow || root.graph || meta.graph ||
+        actualRoot.workflow || actualRoot.graph || meta.has_workflow_data;
+
     const mapped: any = {
         tool: 'InvokeAI',
         model: 'Unknown',
@@ -308,13 +312,11 @@ export function mapRawInvokeMetadata(meta: any): any {
         ipAdapters: [],
         embeddings: [],
         hypernetworks: [],
-        hasWorkflowHint: !!(root.workflow || root.graph || meta.has_workflow),
+        hasWorkflowHint: !!(workflow || meta.has_workflow),
         isIntermediate: root?.is_intermediate === 1 || root?.is_intermediate === true || meta?.is_intermediate === 1 || meta?.is_intermediate === true,
         generationType: 'unknown',
-        workflowJson: root.workflow || meta.workflow || root.graph || meta.graph ? JSON.stringify(root.workflow || meta.workflow || root.graph || meta.graph) : undefined
+        workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined
     };
-
-    const actualRoot = root.image || root.generation || root;
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
     if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = actualRoot.positive_prompt || actualRoot.positivePrompt;
