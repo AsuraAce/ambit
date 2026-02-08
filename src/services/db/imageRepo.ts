@@ -4,6 +4,8 @@ import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
+import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
+import { mapRawChunksToMetadata } from '../metadata/mappingUtils';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
@@ -191,28 +193,54 @@ export const revertImageMetadata = async (id: string) => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
 
-        // We want to restore 'tool' from the original metadata if possible.
-        // The easiest way is to set metadata_json to NULL, which means 'no modifications'.
-        // However, we also need to sync the 'tool' column.
-        // We'll read the original_metadata_json first to see what the tool was.
-        const row: any = await db.select('SELECT original_metadata_json, tool FROM images WHERE id = ?', [normalizedId]);
+        // 1. Fetch the original metadata chunks and current tool
+        const row: any = await db.select('SELECT original_metadata_json, tool, model_hash, model_name FROM images WHERE id = ?', [normalizedId]);
         if (!row || row.length === 0) return;
+        const img = row[0];
 
-        // The most robust revert is setting metadata_json to NULL.
-        // This clears all 'json_set' overrides.
-        // We also need to clear model_hash/model_name/tool/overrideModel denormalized columns so they re-sync from original.
-        await db.execute(`
-            UPDATE images 
-            SET metadata_json = NULL,
-                model_hash = (SELECT json_extract(original_metadata_json, '$.modelHash') FROM images WHERE id = ?),
-                model_name = (SELECT json_extract(original_metadata_json, '$.model') FROM images WHERE id = ?),
-                tool = (CASE 
-                    WHEN original_metadata_json LIKE '%invokeai_metadata%' THEN 'InvokeAI'
-                    WHEN original_metadata_json LIKE '%prompt%\"inputs%' THEN 'ComfyUI'
-                    ELSE tool -- Keep as is if we can't be sure
-                END)
-            WHERE id = ?
-        `, [normalizedId, normalizedId, normalizedId]);
+        if (!img.original_metadata_json) {
+            // If no original metadata, we just clear overrides
+            await db.execute('UPDATE images SET metadata_json = NULL WHERE id = ?', [normalizedId]);
+            return;
+        }
+
+        try {
+            const parsedJson = JSON.parse(img.original_metadata_json);
+
+            // 2. Re-parse the original chunks using the centralized logic
+            const isInvokeStructure = img.tool === 'InvokeAI' ||
+                parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt);
+
+            const originalMetadata = isInvokeStructure
+                ? mapRawInvokeMetadata(parsedJson)
+                : mapRawChunksToMetadata(parsedJson, img.tool as GeneratorTool);
+
+            // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
+            // If an image is in the DB, it belongs in the main view, so we ensure 
+            // isIntermediate is false (this avoids hiding it via the generated is_intermediate_gen column).
+            originalMetadata.isIntermediate = false;
+
+            // 3. Update metadata_json with the full original object
+            // This ensures all fields (prompts, sampler, etc.) are restored for both grid and details view
+            await db.execute(`
+                UPDATE images 
+                SET metadata_json = ?,
+                    model_hash = ?,
+                    model_name = ?,
+                    tool = ?
+                WHERE id = ?
+            `, [
+                JSON.stringify(originalMetadata),
+                originalMetadata.modelHash || null,
+                originalMetadata.model || null,
+                originalMetadata.tool || img.tool,
+                normalizedId
+            ]);
+        } catch (e) {
+            console.error('[DB] Failed to revert metadata:', e);
+            // Fallback: just clear overrides if parsing fails
+            await db.execute('UPDATE images SET metadata_json = NULL WHERE id = ?', [normalizedId]);
+        }
     });
 };
 

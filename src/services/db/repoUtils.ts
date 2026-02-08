@@ -1,7 +1,8 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage } from '../../types';
+import { AIImage, GeneratorTool } from '../../types';
 import { mapRawInvokeMetadata, cleanModelName } from '../invoke/metadataMapper';
+import { mapRawChunksToMetadata } from '../metadata/mappingUtils';
 
 // Lightweight column set for grid/listing views
 // Lightweight column set for grid/listing views
@@ -53,31 +54,31 @@ export function mapRowToImage(row: any): AIImage {
         // Propagation: If the original metadata model also matches the current raw model, 
         // we update IT as well to prevent a "modification" flag for system-level resolution.
 
-        // Intelligent Parsing: Check content for InvokeAI structure if tool is mismatching or generic
-        let isInvokeStructure = row.tool === 'InvokeAI';
-        if (!isInvokeStructure && row.original_metadata_json) {
+        if (row.original_metadata_json) {
             try {
-                const raw = JSON.parse(row.original_metadata_json);
-                if (raw.invokeai_metadata || raw['sd-metadata'] || raw.dream_metadata || (raw.image && raw.image.prompt)) {
-                    isInvokeStructure = true;
+                const chunks = JSON.parse(row.original_metadata_json);
+                let originalMeta: any;
+
+                // Check for InvokeAI specific structure
+                if (row.tool === 'InvokeAI' || chunks.invokeai_metadata || chunks['sd-metadata'] || chunks.dream_metadata || (chunks.image && chunks.image.prompt)) {
+                    originalMeta = mapRawInvokeMetadata(chunks);
+                } else {
+                    originalMeta = mapRawChunksToMetadata(chunks, row.tool as GeneratorTool);
+                }
+
+                if (originalMeta && originalMeta.model) {
+                    const originalModel = cleanModelName(originalMeta.model);
+                    if (originalModel === currentModel || originalModel === resolvedModel) {
+                        originalMeta.model = row.resolved_model_name;
+                        // We'll pass this cached version to the return block below
+                        (row as any)._preparsedOriginal = originalMeta;
+                    }
                 }
             } catch (e) { /* ignore */ }
         }
-
-        if (row.original_metadata_json && isInvokeStructure) {
-            // Need to parse original metadata early to compare
-            const originalMeta = mapRawInvokeMetadata(JSON.parse(row.original_metadata_json));
-            const originalModel = cleanModelName(originalMeta.model);
-
-            if (originalModel === currentModel || originalModel === resolvedModel) {
-                originalMeta.model = row.resolved_model_name;
-                // We'll pass this cached version to the return block below
-                (row as any)._preparsedOriginal = originalMeta;
-            }
-        }
     }
 
-    return {
+    const result: AIImage = {
         id: row.id,
         url: convertFileSrc(normalizedPath),
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
@@ -96,6 +97,7 @@ export function mapRowToImage(row: any): AIImage {
         groupId: row.group_id,
         boardId: row.board_id,
         notes: row.notes,
+        isIntermediate: row.is_intermediate_gen === 1 || row.is_intermediate_gen === true || row.is_intermediate_gen === '1',
         metadata: metadata,
         // Populate raw chunks for re-parsing (CRITICAL for Force Refresh logic)
         originalChunks: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined,
@@ -107,19 +109,18 @@ export function mapRowToImage(row: any): AIImage {
                 return pre;
             }
             if (row.original_metadata_json) {
-                // Same logic as above: detect if it looks like InvokeAI
-                let isInvokeStructure = row.tool === 'InvokeAI';
                 let parsedJson: any;
                 try {
                     parsedJson = JSON.parse(row.original_metadata_json);
-                    if (!isInvokeStructure && (parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt))) {
-                        isInvokeStructure = true;
-                    }
                 } catch (e) { return undefined; }
+
+                // Same logic as above: detect if it looks like InvokeAI
+                const isInvokeStructure = row.tool === 'InvokeAI' ||
+                    parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt);
 
                 const parsed = isInvokeStructure
                     ? mapRawInvokeMetadata(parsedJson)
-                    : parsedJson;
+                    : mapRawChunksToMetadata(parsedJson, row.tool as GeneratorTool);
 
                 if (row.has_workflow_hint !== undefined) parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
                 return parsed;
@@ -128,4 +129,17 @@ export function mapRowToImage(row: any): AIImage {
         })(),
         originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
     };
+
+    // FALLBACK: If metadata is very sparse (missing props from json_extract usually)
+    // and we have originalMetadata, use it as a base.
+    // We check if it only contains the 'light' load fields (model, tool, hash).
+    const isSparse = !result.metadata.positivePrompt && !result.metadata.sampler && (!result.metadata.steps || result.metadata.steps === 0);
+    if (isSparse && result.originalMetadata) {
+        result.metadata = {
+            ...result.originalMetadata,
+            ...result.metadata // Overlays current sparse metadata (which might have tool/model)
+        };
+    }
+
+    return result;
 }

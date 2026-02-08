@@ -324,7 +324,19 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
     if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
     if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;
-    if (actualRoot.scheduler || actualRoot.sampler) mapped.sampler = actualRoot.scheduler || actualRoot.sampler;
+    // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
+    if (actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name) {
+        mapped.sampler = actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name;
+    }
+
+    // Hash extraction (v2.x uses model_hash at root, v3.5+ uses model.hash)
+    if (root.model_hash) mapped.modelHash = root.model_hash.toString();
+    else if (meta.model_hash) mapped.modelHash = meta.model_hash.toString();
+    else if (actualRoot.model?.hash) {
+        // Strip prefixes like "blake3:" if present
+        const hashStr = actualRoot.model.hash.toString();
+        mapped.modelHash = hashStr.split(':').pop() || hashStr;
+    }
 
     // Additional fields for parity with Rust ImageMetadata
     if (actualRoot.clip_skip !== undefined || actualRoot.clipSkip !== undefined) mapped.clipSkip = actualRoot.clip_skip !== undefined ? actualRoot.clip_skip : actualRoot.clipSkip;
