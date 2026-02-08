@@ -268,7 +268,14 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (!meta) return {
         tool: 'InvokeAI',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
+        loras: [],
+        controlNets: [],
+        ipAdapters: [],
+        embeddings: [],
+        hypernetworks: [],
+        hasWorkflowHint: false,
+        isIntermediate: false
     };
 
     // Check if the input is wrapped in our internal DB structure
@@ -293,13 +300,23 @@ export function mapRawInvokeMetadata(meta: any): any {
 
     const mapped: any = {
         tool: 'InvokeAI',
+        model: 'Unknown',
+        steps: 0,
+        cfg: 0,
+        seed: 0,
+        sampler: 'Unknown',
+        positivePrompt: '',
+        negativePrompt: '',
+        loras: [],
+        controlNets: [],
+        ipAdapters: [],
+        embeddings: [],
+        hypernetworks: [],
         hasWorkflowHint: !!(workflow || meta.has_workflow),
         isIntermediate: root?.is_intermediate === 1 || root?.is_intermediate === true || meta?.is_intermediate === 1 || meta?.is_intermediate === true,
+        generationType: 'unknown',
         workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined
     };
-
-    // Note: We avoid setting defaults like steps: 0 or model: 'Unknown' here 
-    // to match the worker's behavior and avoid false modification flags.
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
     if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = (actualRoot.positive_prompt || actualRoot.positivePrompt).toString().trim();
@@ -307,9 +324,7 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
     if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
     if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;
-    if (actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name) {
-        mapped.sampler = actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name;
-    }
+    if (actualRoot.scheduler || actualRoot.sampler) mapped.sampler = actualRoot.scheduler || actualRoot.sampler;
 
     // Additional fields for parity with Rust ImageMetadata
     if (actualRoot.clip_skip !== undefined || actualRoot.clipSkip !== undefined) mapped.clipSkip = actualRoot.clip_skip !== undefined ? actualRoot.clip_skip : actualRoot.clipSkip;
@@ -335,7 +350,7 @@ export function mapRawInvokeMetadata(meta: any): any {
         else if (actualRoot.model.name) modelFull = actualRoot.model.name;
         else if (actualRoot.model.default) modelFull = actualRoot.model.default;
 
-        if (modelFull) mapped.model = modelFull;
+        if (modelFull) mapped.model = cleanModelName(modelFull);
     }
 
     // Deep scan for resources (LoRAs, ControlNets, IP-Adapters, Embeddings, Hypernets)

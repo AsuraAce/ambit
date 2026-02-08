@@ -8,7 +8,6 @@ import { formatModelName } from '../../../../utils/formatUtils';
 import { ParamItem } from './ParamItem';
 import { ResourceSection } from './ResourceSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
-import { cleanModelName } from '../../../../services/invoke/metadataMapper';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -79,22 +78,14 @@ export const MetadataInfoTab = ({
 
         if (cur === orig) return false;
 
-        // Handle equivalent empty values (null, undefined, empty string, or defaults like 0/'Unknown')
-        // This is crucial for matching 'originalMetadata' (baseline) vs 'metadata' (worker)
-        const isEmptyA = cur === null || cur === undefined || cur === '' || cur === 0 || cur === 'Unknown';
-        const isEmptyB = orig === null || orig === undefined || orig === '' || orig === 0 || orig === 'Unknown';
+        // Handle equivalent empty values (null, undefined, empty string)
+        const isEmptyA = cur === null || cur === undefined || cur === '';
+        const isEmptyB = orig === null || orig === undefined || orig === '';
         if (isEmptyA && isEmptyB) return false;
 
         // Handle trimmed string comparison to avoid whitespace flicker
         if (typeof cur === 'string' && typeof orig === 'string') {
-            const curT = cur.trim();
-            const origT = orig.trim();
-            if (curT === origT) return false;
-
-            // Model name robustness: fallback to cleaned comparison
-            if (key === 'model') {
-                if (cleanModelName(curT) === cleanModelName(origT)) return false;
-            }
+            if (cur.trim() === orig.trim()) return false;
         }
 
         return true;

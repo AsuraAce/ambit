@@ -2,7 +2,6 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage } from '../../types';
 import { mapRawInvokeMetadata, cleanModelName } from '../invoke/metadataMapper';
-import { mapRawMetadata } from '../metadata/universalMapper';
 
 // Lightweight column set for grid/listing views
 // Lightweight column set for grid/listing views
@@ -53,9 +52,21 @@ export function mapRowToImage(row: any): AIImage {
 
         // Propagation: If the original metadata model also matches the current raw model, 
         // we update IT as well to prevent a "modification" flag for system-level resolution.
-        if (row.original_metadata_json) {
-            const rawChunks = JSON.parse(row.original_metadata_json);
-            const originalMeta = mapRawMetadata(rawChunks, row.tool);
+
+        // Intelligent Parsing: Check content for InvokeAI structure if tool is mismatching or generic
+        let isInvokeStructure = row.tool === 'InvokeAI';
+        if (!isInvokeStructure && row.original_metadata_json) {
+            try {
+                const raw = JSON.parse(row.original_metadata_json);
+                if (raw.invokeai_metadata || raw['sd-metadata'] || raw.dream_metadata || (raw.image && raw.image.prompt)) {
+                    isInvokeStructure = true;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        if (row.original_metadata_json && isInvokeStructure) {
+            // Need to parse original metadata early to compare
+            const originalMeta = mapRawInvokeMetadata(JSON.parse(row.original_metadata_json));
             const originalModel = cleanModelName(originalMeta.model);
 
             if (originalModel === currentModel || originalModel === resolvedModel) {
@@ -96,12 +107,21 @@ export function mapRowToImage(row: any): AIImage {
                 return pre;
             }
             if (row.original_metadata_json) {
-                const rawChunks = JSON.parse(row.original_metadata_json);
-                const parsed = mapRawMetadata(rawChunks, row.tool);
+                // Same logic as above: detect if it looks like InvokeAI
+                let isInvokeStructure = row.tool === 'InvokeAI';
+                let parsedJson: any;
+                try {
+                    parsedJson = JSON.parse(row.original_metadata_json);
+                    if (!isInvokeStructure && (parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt))) {
+                        isInvokeStructure = true;
+                    }
+                } catch (e) { return undefined; }
 
-                if (row.has_workflow_hint !== undefined) {
-                    parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
-                }
+                const parsed = isInvokeStructure
+                    ? mapRawInvokeMetadata(parsedJson)
+                    : parsedJson;
+
+                if (row.has_workflow_hint !== undefined) parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
                 return parsed;
             }
             return undefined;

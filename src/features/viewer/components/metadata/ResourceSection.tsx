@@ -10,7 +10,7 @@ interface ResourceSectionProps {
 }
 
 export const ResourceSection = ({ title, items, icon: Icon, onSearch, onClose }: ResourceSectionProps) => {
-    if (!items || items.length === 0) return null;
+    if (!items || !Array.isArray(items) || items.length === 0) return null;
     return (
         <div className="mb-4 last:mb-0">
             <div className="flex items-center gap-2 mb-2">

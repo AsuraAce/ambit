@@ -155,27 +155,64 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         const params: any[] = [];
 
         Object.entries(updates).forEach(([key, value]) => {
-            jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
-            params.push(value);
+            // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
+            // Otherwise SQLite might store it as a literal string "[object Object]" or similar corruption.
+            if (value !== null && typeof value === 'object') {
+                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', json(?))`;
+                params.push(JSON.stringify(value));
+            } else {
+                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+                params.push(value);
+            }
         });
 
-        // Denormalized Column Sync: If we're updating 'tool' or 'model' keys, 
-        // we also sync the top-level columns for performance/filtering consistency.
-        let colUpdates = '';
-        const colParams: any[] = [];
-        if (updates.tool) {
-            colUpdates += ', tool = ?';
-            colParams.push(updates.tool);
-        }
-        if (updates.overrideModel || updates.model) {
-            colUpdates += ', model_name = ?';
-            colParams.push(updates.overrideModel || updates.model);
+        query += jsonSetExpr;
+
+        // SPECIAL CASE: 'tool' is a real column, so we must update it too if it's in the updates
+        if ('tool' in updates) {
+            query += ', tool = ?';
+            params.push(updates.tool);
         }
 
-        query += jsonSetExpr + colUpdates + ' WHERE id = ?';
-        params.push(...colParams, normalizedId);
+        query += ' WHERE id = ?';
+        params.push(normalizedId);
 
         await db.execute(query, params);
+    });
+};
+
+/**
+ * Reverts the entire metadata_json for an image to its original state (if stored) 
+ * or effectively clears all user-applied overrides by setting metadata_json to null.
+ * Also resets denormalized columns like 'tool'.
+ */
+export const revertImageMetadata = async (id: string) => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const normalizedId = normalizePath(id);
+
+        // We want to restore 'tool' from the original metadata if possible.
+        // The easiest way is to set metadata_json to NULL, which means 'no modifications'.
+        // However, we also need to sync the 'tool' column.
+        // We'll read the original_metadata_json first to see what the tool was.
+        const row: any = await db.select('SELECT original_metadata_json, tool FROM images WHERE id = ?', [normalizedId]);
+        if (!row || row.length === 0) return;
+
+        // The most robust revert is setting metadata_json to NULL.
+        // This clears all 'json_set' overrides.
+        // We also need to clear model_hash/model_name/tool/overrideModel denormalized columns so they re-sync from original.
+        await db.execute(`
+            UPDATE images 
+            SET metadata_json = NULL,
+                model_hash = (SELECT json_extract(original_metadata_json, '$.modelHash') FROM images WHERE id = ?),
+                model_name = (SELECT json_extract(original_metadata_json, '$.model') FROM images WHERE id = ?),
+                tool = (CASE 
+                    WHEN original_metadata_json LIKE '%invokeai_metadata%' THEN 'InvokeAI'
+                    WHEN original_metadata_json LIKE '%prompt%\"inputs%' THEN 'ComfyUI'
+                    ELSE tool -- Keep as is if we can't be sure
+                END)
+            WHERE id = ?
+        `, [normalizedId, normalizedId, normalizedId]);
     });
 };
 

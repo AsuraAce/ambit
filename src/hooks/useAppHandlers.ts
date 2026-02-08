@@ -149,18 +149,18 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
     const handleRevertMetadata = async (id: string) => {
         const img = images.find(i => i.id === id);
-        if (!img || !img.originalMetadata) return;
+        if (!img) return;
 
+        // Optimistic UI update
         const updatedImg = {
             ...img,
-            metadata: img.originalMetadata,
-            originalMetadata: undefined
+            metadata: img.originalMetadata || { ...img.metadata },
+            originalMetadata: img.originalMetadata
         };
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        // For revert, we actually want to overwrite the metadata_json with originalMetadata
-        // But since we don't have a specific individual 'save' that handles metadata_json blob overwrite safely 
-        // without risking other columns in this specific context, we'll use updateImageMetadataFields with the full object
-        await updateImageMetadataFields(id, img.originalMetadata);
+
+        const { revertImageMetadata } = await import('../services/db/imageRepo');
+        await revertImageMetadata(id);
         addToast('Reverted to original', 'success');
     };
 
