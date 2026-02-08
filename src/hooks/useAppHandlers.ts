@@ -1,6 +1,6 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
-import { insertImage } from '../services/db/imageRepo';
+import { updateImageMetadataFields, updateImageNotesCol } from '../services/db/imageRepo';
 import { urlToPath } from '../utils/pathUtils';
 
 interface UseAppHandlersProps {
@@ -24,7 +24,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         };
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        await updateImageMetadataFields(id, { positivePrompt: prompt });
         addToast('Updated', 'success');
     };
 
@@ -40,7 +40,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         };
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        await updateImageMetadataFields(id, { negativePrompt });
         addToast('Updated', 'success');
     };
 
@@ -56,7 +56,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         };
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        await updateImageMetadataFields(id, { overrideModel: model });
         addToast('Updated', 'success');
     };
 
@@ -72,7 +72,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         };
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        await updateImageMetadataFields(id, { tool });
         addToast('Updated', 'success');
     };
 
@@ -143,7 +143,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
         const updatedImg = { ...img, notes };
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        await updateImageNotesCol(id, notes);
         addToast('Saved', 'success');
     };
 
@@ -157,7 +157,10 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             originalMetadata: undefined
         };
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await insertImage(updatedImg);
+        // For revert, we actually want to overwrite the metadata_json with originalMetadata
+        // But since we don't have a specific individual 'save' that handles metadata_json blob overwrite safely 
+        // without risking other columns in this specific context, we'll use updateImageMetadataFields with the full object
+        await updateImageMetadataFields(id, img.originalMetadata);
         addToast('Reverted to original', 'success');
     };
 

@@ -141,6 +141,42 @@ export const syncCollectionImages = async (ids?: string[]) => {
     });
 };
 
+/**
+ * Safely updates individual fields within the metadata_json blob without overwriting the entire object.
+ * CRITICAL: Prevents data loss when editing from "light" grid view imagery.
+ */
+export const updateImageMetadataFields = async (id: string, updates: Record<string, any>) => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const normalizedId = normalizePath(id);
+
+        let query = 'UPDATE images SET metadata_json = ';
+        let jsonSetExpr = 'metadata_json';
+        const params: any[] = [];
+
+        Object.entries(updates).forEach(([key, value]) => {
+            jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+            params.push(value);
+        });
+
+        query += jsonSetExpr + ' WHERE id = ?';
+        params.push(normalizedId);
+
+        await db.execute(query, params);
+    });
+};
+
+/**
+ * Atomic update for the notes column.
+ */
+export const updateImageNotesCol = async (id: string, notes: string | null) => {
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const normalizedId = normalizePath(id);
+        await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+    });
+};
+
 export const isImageNew = async (id: string): Promise<boolean> => {
     const db = await getDb();
     const result = await db.select<any[]>(`SELECT count(*) as count FROM images WHERE id = ?`, [id]);
