@@ -159,8 +159,21 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(value);
         });
 
-        query += jsonSetExpr + ' WHERE id = ?';
-        params.push(normalizedId);
+        // Denormalized Column Sync: If we're updating 'tool' or 'model' keys, 
+        // we also sync the top-level columns for performance/filtering consistency.
+        let colUpdates = '';
+        const colParams: any[] = [];
+        if (updates.tool) {
+            colUpdates += ', tool = ?';
+            colParams.push(updates.tool);
+        }
+        if (updates.overrideModel || updates.model) {
+            colUpdates += ', model_name = ?';
+            colParams.push(updates.overrideModel || updates.model);
+        }
+
+        query += jsonSetExpr + colUpdates + ' WHERE id = ?';
+        params.push(...colParams, normalizedId);
 
         await db.execute(query, params);
     });
