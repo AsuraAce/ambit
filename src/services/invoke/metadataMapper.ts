@@ -335,7 +335,7 @@ export function mapRawInvokeMetadata(meta: any): any {
         else if (actualRoot.model.name) modelFull = actualRoot.model.name;
         else if (actualRoot.model.default) modelFull = actualRoot.model.default;
 
-        if (modelFull) mapped.model = cleanModelName(modelFull);
+        if (modelFull) mapped.model = modelFull;
     }
 
     // Deep scan for resources (LoRAs, ControlNets, IP-Adapters, Embeddings, Hypernets)

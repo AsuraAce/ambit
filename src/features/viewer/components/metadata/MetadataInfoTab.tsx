@@ -8,6 +8,7 @@ import { formatModelName } from '../../../../utils/formatUtils';
 import { ParamItem } from './ParamItem';
 import { ResourceSection } from './ResourceSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
+import { cleanModelName } from '../../../../services/invoke/metadataMapper';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -86,7 +87,14 @@ export const MetadataInfoTab = ({
 
         // Handle trimmed string comparison to avoid whitespace flicker
         if (typeof cur === 'string' && typeof orig === 'string') {
-            if (cur.trim() === orig.trim()) return false;
+            const curT = cur.trim();
+            const origT = orig.trim();
+            if (curT === origT) return false;
+
+            // Model name robustness: fallback to cleaned comparison
+            if (key === 'model') {
+                if (cleanModelName(curT) === cleanModelName(origT)) return false;
+            }
         }
 
         return true;
