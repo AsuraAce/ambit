@@ -1,6 +1,7 @@
 
 import { describe, it, expect } from 'vitest';
-import { detectGenerationType, parseA1111Parameters, parseFilenameMetadata } from './metadata.worker';
+import { parseA1111Parameters } from '../services/metadata/mappingUtils';
+import { detectGenerationType, parseFilenameMetadata } from './metadata.worker';
 
 describe('Metadata Worker Tests', () => {
 
@@ -36,8 +37,7 @@ describe('Metadata Worker Tests', () => {
     describe('parseA1111Parameters', () => {
         it('should parse basic A1111 parameters', () => {
             const raw = "Positive prompt here\nNegative prompt: Negative content\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: v1-5-pruned, Model hash: abcde";
-            const meta: any = {};
-            parseA1111Parameters(raw, meta);
+            const meta = parseA1111Parameters(raw);
 
             expect(meta.positivePrompt).toBe("Positive prompt here");
             expect(meta.negativePrompt).toBe("Negative content");
@@ -50,22 +50,19 @@ describe('Metadata Worker Tests', () => {
 
         it('should detect SD.Next via App key', () => {
             const raw = "Prompt\nSteps: 20, App: SD.Next";
-            const meta: any = {};
-            parseA1111Parameters(raw, meta);
+            const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('SD.Next');
         });
 
         it('should detect Forge via Version key', () => {
             const raw = "Prompt\nSteps: 20, Version: forge";
-            const meta: any = {};
-            parseA1111Parameters(raw, meta);
+            const meta = parseA1111Parameters(raw);
             expect(meta.tool).toBe('Forge');
         });
 
         it('should extract LoRAs', () => {
             const raw = "A beautiful <lora:cool_style:0.8> painting";
-            const meta: any = {};
-            parseA1111Parameters(raw, meta);
+            const meta = parseA1111Parameters(raw);
             expect(meta.loras).toContain('cool_style');
         });
     });
