@@ -307,7 +307,9 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
     if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
     if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;
-    if (actualRoot.scheduler || actualRoot.sampler) mapped.sampler = actualRoot.scheduler || actualRoot.sampler;
+    if (actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name) {
+        mapped.sampler = actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name;
+    }
 
     // Additional fields for parity with Rust ImageMetadata
     if (actualRoot.clip_skip !== undefined || actualRoot.clipSkip !== undefined) mapped.clipSkip = actualRoot.clip_skip !== undefined ? actualRoot.clip_skip : actualRoot.clipSkip;
