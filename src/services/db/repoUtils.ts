@@ -52,15 +52,26 @@ export function mapRowToImage(row: any): AIImage {
 
         // Propagation: If the original metadata model also matches the current raw model, 
         // we update IT as well to prevent a "modification" flag for system-level resolution.
-        if (row.original_metadata_json && row.tool === 'InvokeAI') {
-            // Need to parse original metadata early to compare
-            const originalMeta = mapRawInvokeMetadata(JSON.parse(row.original_metadata_json));
-            const originalModel = cleanModelName(originalMeta.model);
+        if (row.original_metadata_json) {
+            const rawObj = JSON.parse(row.original_metadata_json);
+            const isInvoke = (
+                row.tool === 'InvokeAI' ||
+                (typeof rawObj === 'object' && rawObj !== null && (
+                    rawObj.sd || rawObj.invokeai || rawObj.invoke ||
+                    (Array.isArray(rawObj) && rawObj.some((c: any) => c.sd || c.invokeai || c.invoke))
+                ))
+            );
 
-            if (originalModel === currentModel || originalModel === resolvedModel) {
-                originalMeta.model = row.resolved_model_name;
-                // We'll pass this cached version to the return block below
-                (row as any)._preparsedOriginal = originalMeta;
+            if (isInvoke) {
+                // Need to parse original metadata early to compare
+                const originalMeta = mapRawInvokeMetadata(rawObj);
+                const originalModel = cleanModelName(originalMeta.model);
+
+                if (originalModel === currentModel || originalModel === resolvedModel) {
+                    originalMeta.model = row.resolved_model_name;
+                    // We'll pass this cached version to the return block below
+                    (row as any)._preparsedOriginal = originalMeta;
+                }
             }
         }
     }
@@ -95,11 +106,24 @@ export function mapRowToImage(row: any): AIImage {
                 return pre;
             }
             if (row.original_metadata_json) {
-                const parsed = row.tool === 'InvokeAI'
-                    ? mapRawInvokeMetadata(JSON.parse(row.original_metadata_json))
-                    : JSON.parse(row.original_metadata_json);
+                const rawObj = JSON.parse(row.original_metadata_json);
+                // Resilient detection: If it looks like Invoke metadata (contains sd, invokeai, etc.),
+                // we map it as such regardless of the current 'tool' column value.
+                const isInvoke = (
+                    row.tool === 'InvokeAI' ||
+                    (typeof rawObj === 'object' && rawObj !== null && (
+                        rawObj.sd || rawObj.invokeai || rawObj.invoke ||
+                        (Array.isArray(rawObj) && rawObj.some((c: any) => c.sd || c.invokeai || c.invoke))
+                    ))
+                );
 
-                if (row.has_workflow_hint !== undefined) parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
+                const parsed = isInvoke
+                    ? mapRawInvokeMetadata(rawObj)
+                    : rawObj;
+
+                if (row.has_workflow_hint !== undefined) {
+                    parsed.hasWorkflowHint = row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true';
+                }
                 return parsed;
             }
             return undefined;
