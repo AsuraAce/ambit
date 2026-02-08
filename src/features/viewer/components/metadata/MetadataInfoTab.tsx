@@ -78,9 +78,10 @@ export const MetadataInfoTab = ({
 
         if (cur === orig) return false;
 
-        // Handle equivalent empty values (null, undefined, empty string)
-        const isEmptyA = cur === null || cur === undefined || cur === '';
-        const isEmptyB = orig === null || orig === undefined || orig === '';
+        // Handle equivalent empty values (null, undefined, empty string, or defaults like 0/'Unknown')
+        // This is crucial for matching 'originalMetadata' (baseline) vs 'metadata' (worker)
+        const isEmptyA = cur === null || cur === undefined || cur === '' || cur === 0 || cur === 'Unknown';
+        const isEmptyB = orig === null || orig === undefined || orig === '' || orig === 0 || orig === 'Unknown';
         if (isEmptyA && isEmptyB) return false;
 
         // Handle trimmed string comparison to avoid whitespace flicker

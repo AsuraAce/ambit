@@ -268,14 +268,7 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (!meta) return {
         tool: 'InvokeAI',
         positivePrompt: '',
-        negativePrompt: '',
-        loras: [],
-        controlNets: [],
-        ipAdapters: [],
-        embeddings: [],
-        hypernetworks: [],
-        hasWorkflowHint: false,
-        isIntermediate: false
+        negativePrompt: ''
     };
 
     // Check if the input is wrapped in our internal DB structure
@@ -300,23 +293,13 @@ export function mapRawInvokeMetadata(meta: any): any {
 
     const mapped: any = {
         tool: 'InvokeAI',
-        model: 'Unknown',
-        steps: 0,
-        cfg: 0,
-        seed: 0,
-        sampler: 'Unknown',
-        positivePrompt: '',
-        negativePrompt: '',
-        loras: [],
-        controlNets: [],
-        ipAdapters: [],
-        embeddings: [],
-        hypernetworks: [],
         hasWorkflowHint: !!(workflow || meta.has_workflow),
         isIntermediate: root?.is_intermediate === 1 || root?.is_intermediate === true || meta?.is_intermediate === 1 || meta?.is_intermediate === true,
-        generationType: 'unknown',
         workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined
     };
+
+    // Note: We avoid setting defaults like steps: 0 or model: 'Unknown' here 
+    // to match the worker's behavior and avoid false modification flags.
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
     if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = (actualRoot.positive_prompt || actualRoot.positivePrompt).toString().trim();
