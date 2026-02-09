@@ -24,6 +24,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::filter_commands::get_parameter_ranges,
         db::commands::filter_commands::backfill_parameter_columns,
         db::facets::rebuild_facet_cache,
+        db::facets::rebuild_facet_cache_incremental,
         db::facets::get_valid_facet_names,
         db::commands::image_commands::mark_images_corrupt,
         db::commands::image_commands::verify_library_integrity,

@@ -1,7 +1,8 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
-import { updateImageMetadataFields, updateImageNotesCol } from '../services/db/imageRepo';
+import { updateImageMetadataFields, updateImageNotesCol, rebuildFacetCacheIncremental } from '../services/db/imageRepo';
 import { urlToPath } from '../utils/pathUtils';
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -11,6 +12,7 @@ interface UseAppHandlersProps {
 
 export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
     const { addToast } = useToast();
+    const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
         const img = images.find(i => i.id === id);
@@ -57,6 +59,10 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
         await updateImageMetadataFields(id, { overrideModel: model });
+
+        // Ensure filter panel is updated
+        rebuildFacetCacheIncremental('checkpoints').then(() => incrementFacetCacheVersion());
+
         addToast('Updated', 'success');
     };
 
@@ -73,6 +79,10 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
         await updateImageMetadataFields(id, { tool });
+
+        // Ensure filter panel is updated
+        rebuildFacetCacheIncremental('tools').then(() => incrementFacetCacheVersion());
+
         addToast('Updated', 'success');
     };
 
@@ -161,6 +171,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
         const { revertImageMetadata } = await import('../services/db/imageRepo');
         await revertImageMetadata(id);
+
+        // Revert can change tools and models, so we rebuild both incrementally
+        Promise.all([
+            rebuildFacetCacheIncremental('tools'),
+            rebuildFacetCacheIncremental('checkpoints')
+        ]).then(() => incrementFacetCacheVersion());
+
         addToast('Reverted to original', 'success');
     };
 

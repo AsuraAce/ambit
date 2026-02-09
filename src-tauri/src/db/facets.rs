@@ -185,6 +185,70 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn rebuild_facet_cache_incremental(
+    app: tauri::AppHandle,
+    facet_type: String,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
+        harvest_models(&tx)?;
+
+        // Map frontend types to DB types if necessary
+        let db_facet_type = match facet_type.as_str() {
+            "checkpoints" => "checkpoints",
+            "tools" => "tools",
+            "loras" => "loras",
+            "embeddings" => "embeddings",
+            "hypernetworks" => "hypernetworks",
+            "controlNets" | "control_nets" => "control_nets",
+            "ipAdapters" | "ip_adapters" => "ip_adapters",
+            other => other,
+        };
+
+        // Clear existing cache for this specific type
+        tx.execute(
+            "DELETE FROM facet_cache WHERE facet_type = ?1",
+            [db_facet_type],
+        )
+        .map_err(|e| e.to_string())?;
+
+        match db_facet_type {
+            "checkpoints" => build_checkpoint_facets(&tx)?,
+            "tools" => build_tool_facets(&tx)?,
+            "loras" => build_resource_facets(&tx, "loras", "loras")?,
+            "embeddings" => build_resource_facets(&tx, "embeddings", "embeddings")?,
+            "hypernetworks" => build_resource_facets(&tx, "hypernetworks", "hypernetworks")?,
+            "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets")?,
+            "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters")?,
+            _ => return Err(format!("Unknown facet type for incremental build: {}", facet_type)),
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+
+        // Return current count for this type
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = ?1",
+                [db_facet_type],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        Ok(count as usize)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+
 /// Valid facet names result - used for drill-down filtering
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -305,19 +369,19 @@ pub async fn get_valid_facet_names(
         // Build combined UNION ALL query for all facet types
         // Each subquery adds a 'facet_type' discriminator column
         let combined_query = format!(
-            "SELECT 'checkpoint' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
+            "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
              UNION ALL
-             SELECT 'lora', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
+             SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
              UNION ALL
-             SELECT 'embedding', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
+             SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
              UNION ALL
-             SELECT 'hypernetwork', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
+             SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
              UNION ALL
-             SELECT 'tool', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
+             SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
              UNION ALL
-             SELECT 'control_net', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
+             SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
              UNION ALL
-             SELECT 'ip_adapter', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
+             SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
             coll = collection_join,
             lora = lora_join,
             where = prefixed
@@ -362,13 +426,13 @@ pub async fn get_valid_facet_names(
         for row in rows.flatten() {
             let (facet_type, name) = row;
             match facet_type.as_str() {
-                "checkpoint" => { if cp_set.insert(name.clone()) { checkpoints.push(name); } }
-                "lora" => { if lora_set.insert(name.clone()) { loras.push(name); } }
-                "embedding" => { if emb_set.insert(name.clone()) { embeddings.push(name); } }
-                "hypernetwork" => { if hyper_set.insert(name.clone()) { hypernetworks.push(name); } }
-                "tool" => { if tool_set.insert(name.clone()) { tools.push(name); } }
-                "control_net" => { if cn_set.insert(name.clone()) { control_nets.push(name); } }
-                "ip_adapter" => { if ip_set.insert(name.clone()) { ip_adapters.push(name); } }
+                "checkpoints" => { if cp_set.insert(name.clone()) { checkpoints.push(name); } }
+                "loras" => { if lora_set.insert(name.clone()) { loras.push(name); } }
+                "embeddings" => { if emb_set.insert(name.clone()) { embeddings.push(name); } }
+                "hypernetworks" => { if hyper_set.insert(name.clone()) { hypernetworks.push(name); } }
+                "tools" => { if tool_set.insert(name.clone()) { tools.push(name); } }
+                "control_nets" => { if cn_set.insert(name.clone()) { control_nets.push(name); } }
+                "ip_adapters" => { if ip_set.insert(name.clone()) { ip_adapters.push(name); } }
                 _ => {}
             }
         }
@@ -504,7 +568,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // thumbnail_mode = 'dynamic' forces skip of sidecar
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override)
-            SELECT 'checkpoint', m.name, m.hash, 
+            SELECT 'checkpoints', m.name, m.hash, 
                 COALESCE(cc.total_cnt, 0), 
                 CASE 
                     WHEN m.thumbnail_path IS NOT NULL THEN m.thumbnail_path

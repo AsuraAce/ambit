@@ -13,6 +13,7 @@ pub mod m43_parser_version;
 pub mod m44_optimize_reparse;
 pub mod m45_optimize_triggers;
 pub mod m46_optimize_fts;
+pub mod m47_facet_cleanup;
 
 
 pub fn init_db() -> Vec<Migration> {
@@ -36,6 +37,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m44_optimize_reparse::migration44());
     migrations.push(m45_optimize_triggers::migration45());
     migrations.push(m46_optimize_fts::migration46());
+    migrations.push(m47_facet_cleanup::migration47());
     
     // Ensure migrations are sorted by version (tauri-plugin-sql needs this?)
     // Actually, pushing in order is usually enough, but let's be safe if needed.

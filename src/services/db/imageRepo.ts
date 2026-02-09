@@ -113,6 +113,23 @@ export const rebuildFacetCache = async (): Promise<number> => {
 };
 
 /**
+ * Rebuilds a specific facet type in the cache.
+ * Much faster than a full rebuild for metadata edits.
+ * @param type 'checkpoints' | 'tools' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters'
+ */
+export const rebuildFacetCacheIncremental = async (type: string): Promise<number> => {
+    try {
+        const count = await unwrap(commands.rebuildFacetCacheIncremental(type));
+        console.log(`[DB] Rebuilt incremental facet cache for ${type}: ${count} entries`);
+        return count;
+    } catch (e) {
+        console.error(`[DB] Failed to rebuild incremental facet cache for ${type}`, e);
+        return 0;
+    }
+};
+
+
+/**
  * High-performance bulk sync of the collection_images junction table.
  * Links images to their InvokeAI boards.
  * @param ids Optional array of image IDs to sync. If omitted, syncs all images with board_ids.
@@ -176,12 +193,22 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.tool);
         }
 
+        // SPECIAL CASE: Model name is also denormalized for filtering
+        if ('overrideModel' in updates) {
+            query += ', resolved_model_name = ?';
+            params.push(updates.overrideModel);
+        } else if ('model' in updates) {
+            query += ', resolved_model_name = ?';
+            params.push(updates.model);
+        }
+
         query += ' WHERE id = ?';
         params.push(normalizedId);
 
         await db.execute(query, params);
     });
 };
+
 
 /**
  * Reverts the entire metadata_json for an image to its original state (if stored) 
@@ -200,7 +227,15 @@ export const revertImageMetadata = async (id: string) => {
 
         if (!img.original_metadata_json) {
             // If no original metadata, we just clear overrides
-            await db.execute('UPDATE images SET metadata_json = NULL WHERE id = ?', [normalizedId]);
+            await db.execute(`
+                UPDATE images 
+                SET metadata_json = NULL,
+                    tool = NULL,
+                    model_hash = NULL,
+                    model_name = NULL,
+                    resolved_model_name = NULL
+                WHERE id = ?
+            `, [normalizedId]);
             return;
         }
 
@@ -208,32 +243,31 @@ export const revertImageMetadata = async (id: string) => {
             const parsedJson = JSON.parse(img.original_metadata_json);
 
             // 2. Re-parse the original chunks using the centralized logic
-            const isInvokeStructure = img.tool === 'InvokeAI' ||
-                parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt);
+            // IMPORTANT: We use UNKNOWN as the hint because the current tool is what we are reverting FROM.
+            const isInvokeStructure = parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt);
 
             const originalMetadata = isInvokeStructure
                 ? mapRawInvokeMetadata(parsedJson)
-                : mapRawChunksToMetadata(parsedJson, img.tool as GeneratorTool);
+                : mapRawChunksToMetadata(parsedJson, GeneratorTool.UNKNOWN);
 
             // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
-            // If an image is in the DB, it belongs in the main view, so we ensure 
-            // isIntermediate is false (this avoids hiding it via the generated is_intermediate_gen column).
             originalMetadata.isIntermediate = false;
 
-            // 3. Update metadata_json with the full original object
-            // This ensures all fields (prompts, sampler, etc.) are restored for both grid and details view
+            // 3. Update metadata_json and denormalized columns with the full original object
             await db.execute(`
                 UPDATE images 
                 SET metadata_json = ?,
                     model_hash = ?,
                     model_name = ?,
-                    tool = ?
+                    tool = ?,
+                    resolved_model_name = ?
                 WHERE id = ?
             `, [
                 JSON.stringify(originalMetadata),
                 originalMetadata.modelHash || null,
                 originalMetadata.model || null,
-                originalMetadata.tool || img.tool,
+                originalMetadata.tool || GeneratorTool.UNKNOWN,
+                originalMetadata.model || null, // resolved_model_name matches model_name on revert
                 normalizedId
             ]);
         } catch (e) {

@@ -416,7 +416,7 @@ export const getFacets = async (
 
     try {
         // Map frontend type names to cache type names and create parameterized query
-        const cacheTypes = types.map(t => t === 'checkpoints' ? 'checkpoint' : t);
+        const cacheTypes = types;
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
@@ -442,7 +442,7 @@ export const getFacets = async (
             };
 
             switch (row.facet_type) {
-                case 'checkpoint':
+                case 'checkpoints':
                     result.checkpoints.push(item);
                     break;
                 case 'loras':
