@@ -11,15 +11,17 @@ vi.mock('../useToast', () => ({
     }),
 }));
 
-const mockInsertImage = vi.fn();
+const mockUpdateImageMetadataFields = vi.fn();
 const mockMarkAsDeleted = vi.fn();
-const mockDeleteImage = vi.fn();
+const mockDeleteImageFromDisk = vi.fn();
+const mockGetImagesByIds = vi.fn();
 const mockGetDeletedImages = vi.fn();
 
 vi.mock('../../services/db/imageRepo', () => ({
-    insertImage: (...args: any[]) => mockInsertImage(...args),
+    updateImageMetadataFields: (...args: any[]) => mockUpdateImageMetadataFields(...args),
     markAsDeleted: (...args: any[]) => mockMarkAsDeleted(...args),
-    deleteImage: (...args: any[]) => mockDeleteImage(...args),
+    deleteImageFromDisk: (...args: any[]) => mockDeleteImageFromDisk(...args),
+    getImagesByIds: (...args: any[]) => mockGetImagesByIds(...args),
 }));
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
@@ -58,6 +60,7 @@ describe('useAppHandlers', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetImagesByIds.mockResolvedValue([mockImages[0]]);
     });
 
     it('should update positive prompt and call DB', async () => {
@@ -68,10 +71,7 @@ describe('useAppHandlers', () => {
         });
 
         expect(mockSetImages).toHaveBeenCalled();
-        expect(mockInsertImage).toHaveBeenCalledWith(expect.objectContaining({
-            id: 'img1',
-            metadata: expect.objectContaining({ positivePrompt: 'A cool cat' })
-        }));
+        expect(mockUpdateImageMetadataFields).toHaveBeenCalledWith('img1', { positivePrompt: 'A cool cat' });
         expect(mockAddToast).toHaveBeenCalledWith('Updated', 'success');
     });
 
@@ -108,7 +108,7 @@ describe('useAppHandlers', () => {
             await result.current.handleDeleteForever(['img1']);
         });
 
-        expect(mockDeleteImage).toHaveBeenCalledWith('img1');
+        expect(mockDeleteImageFromDisk).toHaveBeenCalledWith('img1', 'img1', 'thumb1');
         expect(mockSetImages).toHaveBeenCalled();
         const updater = mockSetImages.mock.calls[0][0];
         const nextState = updater(mockImages);
