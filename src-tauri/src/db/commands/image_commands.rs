@@ -22,7 +22,7 @@ pub async fn save_images_batch(
                     use crate::metadata::CURRENT_PARSER_VERSION;
                     
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version)
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
@@ -32,7 +32,8 @@ pub async fn save_images_batch(
                              CAST(json_extract(?7, '$.cfg') AS REAL),
                              REPLACE(REPLACE(LOWER(json_extract(?7, '$.sampler')), '_', ' '), '-', ' '),
                              json_extract(?7, '$.generationType'),
-                             ?22
+                             ?22,
+                             ?7
                          )
                          ON CONFLICT(id) DO UPDATE SET 
                             path=excluded.path,
@@ -58,7 +59,8 @@ pub async fn save_images_batch(
                             cfg=excluded.cfg,
                             sampler=excluded.sampler,
                             generation_type=excluded.generation_type,
-                            parser_version=excluded.parser_version
+                            parser_version=excluded.parser_version,
+                            original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json)
                          WHERE images.metadata_json != excluded.metadata_json 
                             OR images.timestamp != excluded.timestamp 
                             OR images.file_size != excluded.file_size

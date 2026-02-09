@@ -191,6 +191,7 @@ pub async fn start_reparse_job(
                 let mut update_stmt = tx.prepare_cached(
                     "UPDATE images SET 
                         metadata_json = ?1,
+                        original_parsed_json = ?1,
                         model_hash = ?2,
                         model_name = ?3,
                         tool = ?4,
