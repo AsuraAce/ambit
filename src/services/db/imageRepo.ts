@@ -4,8 +4,6 @@ import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
-import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
-import { mapRawChunksToMetadata } from '../metadata/mappingUtils';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
@@ -220,13 +218,13 @@ export const revertImageMetadata = async (id: string) => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
 
-        // 1. Fetch the original metadata chunks and current tool
-        const row: any = await db.select('SELECT original_metadata_json, tool, model_hash, model_name FROM images WHERE id = ?', [normalizedId]);
+        // 1. Fetch the original parsed metadata (already parsed, no re-parsing needed!)
+        const row: any = await db.select('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
         if (!row || row.length === 0) return;
         const img = row[0];
 
-        if (!img.original_metadata_json) {
-            // If no original metadata, we just clear overrides
+        if (!img.original_parsed_json) {
+            // If no original parsed metadata, just clear overrides
             await db.execute(`
                 UPDATE images 
                 SET metadata_json = NULL,
@@ -240,20 +238,14 @@ export const revertImageMetadata = async (id: string) => {
         }
 
         try {
-            const parsedJson = JSON.parse(img.original_metadata_json);
-
-            // 2. Re-parse the original chunks using the centralized logic
-            // IMPORTANT: We use UNKNOWN as the hint because the current tool is what we are reverting FROM.
-            const isInvokeStructure = parsedJson.invokeai_metadata || parsedJson['sd-metadata'] || parsedJson.dream_metadata || (parsedJson.image && parsedJson.image.prompt);
-
-            const originalMetadata = isInvokeStructure
-                ? mapRawInvokeMetadata(parsedJson)
-                : mapRawChunksToMetadata(parsedJson, GeneratorTool.UNKNOWN);
+            // Parse the already-stored baseline (no re-parsing from raw chunks!)
+            const originalMetadata = JSON.parse(img.original_parsed_json);
 
             // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
             originalMetadata.isIntermediate = false;
 
-            // 3. Update metadata_json and denormalized columns with the full original object
+            // 2. Update metadata_json and denormalized columns with the baseline
+            // CRITICAL: Set metadata_json = original_parsed_json to ensure they match exactly
             await db.execute(`
                 UPDATE images 
                 SET metadata_json = ?,
@@ -263,7 +255,7 @@ export const revertImageMetadata = async (id: string) => {
                     resolved_model_name = ?
                 WHERE id = ?
             `, [
-                JSON.stringify(originalMetadata),
+                img.original_parsed_json, // Use the exact same JSON string!
                 originalMetadata.modelHash || null,
                 originalMetadata.model || null,
                 originalMetadata.tool || GeneratorTool.UNKNOWN,
