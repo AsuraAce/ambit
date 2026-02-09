@@ -409,11 +409,25 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             match key {
                 "noise_seed" | "seed" => return arr.get(1),
                 "steps" => return arr.get(3),
-                "cfg" => return arr.get(4),
-                "sampler_name" => return arr.get(5),
-                "scheduler" => return arr.get(6),
-                "start_at_step" => return arr.get(7),
-                "end_at_step" => return arr.get(8),
+                "cfg" => return arr.get(6),
+                "sampler_name" => return arr.get(7),
+                "scheduler" => return arr.get(8),
+                "start_at_step" => return arr.get(4),
+                "end_at_step" => return arr.get(5),
+                _ => {}
+            }
+        }
+
+        if t == "SDPromptSaver" {
+            match key {
+                "ckpt_name" | "model_name" => return arr.get(2),
+                "seed" | "noise_seed" => return arr.get(3),
+                "steps" => return arr.get(5),
+                "cfg" => return arr.get(6),
+                "sampler_name" => return arr.get(7),
+                "scheduler" => return arr.get(8),
+                "positive" => return arr.get(11),
+                "negative" => return arr.get(12),
                 _ => {}
             }
         }
