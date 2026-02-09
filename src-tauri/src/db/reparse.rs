@@ -369,7 +369,7 @@ pub async fn start_reparse_job(
                  let fetch_start = std::time::Instant::now();
                  let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
                  let batch_query = format!(
-                    "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                    "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
                      FROM images 
                      WHERE id IN ({})", 
                     placeholders
@@ -410,7 +410,7 @@ pub async fn start_reparse_job(
                     params.push(Box::new(last_seen_id.clone()));
                     
                     let query = format!(
-                        "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
+                        "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
                          FROM images 
                          WHERE {} AND id > ?
                          ORDER BY id ASC
