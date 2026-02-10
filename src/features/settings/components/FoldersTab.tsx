@@ -1,6 +1,7 @@
 import * as React from 'react';
+import { useCallback } from 'react';
 import { Monitor } from 'lucide-react';
-import { AppSettings } from '../../../types';
+import { AppSettings, GeneratorTool } from '../../../types';
 import { useFoldersTabLogic } from '../hooks/useFoldersTabLogic';
 import { FolderItem } from './FolderItem';
 import { AddFolderForm } from './AddFolderForm';
@@ -41,6 +42,19 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
 
     const { forceRefresh } = useMetadataRefresh();
 
+    // Route refresh to the correct handler based on integration type.
+    // InvokeAI folders re-sync from their database; all others re-parse stored PNG chunks.
+    const handleRefresh = useCallback((path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
+        if (isManaged && variant === GeneratorTool.INVOKEAI) {
+            const folder = combinedFolders.find((f: any) => (f.isManaged ? f.pathRaw : f.path) === path);
+            if (folder) {
+                handleRescan(folder.id, path, variant, true);
+            }
+            return;
+        }
+        forceRefresh(path, force);
+    }, [combinedFolders, handleRescan, forceRefresh]);
+
     return (
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             {/* 1. Image Monitoring Section */}
@@ -63,7 +77,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                 onRescan={handleRescan}
                                 onRemove={removeFolder}
                                 showDevTools={settings.devMode}
-                                onRefresh={forceRefresh}
+                                onRefresh={handleRefresh}
                             />
                         ))}
                         {combinedFolders.length === 0 && (

@@ -8,7 +8,7 @@ interface FolderItemProps {
     onRescan: (id: string, path: string, variant?: string, isManaged?: boolean) => void;
     onRemove: (id: string) => void;
     showDevTools?: boolean;
-    onRefresh?: (path: string, force: boolean) => void;
+    onRefresh?: (path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => void;
 }
 
 const getVariantIcon = (variant?: GeneratorTool) => {
@@ -80,7 +80,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                         onClick={(e) => {
                             // Click = Resume (force=false), Shift+Click = Force (force=true)
                             console.log('[FolderItem] Refresh clicked. Shift:', e.shiftKey, 'Force:', e.shiftKey);
-                            onRefresh(path, e.shiftKey);
+                            onRefresh(path, e.shiftKey, folder.variant, folder.isManaged);
                         }}
                         disabled={isScanning}
                         className="p-1.5 text-gray-400 hover:text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20 rounded-lg transition-all"
