@@ -25,7 +25,6 @@ export const DevTab: React.FC = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [targetCount, setTargetCount] = useState(10000);
-    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Prompt Editing State
     const [openPrompt, setOpenPrompt] = useState<AIPromptKey | null>(null);
@@ -95,14 +94,7 @@ export const DevTab: React.FC = () => {
         };
     }, [addToast]);
 
-    const handleForceRefresh = () => {
-        console.log('[DevTab] handleForceRefresh clicked');
-        setIsRefreshing(true);
-        // Trigger the refresh via store - the hook handles the full flow
-        useLibraryStore.getState().triggerRefresh();
-        // Reset local state after a brief delay (actual progress tracked via events)
-        setTimeout(() => setIsRefreshing(false), 500);
-    };
+
 
     const tabs: { id: DevTabId; label: string; icon: React.ElementType }[] = [
         { id: 'prompts', label: 'AI Prompts', icon: BrainCircuit },
@@ -269,32 +261,7 @@ export const DevTab: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Force Refresh All Metadata */}
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Force Refresh All Metadata</div>
-                                        <div className="text-xs text-gray-500">Re-analyze all images with latest parser (no file I/O)</div>
-                                    </div>
-                                    <button
-                                        onClick={handleForceRefresh}
-                                        disabled={isRefreshing}
-                                        className="flex items-center gap-2 px-4 py-2 bg-amethyst-600 hover:bg-amethyst-500 disabled:bg-gray-300 dark:disabled:bg-white/5 text-white rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-amethyst-500/20"
-                                    >
-                                        {isRefreshing ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Refreshing...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <RefreshCw className="w-4 h-4" />
-                                                Refresh All
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
+
 
                             {/* Metadata Diagnostics */}
                             <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">

@@ -20,6 +20,12 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 /// for background re-parsing from their stored original_metadata_json.
 pub const CURRENT_PARSER_VERSION: u32 = 3;
 
+/// Tools affected by the latest parser version bump.
+/// Empty slice = all tools affected (full refresh).
+/// When set (e.g. &["ComfyUI"]), only images from those tools
+/// are auto-refreshed at startup. Manual "Refresh All" ignores this.
+pub const PARSER_AFFECTED_TOOLS: &[&str] = &[];
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]
 pub struct ImageMetadata {
     pub tool: String,

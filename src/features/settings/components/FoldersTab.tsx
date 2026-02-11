@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useCallback } from 'react';
-import { Monitor } from 'lucide-react';
+import { Monitor, RefreshCcw } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useFoldersTabLogic } from '../hooks/useFoldersTabLogic';
 import { FolderItem } from './FolderItem';
@@ -55,6 +55,19 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         forceRefresh(path, force);
     }, [combinedFolders, handleRescan, forceRefresh]);
 
+    const handleRefreshAll = useCallback(async () => {
+        // 1. If we have a managed InvokeAI integration, sync it first
+        const managedInvoke = (combinedFolders as any[]).find((f) => f.isManaged && f.variant === GeneratorTool.INVOKEAI);
+        if (managedInvoke) {
+            console.log('[FoldersTab] Syncing managed InvokeAI database for Refresh All');
+            await handleRescan(managedInvoke.id, managedInvoke.pathRaw, GeneratorTool.INVOKEAI, true);
+        }
+
+        // 2. Trigger the global reparse job
+        console.log('[FoldersTab] Triggering global metadata reparse');
+        forceRefresh(undefined, false); // No path = all, force = false (version-gated)
+    }, [combinedFolders, handleRescan, forceRefresh]);
+
     return (
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             {/* 1. Image Monitoring Section */}
@@ -68,6 +81,20 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                 </div>
 
                 <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden shadow-sm">
+                    <div className="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02]">
+                        <div className="flex items-center gap-2.5">
+                            <Monitor className="w-4 h-4 text-sage-600 dark:text-sage-400" />
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-tight">Monitored Folders</h3>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleRefreshAll}
+                            className="group flex items-center gap-2 px-3.5 py-1.5 bg-white dark:bg-white/5 border border-sage-200 dark:border-sage-500/30 hover:border-sage-500 dark:hover:border-sage-400 text-sage-600 dark:text-sage-400 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all shadow-sm hover:shadow-sage-500/10"
+                        >
+                            <RefreshCcw className="w-3.5 h-3.5 transition-transform group-hover:rotate-180 duration-500" />
+                            Refresh All Metadata
+                        </button>
+                    </div>
                     <div className="p-2 space-y-1">
                         {combinedFolders.map(folder => (
                             <FolderItem
@@ -76,7 +103,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                 scanningIds={scanningIds}
                                 onRescan={handleRescan}
                                 onRemove={removeFolder}
-                                showDevTools={settings.devMode}
                                 onRefresh={handleRefresh}
                             />
                         ))}

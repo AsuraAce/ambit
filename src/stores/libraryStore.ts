@@ -56,7 +56,6 @@ interface LibraryState {
     // Background Metadata Refresh State
     isRefreshingMetadata: boolean;
     refreshProgress: SyncProgress | null;
-    refreshTrigger: number; // Incremented to signal manual trigger
 
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
@@ -98,7 +97,6 @@ interface LibraryState {
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val: boolean) => void;
     setRefreshProgress: (progress: SyncProgress | null) => void;
-    triggerRefresh: () => void;
     cancelRefresh: () => void;
 }
 
@@ -143,7 +141,6 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Background Metadata Refresh State
     isRefreshingMetadata: false,
     refreshProgress: null,
-    refreshTrigger: 0,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -204,7 +201,6 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val) => set({ isRefreshingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
     setRefreshProgress: (progress) => set({ refreshProgress: progress }),
-    triggerRefresh: () => set((state) => ({ refreshTrigger: state.refreshTrigger + 1 })),
     cancelRefresh: () => {
         invoke('cancel_reparse_job').catch(console.error);
         set({ isRefreshingMetadata: false, refreshProgress: null });

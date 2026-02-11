@@ -126,9 +126,9 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
  * 3. Parses using Rayon
  * 4. Updates DB with Smart Diffing (skipping unchanged prompts/junctions)
  */
-async startReparseJob(forceReparse: boolean, filterRoot: string | null) : Promise<Result<ReparseJobResult, string>> {
+async startReparseJob(forceReparse: boolean, filterRoot: string | null, filterTool: string | null) : Promise<Result<ReparseJobResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse, filterRoot }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse, filterRoot, filterTool }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

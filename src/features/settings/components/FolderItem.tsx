@@ -7,7 +7,6 @@ interface FolderItemProps {
     scanningIds: Set<string>;
     onRescan: (id: string, path: string, variant?: string, isManaged?: boolean) => void;
     onRemove: (id: string) => void;
-    showDevTools?: boolean;
     onRefresh?: (path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => void;
 }
 
@@ -30,7 +29,7 @@ const getVariantIcon = (variant?: GeneratorTool) => {
     }
 };
 
-export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, showDevTools, onRefresh }) => {
+export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, onRefresh }) => {
     const isScanning = scanningIds.has(folder.id);
     const path = folder.isManaged ? folder.pathRaw : folder.path;
 
@@ -74,7 +73,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
                 </button>
 
-                {showDevTools && onRefresh && (
+                {onRefresh && (
                     <button
                         type="button"
                         onClick={(e) => {
@@ -83,7 +82,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                             onRefresh(path, e.shiftKey, folder.variant, folder.isManaged);
                         }}
                         disabled={isScanning}
-                        className="p-1.5 text-gray-400 hover:text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20 rounded-lg transition-all"
+                        className="p-1.5 text-gray-400 hover:text-sage-500 hover:bg-sage-50 dark:hover:bg-sage-900/20 rounded-lg transition-all"
                         title="Resume Smart Refresh (Shift+Click to Force Refresh All)"
                     >
                         <FileJson className="w-4 h-4" />

@@ -59,6 +59,7 @@ pub async fn start_reparse_job(
     state: tauri::State<'_, ReparseState>,
     force_reparse: bool,
     filter_root: Option<String>,
+    filter_tool: Option<String>,
 ) -> Result<ReparseJobResult, String> {
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
@@ -66,7 +67,7 @@ pub async fn start_reparse_job(
     
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
-        log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}", force_reparse, filter_root);
+        log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}, Tool: {:?}", force_reparse, filter_root, filter_tool);
         
         log::info!("[Reparse] Thread started, opening connection...");
         let db_path = resolve_db_path(&app)?;
@@ -90,7 +91,7 @@ pub async fn start_reparse_job(
         });
 
         // Helper to build WHERE clause
-        let build_filters = |force: bool, root: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+        let build_filters = |force: bool, root: Option<&String>, tool: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let mut clauses = vec![
                 "is_deleted = 0".to_string(),
                 "original_metadata_json IS NOT NULL".to_string(),
@@ -117,11 +118,17 @@ pub async fn start_reparse_job(
                 params.push(Box::new(r_back.clone()));
             }
 
+            // Filter by generator tool (e.g. "ComfyUI", "InvokeAI")
+            if let Some(t) = tool {
+                clauses.push("LOWER(tool) LIKE LOWER(?)".to_string());
+                params.push(Box::new(format!("%{}%", t)));
+            }
+
             (clauses.join(" AND "), params)
         };
 
         // Count total work upfront
-        let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref());
+        let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
         let count_query = format!("SELECT COUNT(*) FROM images WHERE {}", where_sql);
 
         let total: usize = conn.query_row(
@@ -345,7 +352,7 @@ pub async fn start_reparse_job(
             let prefetch_start = std::time::Instant::now();
             
             // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
-            let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref());
+            let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
 
              let query = format!("SELECT id FROM images WHERE {}", where_sql);
              
@@ -406,7 +413,7 @@ pub async fn start_reparse_job(
 
                 let fetch_start = std::time::Instant::now();
                 let batch: Vec<(String, String, String, String)> = {
-                    let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref());
+                    let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref(), filter_tool.as_ref());
                     params.push(Box::new(last_seen_id.clone()));
                     
                     let query = format!(
