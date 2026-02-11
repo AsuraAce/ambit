@@ -322,16 +322,22 @@ const VirtualGridInternal = <T extends { id: string }>(
       return;
     }
 
-    // Check if we're clicking on a draggable item
-    const isOverItem = !!target.closest('[data-draggable="true"]');
+    // Check if we're clicking on a draggable item (ImageCard)
+    // data-drag-source is our custom marker on the ImageCard component
+    const isOverItem = !!(
+      target.closest('[data-drag-source="true"]') ||
+      target.tagName === 'IMG'
+    );
 
-    if (isOverItem) return;
+    if (isOverItem) {
+      return;
+    }
 
     if (!containerRef.current || !scrollContainerRef.current) return;
 
+
+
     // Use currentTarget to get the container's rect for consistent coordinates
-    // getBoundingClientRect() already accounts for scroll position, so
-    // (clientY - rect.top) gives us grid-absolute coordinates directly
     const rect = containerRef.current.getBoundingClientRect();
     const startX = e.clientX - rect.left;
     const startY = e.clientY - rect.top;
@@ -507,7 +513,7 @@ const VirtualGridInternal = <T extends { id: string }>(
   }
 
   // Debug Log (Throttled?)
-  // console.log('[VirtualGrid] Render', { items: items.length, visibleItems: visibleItems.length, scrollTop, gridOffset, relativeScrollTop });
+
 
   return (
     <div

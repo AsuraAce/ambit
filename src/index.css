@@ -145,10 +145,15 @@
   }
 
   [draggable="true"],
-  [data-draggable="true"] {
-    -webkit-user-drag: element;
+  [data-drag-source="true"] {
     user-select: none;
     -webkit-user-select: none;
+    cursor: grab;
+  }
+
+  [draggable="true"]:active,
+  [data-drag-source="true"]:active {
+    cursor: grabbing;
   }
 }
 

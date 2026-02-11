@@ -18,6 +18,9 @@ interface ImageCardProps {
   onTogglePin?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDragStart?: (e: React.DragEvent, id: string) => void;
+  onDrag?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
   onImageError?: () => void;
 }
 
@@ -32,6 +35,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   onTogglePin,
   onContextMenu,
   onDragStart,
+  onDrag,
+  onDragEnd,
+  onMouseDown,
   onImageError
 }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -57,13 +63,17 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         }
         ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
       `}
+      onMouseDown={onMouseDown}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
-      data-draggable="true"
-      onDragStart={(e) => onDragStart && onDragStart(e, image.id)}
-      style={{ WebkitUserDrag: 'element' } as any}
+      data-drag-source="true"
+      onDragStart={(e) => {
+        onDragStart && onDragStart(e, image.id);
+      }}
+      onDrag={onDrag}
+      onDragEnd={onDragEnd}
     >
       <SmartImage
         src={image.thumbnailUrl}
