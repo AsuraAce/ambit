@@ -148,7 +148,7 @@ pub fn import_a1111_cache(
     }
 
     let db_path = resolve_db_path(&app)?;
-    let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let mut added_count = 0;
@@ -181,6 +181,11 @@ pub fn import_a1111_cache(
     } else {
         entries.len()
     };
+
+    // CRITICAL FIX: Update the 'images' table to reflect the new resolved names immediately
+    // models table has been updated, now sync images
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let _ = update_images_with_resolved_names(&conn);
 
     Ok(ImportResult {
         added: added_unique,
@@ -257,6 +262,7 @@ pub async fn resolve_hashes_online(
                     
                     SELECT hash FROM models 
                     WHERE civitai_version_id IS NULL 
+                    AND (lookup_source != 'civitai_failed' OR (lookup_source = 'civitai_failed' AND scanned_at < datetime('now', '-1 day')))
                     AND hash NOT LIKE 'file:%'
                     AND hash NOT LIKE 'lora_%'
                     AND hash NOT LIKE 'emb_%'
@@ -276,6 +282,12 @@ pub async fn resolve_hashes_online(
     };
 
     let total = hashes_to_resolve.len();
+
+    // CRITICAL: Always sync images table, even if no NEW hashes to resolve.
+    // This handles cases where models table is populated but images table is stale.
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let _ = update_images_with_resolved_names(&conn);
+
     if total == 0 {
         return Ok(ResolutionResult {
             resolved_count: harvest_count,
@@ -287,6 +299,7 @@ pub async fn resolve_hashes_online(
 
     let client = Client::new();
     let mut resolved_items = Vec::new();
+    let mut failed_items = Vec::new();
     let mut failed = 0;
 
     for (i, hash) in hashes_to_resolve.into_iter().enumerate() {
@@ -326,22 +339,28 @@ pub async fn resolve_hashes_online(
                         resolved_items.push((hash, full_name, version.id, r_type.to_string()));
                     } else {
                         failed += 1;
+                        failed_items.push(hash);
                     }
                 } else {
                     failed += 1;
+                    failed_items.push(hash);
                 }
             }
             Err(_) => {
                 failed += 1;
+                failed_items.push(hash);
             }
         }
     }
 
     let newly_resolved = resolved_items.len();
-    if newly_resolved > 0 {
+    let newly_failed = failed_items.len();
+
+    if newly_resolved > 0 || newly_failed > 0 {
         let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
+        // 1. Insert/Update Resolved Models
         for (hash, name, version_id, r_type) in resolved_items {
             let _ = tx.execute(
                 "INSERT INTO models (hash, name, lookup_source, civitai_version_id, scanned_at, resource_type) 
@@ -354,10 +373,29 @@ pub async fn resolve_hashes_online(
                 params![hash, name, version_id, now, r_type]
             );
         }
+
+        // 2. Insert/Update Failed Models (to prevent infinite retry loops)
+        // We mark them as 'civitai_failed' and set a timestamp. 
+        // Future logic could retry these after X days if needed.
+        for hash in failed_items {
+             let _ = tx.execute(
+                "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 VALUES (?1, 'Unknown Model', 'civitai_failed', ?2, 'checkpoint')
+                 ON CONFLICT(hash) DO UPDATE SET 
+                    lookup_source = 'civitai_failed', 
+                    scanned_at = excluded.scanned_at",
+                params![hash, now]
+            );
+        }
         
         let _ = crate::metadata::models::classify_unlabeled_models(&tx);
         
         tx.commit().map_err(|e| e.to_string())?;
+
+        // CRITICAL FIX: Update the 'images' table to reflect the new resolved names immediately
+        // This ensures the UI updates without requiring a full re-scan
+        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let _ = update_images_with_resolved_names(&conn);
     }
 
     let mut named_fallback = 0;
@@ -399,4 +437,28 @@ pub async fn resolve_hashes_online(
         named_fallback_count: named_fallback,
         unknown_count: truly_unknown,
     })
+}
+
+/// Helper to sync the 'images.resolved_model_name' column with the 'models' table.
+/// This fixes the issue where resolved hashes wouldn't show up in the UI until a re-scan.
+fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    log::info!("[CivitAI] Syncing resolved model names to images table...");
+    
+    // We update any image where the model_hash matches a known model, 
+    // AND the current resolved_name is either missing or outdated.
+    let count = conn.execute(
+        "UPDATE images 
+         SET resolved_model_name = (SELECT name FROM models WHERE models.hash = images.model_hash)
+         WHERE model_hash IS NOT NULL 
+         AND model_hash IN (SELECT hash FROM models)
+         AND (
+            resolved_model_name IS NULL 
+            OR resolved_model_name = 'Unknown' 
+            OR resolved_model_name != (SELECT name FROM models WHERE models.hash = images.model_hash)
+         )",
+        [],
+    )?;
+    
+    log::info!("[CivitAI] Synced {} images with new model names.", count);
+    Ok(count)
 }
