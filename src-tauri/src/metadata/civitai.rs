@@ -228,17 +228,98 @@ pub async fn resolve_hashes_online(
                 },
             );
 
-            harvest_count = conn.execute(
+            harvest_count += conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT 
+                    'lora_' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(clean_name, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(clean_name, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    'harvest_lora', 
+                    ?1,
+                    'loras'
+                 FROM (
+                     SELECT 
+                        CASE 
+                            WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
+                            WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
+                            ELSE j.value 
+                        END as clean_name
+                     FROM images, json_each(metadata_json, '$.loras') j
+                 ) 
+                 WHERE clean_name IS NOT NULL AND clean_name != ''",
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
+
+            harvest_count += conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT 
+                    'emb_' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    'harvest_embedding', 
+                    ?1,
+                    'embeddings'
+                 FROM images, json_each(metadata_json, '$.embeddings') j
+                 WHERE j.value IS NOT NULL AND j.value != ''",
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
+
+            harvest_count += conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT 
+                    'hyper_' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    'harvest_hypernet', 
+                    ?1,
+                    'hypernetworks'
+                 FROM images, json_each(metadata_json, '$.hypernetworks') j
+                 WHERE j.value IS NOT NULL AND j.value != ''",
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
+
+            harvest_count += conn.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
                  SELECT DISTINCT 
                     COALESCE(json_extract(metadata_json, '$.modelHash'), 'name:' || json_extract(metadata_json, '$.model')), 
                     json_extract(metadata_json, '$.model'), 
-                    'local_metadata', ?1, 'checkpoint'
-                 FROM images 
+                    'harvest_checkpoint', 
+                    ?1,
+                    'checkpoint'
+                 FROM images
                  WHERE (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
                  AND json_extract(metadata_json, '$.model') IS NOT NULL",
-                 params![now]
-            ).unwrap_or(0);
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
+            
+            harvest_count += conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT 
+                    'cnet_' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    'harvest_controlnet', 
+                    ?1,
+                    'control_nets'
+                 FROM images, json_each(metadata_json, '$.controlNets') j
+                 WHERE j.value IS NOT NULL AND j.value != ''",
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
+
+            harvest_count += conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
+                 SELECT DISTINCT 
+                    'ipad_' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.value, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                    'harvest_ipadapter', 
+                    ?1,
+                    'ip_adapters'
+                 FROM images, json_each(metadata_json, '$.ipAdapters') j
+                 WHERE j.value IS NOT NULL AND j.value != ''",
+                params![now],
+            )
+            .map_err(|e| e.to_string())?;
         } else {
             let _ = app.emit(
                 "model_resolution_progress",
