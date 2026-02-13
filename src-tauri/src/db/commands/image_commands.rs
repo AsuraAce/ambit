@@ -69,11 +69,13 @@ pub async fn save_images_batch(
                     let mut lora_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_loras (image_id, lora_name)
                         SELECT ?1, 
-                            CASE 
-                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                ELSE value 
-                            END
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                CASE 
+                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                    ELSE value 
+                                END, 
+                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
                         FROM json_each(?2, '$.loras')
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
@@ -81,11 +83,13 @@ pub async fn save_images_batch(
                     let mut cn_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
                         SELECT ?1, 
-                            CASE 
-                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                ELSE value 
-                            END
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                CASE 
+                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                    ELSE value 
+                                END, 
+                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
                         FROM json_each(?2, '$.controlNets')
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
@@ -93,11 +97,13 @@ pub async fn save_images_batch(
                     let mut ip_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
                         SELECT ?1, 
-                            CASE 
-                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                ELSE value 
-                            END
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                CASE 
+                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                    ELSE value 
+                                END, 
+                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
                         FROM json_each(?2, '$.ipAdapters')
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
@@ -105,11 +111,13 @@ pub async fn save_images_batch(
                     let mut emb_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
                         SELECT ?1, 
-                            CASE 
-                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                ELSE value 
-                            END
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                CASE 
+                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                    ELSE value 
+                                END, 
+                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
                         FROM json_each(?2, '$.embeddings')
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
@@ -117,11 +125,13 @@ pub async fn save_images_batch(
                     let mut hn_stmt = tx.prepare_cached("
                         INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
                         SELECT ?1, 
-                            CASE 
-                                WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                ELSE value 
-                            END
+                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                                CASE 
+                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                                    ELSE value 
+                                END, 
+                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
                         FROM json_each(?2, '$.hypernetworks')
                         WHERE value IS NOT NULL AND value != ''
                     ").map_err(|e| e.to_string())?;
