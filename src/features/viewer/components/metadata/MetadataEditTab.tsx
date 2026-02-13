@@ -195,7 +195,7 @@ export const MetadataEditTab = ({
                                             console.error("Clipboard paste failed", e);
                                         }
                                     }}
-                                    className="text-xs text-sage-600 hover:text-sage-700 flex items-center gap-1 transition-colors bg-sage-50 px-2 py-1 rounded border border-sage-200"
+                                    className="text-[10px] font-medium text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 flex items-center gap-1.5 transition-all bg-transparent dark:bg-sage-500/5 px-2.5 py-1 rounded-lg border border-sage-500/20 hover:border-sage-500/50 hover:bg-sage-500/10 active:scale-95 shadow-sm"
                                     title="Paste & Parse from Clipboard (Auto1111 format)"
                                 >
                                     <ClipboardList className="w-3 h-3" /> Parse from Clipboard

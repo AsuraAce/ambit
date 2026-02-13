@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Collection, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
 import { upsertCollection, deleteCollectionFromDb, addImagesToCollection as addImgsToCol, removeImagesFromCollection as removeImgsFromCol } from '../services/db/collectionRepo';
@@ -24,6 +25,7 @@ export const useCollectionOperations = ({
   activeCollectionId
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
+  const queryClient = useQueryClient();
 
   const createCollection = useCallback(async (name: string, filters?: FilterState) => {
     const id = `c_${Date.now()}`;
@@ -192,7 +194,10 @@ export const useCollectionOperations = ({
       await addImgsToCol(collectionId, imageIds);
       addToast(`Added images to collection`, 'success');
       // Background refresh for safety and smart collection updates
-      await refreshCollections();
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] })
+      ]);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
@@ -225,7 +230,10 @@ export const useCollectionOperations = ({
       // Always attempt removal from junction table (handles manual additions)
       await removeImgsFromCol(collectionId, imageIds);
       addToast("Removed from collection", "info");
-      await refreshCollections();
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] })
+      ]);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
@@ -268,7 +276,10 @@ export const useCollectionOperations = ({
       await addImgsToCol(targetId, imageIds);
 
       addToast(`Moved images to ${targetCol.name}`, 'success');
-      await refreshCollections();
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] })
+      ]);
     } catch (e) {
       // Rollback both
       setAllCollections(prev => prev.map(c => {
@@ -284,7 +295,10 @@ export const useCollectionOperations = ({
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
     if (!col) return;
     await upsertCollection({ ...col, customThumbnail: imageId });
-    await refreshCollections();
+    await Promise.all([
+      refreshCollections(),
+      queryClient.invalidateQueries({ queryKey: ['images'] })
+    ]);
     addToast("Thumbnail updated", "success");
   }, [collections, smartCollections, refreshCollections, addToast]);
 
@@ -292,7 +306,10 @@ export const useCollectionOperations = ({
     const col = [...collections, ...smartCollections].find(c => c.id === id);
     if (!col) return;
     await upsertCollection({ ...col, customThumbnail: undefined });
-    await refreshCollections();
+    await Promise.all([
+      refreshCollections(),
+      queryClient.invalidateQueries({ queryKey: ['images'] })
+    ]);
     addToast("Thumbnail reset", "info");
   }, [collections, smartCollections, refreshCollections, addToast]);
 
