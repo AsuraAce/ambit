@@ -505,8 +505,8 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
             &format!(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
                 SELECT DISTINCT 
-                '{}' || {}, 
-                {}, 
+                '{}' || REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''), 
                 '{}', 
                 ?1,
                 '{}'
@@ -653,11 +653,11 @@ fn build_resource_facets(
                         WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
                         ELSE jt.{1} 
                     END AS clean_ref,
-                    LOWER(CASE 
+                    LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CASE 
                         WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
                         WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
                         ELSE jt.{1} 
-                    END) AS lclean_ref,
+                    END, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')) AS lclean_ref,
                     COUNT(DISTINCT i.id) AS cnt,
                     MAX(i.timestamp) as last_used,
                     MIN(i.timestamp) as first_used
@@ -681,18 +681,18 @@ fn build_resource_facets(
             "CREATE TEMP TABLE IF NOT EXISTS {0} AS
              SELECT lclean_ref, thumbnail_path FROM (
                 SELECT 
-                    LOWER(CASE 
+                    LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CASE 
                         WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
                         WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
                         ELSE jt.{1} 
-                    END) AS lclean_ref,
+                    END, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')) AS lclean_ref,
                     i.thumbnail_path,
                     ROW_NUMBER() OVER (
-                        PARTITION BY LOWER(CASE 
+                        PARTITION BY LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(CASE 
                             WHEN instr(jt.{1}, ' (') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ' (') - 1)
                             WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
                             ELSE jt.{1} 
-                        END)
+                        END, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''))
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM {2} jt
@@ -949,5 +949,47 @@ mod tests {
             "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='Unknown'",
             [], |r| r.get(0)).unwrap();
         assert_eq!(unknown_count, 3, "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)");
+    }
+
+    #[test]
+    fn test_facet_extension_mismatch() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        // 1. Simulate a disk scan for a LoRA (clean name)
+        conn.execute(
+            "INSERT INTO models (hash, name, filename, lookup_source, resource_type, sidecar_thumbnail_path) 
+             VALUES ('lora_MyLora', 'MyLora', 'MyLora.safetensors', 'disk_scan', 'loras', 'C:/thumbs/MyLora.webp')",
+            [],
+        ).unwrap();
+
+        // 2. Simulate an image ingestion with a LoRA path (including extension)
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp) VALUES ('img1', 'test.png', 100)",
+            [],
+        ).unwrap();
+        
+        // This is what happens currently: LoRA name stored WITH extension in junction table
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'MyLora.safetensors')",
+            [],
+        ).unwrap();
+
+        // 3. Build LoRA facets
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+
+        // 4. Check if the facet has the thumbnail
+        let (name, thumb): (String, Option<String>) = conn.query_row(
+            "SELECT resource_name, thumbnail_path FROM facet_cache WHERE facet_type='loras'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?))
+        ).unwrap();
+
+        assert_eq!(name, "MyLora", "Facet name should be 'MyLora' (normalized from the model name)");
+        assert!(thumb.is_some(), "Facet should have a thumbnail path linked from the model");
+        assert_eq!(thumb.unwrap(), "C:/thumbs/MyLora.webp");
     }
 }
