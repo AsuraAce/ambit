@@ -106,9 +106,6 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                             }));
                         }
                     }}
-                    onDragEnter={(e) => handleDragEnter(e, col.id)}
-                    onDragOver={(e) => handleDragOver(e, col.id)}
-                    onDrop={(e) => handleDrop(e, col.id)}
                     onContextMenu={(e) => handleContextMenu(e, col.id)}
                     title={col.name} // Native tooltip for full name
                     className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring 

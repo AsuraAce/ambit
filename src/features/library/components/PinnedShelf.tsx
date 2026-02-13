@@ -62,7 +62,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     const handleMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
         // Don't intercept if clicking on a draggable item
-        if ((e.target as HTMLElement).closest('[data-draggable="true"]')) return;
+        if ((e.target as HTMLElement).closest('[data-drag-source="true"]')) return;
 
         if (!containerRef.current) return;
 

@@ -151,12 +151,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                 isSelected={selectedIds.has(subItem.image.id)}
                                                 isMasked={isImageMasked(subItem.image, privacyEnabled, maskedKeywords)}
                                                 onDragStart={(e) => {
-                                                    const idsToDrag = selectedIds.has(subItem.image.id) ? Array.from(selectedIds) : [subItem.image.id];
-                                                    e.dataTransfer.effectAllowed = 'copyMove';
-                                                    e.dataTransfer.setData('text/plain', JSON.stringify(idsToDrag));
-                                                    e.dataTransfer.setData('application/json', JSON.stringify(idsToDrag));
-                                                    const img = (e.currentTarget as HTMLElement).querySelector('img');
-                                                    if (img && e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(img, 20, 20);
+                                                    const ids = selectedIds.size > 0 ? Array.from(selectedIds) : [subItem.image.id];
+                                                    try {
+                                                        e.dataTransfer.effectAllowed = 'copyMove';
+                                                        e.dataTransfer.setData('application/x-ambit-image-ids', JSON.stringify(ids));
+                                                        e.dataTransfer.setData('text/plain', `ambit:${ids.length} images`);
+                                                    } catch (err) {
+                                                        console.error('[TimelineView] Failed to set drag data:', err);
+                                                    }
                                                 }}
                                                 onClick={(e) => onImageClick(e, subItem.image.id, subItem.globalIndex)}
                                                 onToggleSelection={(e) => onSelectionToggle(e, subItem.image.id)}

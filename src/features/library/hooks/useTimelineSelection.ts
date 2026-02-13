@@ -19,7 +19,16 @@ export const useTimelineSelection = ({
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
-        if ((e.target as HTMLElement).closest('[data-draggable="true"]')) return;
+
+        const target = e.target as HTMLElement;
+        const isOverItem = !!(
+            target.closest('[data-drag-source="true"]') ||
+            target.tagName === 'IMG'
+        );
+
+        if (isOverItem) {
+            return;
+        }
         if (!containerRef.current) return;
 
         e.preventDefault();

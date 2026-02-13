@@ -110,7 +110,13 @@ export function CollectionList<T extends Collection>({
     };
     const handleDragOver = (e: React.DragEvent, colId: string) => {
         e.preventDefault(); e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy'; // Visual feedback
         setDropTargetId(colId);
+
+        // Diagnostic log
+        if (Math.random() < 0.1) {
+            console.log('[CollectionList] handleDragOver on:', colId, 'Types:', Array.from(e.dataTransfer.types));
+        }
     };
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault(); e.stopPropagation();
@@ -120,8 +126,12 @@ export function CollectionList<T extends Collection>({
     const handleDrop = (e: React.DragEvent, colId: string) => {
         e.preventDefault(); e.stopPropagation();
         setDropTargetId(null);
-        const data = e.dataTransfer.getData('text/plain');
-        if (data && onDropOnCollection) onDropOnCollection(colId, data);
+        console.log('[CollectionList] Drop event on:', colId);
+        const data = e.dataTransfer.getData('application/x-ambit-image-ids') || e.dataTransfer.getData('text/plain');
+        if (data && onDropOnCollection) {
+            console.log('[CollectionList] Dropped data:', data);
+            onDropOnCollection(colId, data);
+        }
     };
 
     const handleContextMenu = (e: React.MouseEvent, colId: string) => {

@@ -180,18 +180,13 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                     isMasked={isMasked}
                     isThumbnail={isThumbnail}
                     onDragStart={(e) => {
-                        const idsToDrag = isSelected ? Array.from(selectedIds) : [image.id];
-                        console.log('[GridItem] Drag Start. IDs:', idsToDrag);
-
-                        // Set multiple data types for maximum compatibility
-                        e.dataTransfer.effectAllowed = 'copyMove';
-                        e.dataTransfer.setData('text/plain', JSON.stringify(idsToDrag));
-                        e.dataTransfer.setData('application/json', JSON.stringify(idsToDrag));
-
-                        // Set a drag image as a fallback (browser should handle it usually)
-                        const img = (e.currentTarget as HTMLElement).querySelector('img');
-                        if (img && e.dataTransfer.setDragImage) {
-                            e.dataTransfer.setDragImage(img, 20, 20);
+                        const ids = selectedIds.size > 0 ? Array.from(selectedIds) : [image.id];
+                        try {
+                            e.dataTransfer.effectAllowed = 'copyMove';
+                            e.dataTransfer.setData('application/x-ambit-image-ids', JSON.stringify(ids));
+                            e.dataTransfer.setData('text/plain', `ambit:${ids.length} images`);
+                        } catch (err) {
+                            console.error('[GridItem] Failed to set drag data:', err);
                         }
                     }}
                     onClick={(e) => onClick(e, image.id, index)}
