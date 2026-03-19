@@ -190,6 +190,8 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
                     loras: [],
                     embeddings: [],
                     hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
                     samplers: [],
                     generationTypes: [],
                     searchQuery: ''
@@ -236,6 +238,8 @@ export const getSmartCollectionCounts = async (smartCollections: Collection[]): 
                 loras: [],
                 embeddings: [],
                 hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
                 samplers: [],
                 generationTypes: [],
                 searchQuery: ''

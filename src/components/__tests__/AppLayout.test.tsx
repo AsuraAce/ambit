@@ -1,5 +1,5 @@
 
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '../../test/testUtils';
 import { describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
 
@@ -39,6 +39,9 @@ vi.mock('../../features/library/components/GridItem', () => ({
 }));
 vi.mock('../ui/ErrorBoundary', () => ({
     ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>
+}));
+vi.mock('../../contexts/SearchContext', () => ({
+    useSearch: () => ({ images: [{id: '1', filename: 'test.png', timestamp: 123}], filters: {} })
 }));
 
 describe('AppLayout', () => {

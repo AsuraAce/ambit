@@ -17,6 +17,8 @@ export const useFiltering = (
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
         samplers: [],
         generationTypes: [],
         dateRange: 'all',

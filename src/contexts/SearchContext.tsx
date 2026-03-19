@@ -143,7 +143,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settingsLoaded: settingsLoaded && collectionsLoaded
     });
 
-    const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [] };
+    const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
     const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
     const activeValidNames = statsData?.validNames || null;
 

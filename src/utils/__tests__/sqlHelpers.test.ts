@@ -10,6 +10,8 @@ describe('sqlHelpers', () => {
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
         samplers: [],
         generationTypes: [],
         dateRange: 'all',
@@ -59,13 +61,13 @@ describe('sqlHelpers', () => {
 
         it('should use junction table for Embedding filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, embeddings: ['EasyNegative'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ?)");
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)");
             expect(params).toEqual(['EasyNegative']);
         });
 
         it('should use junction table for Hypernetwork filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, hypernetworks: ['HyperNet'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ?)");
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)");
             expect(params).toEqual(['HyperNet']);
         });
 
@@ -89,14 +91,14 @@ describe('sqlHelpers', () => {
         describe('Search Query Parsing', () => {
             it('should handle simple text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'sunset' }, false, 'blur', []);
-                expect(where).toContain('(path LIKE ? OR metadata_json LIKE ?)');
-                expect(params).toEqual(['%sunset%', '%sunset%']);
+                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?");
+                expect(params).toEqual(['%sunset%']);
             });
 
             it('should handle negative text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-bird' }, false, 'blur', []);
-                expect(where).toContain('(path NOT LIKE ? AND metadata_json NOT LIKE ?)');
-                expect(params).toEqual(['%bird%', '%bird%']);
+                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?");
+                expect(params).toEqual(['%bird%']);
             });
 
             it('should handle key:val filters (cfg)', () => {
@@ -113,7 +115,8 @@ describe('sqlHelpers', () => {
 
             it('should handle quoted phrases', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"golden hour"' }, false, 'blur', []);
-                expect(params).toEqual(['%golden hour%', '%golden hour%']);
+                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?");
+                expect(params).toEqual(['%golden hour%']);
             });
         });
 
@@ -144,7 +147,7 @@ describe('sqlHelpers', () => {
 
             it('should handle smart collections (hybrid mode)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col2' }, false, 'blur', [], mockCollections);
-                expect(where).toContain('(path LIKE ? OR metadata_json LIKE ?)'); // From smart filters
+                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?"); // From smart filters
                 expect(params).toContain('%ocean%');
             });
 

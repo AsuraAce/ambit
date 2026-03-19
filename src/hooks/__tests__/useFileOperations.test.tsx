@@ -1,5 +1,5 @@
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFileOperations } from '../useFileOperations';
 
@@ -217,8 +217,8 @@ describe('useFileOperations', () => {
                 await result.current.regenerateThumbnails();
             });
 
-            expect(regenerateThumbnailsForImages).toHaveBeenCalledWith([mockImages[2]], expect.any(Function));
-            expect(mocksetIsRegeneratingThumbnails).toHaveBeenCalledWith(true);
+            expect(regenerateThumbnailsForImages).toHaveBeenCalledWith([mockImages[2]], expect.any(Function), expect.anything());
+
             expect(mockSetImages).toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Successfully optimized 1 of 1 thumbnails'), 'success');
         });

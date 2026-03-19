@@ -599,12 +599,12 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     // 4. Insert Orphans (Dynamic Thumbnail Only)
     conn.execute(
         "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count, thumbnail_path, last_used_at, created_at)
-            SELECT 'checkpoint', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(ct.thumbnail_path), MAX(cc.last_used), MIN(cc.first_used)
+            SELECT 'checkpoints', cc.mn, COALESCE(cc.mh, 'orphan_' || cc.mn), SUM(cc.cnt), MAX(ct.thumbnail_path), MAX(cc.last_used), MIN(cc.first_used)
             FROM cp_counts cc
             LEFT JOIN cp_thumbs ct ON ct.lmn = cc.lmn
             WHERE NOT EXISTS (
                 SELECT 1 FROM facet_cache fc 
-                WHERE fc.facet_type = 'checkpoint' 
+                WHERE fc.facet_type = 'checkpoints' 
                 AND (fc.resource_hash = cc.mh OR fc.resource_name = cc.mn OR LOWER(fc.resource_name) = cc.lmn)
             )
             AND cc.mn IS NOT NULL AND cc.mn != ''
@@ -905,7 +905,7 @@ mod tests {
 
         // Checkpoint Check: Expected thumb2.png (Pinned)
         let (cp_count, cp_thumb): (i64, String) = conn.query_row(
-            "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
+            "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='SDXL Base'", 
             [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(cp_count, 3, "Multiplier bug! Should count exactly 3 images for SDXL Base (not doubled/tripled)");
         assert_eq!(
@@ -932,12 +932,12 @@ mod tests {
         .unwrap();
 
         // Rebuild Only Checkpoints - MUST CLEAR CACHE FIRST or handle upsert
-        conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoint'", [])
+        conn.execute("DELETE FROM facet_cache WHERE facet_type='checkpoints'", [])
             .unwrap();
         build_checkpoint_facets(&conn).unwrap();
 
         let cp_thumb_manual: String = conn.query_row(
-            "SELECT thumbnail_path FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='SDXL Base'", 
+            "SELECT thumbnail_path FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='SDXL Base'", 
             [], |r| r.get(0)).unwrap();
         assert_eq!(
             cp_thumb_manual, "manual_override.png",
@@ -946,7 +946,7 @@ mod tests {
 
         // Verification for 'Unknown' facet (img4, img5, img6)
         let unknown_count: i64 = conn.query_row(
-            "SELECT count FROM facet_cache WHERE facet_type='checkpoint' AND resource_name='Unknown'",
+            "SELECT count FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='Unknown'",
             [], |r| r.get(0)).unwrap();
         assert_eq!(unknown_count, 3, "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)");
     }

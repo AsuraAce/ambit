@@ -1,5 +1,5 @@
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAiSearchLogic } from '../useAiSearchLogic';
 import { AppSettings, FilterState } from '../../types';
@@ -42,6 +42,8 @@ describe('useAiSearchLogic', () => {
         loras: [],
         embeddings: [],
         hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
         samplers: [],
         generationTypes: [],
         dateRange: 'all',
@@ -112,7 +114,7 @@ describe('useAiSearchLogic', () => {
             await result.current.submitSearch('find sunsets');
         });
 
-        expect(mockGenerateFilters).toHaveBeenCalledWith('find sunsets', 'test-key');
+        expect(mockGenerateFilters).toHaveBeenCalledWith('find sunsets', 'test-key', undefined);
         expect(mockSetFilters).toHaveBeenCalledTimes(2); // Local set + AI results set
         expect(mockAddToast).toHaveBeenCalledWith('Filters updated by AI', 'success');
     });

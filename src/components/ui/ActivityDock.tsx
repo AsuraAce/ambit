@@ -22,8 +22,7 @@ export const ActivityDock: React.FC = () => {
         cancelImport,
         cancelThumbnailRegeneration,
         cancelSync,
-        cancelRefresh,
-        refreshTrigger
+        cancelRefresh
     } = useLibraryStore();
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
@@ -32,8 +31,8 @@ export const ActivityDock: React.FC = () => {
     const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
-    // Show refresh if active AND (no high priority OR it was manually triggered)
-    const isRefreshActive = isRefreshingMetadata && (!isHighPriorityActive || refreshTrigger > 0) && !isBackgroundActive;
+    // Show refresh if active AND no high priority
+    const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive;
 
@@ -66,8 +65,8 @@ export const ActivityDock: React.FC = () => {
         isLowPriority = true;
     } else if (isRefreshActive) {
         progress = refreshProgress;
-        label = refreshTrigger > 0 ? "Refreshing Metadata" : "Refreshing Metadata";
-        isLowPriority = refreshTrigger === 0;
+        label = "Refreshing Metadata";
+        isLowPriority = false;
     }
 
     const current = progress?.current || 0;

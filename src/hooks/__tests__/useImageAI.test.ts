@@ -1,5 +1,5 @@
 
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useImageAI } from '../useImageAI';
 
@@ -20,20 +20,20 @@ describe('useImageAI', () => {
     });
 
     it('should call analyzePromptAndSuggest when enabled and apiKey provided', async () => {
-        const { result } = renderHook(() => useImageAI('key123', true));
+        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
 
         await act(async () => {
             await result.current.analyzePrompt('a cat', mockOnOpenSettings);
         });
 
-        expect(mockAnalyze).toHaveBeenCalledWith('a cat', 'key123');
+        expect(mockAnalyze).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined);
         expect(result.current.result).toBe('Suggested prompt');
         expect(result.current.modalOpen).toBe(true);
         expect(result.current.modalType).toBe('analysis');
     });
 
     it('should open settings if disabled or apiKey missing', async () => {
-        const { result } = renderHook(() => useImageAI(undefined, true));
+        const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
         await act(async () => {
             await result.current.analyzePrompt('a cat', mockOnOpenSettings);
@@ -44,13 +44,13 @@ describe('useImageAI', () => {
     });
 
     it('should handle variations correctly', async () => {
-        const { result } = renderHook(() => useImageAI('key123', true));
+        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
 
         await act(async () => {
             await result.current.generateVariations('a cat', mockOnOpenSettings);
         });
 
-        expect(mockVariations).toHaveBeenCalledWith('a cat', 'key123');
+        expect(mockVariations).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined);
         expect(result.current.result).toEqual(['Var 1', 'Var 2']);
         expect(result.current.modalType).toBe('variations');
     });
@@ -59,7 +59,7 @@ describe('useImageAI', () => {
         let resolvePromise: (val: string) => void;
         mockAnalyze.mockReturnValue(new Promise(resolve => { resolvePromise = resolve; }));
 
-        const { result } = renderHook(() => useImageAI('key123', true));
+        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
 
         act(() => {
             result.current.analyzePrompt('a cat', mockOnOpenSettings);

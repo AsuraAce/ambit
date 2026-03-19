@@ -32,7 +32,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
 
         // Helper: is this an internal (image reorder) drag?
         const isInternalDrag = (e: DragEvent): boolean => {
-            const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
+            const types = e.dataTransfer?.types ? Array.from(e.dataTransfer.types) : [];
             return types.some(t => t === 'application/x-ambit-image-ids' || t === 'application/json');
         };
 

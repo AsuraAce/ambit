@@ -1,7 +1,16 @@
 
-import { renderHook } from '@testing-library/react';
+import { renderHook } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFolderMonitor } from '../useFolderMonitor';
+
+vi.mock('../../contexts/WatcherContext', () => ({
+    useWatchers: () => ({
+        watchedFolders: [],
+        scanFolder: vi.fn(),
+        isScanning: false,
+        lastWatcherEvent: 0
+    })
+}));
 
 describe('useFolderMonitor', () => {
     const mockOnScan = vi.fn();
@@ -17,7 +26,9 @@ describe('useFolderMonitor', () => {
             isLoaded: false,
             monitoredFolders: folders,
             onScan: mockOnScan,
-            addToast: mockAddToast
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn()
         }));
 
         expect(mockOnScan).not.toHaveBeenCalled();
@@ -29,7 +40,9 @@ describe('useFolderMonitor', () => {
             isLoaded: true,
             monitoredFolders: folders,
             onScan: mockOnScan,
-            addToast: mockAddToast
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn()
         }), {
             initialProps: { folders: initialFolders }
         });
@@ -42,7 +55,7 @@ describe('useFolderMonitor', () => {
 
         rerender({ folders: updatedFolders });
 
-        expect(mockOnScan).toHaveBeenCalledWith('/test2', false);
+        expect(mockOnScan).toHaveBeenCalledWith([{ path: '/test2', variant: undefined }], false);
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('/test2'), 'info');
     });
 
@@ -51,7 +64,9 @@ describe('useFolderMonitor', () => {
             isLoaded,
             monitoredFolders: folders,
             onScan: mockOnScan,
-            addToast: mockAddToast
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn()
         }), {
             initialProps: { folders: [], isLoaded: false }
         });
@@ -59,7 +74,7 @@ describe('useFolderMonitor', () => {
         // Set loaded and add folder
         rerender({ folders: [{ id: '1', path: '/test', isActive: true, imageCount: 0 }], isLoaded: true });
 
-        expect(mockOnScan).toHaveBeenCalledWith('/test', true);
+        expect(mockOnScan).toHaveBeenCalledWith([{ path: '/test', variant: undefined }], true);
         expect(mockAddToast).not.toHaveBeenCalled(); // No toast on startup scan
     });
 });

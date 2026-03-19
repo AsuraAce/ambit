@@ -1,5 +1,5 @@
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppActions } from '../useAppActions';
 import { AppSettings, FilterState } from '../../types';
@@ -23,20 +23,29 @@ vi.mock('../../services/db/imageRepo', () => ({
     deleteImage: vi.fn(),
 }));
 
-vi.mock('../useLibraryContext', () => ({
-    useLibraryContext: () => ({
+vi.mock('../../stores/searchStore', () => ({
+    useSearchStore: (selector: any) => selector({
         images: [
             { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
             { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
         ],
         setImages: mockSetImages,
-        filters: { collectionId: 'col1' } as FilterState,
-        setCollections: vi.fn(),
-        refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
+        filters: { collectionId: 'col1' },
         toggleFavorite: mockToggleFavorite,
+    }),
+}));
+
+vi.mock('../../stores/settingsStore', () => ({
+    useSettingsStore: (selector: any) => selector({
+        settings: { confirmDelete: true },
         privacyEnabled: false,
         setPrivacyEnabled: vi.fn(),
-        settings: { confirmDelete: true } as AppSettings,
+    }),
+}));
+
+vi.mock('../../stores/collectionStore', () => ({
+    useCollectionStore: (selector: any) => selector({
+        refreshCollections: mockRefreshCollectionThumbnails,
     }),
 }));
 

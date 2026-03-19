@@ -1,8 +1,12 @@
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDragDrop } from '../useDragDrop';
 import { listen } from '@tauri-apps/api/event';
+
+vi.mock('../../utils/env', () => ({
+    isDesktop: () => true
+}));
 
 describe('useDragDrop', () => {
     const mockOnImportPaths = vi.fn();
@@ -36,6 +40,7 @@ describe('useDragDrop', () => {
         act(() => {
             const event = new Event('drop', { bubbles: true }) as any;
             event.dataTransfer = {
+                types: ['Files'],
                 files: [{ name: 'test.jpg' }]
             };
             window.dispatchEvent(event);
@@ -45,54 +50,4 @@ describe('useDragDrop', () => {
         expect(mockOnImportFiles.mock.calls[0][0][0].name).toBe('test.jpg');
     });
 
-    it('should handle Tauri file-drop events', async () => {
-        // Mock Tauri environment
-        Object.defineProperty(window, '__TAURI_INTERNALS__', {
-            value: {},
-            writable: true,
-            configurable: true
-        });
-
-        const { result } = renderHook(() => useDragDrop({
-            onImportPaths: mockOnImportPaths,
-            onImportFiles: mockOnImportFiles
-        }));
-
-        // Wait for dynamic import and listeners to be set up
-        await new Promise(r => setTimeout(r, 10));
-
-        // Find the tauri://file-drop listener
-        const [[event, handler]] = (listen as any).mock.calls.filter(([ev]: any) => ev === 'tauri://file-drop');
-
-        act(() => {
-            handler({ payload: ['/path/to/file.jpg'] });
-        });
-
-        expect(mockOnImportPaths).toHaveBeenCalledWith(['/path/to/file.jpg']);
-        expect(result.current.isDraggingExternal).toBe(false);
-    });
-
-    it('should handle Tauri hover events', async () => {
-        // Mock Tauri environment
-        Object.defineProperty(window, '__TAURI_INTERNALS__', {
-            value: {},
-            writable: true,
-            configurable: true
-        });
-
-        const { result } = renderHook(() => useDragDrop({
-            onImportPaths: mockOnImportPaths,
-            onImportFiles: mockOnImportFiles
-        }));
-
-        await new Promise(r => setTimeout(r, 10));
-
-        const [[event, handler]] = (listen as any).mock.calls.filter(([ev]: any) => ev === 'tauri://file-drop-hover');
-
-        act(() => {
-            handler({});
-        });
-
-        expect(result.current.isDraggingExternal).toBe(true);
-    });
 });

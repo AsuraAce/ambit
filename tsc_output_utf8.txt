@@ -1,2 +1,0 @@
-﻿src/components/settings/SettingsTabs.tsx(589,51): error TS2339: Property 'cleanLibrary' does not exist on type 'LibraryContextType'.
-src/components/settings/SettingsTabs.tsx(601,44): error TS2554: Expected 0-1 arguments, but got 2.
