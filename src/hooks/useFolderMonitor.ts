@@ -28,7 +28,6 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
-    const { lastWatcherEvent } = useWatchers(); // Listen for global file change events
 
     useEffect(() => {
         if (!isLoaded) {
@@ -150,12 +149,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         prevFoldersRef.current = currentFolders;
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths]);
 
-    // Live Watch Catch-up & Events
+    // Live Watch Catch-up
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
     const hasLiveWatchStartedRef = useRef(isLiveWatching);
-    const lastEventRef = useRef(lastWatcherEvent);
 
-    // Unified Watcher Effect (Handles both "Turn On" and "New Event")
+    // Unified Watcher Effect (Handles "Turn On")
     useEffect(() => {
         const activeFolders = monitoredFolders.filter(f => f.isActive);
         if (activeFolders.length === 0) return;
@@ -170,21 +168,13 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         // Condition 1: Turning ON (Catch-up)
         const isTurningOn = isLiveWatching && !hasLiveWatchStartedRef.current;
 
-        // Condition 2: Watcher Event Fired (if already watching)
-        // We check > 0 to ignore initial mount
-        const isNewEvent = isLiveWatching && lastWatcherEvent > 0 && lastWatcherEvent !== lastEventRef.current;
-
         if (isTurningOn) {
             console.log('[FolderMonitor] Live Watch enabled - triggering catch-up scan for linked folders');
             performUnifiedScan(activeFolders, 'Catch-up');
-        } else if (isNewEvent) {
-            console.log(`[FolderMonitor] Watcher event detected (${lastWatcherEvent}) - triggering smart scan`);
-            performUnifiedScan(activeFolders, 'Live Watch');
-        }
+        } 
 
         hasLiveWatchStartedRef.current = isLiveWatching;
-        lastEventRef.current = lastWatcherEvent;
-    }, [isLiveWatching, lastWatcherEvent, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata]);
+    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata]);
 
     // Reusable Scan Logic (Extracted from previous effect)
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
@@ -219,7 +209,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
             for (const task of tasks) {
                 await handleImportPaths(task.paths, task.variant, {
                     skipStateManagement: true,
-                    onProgress: (c, t, m) => setImportProgress({ current: currentCount + c, total: totalFilesFound, message: m })
+                    onProgress: (c, t, m) => setImportProgress({ 
+                        current: currentCount + c, 
+                        total: totalFilesFound, 
+                        message: m ? `${source}: ${m}` : `${source}: Importing images...`
+                    })
                 });
                 currentCount += task.paths.length;
             }

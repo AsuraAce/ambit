@@ -60,7 +60,7 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
 ///
 /// **IMPORTANT**: This function expects the reader to be positioned at the **beginning** of the file
 /// (byte 0) because it verifies the 8-byte PNG header before scanning chunks.
-pub fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, String>, String> {
+pub fn extract_png_chunks<R: Read + Seek>(reader: &mut R) -> Result<HashMap<String, String>, String> {
     let mut buffer = [0; 8];
     if reader.read_exact(&mut buffer).is_err() {
         return Err("Failed to read header".to_string());
@@ -170,10 +170,9 @@ pub fn extract_png_chunks<R: Read>(reader: &mut R) -> Result<HashMap<String, Str
         } else if chunk_type == "IEND" {
             break;
         } else {
-            // Efficiently skip data + CRC
+            // Efficiently skip data + CRC O(1) without thrashing OS disk I/O
             let skip_len = length + 4;
-            std::io::copy(&mut reader.by_ref().take(skip_len), &mut std::io::sink())
-                .map_err(|e| e.to_string())?;
+            reader.seek(SeekFrom::Current(skip_len as i64)).map_err(|e| e.to_string())?;
         }
     }
 

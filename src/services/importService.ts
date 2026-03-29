@@ -115,10 +115,20 @@ async function processFileEntries(
         // console.log(`[Import] Processing batch ${i / BATCH_SIZE + 1} (${chunk.length} files)`);
 
         try {
-            // console.time(`scanBatch-${i}`);
+            // Setup listener for native progress stream for silky smooth UI loading bars
+            const { listen } = await import('@tauri-apps/api/event');
+            const unlisten = await listen<{current: number, total: number, message: string}>('import_progress', (e) => {
+                if (onProgress) {
+                    const absCurrent = Math.min(i + e.payload.current, totalToProcess);
+                    onProgress(absCurrent, totalToProcess, e.payload.message);
+                }
+            });
+
             // true for extractWorkflow (always want full metadata)
             const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool);
-            // console.timeEnd(`scanBatch-${i}`);
+            
+            unlisten(); // Clean up IPC listener immediately after the chunk is done
+
 
             const batchImages: AIImage[] = [];
 
@@ -424,6 +434,34 @@ export const processNativePaths = async (
         forceRescan,
         skipThumbnail: false
     });
+};
+
+export const processTargetedFiles = async (
+    paths: string[],
+    options: ImportOptions = {},
+    defaultTool?: GeneratorTool
+): Promise<ImportResult> => {
+    const result: ImportResult = {
+        images: [],
+        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 }
+    };
+
+    if (paths.length === 0) return result;
+
+    const entries: FileEntry[] = paths.map(p => ({ 
+        path: p, 
+        modified: Date.now(), 
+        size: 0 // Will be read by rust metadata extractor anyway
+    }));
+
+    console.log(`[Import] Processing ${paths.length} targeted paths...`);
+    const imported = await processFileEntries(entries, result.stats, options, defaultTool);
+    result.images = imported;
+
+    // Removed synchronous rebuildFacetCache.
+    // Live Watch relies on the 60s idle timeout `useLibraryStore.getState().reportLiveImagesReceived()` 
+    // managed in SyncContext to gracefully handle heavy aggregations off-thread.
+    return result;
 };
 
 export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: number; updated: number }> => {

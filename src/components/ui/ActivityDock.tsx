@@ -7,6 +7,7 @@ export const ActivityDock: React.FC = () => {
     const {
         isImporting, importProgress,
         syncStatus, syncProgress, isLiveSyncing,
+        isReceivingLiveImages, liveImagesReceivedCount,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
@@ -27,14 +28,17 @@ export const ActivityDock: React.FC = () => {
 
     const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
 
-    // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing
+    // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing > Live Watch
     const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     // Show refresh if active AND no high priority
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
-    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive;
+    // Show Live Watch if active and nothing else is overriding it
+    const isLiveWatchActive = isReceivingLiveImages && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
+
+    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
 
     // Determine current task details
     let progress = null;
@@ -67,6 +71,10 @@ export const ActivityDock: React.FC = () => {
         progress = refreshProgress;
         label = "Refreshing Metadata";
         isLowPriority = false;
+    } else if (isLiveWatchActive) {
+        progress = { current: 0, total: 0, message: `${liveImagesReceivedCount} images received this session...` };
+        label = "Live Sync Session";
+        isLowPriority = true;
     }
 
     const current = progress?.current || 0;
@@ -166,9 +174,11 @@ export const ActivityDock: React.FC = () => {
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4">
                                         {message || "Starting work..."}
                                     </p>
-                                    <span className={`text-[11px] font-black font-mono italic ${isLowPriority ? 'text-violet-600 dark:text-violet-400' : 'text-sage-600 dark:text-sage-400'}`}>
-                                        {percent}%
-                                    </span>
+                                    {!isLiveWatchActive && (
+                                        <span className={`text-[11px] font-black font-mono italic ${isLowPriority ? 'text-violet-600 dark:text-violet-400' : 'text-sage-600 dark:text-sage-400'}`}>
+                                            {percent}%
+                                        </span>
+                                    )}
                                 </div>
                             </motion.div>
 

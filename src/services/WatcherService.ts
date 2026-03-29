@@ -3,7 +3,7 @@ import { unwrap } from '../utils/spectaUtils';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
 
-type WatcherCallback = () => void;
+type WatcherCallback = (paths?: string[]) => void;
 
 export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
@@ -30,9 +30,9 @@ export class WatcherService {
             console.log(`[WatcherService] Native watcher started for ${paths.length} paths`);
 
             // Listen for the debounced event from Rust
-            this.unlistenFn = await listen('folder-change-event', () => {
-                console.log('[WatcherService] Folder change detected');
-                onChangeEvent();
+            this.unlistenFn = await listen<string[]>('folder-change-event', (event) => {
+                console.log(`[WatcherService] Folder change detected with ${event.payload?.length || 0} paths`);
+                onChangeEvent(event.payload);
             });
 
         } catch (err) {

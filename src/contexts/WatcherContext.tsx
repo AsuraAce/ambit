@@ -20,7 +20,7 @@ const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
 
 export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: () => void }> = ({ children, onNewImageDetected }) => {
     const { settings, isLoaded } = useSettings();
-    const { startInvokeSync } = useSync();
+    const { startInvokeSync, startTargetedLiveSync } = useSync();
     const { addToast } = useToast();
 
     // Zustand State
@@ -50,9 +50,11 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings });
+    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync });
+    const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
-        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings };
+        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync };
     });
 
     useEffect(() => {
@@ -84,7 +86,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                     invokeRoot = invokeRoot.replace(/\/databases$/i, '');
                 }
 
-                pathsToWatch.push(`${invokeRoot}/outputs/images`);
+                pathsToWatch.push(`${invokeRoot}/databases`);
             }
 
             if (pathsToWatch.length === 0) {
@@ -92,33 +94,66 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 return;
             }
 
-            // Ref for debouncing watcher events
-            const debounceTimer = { current: null as NodeJS.Timeout | null };
+            await watcherService.startWatching(pathsToWatch, async (paths?: string[]) => {
+                if (!paths || paths.length === 0) return;
+                console.log(`[WatcherContext] Targeted change detected for ${paths.length} files`);
+                
+                const cb = callbacksRef.current;
+                
+                // Reconstruct the actual active invoke string directory locally
+                const activeInvokeRoot = (() => {
+                    if (!cb.settings.invokeAiPath) return null;
+                    let root = cb.settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
+                    if (root.toLowerCase().endsWith('.db')) {
+                        root = root.replace(/\/[\w-]+\.db$/i, '');
+                        root = root.replace(/\/databases$/i, '');
+                    } else if (root.toLowerCase().endsWith('/databases')) {
+                        root = root.replace(/\/databases$/i, '');
+                    }
+                    return `${root}/databases`.toLowerCase();
+                })();
 
-            await watcherService.startWatching(pathsToWatch, async () => {
-                console.log('[WatcherContext] Global change detected - scheduling sync...');
+                const invokePaths: string[] = [];
+                const genericPaths: string[] = [];
 
-                // Trailing debounce: Clear existing timer and set a new one
-                if (debounceTimer.current) {
-                    clearTimeout(debounceTimer.current);
-                }
+                paths.forEach(p => {
+                    const normalized = p.replace(/\\/g, '/').toLowerCase();
+                    if (activeInvokeRoot && normalized.startsWith(activeInvokeRoot)) {
+                        // We only care about .db or .db-wal files in the Invoke database folder
+                        if (normalized.endsWith('.db') || normalized.endsWith('.db-wal')) {
+                            invokePaths.push(p);
+                        }
+                    } else {
+                        genericPaths.push(p);
+                    }
+                });
 
-                debounceTimer.current = setTimeout(async () => {
-                    console.log('[WatcherContext] Debounce complete - triggering sync');
-                    const cb = callbacksRef.current;
-
+                // Use O(1) targeted import strictly for non-Invoke generic folder drops
+                if (genericPaths.length > 0) {
+                    if (cb.startTargetedLiveSync) {
+                        await cb.startTargetedLiveSync(genericPaths);
+                    }
                     if (cb.onNewImageDetected) cb.onNewImageDetected();
                     await cb.refreshMaintenanceCounts();
+                }
 
-                    if (cb.settings.invokeAiPath) {
-                        await cb.startInvokeSync({ mode: 'live' });
+                // Signal consumers (like useFolderMonitor) that a change occurred
+                setLastWatcherEvent(Date.now());
+
+                // Immediately Trigger full InvokeAI SQLite Sync evaluation if an Invoke local path dropped
+                if (invokePaths.length > 0 && cb.settings.invokeAiPath) {
+                    console.log(`[WatcherContext] Activity detected in InvokeAI database. Debouncing sync...`);
+                    
+                    if (invokeSyncTimeoutRef.current) {
+                        clearTimeout(invokeSyncTimeoutRef.current);
                     }
-
-                    // Signal consumers (like useFolderMonitor) that a change occurred
-                    setLastWatcherEvent(Date.now());
-
-                    debounceTimer.current = null;
-                }, 3000); // 3 seconds silence required
+                    
+                    invokeSyncTimeoutRef.current = setTimeout(() => {
+                        console.log(`[WatcherContext] Triggering SQLite-driven sync for InvokeAI via Live Watch...`);
+                        cb.startInvokeSync({ mode: 'live' });
+                        invokeSyncTimeoutRef.current = null;
+                    }, 1000);
+                }
             });
 
             if (pathsToWatch.length > 0) {

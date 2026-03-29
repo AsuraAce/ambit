@@ -43,20 +43,35 @@ pub fn start_native_folder_watcher(
 
     let app_handle = app.clone();
 
-    let last_emit_local = std::sync::Arc::new(Mutex::new(
-        Instant::now().checked_sub(Duration::from_secs(10)).unwrap(),
-    ));
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<String>>(1000);
+
+    tauri::async_runtime::spawn(async move {
+        let mut buffer = std::collections::HashSet::new();
+        loop {
+            match tokio::time::timeout(tokio::time::Duration::from_millis(500), rx.recv()).await {
+                Ok(Some(paths)) => {
+                    buffer.extend(paths);
+                }
+                Ok(None) => break, // Channel closed
+                Err(_) => { // Timeout elapsed
+                    if !buffer.is_empty() {
+                        let to_emit: Vec<String> = buffer.drain().collect();
+                        println!("[Rust Watcher] Emitting batch of {} paths", to_emit.len());
+                        let _ = app_handle.emit("folder-change-event", to_emit);
+                    }
+                }
+            }
+        }
+    });
 
     let event_handler = move |res: notify::Result<notify::Event>| {
         match res {
             Ok(event) => {
-                println!("[Rust Watcher] Raw Event: {:?}", event);
                 let is_relevant = match event.kind {
                     notify::EventKind::Create(_)
                     | notify::EventKind::Modify(_)
                     | notify::EventKind::Access(notify::event::AccessKind::Close(_)) => true,
                     notify::EventKind::Any => true, // Catch-all for some OSs
-                    // Handle Rename/Move - essential for windows drag/drop
                     _ => false,
                 };
 
@@ -66,7 +81,7 @@ pub fn start_native_folder_watcher(
                             .extension()
                             .map(|e| {
                                 let s = e.to_string_lossy().to_lowercase();
-                                ["png", "jpg", "jpeg", "webp"].contains(&s.as_str())
+                                ["png", "jpg", "jpeg", "webp", "db", "db-wal"].contains(&s.as_str())
                             })
                             .unwrap_or(false);
 
@@ -84,13 +99,29 @@ pub fn start_native_folder_watcher(
                         !is_thumbnail
                     });
 
-                    if has_image {
-                        let mut last = last_emit_local.lock().unwrap();
-                        if last.elapsed() > Duration::from_millis(2000) {
-                            println!("[Rust Watcher] Detected change in watched folders, emitting event...");
-                            let _ = app_handle.emit("folder-change-event", ());
-                            *last = Instant::now();
-                        }
+                    if !has_image {
+                        return;
+                    }
+
+                    let valid_paths: Vec<String> = event
+                        .paths
+                        .into_iter()
+                        .filter_map(|p| {
+                            let s = p.to_string_lossy().to_string();
+                            let s_lower = s.to_lowercase();
+                            let is_target_file = ["png", "jpg", "jpeg", "webp", "db", "db-wal"].iter().any(|ext| s_lower.ends_with(ext));
+                            let is_thumbnail = s_lower.ends_with("thumbnail.png");
+                            
+                            if is_target_file && !is_thumbnail {
+                                Some(s)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if !valid_paths.is_empty() {
+                        let _ = tx.blocking_send(valid_paths);
                     }
                 }
             }

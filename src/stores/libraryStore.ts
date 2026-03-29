@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { commands } from '../bindings';
 
+let liveWatchTimeout: any = null;
+
 export interface SyncProgress {
     current: number;
     total: number;
@@ -57,6 +59,10 @@ interface LibraryState {
     isRefreshingMetadata: boolean;
     refreshProgress: SyncProgress | null;
 
+    // Live Watch Session State
+    isReceivingLiveImages: boolean;
+    liveImagesReceivedCount: number;
+
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
 
@@ -98,6 +104,10 @@ interface LibraryState {
     setIsRefreshingMetadata: (val: boolean) => void;
     setRefreshProgress: (progress: SyncProgress | null) => void;
     cancelRefresh: () => void;
+
+    // Live Watch Session Actions
+    reportLiveImagesReceived: (count: number) => void;
+    endLiveImageSession: () => Promise<void>;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
@@ -141,6 +151,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Background Metadata Refresh State
     isRefreshingMetadata: false,
     refreshProgress: null,
+
+    // Live Watch Session State
+    isReceivingLiveImages: false,
+    liveImagesReceivedCount: 0,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -204,5 +218,30 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     cancelRefresh: () => {
         invoke('cancel_reparse_job').catch(console.error);
         set({ isRefreshingMetadata: false, refreshProgress: null });
+    },
+
+    // Live Watch Session Actions
+    reportLiveImagesReceived: (count) => {
+        set((state) => ({ 
+            isReceivingLiveImages: true, 
+            liveImagesReceivedCount: state.liveImagesReceivedCount + count 
+        }));
+        
+        if (liveWatchTimeout) clearTimeout(liveWatchTimeout);
+        liveWatchTimeout = setTimeout(async () => {
+            const endSession = useLibraryStore.getState().endLiveImageSession;
+            await endSession();
+        }, 60000); // 60-second idle session timeout
+    },
+    endLiveImageSession: async () => {
+        set({ isReceivingLiveImages: false, liveImagesReceivedCount: 0 });
+        try {
+            console.log('[LiveWatch] Idle timeout reached. Rebuilding Facet Cache.');
+            const { rebuildFacetCache } = await import('../services/db/imageRepo');
+            await rebuildFacetCache();
+            useLibraryStore.getState().incrementFacetCacheVersion();
+        } catch(e) { 
+            console.error('[LiveWatch] Failed facet cache rebuild after idle timeout', e); 
+        }
     },
 }));

@@ -6,10 +6,12 @@ import { useToast } from '../hooks/useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSettingsStore } from '../stores/settingsStore';
 
 
 interface SyncContextType {
     startInvokeSync: (options?: any) => Promise<void>;
+    startTargetedLiveSync: (paths: string[]) => Promise<void>;
     cancelSync: () => void;
     syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
     syncState: {
@@ -59,10 +61,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
         if (options.mode === 'live') {
             isLiveSyncingRef.current = true;
             setIsLiveSyncing(true);
+            setSyncProgress({ current: 0, total: 0, message: undefined });
         } else {
             setSyncStatus('syncing');
+            setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
         }
-        setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
 
         const ctrl = new AbortController();
         setSyncAbortController(ctrl);
@@ -75,7 +78,14 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
                 settingsRef.current.invokeAiPath!,
-                (c, t, msg) => setSyncProgress({ current: c, total: t, message: msg }),
+                (c, t, msg) => {
+                    if (options.mode === 'live') {
+                        // Keep message undefined to prevent ActivityDock from exploding on screen
+                        setSyncProgress({ current: c, total: t, message: undefined });
+                    } else {
+                        setSyncProgress({ current: c, total: t, message: msg });
+                    }
+                },
                 ctrl.signal,
                 {
                     syncFavorites: options.syncFavorites,
@@ -88,7 +98,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
-                setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' });
+                if (options.mode !== 'live') {
+                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' });
+                }
                 // Note: setCollections is still from CollectionContext (Phase 3)
                 setCollections(prev => {
                     const next = [...prev];
@@ -136,15 +148,23 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             const hasChanges = (imported || 0) > 0 || (updated || 0) > 0 || orphansImported > 0;
 
             if (hasChanges) {
-                setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
-                try {
-                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
-                    await rebuildFacetCache();
-                    // Increment version to trigger React Query refetch in useLibraryStatsQuery
-                    useLibraryStore.getState().incrementFacetCacheVersion();
-                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
-                } catch (e) {
-                    console.error('[Sync] Failed to rebuild facet cache after sync', e);
+                if (options.mode === 'live') {
+                    // SILENT, LENIENT ADDITION (Matches native OS logic)
+                    // Advance the Live Watch Session Idle Timer and gently refresh grid
+                    useLibraryStore.getState().reportLiveImagesReceived(totalProcessed);
+                    queryClient.invalidateQueries({ queryKey: ['images'] });
+                } else {
+                    // MANUAL HEAVY REBUILD
+                    setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
+                    try {
+                        const { rebuildFacetCache } = await import('../services/db/imageRepo');
+                        await rebuildFacetCache();
+                        // Increment version to trigger React Query refetch in useLibraryStatsQuery
+                        useLibraryStore.getState().incrementFacetCacheVersion();
+                        setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
+                    } catch (e) {
+                        console.error('[Sync] Failed to rebuild facet cache after sync', e);
+                    }
                 }
             } else {
                 console.log('[Sync] No changes detected, skipping facet cache rebuild.');
@@ -178,6 +198,40 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             }
         }
     }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing]);
+
+    const startTargetedLiveSync = useCallback(async (paths: string[]) => {
+        if (!paths || paths.length === 0) return;
+        try {
+            const { processTargetedFiles } = await import('../services/importService');
+            const result = await processTargetedFiles(paths, { forceRescan: true });
+            
+            // Advance the Live Watch Session Idle Timer
+            const count = result?.images?.length || paths.length;
+            useLibraryStore.getState().reportLiveImagesReceived(count);
+
+            // IMPORTANT: Bump the `lastScanned` timestamp for matching monitored folders!
+            // This prevents `useFolderMonitor`'s generic Startup Catch-up scan from finding these explicitly handled OS-level files.
+            // Without this, turning Live Watch off and on again would redundantly scan every single file generated in the previous session.
+            if (count > 0) {
+                const { updateFolderLastScanned } = useSettingsStore.getState();
+                const monitoredFolders = settingsRef.current.monitoredFolders || [];
+                const now = Date.now();
+                const updatedFolderIds = new Set<string>();
+                
+                paths.forEach(p => {
+                    const lowerPath = p.replace(/\\/g, '/').toLowerCase();
+                    const folder = monitoredFolders.find(f => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
+                    if (folder && !updatedFolderIds.has(folder.id)) {
+                        updatedFolderIds.add(folder.id);
+                        updateFolderLastScanned(folder.id, now);
+                    }
+                });
+            }
+
+        } catch (e) {
+            console.error('[LiveSync] Targeted sync failed', e);
+        }
+    }, []);
 
     const cancelSync = useCallback(() => {
         cancelSyncAction();
@@ -254,6 +308,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     return (
         <SyncContext.Provider value={{
             startInvokeSync,
+            startTargetedLiveSync,
             cancelSync,
             syncStatus,
             syncState: { status: syncStatus, progress: syncProgress },

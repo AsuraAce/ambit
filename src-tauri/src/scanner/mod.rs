@@ -42,6 +42,7 @@ pub async fn scan_image(
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn scan_images_bulk(
+    app: tauri::AppHandle,
     paths: Vec<String>,
     thumbnail_dir: Option<String>,
     skip_thumbnail: bool,
@@ -49,14 +50,18 @@ pub async fn scan_images_bulk(
     default_tool: Option<String>,
 ) -> Result<Vec<ScanResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        SCAN_POOL.install(|| {
+        let app_clone = app.clone();
+        SCAN_POOL.install(move || {
+            let total = paths.len();
+            let parsed_count = std::sync::atomic::AtomicUsize::new(0);
+
             // Use par_iter for parallel processing
             // The SCAN_POOL is configured with 12 threads to handle I/O bound work
             let results: Vec<ScanResult> = paths
                 .par_iter()
                 .map(|path| {
                     // println!("[Bulk] About to scan: {}", path); // Comment out to reduce log spam
-                    core::scan_image_internal(
+                    let res = core::scan_image_internal(
                         path.clone(),
                         thumbnail_dir.clone(),
                         skip_thumbnail,
@@ -75,7 +80,19 @@ pub async fn scan_images_bulk(
                         chunks: std::collections::HashMap::new(),
                         metadata: None,
                         error: Some(e),
-                    })
+                    });
+
+                    let current = parsed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if current % 10 == 0 || current == total {
+                        use tauri::Emitter;
+                        let _ = app_clone.emit("import_progress", crate::db::ProgressPayload {
+                            current,
+                            total,
+                            message: "Extracting metadata...".to_string(),
+                        });
+                    }
+
+                    res
                 })
                 .collect();
             Ok(results)
