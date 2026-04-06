@@ -12,6 +12,15 @@ Updated via the `pre-commit` skill. Loaded at every session start.
 
 ---
 
+## [2026-03-29] — Tauri Native Watcher Extension Filtering
+**Status:** one-off
+**Area:** #rust #tauri #watcher
+**Context:** Live Watch for InvokeAI (watching the `invokeai.db`) was failing because the frontend received no file events.
+**Finding:** The custom Rust native file watcher used a tight extension filter (`png`, `jpg`, `jpeg`, `webp`) which was silently dropping `.db` and `.db-wal` modification events.
+**Solution:** Added `db` and `db-wal` to the extension allowlist in `src-tauri/src/watcher.rs` to permit database monitoring and avoid race conditions with generic image watch logic.
+
+---
+
 ## [2026-03-19] — Test Environment Strategies
 **Status:** candidate-rule
 **Area:** #testing #react #rust

@@ -10,12 +10,8 @@ import { cleanModelName } from '../invoke/metadataMapper';
 export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source,
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
-    images.original_metadata_json, images.original_parsed_json,
-    images.model_name, images.model_hash, images.tool, images.resolved_model_name,
-    json_extract(images.metadata_json, '$.positivePrompt') as positive_prompt,
-    json_extract(images.metadata_json, '$.negativePrompt') as negative_prompt,
-    json_extract(images.metadata_json, '$.overrideModel') as override_model,
-    json_extract(images.metadata_json, '$.hasWorkflowHint') as has_workflow_hint
+    images.original_parsed_json,
+    images.model_name, images.model_hash, images.tool, images.resolved_model_name
 `;
 
 // Helper to keep mapping consistent
@@ -34,11 +30,7 @@ export function mapRowToImage(row: any): AIImage {
         metadata = {
             model: row.resolved_model_name || row.model_name || 'Unknown',
             modelHash: row.model_hash,
-            tool: row.tool || 'Unknown',
-            overrideModel: row.override_model,
-            positivePrompt: row.positive_prompt || '',
-            negativePrompt: row.negative_prompt || '',
-            hasWorkflowHint: row.has_workflow_hint === 1 || row.has_workflow_hint === true || row.has_workflow_hint === 'true'
+            tool: row.tool || 'Unknown'
         };
     }
 

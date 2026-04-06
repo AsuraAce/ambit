@@ -332,13 +332,12 @@ export async function processFoldersUnified(
     }
 
     // 3. Post-Import Cleanup
-    try {
-        const { rebuildFacetCache } = await import('./db/imageRepo');
-        await rebuildFacetCache();
-        useLibraryStore.getState().incrementFacetCacheVersion();
-    } catch (e) {
-        console.error('[Import] Failed cleanup', e);
-    }
+    // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images
+    import('./db/imageRepo').then(({ rebuildFacetCache }) => {
+        rebuildFacetCache()
+            .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
+            .catch(e => console.error('[Import] Failed cleanup', e));
+    });
 
     return result;
 }

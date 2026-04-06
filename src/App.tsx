@@ -34,6 +34,7 @@ import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
+import { useSync } from './contexts/SyncContext';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -170,13 +171,17 @@ export default function App() {
         onImportFiles: handleImportFiles
     });
 
+    const { startInvokeSync } = useSync();
+
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
         onScan: (folders) => fileOps.handleImportFolders(folders),
         handleImportPaths: fileOps.handleImportPaths,
         addToast,
-        refreshMetadata
+        refreshMetadata,
+        invokeAiPath: settings.invokeAiPath,
+        startInvokeSync
     });
 
     // --- Callbacks ---

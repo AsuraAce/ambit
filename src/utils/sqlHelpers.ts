@@ -12,16 +12,15 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // Base Condition: Not Deleted
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
 
         if (!filters.showIntermediates) {
-            conditions.push("(is_intermediate_gen IS NULL OR is_intermediate_gen != 1)");
+            conditions.push("IFNULL(is_intermediate_gen, 0) = 0");
         }
         if (!filters.showGrids) {
             // Use indexed is_grid_gen column only - no json_extract needed
-            conditions.push("(is_grid_gen IS NULL OR is_grid_gen != 1)");
+            conditions.push("IFNULL(is_grid_gen, 0) = 0");
         }
     }
 
