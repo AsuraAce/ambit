@@ -21,6 +21,9 @@ import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
+import { setupGlobalLogging } from '../utils/logger';
+
+setupGlobalLogging();
 
 interface AppLayoutProps {
     // Sidebar Props

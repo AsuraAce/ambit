@@ -24,6 +24,8 @@ export type ViewMode = 'grid' | 'timeline' | 'dashboard' | 'maintenance';
 
 export type LayoutMode = 'grid' | 'masonry' | 'justified';
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
+
 export type RecoveryStyle = 'generic' | 'midjourney' | 'sdxl' | 'danbooru';
 
 export interface ImageMetadata {
@@ -231,6 +233,7 @@ export interface AppSettings {
   devMode?: boolean; // Toggle for experimental/dev features
   enableAutoThumbnailHealing?: boolean; // Auto-regenerate thumbnails in background
   enforceHighQualityThumbnails?: boolean; // Upgrade existing low-res thumbnails
+  logLevel?: LogLevel; // Console log severity level
 }
 
 export interface ToastMessage {

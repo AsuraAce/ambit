@@ -92,8 +92,13 @@ pub fn run() {
     // Check for deferred purge request BEFORE initializing the database
     check_and_execute_deferred_purge();
 
+    let log_level = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "info".to_string())
+        .parse()
+        .unwrap_or(log::LevelFilter::Info);
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(tauri_plugin_log::Builder::default().level(log_level).build())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:images.db", db::migrations::init_db())
