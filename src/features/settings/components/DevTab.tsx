@@ -261,7 +261,25 @@ export const DevTab: React.FC = () => {
                                 </div>
                             </div>
 
-
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4 mb-6">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Console Log Level</div>
+                                        <div className="text-xs text-gray-500">Filter console logs based on severity</div>
+                                    </div>
+                                    <select
+                                        value={settings.logLevel || 'info'}
+                                        onChange={(e) => setSettings(prev => ({ ...prev, logLevel: e.target.value as any }))}
+                                        className="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-bold font-mono text-gray-700 dark:text-gray-300 outline-none focus:ring-2 focus:ring-sage-500/50 cursor-pointer"
+                                    >
+                                        <option value="debug">DEBUG</option>
+                                        <option value="info">INFO</option>
+                                        <option value="warn">WARN</option>
+                                        <option value="error">ERROR</option>
+                                        <option value="none">NONE</option>
+                                    </select>
+                                </div>
+                            </div>
 
                             {/* Metadata Diagnostics */}
                             <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
