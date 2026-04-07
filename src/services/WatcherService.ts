@@ -19,15 +19,15 @@ export class WatcherService {
 
         if (this.isWatching) await this.stopWatching();
 
-        this.isWatching = true;
-        this.lastPaths = [...paths];
-
         if (paths.length === 0) return;
 
         try {
             // Start the native rust watcher which handles multiple paths
             await unwrap(commands.startNativeFolderWatcher(paths));
             console.log(`[WatcherService] Native watcher started for ${paths.length} paths`);
+
+            this.isWatching = true;
+            this.lastPaths = [...paths];
 
             // Listen for the debounced event from Rust
             this.unlistenFn = await listen<string[]>('folder-change-event', (event) => {
@@ -37,6 +37,8 @@ export class WatcherService {
 
         } catch (err) {
             console.error(`[WatcherService] Failed to start native watcher:`, err);
+            // Optionally throw here so the UI can display a Toast, or just leave `isWatching = false` 
+            // so we can try again later.
         }
     }
 
