@@ -17,11 +17,11 @@ export const buildSqlWhereClause = (
         conditions.push('is_deleted = 0');
 
         if (!filters.showIntermediates) {
-            conditions.push("IFNULL(is_intermediate_gen, 0) != 1");
+            conditions.push("IFNULL(is_intermediate_gen, 0) = 0");
         }
         if (!filters.showGrids) {
             // Use indexed is_grid_gen column only - no json_extract needed
-            conditions.push("IFNULL(is_grid_gen, 0) != 1");
+            conditions.push("IFNULL(is_grid_gen, 0) = 0");
         }
     }
 

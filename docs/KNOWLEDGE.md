@@ -11,6 +11,15 @@ Updated via the `pre-commit` skill. Loaded at every session start.
 **Active entries below. Most recent first.**
 
 ---
+---
+
+## [2026-04-07] — SQLite Partial Index Expression Matching (Equality Requirement)
+**Status:** candidate-rule
+**Area:** #sqlite #typescript
+**Context:** App experienced 3-5 second rendering latency on the main dashboard (`LIMIT 1000` with an `ORDER BY`). The console logged slow queries filtering by `is_intermediate_gen != 1`.
+**Finding:** The frontend SQL layer used `IFNULL(is_intermediate_gen, 0) != 1`. Even though it matched the index expression string, SQLite's B-Tree **cannot use a multi-column index to sort** if an intervening column is checked using an inequality operator (!=). It forced SQLite to dump the matching rows into a temporary B-Tree and perform a manual file sort.
+**Solution:** Refactored the queries to use the equality counterpart: `IFNULL(is_intermediate_gen, 0) = 0`. Because it acts as an equality check, SQLite seamlessly spans the compound index `(is_deleted=?, expr1=?, expr2=?, timestamp DESC)` and eliminates the manual temp-tree sort entirely, dropping execution from ~5.3s to <1ms.
+**Action:** → candidate-rule: Add to `docs/rules/data.md` to establish strict equality checks when sorting against bounds.
 
 ## [2026-03-19] — Test Environment Strategies
 **Status:** candidate-rule

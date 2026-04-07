@@ -118,7 +118,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
         WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') 
         AND is_deleted = 0
-        AND IFNULL(is_intermediate_gen, 0) != 1
+        AND IFNULL(is_intermediate_gen, 0) = 0
     `;
 
     if (whereClause) {
@@ -180,7 +180,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
-        AND IFNULL(is_intermediate_gen, 0) != 1
+        AND IFNULL(is_intermediate_gen, 0) = 0
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
@@ -217,7 +217,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
         AND is_missing = 0
-        AND IFNULL(is_intermediate_gen, 0) != 1
+        AND IFNULL(is_intermediate_gen, 0) = 0
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
@@ -258,7 +258,7 @@ export const getUnoptimizedImageEntries = async (
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
         AND is_missing = 0
-        AND IFNULL(is_intermediate_gen, 0) != 1
+        AND IFNULL(is_intermediate_gen, 0) = 0
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
     `;
 
@@ -280,7 +280,7 @@ export const getUnoptimizedImageEntries = async (
 
 export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     const db = await getDb();
-    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) != 1";
+    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
 
     const query = `
         SELECT ${IMAGE_FIELDS_LIGHT.replace('images.metadata_json', 'i.metadata_json')}
@@ -311,7 +311,7 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<any[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) != 1) as untagged,
+            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
             COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
             COUNT(*) FILTER (WHERE is_deleted = 1) as trash
@@ -323,7 +323,7 @@ export const getMaintenanceCounts = async () => {
         SELECT COUNT(*) as count FROM (
             SELECT 1
             FROM images 
-            WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) != 1
+            WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0
             GROUP BY file_size, width, height 
             HAVING COUNT(*) > 1
         )

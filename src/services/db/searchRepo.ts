@@ -34,7 +34,7 @@ export interface ValidFacetNames {
 
 export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) != 1";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
 
     // For combined Collection + LoRA counts
     if (collectionId && loraName) {
@@ -94,7 +94,7 @@ export const countGlobalImages = async (): Promise<number> => {
 
 export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) != 1";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
 
     // Simple query using denormalized columns - no JOIN needed
     const query = `SELECT id FROM images ${finalWhere}`;
@@ -116,7 +116,7 @@ export const searchImages = async (
     cursor?: { val: number | string; id: string; isPinned?: number }
 ): Promise<AIImage[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) != 1";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
 
     const orderBy = prioritizePinned
         ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}` // Strict tie-breaker
@@ -235,7 +235,7 @@ export const searchImages = async (
 
 export const getLibraryStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) != 1";
+    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
 
     try {
         const statsQuery = `
