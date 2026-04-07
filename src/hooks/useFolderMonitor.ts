@@ -47,8 +47,9 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
             const performStartupScan = async () => {
                 const { setIsImporting, setImportProgress } = useLibraryStore.getState();
-                const tasks: { paths: string[], variant: GeneratorTool | undefined }[] = [];
+                const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
                 let totalFilesFound = 0;
+                const scanTime = Date.now();
 
                 // Phase 1: Aggregation - Collect all new files from all valid folders
                 for (const folder of activeFolders) {
@@ -61,29 +62,25 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                             if (newFiles && newFiles.length > 0) {
                                 console.log(`[FolderMonitor] Found ${newFiles.length} new files in ${folder.path}`);
                                 const paths = newFiles.map((f: any) => f.path);
-                                tasks.push({ paths, variant: folder.variant });
+                                tasks.push({ paths, variant: folder.variant, folderId: folder.id });
                                 totalFilesFound += paths.length;
                             } else {
                                 console.log(`[FolderMonitor] No new files in ${folder.path}`);
+                                updateFolderLastScanned(folder.id, scanTime); // Safe to update if nothing found
                             }
-
-                            // Update timestamp immediately
-                            updateFolderLastScanned(folder.id, Date.now());
                         } catch (e) {
                             console.error(`[FolderMonitor] Smart scan failed for ${folder.path}, falling back to full scan`, e);
                         }
                     } else {
                         // Full scan usage (rare on startup if already configured)
-                        // For simplicity, we just trigger these independently as they are heavy anyway
                         console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
                         onScan([{ path: folder.path, variant: folder.variant }], true);
-                        updateFolderLastScanned(folder.id, Date.now());
+                        updateFolderLastScanned(folder.id, scanTime);
                     }
                 }
 
                 // Phase 2: Execution - Run single unified batch for smart updates
                 if (totalFilesFound > 0) {
-                    // ... (existing logging/state setup)
                     console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
                     setIsImporting(true);
                     setImportProgress({ current: 0, total: totalFilesFound, message: 'Starting aggregated import...' });
@@ -106,6 +103,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                             }
                         });
                         globalCurrent += task.paths.length;
+                        // ONLY update once successfully imported
+                        updateFolderLastScanned(task.folderId, scanTime);
                     }
 
                     setIsImporting(false);
@@ -181,21 +180,22 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const { setIsImporting, setImportProgress } = useLibraryStore.getState();
         let totalFilesFound = 0;
         const tasks: any[] = [];
+        const scanTime = Date.now();
 
         for (const folder of folders) {
             try {
                 if (folder.lastScanned) {
                     const newFiles = await unwrap((commands as any).scanDirectorySince(folder.path, folder.lastScanned)) as { path: string }[];
                     if (newFiles.length > 0) {
-                        tasks.push({ paths: newFiles.map((f: any) => f.path), variant: folder.variant });
+                        tasks.push({ paths: newFiles.map((f: any) => f.path), variant: folder.variant, folderId: folder.id });
                         totalFilesFound += newFiles.length;
+                    } else {
+                        updateFolderLastScanned(folder.id, scanTime);
                     }
-                    updateFolderLastScanned(folder.id, Date.now());
                 } else {
-                    // Full scan fallback for new folders (rare here as startup handles new folders)
                     console.log(`[FolderMonitor] ${source}: Full scan needed for ${folder.path}`);
                     onScan([{ path: folder.path, variant: folder.variant }], false);
-                    updateFolderLastScanned(folder.id, Date.now());
+                    updateFolderLastScanned(folder.id, scanTime);
                 }
             } catch (e) {
                 console.error(`[FolderMonitor] ${source} failed for ${folder.path}`, e);
@@ -216,6 +216,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     })
                 });
                 currentCount += task.paths.length;
+                updateFolderLastScanned(task.folderId, scanTime);
             }
             setIsImporting(false);
             setImportProgress(null);
