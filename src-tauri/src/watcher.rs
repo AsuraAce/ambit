@@ -47,17 +47,29 @@ pub fn start_native_folder_watcher(
 
     tauri::async_runtime::spawn(async move {
         let mut buffer = std::collections::HashSet::new();
+        let mut first_event_time: Option<tokio::time::Instant> = None;
+        let throttle_duration = tokio::time::Duration::from_secs(2);
+
         loop {
             match tokio::time::timeout(tokio::time::Duration::from_millis(500), rx.recv()).await {
                 Ok(Some(paths)) => {
                     buffer.extend(paths);
+                    if first_event_time.is_none() {
+                        first_event_time = Some(tokio::time::Instant::now());
+                    } else if first_event_time.unwrap().elapsed() >= throttle_duration {
+                        let to_emit: Vec<String> = buffer.drain().collect();
+                        println!("[Rust Watcher] Emitting throttled batch of {} paths", to_emit.len());
+                        let _ = app_handle.emit("folder-change-event", to_emit);
+                        first_event_time = None;
+                    }
                 }
                 Ok(None) => break, // Channel closed
                 Err(_) => { // Timeout elapsed
                     if !buffer.is_empty() {
                         let to_emit: Vec<String> = buffer.drain().collect();
-                        println!("[Rust Watcher] Emitting batch of {} paths", to_emit.len());
+                        println!("[Rust Watcher] Emitting debounced batch of {} paths", to_emit.len());
                         let _ = app_handle.emit("folder-change-event", to_emit);
+                        first_event_time = None;
                     }
                 }
             }
