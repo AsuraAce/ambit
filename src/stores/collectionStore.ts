@@ -88,6 +88,7 @@ export const useCollectionStore = create<CollectionState>()(
 
                         // 1. Try to load from SQLite
                         let dbCols = await getAllCollectionsWithStats();
+                        let needsReload = false;
 
                         // 2. Only migrate if DB is EMPTY - if it has any collections (invoke or ambit), skip migration
                         const shouldMigrate = dbCols.length === 0;
@@ -117,9 +118,9 @@ export const useCollectionStore = create<CollectionState>()(
                                         await upsertCollection({ ...scol, source: 'ambit' });
                                     }
 
-                                    // Reload from DB
-                                    dbCols = await getAllCollectionsWithStats();
-                                    console.log(`[CollectionStore] Migrated ${dbCols.length} collections.`);
+                                    // Flag for reload after all migrations are pushed
+                                    needsReload = true;
+                                    console.log(`[CollectionStore] Migration commands dispatched.`);
                                 } else {
                                     console.log('[CollectionStore] No legacy data to migrate.');
                                 }
@@ -133,9 +134,6 @@ export const useCollectionStore = create<CollectionState>()(
                         const legacyIds = ['c1', 'c2', 'c3'];
                         const { deleteCollectionFromDb, getCollectionImageIds } = await import('../services/db/collectionRepo');
 
-                        // Reload from DB first
-                        dbCols = await getAllCollectionsWithStats();
-
                         for (const col of dbCols) {
                             if (legacyIds.includes(col.id)) {
                                 // Check if it really is empty
@@ -143,12 +141,15 @@ export const useCollectionStore = create<CollectionState>()(
                                 if (imageIds.length === 0) {
                                     console.log(`[CollectionStore] Removing legacy empty collection: ${col.name} (${col.id})`);
                                     await deleteCollectionFromDb(col.id);
+                                    needsReload = true;
                                 }
                             }
                         }
 
-                        // Final reload
-                        dbCols = await getAllCollectionsWithStats();
+                        // Final reload ONLY if the DB was mutated during init
+                        if (needsReload) {
+                            dbCols = await getAllCollectionsWithStats();
+                        }
 
                         set({ collections: dbCols, isLoaded: true });
 
