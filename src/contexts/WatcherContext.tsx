@@ -7,6 +7,7 @@ import { watcherService } from '../services/WatcherService';
 import { startLiveLink } from '../services/invoke/liveLink';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
+import { normalizeInvokeRoot } from '../utils/pathUtils';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -76,17 +77,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             }
 
             if (currentSettings.invokeAiPath) {
-                let invokeRoot = currentSettings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
-
-                // Handle cases where user selected the DB file or databases folder
-                if (invokeRoot.toLowerCase().endsWith('.db')) {
-                    invokeRoot = invokeRoot.replace(/\/[\w-]+\.db$/i, ''); // Strip filename
-                    invokeRoot = invokeRoot.replace(/\/databases$/i, '');   // Strip databases folder if present
-                } else if (invokeRoot.toLowerCase().endsWith('/databases')) {
-                    invokeRoot = invokeRoot.replace(/\/databases$/i, '');
-                }
-
-                pathsToWatch.push(`${invokeRoot}/databases`);
+                const root = normalizeInvokeRoot(currentSettings.invokeAiPath);
+                if (root) pathsToWatch.push(`${root}/databases`);
             }
 
             if (pathsToWatch.length === 0) {
@@ -102,15 +94,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 
                 // Reconstruct the actual active invoke string directory locally
                 const activeInvokeRoot = (() => {
-                    if (!cb.settings.invokeAiPath) return null;
-                    let root = cb.settings.invokeAiPath.replace(/\\/g, '/').replace(/\/$/, '');
-                    if (root.toLowerCase().endsWith('.db')) {
-                        root = root.replace(/\/[\w-]+\.db$/i, '');
-                        root = root.replace(/\/databases$/i, '');
-                    } else if (root.toLowerCase().endsWith('/databases')) {
-                        root = root.replace(/\/databases$/i, '');
-                    }
-                    return `${root}/databases`.toLowerCase();
+                    const root = normalizeInvokeRoot(cb.settings.invokeAiPath);
+                    return root ? `${root}/databases`.toLowerCase() : null;
                 })();
 
                 const invokePaths: string[] = [];

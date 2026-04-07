@@ -60,3 +60,21 @@ export const urlToPath = (url: string | undefined): string => {
 
     return normalizePath(path);
 };
+
+/**
+ * Normalizes an InvokeAI path string by stripping .db filenames
+ * and appending standard /databases to the root.
+ */
+export const normalizeInvokeRoot = (rawPath: string | null | undefined): string | null => {
+    if (!rawPath) return null;
+    let root = rawPath.replace(/\\/g, '/').replace(/\/$/, '');
+    
+    if (root.toLowerCase().endsWith('.db')) {
+        root = root.replace(/\/[\w-]+\.db$/i, '');
+        root = root.replace(/\/databases$/i, '');
+    } else if (root.toLowerCase().endsWith('/databases')) {
+        root = root.replace(/\/databases$/i, '');
+    }
+    
+    return root;
+};
