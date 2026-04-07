@@ -1,5 +1,4 @@
 use crate::db::resolve_db_path;
-use crate::metadata::guidance::GuidanceClassifier;
 use crate::metadata::models::{ModelDiscoveryState, ProgressPayload, ThumbnailScanResult};
 use rusqlite::{params, Connection};
 use std::sync::atomic::Ordering;

@@ -52,6 +52,16 @@ Active file should only contain the current and previous phase.
 - `src/features/library/`
 - `src/services/layoutEngine.ts`
 
+## Console Log Toggle
+**Phase:** 1
+**Completed:** 2026-04-06
+**What it does:** Allows toggling console log severity via settings.
+**Key files:**
+- `src/utils/logger.ts` — Global proxy wrapper for window.console
+- `src/components/AppLayout.tsx` — Installs the logger
+- `src-tauri/src/lib.rs` — Rust backend log filtering (default Info)
+**Notes:** The backend uses `RUST_LOG` and defaults to Info, while the frontend dynamically uses the persisted interface dropdown.
+
 ---
 
 ## Archive Notice

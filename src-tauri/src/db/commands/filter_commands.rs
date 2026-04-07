@@ -1,4 +1,3 @@
-use rusqlite::params;
 use tauri::AppHandle;
 use super::run_blocking;
 

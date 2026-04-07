@@ -300,11 +300,10 @@ export const getAllImages = async (
     // Optimize: Use STORED generated columns instead of LIKE scan
     let filterClauses = 'WHERE is_deleted = 0';
     if (!showIntermediates) {
-        // checks for 1 (true). NULL or 0 are considered false.
-        filterClauses += ' AND (is_intermediate_gen IS NULL OR is_intermediate_gen = 0)';
+        filterClauses += ' AND IFNULL(is_intermediate_gen, 0) = 0';
     }
     if (!showGrids) {
-        filterClauses += ' AND (is_grid_gen IS NULL OR is_grid_gen = 0)';
+        filterClauses += ' AND IFNULL(is_grid_gen, 0) = 0';
     }
 
     const query = limit
@@ -531,8 +530,8 @@ export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediat
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<any[]>('SELECT 1 FROM images WHERE is_intermediate_gen = 1 LIMIT 1'),
-        db.select<any[]>('SELECT 1 FROM images WHERE is_grid_gen = 1 LIMIT 1')
+        db.select<any[]>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<any[]>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
     ]);
 
     return {

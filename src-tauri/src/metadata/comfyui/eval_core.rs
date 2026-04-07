@@ -1,4 +1,4 @@
-use super::graph::{get_node_id, get_node_param, get_node_type, ComfyGraph};
+use super::graph::{get_node_param, get_node_type, ComfyGraph};
 use super::conditioning::{find_reachable_prompts, find_connected_controlnets};
 use super::eval_utils::{evaluate_number, evaluate_float, evaluate_string, get_source_id};
 use crate::metadata::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};

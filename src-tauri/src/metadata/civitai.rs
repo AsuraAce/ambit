@@ -13,10 +13,6 @@ pub struct CivitAiVersion {
     pub model: CivitAiModel,
     pub name: String,
     pub id: i64,
-    #[serde(rename = "baseModel")]
-    pub base_model: Option<String>,
-    #[serde(rename = "trainedWords", default)]
-    pub trained_words: Vec<String>,
 }
 
 #[derive(Deserialize)]

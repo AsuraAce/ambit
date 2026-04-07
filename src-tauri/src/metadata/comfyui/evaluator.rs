@@ -1,4 +1,4 @@
-use super::graph::{get_node_id, get_node_input_link, get_node_type, get_source_id, ComfyGraph};
+use super::graph::{get_node_input_link, get_node_type, get_source_id, ComfyGraph};
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -95,13 +95,6 @@ impl<'a> ComfyEvaluator<'a> {
         false
     }
 
-    pub fn is_bypassed(&self, node: &Value) -> bool {
-        if let Some(mode) = node.get("mode").and_then(|v| v.as_i64()) {
-            return mode == 4;
-        }
-        false
-    }
-
     fn find_upstream_sampler(&self, start_id: &str, visited: &mut HashSet<String>, depth: u32) -> Option<String> {
         if depth > 50 || !visited.insert(start_id.to_string()) {
             return None;
@@ -135,7 +128,7 @@ impl<'a> ComfyEvaluator<'a> {
         let mut depth = 0;
 
         while depth < 10 {
-            if let Some(node) = self.graph.get_node(&current_id) {
+            if self.graph.get_node(&current_id).is_some() {
                 if let Some(source_id) = get_source_id(self.graph, &current_id, "latent_image") {
                     if let Some(source_node) = self.graph.get_node(&source_id) {
                         let t = get_node_type(source_node);
