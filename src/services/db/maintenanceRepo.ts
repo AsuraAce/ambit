@@ -318,17 +318,6 @@ export const getMaintenanceCounts = async () => {
         FROM images
     `);
 
-    // Duplicates require a subquery count
-    const duplicates = await db.select<{ count: number }[]>(`
-        SELECT COUNT(*) as count FROM (
-            SELECT 1
-            FROM images 
-            WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0
-            GROUP BY file_size, width, height 
-            HAVING COUNT(*) > 1
-        )
-    `);
-
     const counts = res[0] || {};
 
     return {
@@ -337,6 +326,6 @@ export const getMaintenanceCounts = async () => {
         intermediates: counts.intermediates || 0,
         missing: counts.missing || 0,
         trash: counts.trash || 0,
-        duplicates: duplicates[0]?.count || 0
+        duplicates: 0 // Duplicates are processed manually from the UI via getDuplicateCandidates
     };
 };

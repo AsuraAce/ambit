@@ -233,7 +233,18 @@ export const searchImages = async (
     return rows.map(mapRowToImage);
 };
 
+let globalStatsCache: LibraryStats | null = null;
+
+export const clearLibraryStatsCache = () => {
+    globalStatsCache = null;
+};
+
 export const getLibraryStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
+    // Return cached result instantly for unfiltered dashboard loads
+    if (!whereClause && !collectionId && !loraName && globalStatsCache) {
+        return globalStatsCache;
+    }
+
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
 
@@ -274,7 +285,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         // Get Keyword Stats
         const keywordStats = await getKeywordStats(finalWhere, params, collectionId, loraName);
 
-        return {
+        const finalResult = {
             totalImages: total,
             totalGenerations: total,
             avgSteps: avgSteps,
@@ -282,6 +293,12 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             modelStats,
             keywordStats
         };
+
+        if (!whereClause && !collectionId && !loraName) {
+            globalStatsCache = finalResult;
+        }
+
+        return finalResult;
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
         return {

@@ -101,6 +101,9 @@ export const insertImagesBatch = async (images: AIImage[]) => {
  */
 export const rebuildFacetCache = async (): Promise<number> => {
     try {
+        const { clearLibraryStatsCache } = await import('./searchRepo');
+        clearLibraryStatsCache();
+        
         const count = await unwrap(commands.rebuildFacetCache());
         console.log(`[DB] Rebuilt facet cache with ${count} entries`);
         return count;
