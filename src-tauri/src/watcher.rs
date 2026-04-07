@@ -144,11 +144,14 @@ pub fn start_native_folder_watcher(
     let mut watcher =
         RecommendedWatcher::new(event_handler, Config::default()).map_err(|e| e.to_string())?;
 
+    let mut errors = Vec::new();
     for path_str in &paths {
         let path_buf = PathBuf::from(path_str);
         if path_buf.exists() {
             if let Err(e) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
-                println!("[Rust Watcher] Failed to watch path {}: {}", path_str, e);
+                let err_msg = format!("Failed to watch path {}: {}", path_str, e);
+                println!("[Rust Watcher] {}", err_msg);
+                errors.push(err_msg);
             } else {
                 println!("[Rust Watcher] Added path: {}", path_str);
             }
@@ -158,6 +161,10 @@ pub fn start_native_folder_watcher(
     }
 
     *watcher_guard = Some(watcher);
+
+    if !errors.is_empty() {
+        return Err(errors.join("\n"));
+    }
 
     Ok(())
 }
