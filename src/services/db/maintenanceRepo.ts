@@ -311,7 +311,7 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<any[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
+            COUNT(*) FILTER (WHERE (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
             COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
             COUNT(*) FILTER (WHERE is_deleted = 1) as trash

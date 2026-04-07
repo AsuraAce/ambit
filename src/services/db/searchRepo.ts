@@ -241,7 +241,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         const statsQuery = `
             SELECT 
                 count(*) as total, 
-                avg(cast(json_extract(metadata_json, '$.steps') as integer)) as avg_steps
+                avg(steps) as avg_steps
             FROM images 
             ${collectionId ? `JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'` : ''}
             ${loraName ? `JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'` : ''}

@@ -136,14 +136,16 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
     // Get thumbnails (optimized: pick most recent pinned or most recent)
     // We only join with images for the ranking subset
     const thumbnails = await db.select<{ collection_id: string, thumbnail_path: string }[]>(`
-        WITH Ranked AS (
-            SELECT ci.collection_id, i.thumbnail_path,
-                   ROW_NUMBER() OVER (PARTITION BY ci.collection_id ORDER BY i.is_pinned DESC, i.timestamp DESC) as rn
+        SELECT c.id as collection_id, (
+            SELECT i.thumbnail_path 
             FROM collection_images ci
             INNER JOIN images i ON ci.image_id = i.id
-            WHERE i.is_deleted = 0
-        )
-        SELECT collection_id, thumbnail_path FROM Ranked WHERE rn = 1
+            WHERE ci.collection_id = c.id AND i.is_deleted = 0
+            ORDER BY i.is_pinned DESC, i.timestamp DESC
+            LIMIT 1
+        ) as thumbnail_path
+        FROM collections c
+        WHERE thumbnail_path IS NOT NULL
     `);
     const thumbMap = new Map(thumbnails.map(t => [t.collection_id, t.thumbnail_path]));
 
