@@ -30,7 +30,15 @@ Ambit is a next-generation tool designed to catalog, search, and manage massive 
     *   Tauri Extension
     *   ESLint / Prettier
 
-### Installation
+### 🧪 Phase 1 Private Release (Testing)
+
+Ambit is currently in **Phase 1 (Private Alpha)**. If you have been invited to test, you can download the latest pre-compiled binaries from the [GitHub Releases](https://github.com/your-username/ambit/releases) page.
+
+1.  **Download**: Choose the installer for your platform (`.msi` for Windows, `.dmg` for macOS, `.AppImage` for Linux).
+2.  **Install**: Run the installer and follow the prompts.
+3.  **Feedback**: Please report any bugs or provide feedback by opening a [GitHub Issue](https://github.com/your-username/ambit/issues). Mention "Phase 1 Alpha" in your report.
+
+### Development Installation
 
 1.  **Clone the repository**:
     ```bash
