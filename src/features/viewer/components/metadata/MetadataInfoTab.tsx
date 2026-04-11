@@ -84,11 +84,31 @@ export const MetadataInfoTab = ({
 
         if (isEmpty(cur) && isEmpty(orig)) return false;
 
-        // Handle trimmed string comparison to avoid whitespace flicker
+        // Numerical comparison with epsilon to avoid float jitter (e.g. 7.0 vs 7)
+        if (typeof cur === 'number' || typeof orig === 'number') {
+            const nCur = Number(cur);
+            const nOrig = Number(orig);
+            if (!isNaN(nCur) && !isNaN(nOrig)) {
+                if (Math.abs(nCur - nOrig) < 0.0001) {
+                    return false;
+                }
+            }
+        }
+
+        // Handle string comparison (trimmed)
         if (typeof cur === 'string' && typeof orig === 'string') {
             if (cur.trim() === orig.trim()) return false;
         }
 
+        console.log(`[DEBUG] isModified(${key}): true`, {
+            cur,
+            orig,
+            curType: typeof cur,
+            origType: typeof orig,
+            filename: image.filename
+        });
+
+        // Final fallback: standard comparison (already checked cur === orig above)
         return true;
     };
 
