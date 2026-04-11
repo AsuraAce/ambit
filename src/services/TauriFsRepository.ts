@@ -71,6 +71,13 @@ export class TauriFsRepository implements IRepository {
         return this.getDefaultState();
     }
 
+    /**
+     * NOTE on Security: library.json currently stores AppSettings, which includes the googleGeminiApiKey.
+     * While this is stored in the local AppLocalData folder, it is currently in plaintext.
+     * TODO: In a future security-focused update, we should migrate API key storage to tauri-plugin-stronghold
+     * or use the system's native keychain (via tauri-plugin-store with encryption) to ensure secrets
+     * are not easily accessible if the library file is shared or the user's local disk is compromised.
+     */
     async save(state: AppState): Promise<void> {
         try {
             await this.ensureDirectory();
