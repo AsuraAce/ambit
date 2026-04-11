@@ -16,6 +16,14 @@ export const migrateSchema = async () => {
 
     await db.execute('UPDATE images SET is_pinned = 0 WHERE is_pinned IS NULL');
 
+    // Performance Patches: Add covering indexes for strict equality matching
+    try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_images_fast_sort_v3 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), timestamp DESC, id DESC)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_images_model_stats_v2 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), resolved_model_name, model_name)');
+    } catch (e) {
+        console.warn('[DB] Migration failed for performance indexes', e);
+    }
+
     try {
         await db.execute(`
             UPDATE images 

@@ -21,6 +21,15 @@ Updated via the `pre-commit` skill. Loaded at every session start.
 **Solution:** Refactored the queries to use the equality counterpart: `IFNULL(is_intermediate_gen, 0) = 0`. Because it acts as an equality check, SQLite seamlessly spans the compound index `(is_deleted=?, expr1=?, expr2=?, timestamp DESC)` and eliminates the manual temp-tree sort entirely, dropping execution from ~5.3s to <1ms.
 **Action:** → candidate-rule: Add to `docs/rules/data.md` to establish strict equality checks when sorting against bounds.
 
+## [2026-03-29] — Tauri Native Watcher Extension Filtering
+**Status:** one-off
+**Area:** #rust #tauri #watcher
+**Context:** Live Watch for InvokeAI (watching the `invokeai.db`) was failing because the frontend received no file events.
+**Finding:** The custom Rust native file watcher used a tight extension filter (`png`, `jpg`, `jpeg`, `webp`) which was silently dropping `.db` and `.db-wal` modification events.
+**Solution:** Added `db` and `db-wal` to the extension allowlist in `src-tauri/src/watcher.rs` to permit database monitoring and avoid race conditions with generic image watch logic.
+
+---
+
 ## [2026-03-19] — Test Environment Strategies
 **Status:** candidate-rule
 **Area:** #testing #react #rust

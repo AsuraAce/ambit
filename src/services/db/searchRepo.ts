@@ -222,14 +222,17 @@ export const searchImages = async (
 
     const query = `
         SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
-        FROM images 
+        FROM images INDEXED BY idx_images_fast_sort_v3
         ${finalWhere} 
         ${cursorWhere}
         ${orderBy} 
         LIMIT ${limit}
     `;
 
+    console.time('[DB] searchImages');
     const rows = await db.select<any[]>(query, params);
+    console.timeEnd('[DB] searchImages');
+    
     return rows.map(mapRowToImage);
 };
 
@@ -251,30 +254,36 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     try {
         const statsQuery = `
             SELECT 
-                count(*) as total, 
-                avg(steps) as avg_steps
+                count(*) as total
+
             FROM images 
             ${collectionId ? `JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'` : ''}
             ${loraName ? `JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'` : ''}
             ${finalWhere}
         `;
 
+        console.time('[DB] getLibraryStats: basicStats');
         const basicStats = await db.select<any[]>(statsQuery, params);
+        console.timeEnd('[DB] getLibraryStats: basicStats');
+        
         const total = basicStats[0]?.total || 0;
-        const avgSteps = Math.round(basicStats[0]?.avg_steps || 0);
+        const avgSteps = 0; // Temporarily disabled for performance
 
         // Use denormalized resolved_model_name column for model stats
         const modelQuery = `
         SELECT
         COALESCE(resolved_model_name, model_name, 'Unknown') as name,
             count(*) as count
-            FROM images
+            FROM images INDEXED BY idx_images_model_stats_v2
             ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
             LIMIT 20
             `;
+            
+        console.time('[DB] getLibraryStats: modelStats');
         const modelRows = await db.select<any[]>(modelQuery, params);
+        console.timeEnd('[DB] getLibraryStats: modelStats');
 
         const modelStats = modelRows.map(r => ({
             name: (r.name || 'Unknown').split(' ')[0],
@@ -316,8 +325,6 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
     const db = await getDb();
 
     try {
-        const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
-
         // Debug: Log the incoming filter to debug "static" issues
         console.log('[DB] getKeywordStats filter:', whereClause);
 
@@ -379,15 +386,18 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         }
 
         const promptQuery = `
-            SELECT images.positive_prompt 
+            SELECT images_fts.positive_prompt 
             FROM images
             ${joinClause}
             ${safeWhere}
             LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
         `;
-
+        
+        console.time('[DB] getKeywordStats');
         const rows = await db.select<any[]>(promptQuery, params);
-
+        console.timeEnd('[DB] getKeywordStats');
+        
+        const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
         const counts: Record<string, number> = {};
         rows.forEach(r => {
             const tokens = (r.positive_prompt || '')

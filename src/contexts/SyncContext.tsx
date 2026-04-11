@@ -53,7 +53,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             ...optionsInput
         };
 
-        if (syncStatus === 'syncing' && options.mode === 'manual') return;
+        if (syncStatus === 'syncing' && (options.mode === 'manual' || options.mode === 'startup')) return;
         if ((syncStatus === 'syncing' || isLiveSyncingRef.current) && options.mode === 'live') {
             return;
         }
@@ -64,7 +64,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             setSyncProgress({ current: 0, total: 0, message: undefined });
         } else {
             setSyncStatus('syncing');
-            setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
+            setSyncProgress({ current: 0, total: 0, message: options.mode === 'startup' ? 'Catching up InvokeAI DB...' : 'Preparing...' });
         }
 
         const ctrl = new AbortController();
@@ -131,7 +131,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             let orphansImported = 0;
             const shouldImportOrphans = options.importOrphans !== undefined ? options.importOrphans : settingsRef.current.importOrphans;
 
-            if (options.mode === 'manual' && shouldImportOrphans !== false) {
+            if (options.mode !== 'live' && shouldImportOrphans !== false) {
                 orphansImported = await scanForOrphans(
                     settingsRef.current.invokeAiPath!,
                     syncedIds,
@@ -155,31 +155,55 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                     queryClient.invalidateQueries({ queryKey: ['images'] });
                 } else {
                     // MANUAL HEAVY REBUILD
+                    setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
+
+                    // IMMEDIATE UI REFRESH (Block here until data hits RAM)
+                    await queryClient.refetchQueries({ queryKey: ['images'] });
+
+                    // Advance cursor IMMEDIATELY so we don't scan the same files if something crashes
+                    if (newTs) {
+                        setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
+                    }
+
                     setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
+
+                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
                     try {
-                        const { rebuildFacetCache } = await import('../services/db/imageRepo');
                         await rebuildFacetCache();
-                        // Increment version to trigger React Query refetch in useLibraryStatsQuery
                         useLibraryStore.getState().incrementFacetCacheVersion();
-                        setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
                     } catch (e) {
                         console.error('[Sync] Failed to rebuild facet cache after sync', e);
+                        setSyncStatus('error');
+                        return; // Halt completion if critical DB error
                     }
+
+                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
+
+                    // Trigger complete routines
+                    if (totalProcessed > 0 && (options.mode === 'manual' || options.mode === 'startup')) {
+                        addToast(`Synchronization complete: ${totalProcessed} items processed.`, 'success');
+                    }
+                    
+                    if (options.mode !== 'startup') {
+                        onSyncComplete?.();
+                    } else {
+                        setSyncStatus('complete');
+                    }
+
+                    return;
                 }
             } else {
                 console.log('[Sync] No changes detected, skipping facet cache rebuild.');
             }
 
-            // Always update timestamp on success to advance the cursor (crucial for Live Sync efficiency)
+            // Fallback for NO CHANGES scenario (hasChanges === false)
             if (newTs) {
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
 
             if (onSyncComplete) onSyncComplete();
 
-            if (totalProcessed > 0 && options.mode === 'manual') {
-                addToast(`Synchronization complete: ${totalProcessed} items processed.`, 'success');
-            } else if (totalProcessed === 0 && options.mode === 'manual') {
+            if (totalProcessed === 0 && options.mode === 'manual') {
                 addToast('Synchronization complete: No new changes.', 'info');
             }
 
@@ -188,7 +212,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             else {
                 console.error('Sync failed', e);
                 setSyncStatus('error');
-                if (options.mode === 'manual') addToast('Sync failed: ' + e.message, 'error');
+                if (options.mode === 'manual' || options.mode === 'startup') addToast('Sync failed: ' + e.message, 'error');
             }
         } finally {
             setSyncAbortController(null);

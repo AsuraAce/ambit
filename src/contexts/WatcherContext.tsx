@@ -141,13 +141,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 }
             });
 
-            if (pathsToWatch.length > 0) {
-                // Immediate Catch-up Scan
-                if (currentSettings.invokeAiPath) {
-                    console.log('[WatcherContext] Triggering catch-up sync for InvokeAI...');
-                    callbacksRef.current.startInvokeSync({ mode: 'live' });
-                }
-            }
+
         };
 
         // Debounce initialization

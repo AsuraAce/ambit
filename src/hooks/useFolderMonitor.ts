@@ -22,9 +22,11 @@ interface UseFolderMonitorProps {
     handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<void>;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
     refreshMetadata: () => Promise<void>;
+    invokeAiPath?: string;
+    startInvokeSync?: (options?: any) => Promise<void>;
 }
 
-export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast, refreshMetadata }: UseFolderMonitorProps) {
+export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast, refreshMetadata, invokeAiPath, startInvokeSync }: UseFolderMonitorProps) {
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
@@ -36,13 +38,15 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         }
 
         // STARTUP LOGIC: Smart Scan
-        if (monitoredFolders.length > 0 && !hasScannedOnStartup.current) {
+        const hasStartups = monitoredFolders.length > 0 || !!invokeAiPath;
+        if (hasStartups && !hasScannedOnStartup.current) {
             hasScannedOnStartup.current = true;
             const activeFolders = monitoredFolders.filter(f => f.isActive);
 
             console.log('[FolderMonitor] Startup Check:', {
                 allFolders: monitoredFolders.length,
-                active: activeFolders.length
+                active: activeFolders.length,
+                hasInvokeIntegration: !!invokeAiPath
             });
 
             const performStartupScan = async () => {
@@ -112,6 +116,13 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                     // Force UI Refresh
                     await refreshMetadata();
+                }
+
+                // Unconditionally catch up InvokeAI DB if configured
+                // Fires synchronously at the end as part of startup catchup sequence
+                if (invokeAiPath && startInvokeSync) {
+                    console.log('[FolderMonitor] Triggering startup catch-up sync for InvokeAI DB...');
+                    await startInvokeSync({ mode: 'startup' }).catch(e => console.error("Startup Invoke sync failed", e));
                 }
             };
 

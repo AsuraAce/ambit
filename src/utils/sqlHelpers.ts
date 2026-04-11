@@ -12,7 +12,6 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: any[] = [];
 
-    // Base Condition: Not Deleted
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
 

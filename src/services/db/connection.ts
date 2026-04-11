@@ -39,13 +39,18 @@ export const getDb = async () => {
         try {
             await db.execute('PRAGMA journal_mode=WAL');
             await db.execute('PRAGMA synchronous=NORMAL');
-            await db.execute('PRAGMA busy_timeout=30000'); // Higher timeout for massive batches
+            await db.execute('PRAGMA busy_timeout=60000'); // Higher timeout for massive batches
             await db.execute('PRAGMA cache_size=-64000');   // 64MB cache for large libraries
             await db.execute('PRAGMA temp_store=MEMORY');   // Faster sorting/grouping
             await db.execute('PRAGMA mmap_size=268435456'); // 256MB memory-mapped I/O
             console.log('[DB] Applied performance PRAGMAs');
+
+            // --- AMBIT PERFORMANCE PATCHES ---
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_images_fast_sort_v3 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), timestamp DESC, id DESC)');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_images_model_stats_v2 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), resolved_model_name, model_name)');
+            console.log('[DB] Applied Performance Covering Indexes');
         } catch (e) {
-            console.error('[DB] Failed to set PRAGMAs', e);
+            console.error('[DB] Failed to set PRAGMAs or Indexes', e);
         }
     }
     return db;
