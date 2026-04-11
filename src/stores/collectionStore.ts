@@ -11,13 +11,12 @@ interface CollectionState {
 
     // Actions
     initialize: () => Promise<void>;
-    refreshCollections: () => Promise<void>;
+    refreshCollections: (debounced?: boolean) => Promise<void>;
     refreshSmartCounts: () => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
-
-    // Legacy support needed? 
-    // Usually we just expose collections and let UI derive smart/regular
 }
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useCollectionStore = create<CollectionState>()(
     devtools(
@@ -25,16 +24,31 @@ export const useCollectionStore = create<CollectionState>()(
             collections: [],
             isLoaded: false,
 
-            refreshCollections: async () => {
-                try {
-                    const { getAllCollectionsWithStats } = await import('../services/db/collectionRepo');
-                    const cols = await getAllCollectionsWithStats();
-                    set({ collections: cols });
+            refreshCollections: async (debounced = false) => {
+                const run = async () => {
+                    try {
+                        const { getAllCollectionsWithStats } = await import('../services/db/collectionRepo');
+                        const cols = await getAllCollectionsWithStats();
+                        set({ collections: cols });
 
-                    // Lazily fetch smart counts in the background
-                    get().refreshSmartCounts();
-                } catch (e) {
-                    console.error('[CollectionStore] Failed to refresh collections', e);
+                        // Lazily fetch smart counts in the background
+                        get().refreshSmartCounts();
+                    } catch (e) {
+                        console.error('[CollectionStore] Failed to refresh collections', e);
+                    }
+                };
+
+                if (debounced) {
+                    if (debounceTimer) clearTimeout(debounceTimer);
+                    return new Promise((resolve) => {
+                        debounceTimer = setTimeout(async () => {
+                            await run();
+                            debounceTimer = null;
+                            resolve();
+                        }, 300);
+                    });
+                } else {
+                    await run();
                 }
             },
 

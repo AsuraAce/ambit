@@ -226,7 +226,7 @@ export function CollectionList<T extends Collection>({
                         <div className="px-2 pb-1.5 text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-wider flex items-center gap-1">
                             <Pin className="w-3 h-3" /> Pinned
                         </div>
-                        <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
+                        <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2 relative' : 'space-y-1 relative'}>
                             <AnimatePresence mode="popLayout" initial={false}>
                                 {pinned.map(col => (
                                     <motion.div
@@ -235,6 +235,7 @@ export function CollectionList<T extends Collection>({
                                         initial={{ opacity: 0, scale: 0.95 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.95 }}
+                                        className={viewMode === 'grid' ? '' : 'relative'}
                                         transition={{
                                             layout: { duration: 0.2, ease: 'easeInOut' },
                                             opacity: { duration: 0.15 },
@@ -273,7 +274,7 @@ export function CollectionList<T extends Collection>({
                     </div>
                 )}
 
-                <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2' : 'space-y-1'}>
+                <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-2 relative' : 'space-y-1 relative'}>
                     <AnimatePresence mode="popLayout" initial={false}>
                         {visibleOthers.map(col => (
                             <motion.div
@@ -282,6 +283,7 @@ export function CollectionList<T extends Collection>({
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
+                                className={viewMode === 'grid' ? '' : 'relative'}
                                 transition={{
                                     layout: { duration: 0.2, ease: 'easeInOut' },
                                     opacity: { duration: 0.15 },
