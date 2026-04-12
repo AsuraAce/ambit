@@ -1,10 +1,11 @@
 import * as React from 'react';
-import { FlaskConical, Key, Check, XCircle, Loader2, Cpu } from 'lucide-react';
+import { FlaskConical, Cpu } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { verifyApiKey } from '../../../services/geminiService';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface TabProps {
     settings: AppSettings;
@@ -13,9 +14,16 @@ interface TabProps {
 
 export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const { addToast } = useToast();
+    const { geminiApiKey, setGeminiApiKey } = useSettingsStore();
+    const [localApiKey, setLocalApiKey] = React.useState(geminiApiKey || '');
     const [isVerifying, setIsVerifying] = React.useState(false);
     const [verificationStatus, setVerificationStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const [verificationError, setVerificationError] = React.useState<string | null>(null);
+
+    // Update local state if global key changes (e.g. from init)
+    React.useEffect(() => {
+        setLocalApiKey(geminiApiKey || '');
+    }, [geminiApiKey]);
 
     const isEnvKey = !!process.env.API_KEY;
 
@@ -25,8 +33,8 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
         addToast(newValue ? 'AI features enabled' : 'AI features disabled', 'success');
     };
 
-    const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSettings(prev => ({ ...prev, googleGeminiApiKey: e.target.value }));
+    const handleApiKeyChange = (val: string) => {
+        setLocalApiKey(val);
         setVerificationStatus('idle');
         setVerificationError(null);
     };
@@ -43,7 +51,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
     };
 
     const handleVerifyKey = async () => {
-        if (!settings.googleGeminiApiKey) {
+        if (!localApiKey) {
             addToast('Please enter an API key first', 'error');
             return;
         }
@@ -53,10 +61,12 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
         setVerificationError(null);
 
         try {
-            const result = await verifyApiKey(settings.googleGeminiApiKey, settings.aiModel || DEFAULT_AI_MODEL);
+            const result = await verifyApiKey(localApiKey, settings.aiModel || DEFAULT_AI_MODEL);
             if (result.valid) {
                 setVerificationStatus('success');
-                addToast('API Key verified successfully', 'success');
+                // Save to secure keyring on successful verification
+                await setGeminiApiKey(localApiKey);
+                addToast('API Key verified and saved securely', 'success');
             } else {
                 setVerificationStatus('error');
                 setVerificationError(result.error || 'Verification failed');
@@ -99,12 +109,8 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                     {settings.enableAI && (
                         <div className="animate-in fade-in slide-in-from-top-2 space-y-4">
                             <ApiKeyInput
-                                value={settings.googleGeminiApiKey || ''}
-                                onChange={(val) => {
-                                    setSettings(prev => ({ ...prev, googleGeminiApiKey: val }));
-                                    setVerificationStatus('idle');
-                                    setVerificationError(null);
-                                }}
+                                value={localApiKey}
+                                onChange={handleApiKeyChange}
                                 onVerify={handleVerifyKey}
                                 isVerifying={isVerifying}
                                 status={verificationStatus}
@@ -113,11 +119,6 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                 onTestEnvKey={() => {
                                     const keyToTest = process.env.API_KEY || '';
                                     if (keyToTest) {
-                                        // We need handleVerifyKey to optionally take a key, 
-                                        // but currently it uses settings.googleGeminiApiKey.
-                                        // Let's modify handleVerifyKey slightly if needed, 
-                                        // or just set the setting temporarily.
-                                        // Actually, let's just make a local verify call.
                                         (async () => {
                                             setIsVerifying(true);
                                             setVerificationStatus('idle');

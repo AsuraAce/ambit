@@ -12,6 +12,14 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 vi.mock('@tauri-apps/plugin-fs', () => ({
     remove: vi.fn(),
+    exists: vi.fn(),
+    mkdir: vi.fn(),
+    readTextFile: vi.fn(),
+    writeTextFile: vi.fn(),
+    BaseDirectory: {
+        AppLocalData: 0,
+        Resource: 1,
+    }
 }));
 
 // Shared Mock Functions

@@ -12,15 +12,24 @@ vi.mock('../../services/geminiService', () => ({
     generatePromptVariations: (...args: any[]) => mockVariations(...args),
 }));
 
+// Mock useSettingsStore
+const mockGetState = vi.fn().mockReturnValue({ geminiApiKey: 'key123' });
+vi.mock('../../stores/settingsStore', () => ({
+    useSettingsStore: Object.assign(vi.fn(), {
+        getState: () => mockGetState()
+    })
+}));
+
 describe('useImageAI', () => {
     const mockOnOpenSettings = vi.fn();
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetState.mockReturnValue({ geminiApiKey: 'key123' });
     });
 
-    it('should call analyzePromptAndSuggest when enabled and apiKey provided', async () => {
-        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
+    it('should call analyzePromptAndSuggest when enabled and apiKey provided via store', async () => {
+        const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
         await act(async () => {
             await result.current.analyzePrompt('a cat', mockOnOpenSettings);
@@ -33,6 +42,8 @@ describe('useImageAI', () => {
     });
 
     it('should open settings if disabled or apiKey missing', async () => {
+        mockGetState.mockReturnValue({ geminiApiKey: null });
+
         const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
         await act(async () => {
@@ -44,7 +55,7 @@ describe('useImageAI', () => {
     });
 
     it('should handle variations correctly', async () => {
-        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
+        const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
         await act(async () => {
             await result.current.generateVariations('a cat', mockOnOpenSettings);
@@ -59,7 +70,7 @@ describe('useImageAI', () => {
         let resolvePromise: (val: string) => void;
         mockAnalyze.mockReturnValue(new Promise(resolve => { resolvePromise = resolve; }));
 
-        const { result } = renderHook(() => useImageAI({ apiKey: 'key123', enableAI: true }));
+        const { result } = renderHook(() => useImageAI({ enableAI: true }));
 
         act(() => {
             result.current.analyzePrompt('a cat', mockOnOpenSettings);

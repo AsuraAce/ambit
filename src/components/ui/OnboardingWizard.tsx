@@ -7,23 +7,23 @@ import { APP_NAME } from '../../constants/app';
 import { verifyApiKey } from '../../services/geminiService';
 import { useToast } from '../../hooks/useToast';
 import { ApiKeyInput } from './ApiKeyInput';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
     onComplete: (settings: Partial<AppSettings>) => void;
     onOpenSettings?: (tab: 'invokeai' | 'comfyui' | 'a1111') => void;
-    initialApiKey?: string;
 }
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     isOpen,
     onComplete,
-    onOpenSettings,
-    initialApiKey
+    onOpenSettings
 }) => {
+    const { geminiApiKey, setGeminiApiKey } = useSettingsStore();
     const [step, setStep] = useState(1);
-    const [apiKey, setApiKey] = useState(initialApiKey || '');
-    const [enableAI, setEnableAI] = useState(!!initialApiKey);
+    const [apiKey, setApiKey] = useState(geminiApiKey || '');
+    const [enableAI, setEnableAI] = useState(!!geminiApiKey);
     const [blurNsfw, setBlurNsfw] = useState(true);
     const [showOnStartup, setShowOnStartup] = useState(false);
 
@@ -67,13 +67,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const totalSteps = 4;
     const isEnvKey = !!process.env.API_KEY;
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (step < totalSteps) {
             setStep(step + 1);
         } else {
+            // Save API key securely on completion if AI is enabled
+            if (enableAI && apiKey.trim()) {
+                try {
+                    await setGeminiApiKey(apiKey.trim());
+                } catch (e) {
+                    console.error('Failed to save API key during onboarding:', e);
+                }
+            }
+
             onComplete({
                 enableAI,
-                googleGeminiApiKey: apiKey.trim(),
                 maskedKeywords: blurNsfw ? ['nsfw', 'nude', 'naked', 'blood', 'gore', 'violence'] : [],
                 maskingMode: 'blur',
                 hasCompletedOnboarding: !showOnStartup

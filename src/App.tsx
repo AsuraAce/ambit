@@ -70,6 +70,7 @@ export default function App() {
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
     const settings = useSettingsStore(s => s.settings);
+    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const setSettings = useSettingsStore(s => s.setSettings);
 
     const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
@@ -401,7 +402,6 @@ export default function App() {
                         addToast("Setup complete!", "success");
                     }}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-                    initialApiKey={settings.googleGeminiApiKey || process.env.API_KEY}
                 />
                 <ImportModal
                     isOpen={isImportModalOpen}

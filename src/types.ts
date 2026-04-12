@@ -213,6 +213,7 @@ export interface AppSettings {
   maskedKeywords: string[];
   maskingMode: 'blur' | 'hide';
   enableAI: boolean;
+  /** @deprecated Moved to OS Secure Keyring. See geminiApiKey in SettingsState. */
   googleGeminiApiKey?: string;
   aiModel?: string;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)

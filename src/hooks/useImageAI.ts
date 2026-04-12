@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
 import { analyzePromptAndSuggest, generatePromptVariations } from '../services/geminiService';
+import { useSettingsStore } from '../stores/settingsStore';
 
 /**
  * Parses a Gemini API error into a user-friendly message.
@@ -29,20 +30,20 @@ function parseGeminiError(error: unknown): string {
 }
 
 interface UseImageAIOptions {
-  apiKey?: string;
   aiModel?: string;
   enableAI?: boolean;
   prompts?: Record<string, string>; // New: System prompt overrides
   onError?: (message: string) => void;
 }
 
-export const useImageAI = ({ apiKey, aiModel, enableAI, prompts, onError }: UseImageAIOptions) => {
+export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOptions) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'analysis' | 'variations'>('analysis');
   const [result, setResult] = useState<string | string[] | null>(null);
 
   const analyzePrompt = async (prompt: string, onOpenSettings: () => void) => {
+    const apiKey = useSettingsStore.getState().geminiApiKey;
     if (!enableAI || !apiKey) {
       onOpenSettings();
       return;
@@ -63,6 +64,7 @@ export const useImageAI = ({ apiKey, aiModel, enableAI, prompts, onError }: UseI
   };
 
   const generateVariations = async (prompt: string, onOpenSettings: () => void) => {
+    const apiKey = useSettingsStore.getState().geminiApiKey;
     if (!enableAI || !apiKey) {
       onOpenSettings();
       return;
