@@ -17,6 +17,13 @@ vi.mock('../../services/geminiService', () => ({
     generateFiltersFromQuery: (...args: any[]) => mockGenerateFilters(...args),
 }));
 
+// Mock useSettingsStore
+vi.mock('../../stores/settingsStore', () => ({
+    useSettingsStore: {
+        getState: () => ({ geminiApiKey: 'test-key' })
+    }
+}));
+
 describe('useAiSearchLogic', () => {
     const mockSetFilters = vi.fn();
     const mockSetRecentSearches = vi.fn();
@@ -24,7 +31,6 @@ describe('useAiSearchLogic', () => {
 
     const mockSettings: AppSettings = {
         enableAI: true,
-        googleGeminiApiKey: 'test-key',
         confirmDelete: true,
         thumbnailSize: 200,
         theme: 'dark',

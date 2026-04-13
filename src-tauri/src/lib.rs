@@ -2,6 +2,7 @@ mod db;
 mod fs_commands;
 mod metadata;
 mod scanner;
+mod security;
 mod thumb;
 mod watcher;
 
@@ -14,6 +15,10 @@ use watcher::WatcherState;
 #[cfg(not(test))]
 pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+        // security commands
+        security::save_api_key,
+        security::load_api_key,
+        security::delete_api_key,
         // db commands
         db::commands::image_commands::save_images_batch,
         db::commands::maintenance::get_db_diagnostics,
@@ -70,6 +75,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // fs commands
         fs_commands::move_to_trash,
         fs_commands::delete_thumbnail,
+        fs_commands::register_library_path,
     ])
 }
 

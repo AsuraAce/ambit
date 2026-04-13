@@ -24,16 +24,10 @@
       "identifier": "fs:allow-read-dir",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPLOCALDATA/**"
         },
         {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$RESOURCE/**"
         }
       ]
     },
@@ -41,16 +35,10 @@
       "identifier": "fs:allow-read-file",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPLOCALDATA/**"
         },
         {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$RESOURCE/**"
         }
       ]
     },
@@ -58,7 +46,7 @@
       "identifier": "fs:allow-read",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -66,7 +54,7 @@
       "identifier": "fs:allow-read-text-file",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -74,16 +62,7 @@
       "identifier": "fs:allow-write-file",
       "allow": [
         {
-          "path": "**"
-        },
-        {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -91,16 +70,7 @@
       "identifier": "fs:allow-write",
       "allow": [
         {
-          "path": "**"
-        },
-        {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -108,16 +78,7 @@
       "identifier": "fs:allow-write-text-file",
       "allow": [
         {
-          "path": "**"
-        },
-        {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -125,7 +86,7 @@
       "identifier": "fs:allow-watch",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
@@ -133,25 +94,13 @@
       "identifier": "fs:allow-exists",
       "allow": [
         {
-          "path": "**"
-        },
-        {
-          "path": "C:\\**"
-        },
-        {
-          "path": "D:\\**"
-        },
-        {
-          "path": "$HOME\\**"
+          "path": "$APPLOCALDATA/**"
         }
       ]
     },
     {
       "identifier": "fs:allow-remove",
       "allow": [
-        {
-          "path": "**"
-        },
         {
           "path": "$APPLOCALDATA/.thumbnails/**"
         },

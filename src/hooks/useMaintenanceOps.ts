@@ -4,6 +4,7 @@ import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
 import { imageToBase64 } from '../services/imageService';
 import { recoverImageMetadata } from '../services/geminiService';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
@@ -49,7 +50,7 @@ export const useMaintenanceOps = ({
         setIsRecoveringMetadata(true);
         try {
             const base64 = await imageToBase64(img.url);
-            const apiKey = settings.googleGeminiApiKey || (process.env as any).API_KEY;
+            const apiKey = useSettingsStore.getState().geminiApiKey;
             if (!apiKey) throw new Error("No API Key");
 
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey, settings.aiModel, settings.systemPrompts);
@@ -77,7 +78,7 @@ export const useMaintenanceOps = ({
         } finally {
             setIsRecoveringMetadata(false);
         }
-    }, [images, settings.googleGeminiApiKey, settings.systemPrompts, settings.aiModel, setImages, addToast]);
+    }, [images, settings.systemPrompts, settings.aiModel, setImages, addToast]);
 
     return {
         isRecoveringMetadata,

@@ -69,16 +69,16 @@ export const TitleBar = () => {
     if (!appWindow) return null;
 
     // Fullscreen styling logic
-    // We use absolute positioning in fullscreen so it slides OVER the content instead of pushing it.
-    // In windowed mode, we keep it in the flex flow to prevent it from overlapping the AppHeader.
-    const containerClasses = isFullscreen
+    // We only retract if we are truly in fullscreen (not just maximized)
+    const isRetracting = isFullscreen && !isMaximized;
+    const containerClasses = isRetracting
         ? `fixed top-0 left-0 right-0 z-[100] transform transition-transform duration-500 ease-spring ${showOnHover ? 'translate-y-0' : '-translate-y-full'}`
         : 'w-full flex-none h-10 relative z-50';
 
     return (
         <>
             {/* Hover Trigger for Fullscreen */}
-            {isFullscreen && (
+            {isRetracting && (
                 <div
                     className="fixed top-0 left-0 right-0 h-4 z-[99]"
                     onMouseEnter={() => setShowOnHover(true)}

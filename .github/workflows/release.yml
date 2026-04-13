@@ -49,5 +49,5 @@ jobs:
           tagName: v__VERSION__ # the Action will use the version from src-tauri/tauri.conf.json
           releaseName: "Ambit v__VERSION__"
           releaseBody: "See the assets below to download the latest version of Ambit."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false

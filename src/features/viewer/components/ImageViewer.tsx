@@ -128,7 +128,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const { palette, isLoading: isPaletteLoading } = usePalette(displayImage.url);
     const { addToast } = useToast();
     const ai = useImageAI({
-        apiKey: settings.googleGeminiApiKey,
         aiModel: settings.aiModel,
         enableAI: settings.enableAI,
         prompts: settings.systemPrompts,

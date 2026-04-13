@@ -71,6 +71,11 @@ export class TauriFsRepository implements IRepository {
         return this.getDefaultState();
     }
 
+    /**
+     * NOTE on Security: library.json contains non-sensitive AppSettings.
+     * Sensitive secrets like API keys are stored in the OS-native secure keyring
+     * (via the `keyring` crate in Rust) and are not persisted in this file.
+     */
     async save(state: AppState): Promise<void> {
         try {
             await this.ensureDirectory();

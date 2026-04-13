@@ -9,7 +9,7 @@ interface UseCollectionOperationsProps {
   collections: Collection[];
   smartCollections: SmartCollection[];
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-  refreshCollections: () => Promise<void>;
+  refreshCollections: (debounced?: boolean) => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<any>>;
   setImages: React.Dispatch<React.SetStateAction<any[]>>;
   activeCollectionId: string | null;
@@ -133,7 +133,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, color });
-      await refreshCollections();
+      refreshCollections(true);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -155,7 +155,7 @@ export const useCollectionOperations = ({
     try {
       await upsertCollection({ ...col, isArchived: newState });
       addToast(newState ? "Collection archived" : "Collection unarchived", "info");
-      await refreshCollections();
+      refreshCollections(true);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));
@@ -174,7 +174,7 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection({ ...col, isPinned: newState });
-      await refreshCollections();
+      refreshCollections(true);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));

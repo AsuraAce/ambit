@@ -2,15 +2,18 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { AppSettings } from '../types';
 import { appRepository } from '../services/repository';
+import { commands } from '../bindings';
 
 interface SettingsState {
     settings: AppSettings;
     privacyEnabled: boolean;
     isLoaded: boolean;
     devModeEnabled: boolean;
+    geminiApiKey: string | null;
 
     // Actions
     setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
+    setGeminiApiKey: (key: string | null) => Promise<void>;
     setPrivacyEnabled: (enabled: boolean) => void;
     updateFolderLastScanned: (id: string, timestamp: number) => void;
     toggleDevMode: () => void;
@@ -47,14 +50,42 @@ export const useSettingsStore = create<SettingsState>()(
             privacyEnabled: true,
             isLoaded: false,
             devModeEnabled: false,
+            geminiApiKey: null,
 
             toggleDevMode: () => set(s => ({ devModeEnabled: !s.devModeEnabled })),
+
+            setGeminiApiKey: async (key: string | null) => {
+                try {
+                    if (key) {
+                        const result = await commands.saveApiKey(key);
+                        if (result.status === 'error') throw new Error(result.error);
+                        set({ geminiApiKey: key });
+                    } else {
+                        const result = await commands.deleteApiKey();
+                        if (result.status === 'error') throw new Error(result.error);
+                        set({ geminiApiKey: null });
+                    }
+                } catch (e) {
+                    console.error('[SettingsStore] Failed to save/delete API key:', e);
+                    throw e;
+                }
+            },
 
             setSettings: (update) => {
                 set((state) => {
                     const newSettings = typeof update === 'function'
                         ? { ...state.settings, ...update(state.settings) }
                         : { ...state.settings, ...update };
+
+                    // Register new folders with Tauri scope immediately if they changed
+                    const oldFolders = new Set(state.settings.monitoredFolders.map(f => f.path));
+                    newSettings.monitoredFolders.forEach(folder => {
+                        if (!oldFolders.has(folder.path)) {
+                            commands.registerLibraryPath(folder.path).catch(e =>
+                                console.error('[SettingsStore] Failed to register new folder scope:', e)
+                            );
+                        }
+                    });
 
                     // Trigger auto-save
                     if (saveTimeout) clearTimeout(saveTimeout);
@@ -89,23 +120,60 @@ export const useSettingsStore = create<SettingsState>()(
                 if (get().isLoaded) return;
                 try {
                     const state = await appRepository.load();
+                    let apiKey: string | null = null;
+
+                    // 1. Try to load from secure keyring first
+                    try {
+                        const keyResult = await commands.loadApiKey();
+                        if (keyResult.status === 'ok') {
+                            apiKey = keyResult.data;
+                        }
+                    } catch (e) {
+                        console.error('[SettingsStore] Failed to load API key from keyring:', e);
+                    }
+
                     if (state.settings) {
                         // Merge with defaults to ensure new settings have defined values
                         // even if user's saved settings file is from an older version
                         const mergedSettings = { ...DEFAULT_SETTINGS, ...state.settings };
 
+                        // 2. Handle Migration: If legacy key exists in JSON but not in keyring
+                        if (mergedSettings.googleGeminiApiKey && !apiKey) {
+                            console.log('[SettingsStore] Migrating API key to secure keyring...');
+                            try {
+                                await commands.saveApiKey(mergedSettings.googleGeminiApiKey);
+                                apiKey = mergedSettings.googleGeminiApiKey;
+                            } catch (e) {
+                                console.error('[SettingsStore] Migration failed:', e);
+                            }
+                        }
+
+                        // 3. Clear legacy key from settings object (always, if it exists)
+                        if (mergedSettings.googleGeminiApiKey) {
+                            delete mergedSettings.googleGeminiApiKey;
+                            // Trigger a save to cleanup library.json
+                            await appRepository.save({ ...state, settings: mergedSettings });
+                        }
+
                         // Ensure API key from env takes precedence if present
                         const envKey = (process.env as any).API_KEY;
-                        if (envKey) mergedSettings.googleGeminiApiKey = envKey;
+                        if (envKey && envKey !== 'undefined') apiKey = envKey;
 
                         // NEW: Enable devMode by default in development environment if not already set
                         if (import.meta.env.DEV && mergedSettings.devMode === undefined) {
                             mergedSettings.devMode = true;
                         }
 
-                        set({ settings: mergedSettings, isLoaded: true });
+                        // Register all monitored folders with Tauri scope on load
+                        mergedSettings.monitoredFolders.forEach(folder => {
+                            commands.registerLibraryPath(folder.path).catch(e =>
+                                console.error('[SettingsStore] Failed to register folder scope on init:', e)
+                            );
+                        });
+
+                        set({ settings: mergedSettings, geminiApiKey: apiKey ?? null, isLoaded: true });
                     } else {
-                        set({ isLoaded: true });
+                        set({ geminiApiKey: apiKey ?? null, isLoaded: true });
                     }
                 } catch (e) {
                     console.error('[SettingsStore] Failed to load settings', e);

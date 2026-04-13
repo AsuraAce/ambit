@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { FilterState, AppSettings } from '../types';
 import { generateFiltersFromQuery } from '../services/geminiService';
 import { useToast } from './useToast';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface UseSearchProps {
   filters: FilterState;
@@ -72,7 +73,7 @@ export const useAiSearchLogic = ({
     inputRef.current?.blur();
 
     if (isAiSearchEnabled && settings.enableAI) {
-      const apiKey = settings.googleGeminiApiKey || process.env.API_KEY;
+      const apiKey = useSettingsStore.getState().geminiApiKey;
       setIsSearchingAi(true);
       addToast("Gemini is analyzing your request...", "info");
       try {
