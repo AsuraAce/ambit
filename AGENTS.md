@@ -36,6 +36,11 @@ This file provides the core instructions, coding standards, and project context 
 
 ## 🤖 AI Agent Workflow
 - **No Cloud Agents:** Do NOT attempt to use GitHub-hosted Gemini Agents. We have disabled them to avoid API costs and privacy concerns.
+- **Clever Context:** Do NOT read all `docs/*.md` files by default. Use this `AGENTS.md` file as an index to pinpoint only the relevant documentation for the current task.
+- **Active Refactor (Refactor-Before-Act):** 
+  - ALWAYS check `docs/REFACTOR.md` before starting a task. 
+  - If a file you are about to touch is on the Refactor Log, flag it to the user and ask if we should refactor it before or after the change.
+  - If you identify technical debt during a task, add it to `docs/REFACTOR.md` immediately upon completion.
 - **PR Workflow:** Always use a feature branch (`feat/` or `fix/`) and provide a clear **Conventional Commit** message.
 - **Release Automation:** We use `release-please`. Your commit messages (e.g., `feat:`, `fix:`) directly generate the `CHANGELOG.md`.
 
