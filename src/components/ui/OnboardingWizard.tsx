@@ -299,7 +299,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 error={verificationError}
                                                 isEnvKey={isEnvKey}
                                                 onTestEnvKey={() => {
-                                                    const keyToTest = initialApiKey || process.env.API_KEY || '';
+                                                    const keyToTest = process.env.API_KEY || apiKey || '';
                                                     if (keyToTest) {
                                                         handleVerifyKey(keyToTest);
                                                     }

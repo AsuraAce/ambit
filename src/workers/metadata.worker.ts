@@ -552,6 +552,7 @@ export const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (!(value instanceof Uint8Array)) continue;
 
             totalSize += value.length;
             if (totalSize > MAX_DECOMPRESSED_SIZE) {
