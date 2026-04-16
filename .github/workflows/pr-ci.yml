@@ -14,16 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
-      - name: install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -44,16 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
-      - name: install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
