@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/AsuraAce/ambit/compare/v0.2.0...v0.3.0) (2026-04-16)
+
+
+### Features
+
+* **filters:** use typed valid-facet inputs ([#7](https://github.com/AsuraAce/ambit/issues/7)) ([4f56462](https://github.com/AsuraAce/ambit/commit/4f56462226c3e20617cabc40c200cec4f8f253e0))
+
 ## [0.2.0](https://github.com/AsuraAce/ambit/compare/v0.1.0...v0.2.0) (2026-04-16)
 
 
