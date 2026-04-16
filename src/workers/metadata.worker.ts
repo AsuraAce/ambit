@@ -537,16 +537,40 @@ const parseExifData = (data: Uint8Array): string | null => {
 };
 
 // Decompression helper using browser-native DecompressionStream
-const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array | null> => {
+export const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array | null> => {
+    const MAX_DECOMPRESSED_SIZE = 10 * 1024 * 1024; // 10MB limit
     try {
         // DecompressionStream is available in modern browser environments (webview2/webkit)
         const ds = new (globalThis as any).DecompressionStream('deflate');
-        const decompressedStream = new Response(buffer as any).body?.pipeThrough(ds);
-        if (!decompressedStream) return null;
-        const res = await new Response(decompressedStream).arrayBuffer();
-        return new Uint8Array(res);
+        const stream = new Response(buffer as any).body?.pipeThrough(ds);
+        if (!stream) return null;
+
+        const reader = stream.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalSize = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            totalSize += value.length;
+            if (totalSize > MAX_DECOMPRESSED_SIZE) {
+                console.warn('[Worker] Decompression limit exceeded (10MB)');
+                await reader.cancel();
+                return null;
+            }
+            chunks.push(value);
+        }
+
+        const result = new Uint8Array(totalSize);
+        let offset = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return result;
     } catch (e) {
-        // Fallback or fail
+        console.error('[Worker] Decompression failed:', e);
         return null;
     }
 };

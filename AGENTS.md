@@ -1,53 +1,81 @@
-# AGENTS.md - Ambit Project Instructions
+# AGENTS.md
 
-This file provides the core instructions, coding standards, and project context for AI agents working on the Ambit project. It is read at the start of every session to ensure consistency and adherence to local-first, high-performance engineering standards.
+## Purpose
+Ambit is a local-first desktop image manager for large AI-generated image libraries. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
 
-## 🚀 Project Overview
-**Ambit** is a high-performance, local-first AI Image Manager built on **Tauri v2 + React**. 
-- **Goal:** Catalog and manage 100k+ AI-generated images (Stable Diffusion, Midjourney, Flux, etc.).
-- **Philosophy:** Privacy-first, local-only data storage, and deep metadata extraction (ComfyUI graphs).
+## Priorities
+When working in this repository, optimize for:
+1. Correctness of local-only library management and metadata handling
+2. Minimal, localized changes that preserve current workflows
+3. Rust-to-TypeScript type sync through Specta-generated bindings
+4. Performance for large libraries and virtualized views
+5. Security and path-scope safety for filesystem access
 
-## 🛠️ Tech Stack & Architecture
-- **Frontend:** React 19, TypeScript 5.8, Zustand (UI State), React Query v5 (Data), Tailwind CSS.
-- **Backend:** Rust 1.77+, Tauri v2, SQLite (rusqlite).
-- **Bridge:** Specta + `tauri-specta` for auto-generated TypeScript bindings in `src/bindings.ts`.
-- **Database:** SQLite is the source of truth for heavy data. `PRAGMA journal_mode=WAL` is enabled.
+Avoid broad refactors unless the task explicitly calls for them.
 
-## 📜 Core Coding Rules
+## Repository Map
+- `src/`: React app shell, feature UI, contexts, Zustand stores, hooks, workers, and TypeScript service adapters.
+- `src/features/`: domain UI for collections, filters, library, maintenance, settings, and viewer flows.
+- `src/components/`: shared layout, modals, and reusable UI primitives.
+- `src/services/`: persistence adapters, Tauri-facing services, and DB helper modules.
+- `src-tauri/src/`: Rust backend for Tauri commands, SQLite, metadata parsing, scanning, watcher, and security.
+- `.github/workflows/`: release automation.
+- `docs/`: agent docs and release workflow notes.
 
-### 1. Type Safety First
-- **NO `any`:** Never use `any`. Use strict TypeScript types.
-- **Rust-TS Sync:** Do NOT manually define TypeScript interfaces for data that exists in Rust. Update the Rust struct, derive `specta::Type`, and let the generator update `src/bindings.ts`.
+Start here for common tasks:
+- App shell and cross-feature UI orchestration: `src/App.tsx`, `src/components/`, `src/features/`
+- Search, query, and persisted UI state: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
+- Rust commands, DB migrations, and metadata extraction: `src-tauri/src/lib.rs`, `src-tauri/src/db/`, `src-tauri/src/metadata/`, `src-tauri/src/scanner/`
+- Release automation and versioning: `docs/WORKFLOW_SETUP.md`, `.github/workflows/`
 
-### 2. Performance Standards
-- **SQLite Equality:** When querying/sorting in SQLite, prefer equality checks over inequality. 
-  - *Bad:* `IFNULL(col, 0) != 1` 
-  - *Good:* `IFNULL(col, 0) = 0` (allows index spanning for sorts).
-- **Virtualized Grids:** All large lists must use virtualization (see `VirtualGrid.tsx`).
+## Commands
+- Install dependencies: `pnpm install`
+- Web dev server: `pnpm run dev`
+- Desktop dev app: `pnpm run app:dev`
+- Frontend build: `pnpm run build`
+- Desktop build: `pnpm run app:build`
+- Frontend tests: `pnpm run test`
+- Coverage: `pnpm run coverage`
+- Rust tests: `pnpm run test:rust`
 
-### 3. State Management
-- **Zustand:** Use for transient UI state (sidebar open, active tab).
-- **React Query:** Use for all asynchronous data fetching from the Tauri/Rust backend.
-- **Hooks:** Business logic should be encapsulated in custom hooks in `src/hooks/` or `src/features/X/hooks/`.
+No dedicated lint or typecheck script is defined in `package.json`. If you add one, document it here.
 
-### 4. File System & Security
-- **Local-Only:** Never implement features that send image data or prompts to external cloud services (except for the user-configured Gemini API for analysis).
-- **Path Protection:** Always use `APPLOCALDATA` or `RESOURCE` scopes for Tauri FS operations.
+## Change Policy
+- No `any`. Keep TypeScript strict.
+- Do not manually edit `src/bindings.ts`. Change Rust structs or commands and regenerate bindings.
+- Use React Query for async backend data and Zustand for transient UI state.
+- Keep business logic in hooks or feature modules rather than growing component bodies when practical.
+- Preserve virtualization for large library views; do not replace `VirtualGrid`-style flows with eager full renders.
+- Keep the product local-first. Do not add cloud data flows except the user-configured Gemini analysis path.
+- Respect Tauri filesystem scope registration and `APPLOCALDATA` or resource-safe access patterns.
+- For SQLite filters and sorts, prefer equality-friendly predicates when semantics allow.
+- Use feature branches (`feat/` or `fix/`) and conventional commits; release automation depends on that history.
+- If you discover recurring structural debt that should survive the current task, record it in `docs/refactor.md`.
 
-## 🤖 AI Agent Workflow
-- **No Cloud Agents:** Do NOT attempt to use GitHub-hosted Gemini Agents. We have disabled them to avoid API costs and privacy concerns.
-- **Clever Context:** Do NOT read all `docs/*.md` files by default. Use this `AGENTS.md` file as an index to pinpoint only the relevant documentation for the current task.
-- **Refactor Log (Session Debt Logging):** 
-  - If you identify technical debt during a task, track it internally during the session.
-  - At the end of a session or a major task completion, document the identified debt in `docs/REFACTOR.md`. 
-  - This file serves as a persistent "Hit List" for future cleanup sessions.
-- **PR Workflow:** Always use a feature branch (`feat/` or `fix/`) and provide a clear **Conventional Commit** message.
-- **Release Automation:** We use `release-please`. Your commit messages (e.g., `feat:`, `fix:`) directly generate the `CHANGELOG.md`.
+## Verification
+- Run the narrowest relevant script from `package.json` for the area you touched.
+- If you change Rust command signatures or Rust-backed types, make sure `src/bindings.ts` is regenerated or explain why not.
+- If you touch search, filtering, or library rendering, verify that virtualized browsing still works for large result sets.
+- If you cannot run checks, say so explicitly.
 
-## 📚 Reference Documentation
-For deep dives into specific subsystems, refer to:
-- `docs/PDD.md`: Product Design & Goals.
-- `docs/TDD.md`: Technical Architecture & Stack.
-- `docs/KNOWLEDGE.md`: Non-obvious fixes and gotchas.
-- `docs/COMFYUI_EXTRACTION.md`: Logic for parsing AI metadata.
-- `docs/WORKFLOW_SETUP.md`: How to manage releases.
+## Risky Areas
+- `src/App.tsx` and `src/contexts/SearchContext.tsx`: cross-feature coordination and mixed state ownership.
+- `src/features/library/components/VirtualGrid.tsx`: performance-sensitive rendering path for large libraries.
+- `src/stores/settingsStore.ts` and `src/services/TauriFsRepository.ts`: settings persistence, keyring migration, and path scope registration.
+- `src-tauri/src/db/`: migrations, PRAGMAs, and query behavior affect data integrity and large-library performance.
+- `src-tauri/src/metadata/comfyui/`: heuristic parsing with a broad regression-test surface.
+
+## Doc Routing
+Use this file as the entry point. Do not bulk-read `docs/` unless one of the routes below is relevant.
+
+- For current system shape and subsystem boundaries, read `docs/architecture.md`.
+- For active work, constraints, and maintainer-review notes, read `docs/progress.md`.
+- For release automation details, read `docs/WORKFLOW_SETUP.md`.
+- For deferred structural cleanup, read `docs/refactor.md` if present.
+
+## Completion Checklist
+Before finishing, confirm:
+- the change is scoped to the request
+- relevant checks passed or are explicitly listed as unrun
+- docs or generated bindings were updated if behavior or Rust-backed types changed
+- follow-up risks or refactor candidates are called out when relevant
