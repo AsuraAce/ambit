@@ -43,6 +43,10 @@ Status: Deferred
 - `src/services/repository.ts` still carries a `LocalStorageRepository` and mock-image defaults, but the live desktop app uses `TauriFsRepository` plus SQLite.
 - `src/services/TauriFsRepository.ts`, `src/stores/settingsStore.ts`, and Rust keyring or database code split persistence across JSON, SQLite, and secure OS storage.
 
+### Current Classification
+- `src/services/repository.ts` is not the canonical desktop persistence path today; it exports `TauriFsRepository` for the shipping app while still carrying a LocalStorage or mock fallback.
+- Treat that fallback path as ambiguous legacy surface unless a dedicated task explicitly keeps, validates, or removes non-Tauri mode.
+
 ### Current Pain Points
 - It is easy to modify the wrong persistence layer or leave migrations half-finished.
 - Startup, onboarding, folder scope registration, and secure key handling all depend on coordinated changes across TypeScript and Rust.
@@ -53,6 +57,7 @@ Status: Deferred
 ### Suggested Future Direction
 - Make the production Tauri persistence path the obvious canonical path in the frontend.
 - Keep the storage split explicit and narrow: SQLite for images and metadata, `library.json` for lightweight app state, keyring for secrets.
+- Resolve `src/services/repository.ts` intentionally: either document the fallback as supported, or remove it in a dedicated cleanup once the repo explicitly drops that mode.
 
 ### Not Part of the Current Task
 - Do not delete web or mock fallbacks unless the repo intentionally drops that mode.
