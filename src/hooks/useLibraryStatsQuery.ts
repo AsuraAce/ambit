@@ -99,7 +99,7 @@ export const useLibraryStatsQuery = ({
             const [facets, stats, baseValidNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params, collectionId, loraName),
-                hasActiveFilters ? getValidFacetNames(where, params, collectionId, loraName) : Promise.resolve(null)
+                hasActiveFilters ? getValidFacetNames(filters, allCollections) : Promise.resolve(null)
             ]);
 
             // 2. Disjunctive Queries: For categories in ANY mode with active selections
@@ -143,7 +143,7 @@ export const useLibraryStatsQuery = ({
                         [excludeKey]
                     );
 
-                    const result = await searchRepo.getValidFacetNames(partial.where, partial.params, partial.collectionId, partial.loraName);
+                    const result = await getValidFacetNames(filters, allCollections, [excludeKey]);
                     return { cat, validNames: result[cat] };
                 });
 

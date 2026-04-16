@@ -1,3 +1,4 @@
+use super::commands::filter_types::{RustCollection, RustFilterState};
 use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
 use rusqlite::params;
@@ -228,7 +229,12 @@ pub async fn rebuild_facet_cache_incremental(
             "hypernetworks" => build_resource_facets(&tx, "hypernetworks", "hypernetworks")?,
             "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets")?,
             "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters")?,
-            _ => return Err(format!("Unknown facet type for incremental build: {}", facet_type)),
+            _ => {
+                return Err(format!(
+                    "Unknown facet type for incremental build: {}",
+                    facet_type
+                ))
+            }
         }
 
         tx.commit().map_err(|e| e.to_string())?;
@@ -247,7 +253,6 @@ pub async fn rebuild_facet_cache_incremental(
     .await
     .map_err(|e| e.to_string())?
 }
-
 
 /// Valid facet names result - used for drill-down filtering
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -272,51 +277,35 @@ pub struct ValidFacetNames {
 #[specta::specta]
 pub async fn get_valid_facet_names(
     app: tauri::AppHandle,
-    where_clause: String,
-    params_json: String,
-    collection_id: Option<String>,
-    lora_name: Option<String>,
+    filters: RustFilterState,
+    collections: Vec<RustCollection>,
+    exclude_categories: Vec<String>,
 ) -> Result<ValidFacetNames, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
-        // Parse JSON params
-        let params: Vec<serde_json::Value> = serde_json::from_str(&params_json)
-            .unwrap_or_else(|_| Vec::new());
+        let (where_clause, sql_params) = filters.build_where_clause(
+            true,
+            "hide",
+            &[],
+            &collections,
+            false,
+            &exclude_categories,
+        );
 
-        // Convert JSON params to rusqlite params
-        let sql_params: Vec<rusqlite::types::Value> = params.iter().map(|p| {
-            match p {
-                serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
-                serde_json::Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        rusqlite::types::Value::Integer(i)
-                    } else if let Some(f) = n.as_f64() {
-                        rusqlite::types::Value::Real(f)
-                    } else {
-                        rusqlite::types::Value::Null
-                    }
-                }
-                serde_json::Value::Bool(b) => rusqlite::types::Value::Integer(if *b { 1 } else { 0 }),
-                serde_json::Value::Null => rusqlite::types::Value::Null,
-                _ => rusqlite::types::Value::Text(p.to_string()),
-            }
-        }).collect();
-
-        // Build base WHERE clause, ensuring it starts with WHERE
         let base_where = if where_clause.is_empty() {
             "WHERE is_deleted = 0".to_string()
         } else {
-            where_clause.clone()
+            where_clause
         };
 
-
-        // Helper to create prefixed WHERE clause for queries that JOIN with images table aliased as 'i'
-        // Uses Regex to robustly identify "whole word" columns, avoiding matches inside other words
-        // or effectively handling parens/operators.
         let prefix_columns = |clause: &str| -> String {
+            if clause.is_empty() {
+                return String::new();
+            }
+
             let columns = [
                 "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
                 "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
@@ -325,29 +314,13 @@ pub async fn get_valid_facet_names(
             ];
             
             let mut result = clause.to_string();
-            
-            // Regex pattern:
-            // 1. (?i) Case insensitive (though columns are usually lowercase in our code)
-            // 2. \b(col1|col2|...)\b -> Match whole word only
-            // 3. We check if it's NOT already prefixed by i. manually by looking at our replacement?
-            //    Actually, regex replace_all doesn't look behind easily in Rust's regex crate (no lookaround).
-            //    BUT, if we just match \bcol\b, "i.col" matches "col" as a word boundary?
-            //    "i.col" -> "." is a boundary? Yes. 
-            //    So "i.col" would match "col". We need to avoid double prefixing.
-            //    Wait, "i.col". "." is NOT a word char. So "col" starts at boundary. 
-            //    We can match `(?P<prefix>i\.)?(?P<col>\b(col1|col2...)\b)`? 
-            //    And if prefix is there, keep it. If not, add it.
-            
-            // Construct the large OR pattern
             let pattern_str = format!(r"(?i)(i\.)?\b({})\b", columns.join("|"));
-            let re = Regex::new(&pattern_str).unwrap(); // compiled once per call is fine, or lazy_static if frequent
+            let re = Regex::new(&pattern_str).unwrap();
             
             result = re.replace_all(&result, |caps: &regex::Captures| {
                 if caps.get(1).is_some() {
-                    // Already prefixed with "i."
                     caps[0].to_string()
                 } else {
-                    // Not prefixed, add "i."
                     format!("i.{}", &caps[2])
                 }
             }).to_string();
@@ -355,47 +328,27 @@ pub async fn get_valid_facet_names(
             result
         };
 
-        // Build query parts for collection and LoRA JOINs
-        let collection_join = collection_id.as_ref().map(|_| 
-            "JOIN collection_images ci ON ci.image_id = i.id AND ci.collection_id = ?"
-        ).unwrap_or("");
-        
-        let lora_join = lora_name.as_ref().map(|_| 
-            "JOIN image_loras il_filter ON il_filter.image_id = i.id AND il_filter.lora_name = ?"
-        ).unwrap_or("");
-
         let prefixed = prefix_columns(&base_where);
 
-        // Build combined UNION ALL query for all facet types
-        // Each subquery adds a 'facet_type' discriminator column
         let combined_query = format!(
-            "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
+            "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
              UNION ALL
-             SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
+             SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {where}
              UNION ALL
-             SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
+             SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {where}
              UNION ALL
-             SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
+             SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {where}
              UNION ALL
-             SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
+             SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {where}
              UNION ALL
-             SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
+             SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {where}
              UNION ALL
-             SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
-            coll = collection_join,
-            lora = lora_join,
+             SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {where}",
             where = prefixed
         );
 
-        // Build params - we need to repeat them 7 times (once per subquery)
         let mut all_params: Vec<rusqlite::types::Value> = Vec::new();
         for _ in 0..7 {
-            if let Some(ref cid) = collection_id {
-                all_params.push(rusqlite::types::Value::Text(cid.clone()));
-            }
-            if let Some(ref ln) = lora_name {
-                all_params.push(rusqlite::types::Value::Text(ln.clone()));
-            }
             all_params.extend(sql_params.clone());
         }
 
@@ -408,7 +361,6 @@ pub async fn get_valid_facet_names(
         let mut control_nets: Vec<String> = Vec::new();
         let mut ip_adapters: Vec<String> = Vec::new();
 
-        // Use HashSets for deduplication (UNION ALL doesn't dedupe)
         use std::collections::HashSet;
         let mut cp_set: HashSet<String> = HashSet::new();
         let mut lora_set: HashSet<String> = HashSet::new();
@@ -436,9 +388,6 @@ pub async fn get_valid_facet_names(
                 _ => {}
             }
         }
-
-        println!("[ValidFacets] Results - CP:{} LoRAs:{} Emb:{} Hyper:{} Tools:{}", 
-            checkpoints.len(), loras.len(), embeddings.len(), hypernetworks.len(), tools.len());
 
         Ok(ValidFacetNames {
             checkpoints,
@@ -480,12 +429,32 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
     // OPTIMIZATION: Use Junction Tables which are already populated
     let types = [
         ("loras", "harvest_lora", "image_loras", "lora_name"),
-        ("embeddings", "harvest_embedding", "image_embeddings", "embedding_name"),
-        ("hypernetworks", "harvest_hypernet", "image_hypernetworks", "hypernetwork_name"),
-        ("control_nets", "harvest_controlnet", "image_controlnets", "controlnet_name"),
-         ("ip_adapters", "harvest_ip_adapter", "image_ipadapters", "ipadapter_name"),
+        (
+            "embeddings",
+            "harvest_embedding",
+            "image_embeddings",
+            "embedding_name",
+        ),
+        (
+            "hypernetworks",
+            "harvest_hypernet",
+            "image_hypernetworks",
+            "hypernetwork_name",
+        ),
+        (
+            "control_nets",
+            "harvest_controlnet",
+            "image_controlnets",
+            "controlnet_name",
+        ),
+        (
+            "ip_adapters",
+            "harvest_ip_adapter",
+            "image_ipadapters",
+            "ipadapter_name",
+        ),
     ];
-    
+
     for (json_key, source, table, col) in types {
         let prefix = match json_key {
             "loras" => "lora_",
@@ -493,14 +462,14 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
             "hypernetworks" => "hyper_",
             _ => "", // ControlNets/IPAdapters don't typically use prefixes in 'models' table but let's check legacy
         };
-        
+
         // Note: 'clean_name' logic (removing version/suffix) is duplicated here.
         // Ideally the junction tables would store cleaned names, or we handle it here.
         // The junction creation in `save_images_batch` ALREADY cleans the name!
         // "CASE WHEN instr(value, ...)..." is used in save_images_batch.
         // So the values in `image_loras` ARE ALREADY CLEANED.
         // We can just select them directly.
-        
+
         conn.execute(
             &format!(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
@@ -881,33 +850,53 @@ mod tests {
         // --- Regression Check: Collections ---
         // Verify that rebuilding cache does NOT wipe collections
         // 1. Create a collection
-        conn.execute("INSERT INTO collections (id, name, created_at) VALUES ('col1', 'Test Col', 100)", []).unwrap();
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at) VALUES ('col1', 'Test Col', 100)",
+            [],
+        )
+        .unwrap();
         // 2. Add image to collection
-        conn.execute("INSERT INTO collection_images (collection_id, image_id) VALUES ('col1', 'img1')", []).unwrap();
-        
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id) VALUES ('col1', 'img1')",
+            [],
+        )
+        .unwrap();
+
         // Re-run rebuild to ensure it doesn't touch collections
         // (We already ran parts of it above, this simulates a full run)
         // But wait, the test calls `build_checkpoint_facets` etc individually.
         // Let's verify collections exist now.
-        let col_count: i64 = conn.query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0)).unwrap();
-        assert_eq!(col_count, 1, "Collection should persist after manual insertions");
+        let col_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            col_count, 1,
+            "Collection should persist after manual insertions"
+        );
 
-        // Now run the full rebuild helper if possible? 
+        // Now run the full rebuild helper if possible?
         // No, `rebuild_facet_cache` takes AppHandle. We can't call it here easily.
         // But we can call the internal functions again.
         conn.execute("DELETE FROM facet_cache", []).unwrap(); // Clear cache first
         build_checkpoint_facets(&conn).unwrap();
         build_resource_facets(&conn, "loras", "loras").unwrap();
-        
-        let col_count_after: i64 = conn.query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0)).unwrap();
-        assert_eq!(col_count_after, 1, "Collection should persist after facet rebuild");
 
+        let col_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM collections", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            col_count_after, 1,
+            "Collection should persist after facet rebuild"
+        );
 
         // Checkpoint Check: Expected thumb2.png (Pinned)
         let (cp_count, cp_thumb): (i64, String) = conn.query_row(
             "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='SDXL Base'", 
             [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
-        assert_eq!(cp_count, 3, "Multiplier bug! Should count exactly 3 images for SDXL Base (not doubled/tripled)");
+        assert_eq!(
+            cp_count, 3,
+            "Multiplier bug! Should count exactly 3 images for SDXL Base (not doubled/tripled)"
+        );
         assert_eq!(
             cp_thumb, "thumb2.png",
             "Checkpoint thumbnail should be from pinned image (thumb2)"
@@ -948,7 +937,10 @@ mod tests {
         let unknown_count: i64 = conn.query_row(
             "SELECT count FROM facet_cache WHERE facet_type='checkpoints' AND resource_name='Unknown'",
             [], |r| r.get(0)).unwrap();
-        assert_eq!(unknown_count, 3, "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)");
+        assert_eq!(
+            unknown_count, 3,
+            "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)"
+        );
     }
 
     #[test]
@@ -970,26 +962,36 @@ mod tests {
         conn.execute(
             "INSERT INTO images (id, path, timestamp) VALUES ('img1', 'test.png', 100)",
             [],
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // This is what happens currently: LoRA name stored WITH extension in junction table
         conn.execute(
             "INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'MyLora.safetensors')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // 3. Build LoRA facets
         build_resource_facets(&conn, "loras", "loras").unwrap();
 
         // 4. Check if the facet has the thumbnail
-        let (name, thumb): (String, Option<String>) = conn.query_row(
-            "SELECT resource_name, thumbnail_path FROM facet_cache WHERE facet_type='loras'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?))
-        ).unwrap();
+        let (name, thumb): (String, Option<String>) = conn
+            .query_row(
+                "SELECT resource_name, thumbnail_path FROM facet_cache WHERE facet_type='loras'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
 
-        assert_eq!(name, "MyLora", "Facet name should be 'MyLora' (normalized from the model name)");
-        assert!(thumb.is_some(), "Facet should have a thumbnail path linked from the model");
+        assert_eq!(
+            name, "MyLora",
+            "Facet name should be 'MyLora' (normalized from the model name)"
+        );
+        assert!(
+            thumb.is_some(),
+            "Facet should have a thumbnail path linked from the model"
+        );
         assert_eq!(thumb.unwrap(), "C:/thumbs/MyLora.webp");
     }
 }
