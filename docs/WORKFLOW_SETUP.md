@@ -26,6 +26,16 @@ The `release-please` workflow automates the versioning of the application and th
 1.  Work on a feature branch.
 2.  Push the branch and open a Pull Request.
 3.  Ensure the PR title follows **Conventional Commits** (e.g., `feat: something new` or `fix: resolve bug`).
-4.  **Squash and Merge** the PR into `main`.
-5.  `release-please` will automatically open a "Release PR".
-6.  When you merge the "Release PR", the `release.yml` workflow kicks off to build the installers for Mac, Windows, and Linux.
+4.  PRs into `main` must pass the `frontend-checks` and `rust-tests` GitHub Actions jobs.
+5.  **Squash and Merge** the PR into `main` so the squashed commit title is the Conventional Commit that lands on the release branch.
+6.  `release-please` will automatically open or refresh a "Release PR".
+7.  When you merge the "Release PR", the `release.yml` workflow builds the installers for Mac, Windows, and Linux.
+
+## Release Tag Notes
+*   Release tags are intended to normalize to `vX.Y.Z`.
+*   During the current transition, the publish workflow accepts both `v*` and legacy `ambit-v*` tags and publishes against the actual tag that triggered the workflow.
+
+## Repository Settings To Verify
+*   **Branch protection:** `main` should require pull requests and the `frontend-checks` plus `rust-tests` status checks.
+*   **Actions permissions:** Under **Settings > Actions > General**, enable **Allow GitHub Actions to create and approve pull requests**.
+*   **Release token:** If `RELEASE_PLEASE_TOKEN` is missing, `release-please` still works with `GITHUB_TOKEN`, but downstream workflows triggered from release PRs or release tags will not run automatically.

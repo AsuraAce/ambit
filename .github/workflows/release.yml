@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+      - "ambit-v*"
 
 jobs:
   publish-tauri:
@@ -46,8 +47,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # the Action will use the version from src-tauri/tauri.conf.json
-          releaseName: "Ambit v__VERSION__"
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ambit ${{ github.ref_name }}"
           releaseBody: "See the assets below to download the latest version of Ambit."
           releaseDraft: false
           prerelease: false

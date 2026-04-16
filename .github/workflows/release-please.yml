@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,6 +14,17 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify release automation prerequisites
+        env:
+          HAS_RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
+        run: |
+          if [ "${HAS_RELEASE_PLEASE_TOKEN}" != "true" ]; then
+            echo "::warning::RELEASE_PLEASE_TOKEN is not configured. Release PRs and tags created with GITHUB_TOKEN will not trigger downstream workflows."
+          else
+            echo "RELEASE_PLEASE_TOKEN detected."
+          fi
+          echo "::notice::Verify Settings > Actions > General allows GitHub Actions to create and approve pull requests."
+
       - name: Create release PR or GitHub Release
         id: release
         uses: google-github-actions/release-please-action@v4
