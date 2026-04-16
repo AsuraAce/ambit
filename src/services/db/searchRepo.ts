@@ -1,4 +1,4 @@
-import { AIImage, FacetType } from '../../types';
+import { AIImage, Collection, FacetType, FilterState } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
@@ -507,20 +507,17 @@ export const getFacets = async (
  * Used to hide facet options that have no matching images in the current filter context.
  */
 export const getValidFacetNames = async (
-    whereClause: string,
-    params: unknown[],
-    collectionId?: string,
-    loraName?: string
+    filters: FilterState,
+    collections: Collection[],
+    excludeCategories: string[] = []
 ): Promise<ValidFacetNames> => {
     try {
         // Import the command dynamically to avoid circular dependencies
         const { commands } = await import('../../bindings');
-        // Serialize params as JSON string for Specta compatibility
         const result = await commands.getValidFacetNames(
-            whereClause,
-            JSON.stringify(params),
-            collectionId ?? null,
-            loraName ?? null
+            filters as any,
+            collections as any,
+            excludeCategories
         );
 
         if (result.status === 'ok') {

@@ -1,10 +1,11 @@
+use super::{configure_connection, resolve_db_path};
 use rusqlite::Connection;
 use tauri::AppHandle;
-use super::{configure_connection, resolve_db_path};
 
+pub mod filter_commands;
+pub mod filter_types;
 pub mod image_commands;
 pub mod maintenance;
-pub mod filter_commands;
 pub mod reparse_commands;
 
 /// Standard wrapper for Tauri commands to reduce boilerplate.

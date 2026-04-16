@@ -117,9 +117,9 @@ async rebuildFacetCacheIncremental(facetType: string) : Promise<Result<number, s
  * OPTIMIZATION: Uses a single UNION ALL query instead of 5 separate queries
  * to reduce database round-trips and allow SQLite to share table scans.
  */
-async getValidFacetNames(whereClause: string, paramsJson: string, collectionId: string | null, loraName: string | null) : Promise<Result<ValidFacetNames, string>> {
+async getValidFacetNames(filters: RustFilterState, collections: RustCollection[], excludeCategories: string[]) : Promise<Result<ValidFacetNames, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { whereClause, paramsJson, collectionId, loraName }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_valid_facet_names", { filters, collections, excludeCategories }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -467,6 +467,8 @@ export type ReparseBatchResult = { processed: number; updated: number; errors: n
  */
 export type ReparseJobResult = { processed: number; updated: number; errors: number; wasCancelled: boolean }
 export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
+export type RustCollection = { id: string; name: string; filters: RustFilterState | null; manualExclusions: string[] | null }
+export type RustFilterState = { searchQuery: string; models: string[]; tools: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; samplers: string[]; generationTypes: string[]; dateRange: string; favoritesOnly: boolean; pinnedOnly: boolean; showIntermediates: boolean; showGrids: boolean; collectionId: string | null; minSteps: number | null; maxSteps: number | null; minCfg: number | null; maxCfg: number | null; matchModes: Partial<{ [key in string]: string }> | null }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**
  * Base64 encoded 32px WebP micro-thumbnail for instant previews
