@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/AsuraAce/ambit/compare/v0.3.0...v0.4.0) (2026-04-18)
+
+
+### Features
+
+* add auto-update flow and fix release image loading ([#10](https://github.com/AsuraAce/ambit/issues/10)) ([6ccaa8a](https://github.com/AsuraAce/ambit/commit/6ccaa8a70b1edb839a91cd5dbecad969884446d1))
+
 ## [0.3.0](https://github.com/AsuraAce/ambit/compare/v0.2.0...v0.3.0) (2026-04-16)
 
 
