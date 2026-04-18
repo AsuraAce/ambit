@@ -59,19 +59,27 @@ export const AppHeader = React.memo(({
     const {
         isLiveWatching, setIsLiveWatching,
         isImporting, importProgress,
-        isLiveSyncing, syncStatus, syncProgress,
+        liveWatchSession,
+        syncStatus, syncProgress,
         isResolvingModels, modelResolutionProgress,
         isScanningDiscovery, discoveryScanProgress, // Added
         isBackgroundHealingActive, backgroundHealingProgress // Added
     } = useLibraryStore();
 
-    const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
-    const isHighPriority = isImporting || isSyncing || isResolvingModels || isScanningDiscovery;
+    const isManualSyncing = syncStatus === 'syncing';
+    const isLiveWatchActive = liveWatchSession.active && liveWatchSession.phase !== 'summary';
+    const isHighPriority = isImporting || isManualSyncing || isLiveWatchActive || isResolvingModels || isScanningDiscovery;
     const active = isHighPriority || isBackgroundHealingActive;
 
     const progress = (isImporting && importProgress)
         ? importProgress
-        : (isSyncing ? syncProgress : (isResolvingModels ? modelResolutionProgress : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null))));
+        : (isManualSyncing
+            ? syncProgress
+            : (isLiveWatchActive
+                ? (liveWatchSession.progress || { current: 0, total: 0, message: liveWatchSession.message })
+                : (isResolvingModels
+                    ? modelResolutionProgress
+                    : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null)))));
 
     // Determine color
     const isBackgroundOnly = isBackgroundHealingActive && !isHighPriority;

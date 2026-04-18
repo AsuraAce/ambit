@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { commands } from '../bindings';
 
-let liveWatchTimeout: any = null;
+let liveWatchTimeout: ReturnType<typeof setTimeout> | null = null;
+const LIVE_WATCH_IDLE_TIMEOUT_MS = 60000;
 
 export interface SyncProgress {
     current: number;
@@ -11,6 +12,80 @@ export interface SyncProgress {
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'complete' | 'error';
+export type LiveWatchSessionSource = 'generic' | 'invoke' | 'mixed';
+export type LiveWatchSessionPhase = 'watching' | 'syncing' | 'importing' | 'summary';
+
+export interface LiveWatchSessionState {
+    active: boolean;
+    source: LiveWatchSessionSource | null;
+    phase: LiveWatchSessionPhase | null;
+    message?: string;
+    progress: SyncProgress | null;
+    receivedCount: number;
+    startedAt: number | null;
+    lastActivityAt: number | null;
+}
+
+interface LiveWatchSessionUpdate {
+    source?: LiveWatchSessionSource;
+    phase?: LiveWatchSessionPhase;
+    message?: string;
+    progress?: SyncProgress | null;
+}
+
+const mergeLiveWatchSource = (
+    current: LiveWatchSessionSource | null,
+    next?: LiveWatchSessionSource
+): LiveWatchSessionSource | null => {
+    if (!next) {
+        return current;
+    }
+
+    if (!current || current === next) {
+        return next;
+    }
+
+    return 'mixed';
+};
+
+export const getLiveWatchSummaryMessage = (receivedCount: number): string => {
+    if (receivedCount <= 0) {
+        return 'Watching for completed images...';
+    }
+
+    return receivedCount === 1
+        ? '1 image received this session. Watching for more...'
+        : `${receivedCount} images received this session. Watching for more...`;
+};
+
+export const createInitialLiveWatchSessionState = (): LiveWatchSessionState => ({
+    active: false,
+    source: null,
+    phase: null,
+    message: undefined,
+    progress: null,
+    receivedCount: 0,
+    startedAt: null,
+    lastActivityAt: null
+});
+
+const scheduleLiveWatchSessionEnd = () => {
+    if (liveWatchTimeout) {
+        clearTimeout(liveWatchTimeout);
+    }
+
+    liveWatchTimeout = setTimeout(async () => {
+        const endSession = useLibraryStore.getState().endLiveImageSession;
+        await endSession();
+    }, LIVE_WATCH_IDLE_TIMEOUT_MS);
+};
+
+const clearLiveWatchSessionEnd = () => {
+    if (liveWatchTimeout) {
+        clearTimeout(liveWatchTimeout);
+        liveWatchTimeout = null;
+    }
+};
 
 export interface MaintenanceCounts {
     untagged: number;
@@ -60,8 +135,7 @@ interface LibraryState {
     refreshProgress: SyncProgress | null;
 
     // Live Watch Session State
-    isReceivingLiveImages: boolean;
-    liveImagesReceivedCount: number;
+    liveWatchSession: LiveWatchSessionState;
 
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
@@ -106,7 +180,9 @@ interface LibraryState {
     cancelRefresh: () => void;
 
     // Live Watch Session Actions
-    reportLiveImagesReceived: (count: number) => void;
+    startLiveWatchSession: (source: LiveWatchSessionSource, update?: Omit<LiveWatchSessionUpdate, 'source'>) => void;
+    updateLiveWatchSession: (update: LiveWatchSessionUpdate) => void;
+    reportLiveImagesReceived: (count: number, update?: Omit<LiveWatchSessionUpdate, 'phase'>) => void;
     endLiveImageSession: () => Promise<void>;
 }
 
@@ -153,8 +229,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     refreshProgress: null,
 
     // Live Watch Session State
-    isReceivingLiveImages: false,
-    liveImagesReceivedCount: 0,
+    liveWatchSession: createInitialLiveWatchSessionState(),
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -221,20 +296,80 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     },
 
     // Live Watch Session Actions
-    reportLiveImagesReceived: (count) => {
-        set((state) => ({ 
-            isReceivingLiveImages: true, 
-            liveImagesReceivedCount: state.liveImagesReceivedCount + count 
-        }));
-        
-        if (liveWatchTimeout) clearTimeout(liveWatchTimeout);
-        liveWatchTimeout = setTimeout(async () => {
-            const endSession = useLibraryStore.getState().endLiveImageSession;
-            await endSession();
-        }, 60000); // 60-second idle session timeout
+    startLiveWatchSession: (source, update = {}) => {
+        const now = Date.now();
+        set((state) => {
+            const currentSession = state.liveWatchSession;
+            const resolvedSource = mergeLiveWatchSource(currentSession.source, source);
+            return {
+                liveWatchSession: {
+                    active: true,
+                    source: resolvedSource,
+                    phase: update.phase ?? 'watching',
+                    message: update.message,
+                    progress: update.progress ?? null,
+                    receivedCount: currentSession.receivedCount,
+                    startedAt: currentSession.active ? currentSession.startedAt : now,
+                    lastActivityAt: now
+                },
+                isActivityDockDismissed: false
+            };
+        });
+        scheduleLiveWatchSessionEnd();
+    },
+    updateLiveWatchSession: (update) => {
+        const now = Date.now();
+        set((state) => {
+            const currentSession = state.liveWatchSession;
+            const resolvedSource = mergeLiveWatchSource(currentSession.source, update.source);
+            return {
+                liveWatchSession: {
+                    active: true,
+                    source: resolvedSource,
+                    phase: update.phase ?? currentSession.phase ?? 'watching',
+                    message: update.message ?? currentSession.message,
+                    progress: update.progress !== undefined ? update.progress : currentSession.progress,
+                    receivedCount: currentSession.receivedCount,
+                    startedAt: currentSession.startedAt ?? now,
+                    lastActivityAt: now
+                },
+                isActivityDockDismissed: false
+            };
+        });
+        scheduleLiveWatchSessionEnd();
+    },
+    reportLiveImagesReceived: (count, update = {}) => {
+        const now = Date.now();
+        set((state) => {
+            const currentSession = state.liveWatchSession;
+            const receivedCount = currentSession.receivedCount + count;
+            const resolvedSource = mergeLiveWatchSource(currentSession.source, update.source);
+            return {
+                liveWatchSession: {
+                    active: true,
+                    source: resolvedSource,
+                    phase: 'summary',
+                    message: update.message ?? getLiveWatchSummaryMessage(receivedCount),
+                    progress: update.progress ?? null,
+                    receivedCount,
+                    startedAt: currentSession.startedAt ?? now,
+                    lastActivityAt: now
+                },
+                isActivityDockDismissed: false
+            };
+        });
+        scheduleLiveWatchSessionEnd();
     },
     endLiveImageSession: async () => {
-        set({ isReceivingLiveImages: false, liveImagesReceivedCount: 0 });
+        clearLiveWatchSessionEnd();
+        const { liveWatchSession } = useLibraryStore.getState();
+        const shouldRebuildFacetCache = liveWatchSession.receivedCount > 0;
+        set({ liveWatchSession: createInitialLiveWatchSessionState() });
+
+        if (!shouldRebuildFacetCache) {
+            return;
+        }
+
         try {
             console.log('[LiveWatch] Idle timeout reached. Rebuilding Facet Cache.');
             const { rebuildFacetCache } = await import('../services/db/imageRepo');

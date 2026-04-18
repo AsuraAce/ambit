@@ -6,8 +6,8 @@ import { useLibraryStore } from '../../stores/libraryStore';
 export const ActivityDock: React.FC = () => {
     const {
         isImporting, importProgress,
-        syncStatus, syncProgress, isLiveSyncing,
-        isReceivingLiveImages, liveImagesReceivedCount,
+        syncStatus, syncProgress,
+        liveWatchSession,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
@@ -26,17 +26,17 @@ export const ActivityDock: React.FC = () => {
         cancelRefresh
     } = useLibraryStore();
 
-    const isSyncing = syncStatus === 'syncing' || isLiveSyncing;
+    const isManualSyncing = syncStatus === 'syncing';
 
-    // Priority order: Import > Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing > Live Watch
-    const isHighPriorityActive = isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
+    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing > Live Watch
+    const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     // Show refresh if active AND no high priority
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
     // Show Live Watch if active and nothing else is overriding it
-    const isLiveWatchActive = isReceivingLiveImages && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
+    const isLiveWatchActive = liveWatchSession.active && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
 
@@ -44,22 +44,29 @@ export const ActivityDock: React.FC = () => {
     let progress = null;
     let label = "";
     let isLowPriority = false;
+    let supportsCancel = false;
+    let footerMessage = "Tracking continues in the top header.";
 
     if (isImporting) {
         progress = importProgress;
         label = "Importing";
-    } else if (isSyncing) {
+        supportsCancel = true;
+    } else if (isManualSyncing) {
         progress = syncProgress;
         label = "Syncing";
+        supportsCancel = true;
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
         label = "Optimizing";
+        supportsCancel = true;
     } else if (isResolvingModels) {
         progress = modelResolutionProgress;
         label = "Resolving Models";
+        supportsCancel = true;
     } else if (isScanningDiscovery) {
         progress = discoveryScanProgress;
         label = "Discovery Scan";
+        supportsCancel = true;
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: "Matching images to models..." };
         label = "Smart Fill";
@@ -71,16 +78,25 @@ export const ActivityDock: React.FC = () => {
         progress = refreshProgress;
         label = "Refreshing Metadata";
         isLowPriority = false;
+        supportsCancel = true;
     } else if (isLiveWatchActive) {
-        progress = { current: 0, total: 0, message: `${liveImagesReceivedCount} images received this session...` };
-        label = "Live Sync Session";
-        isLowPriority = true;
+        progress = liveWatchSession.progress || {
+            current: 0,
+            total: 0,
+            message: liveWatchSession.message
+        };
+        label = "Live Watch";
+        isLowPriority = liveWatchSession.phase === 'watching' || liveWatchSession.phase === 'summary';
+        footerMessage = liveWatchSession.phase === 'summary'
+            ? 'Watching for more images in this session.'
+            : 'Live Watch stays active in the background.';
     }
 
     const current = progress?.current || 0;
     const total = progress?.total || 0;
-    const message = progress?.message || "";
+    const message = progress?.message || (isLiveWatchActive ? liveWatchSession.message || '' : '');
     const percent = total > 0 ? Math.round((current / total) * 100) : (active ? 0 : 0);
+    const showIndeterminateProgress = total === 0 && active && (!isLiveWatchActive || liveWatchSession.phase !== 'summary');
 
     // Should we show the dock? Active AND not dismissed.
     const shouldShow = active && !isActivityDockDismissed;
@@ -145,7 +161,7 @@ export const ActivityDock: React.FC = () => {
                                     <button
                                         onClick={() => setIsActivityDockDismissed(true)}
                                         className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:scale-105 active:scale-95"
-                                        title="Dismiss (Continues in Header)"
+                                        title="Dismiss"
                                     >
                                         <X className="w-3.5 h-3.5" />
                                     </button>
@@ -161,7 +177,7 @@ export const ActivityDock: React.FC = () => {
                                         transition={{ duration: 0.5, ease: "easeOut" }}
                                         className={`h-full ${isLowPriority ? 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]' : 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]'}`}
                                     />
-                                    {total === 0 && active && (
+                                    {showIndeterminateProgress && (
                                         <motion.div
                                             initial={{ x: "-100%" }}
                                             animate={{ x: "200%" }}
@@ -186,14 +202,14 @@ export const ActivityDock: React.FC = () => {
                             <motion.div layout="position" className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Info className="w-3 h-3 text-gray-400" />
-                                    <span className="text-[9px] text-gray-500 font-medium">Tracking continues in the top header.</span>
+                                    <span className="text-[9px] text-gray-500 font-medium">{footerMessage}</span>
                                 </div>
 
-                                {(isImporting || isSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isRefreshActive) && (
+                                {supportsCancel && (
                                     <button
                                         onClick={() => {
                                             if (isImporting) cancelImport();
-                                            if (isSyncing) cancelSync();
+                                            if (isManualSyncing) cancelSync();
                                             if (isRegeneratingThumbnails) cancelThumbnailRegeneration();
                                             if (isResolvingModels) {
                                                 import('@tauri-apps/api/core').then(({ invoke }) => {

@@ -6,6 +6,15 @@ import { watcherService } from '../services/WatcherService';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
+import {
+    createLiveWatchPerfId,
+    debugLiveWatchPerf,
+    elapsedMs,
+    infoLiveWatchPerf,
+    InvokeLiveWatchPerfContext,
+    liveWatchNow,
+    TargetedLiveSyncPerfContext,
+} from '../utils/liveWatchPerf';
 import { MetadataRefreshScope } from '../types';
 
 interface WatcherContextType {
@@ -18,6 +27,63 @@ interface WatcherContextType {
 
 const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
 
+const WATCHER_INIT_DEBOUNCE_MS = 500;
+const INVOKE_LIVE_DEBOUNCE_MS = 500;
+
+const mergeTargetedPerfContext = (
+    current: TargetedLiveSyncPerfContext | null,
+    pathCount: number,
+    receivedAt: number
+): TargetedLiveSyncPerfContext => {
+    if (!current) {
+        return {
+            cycleId: createLiveWatchPerfId('generic-live'),
+            source: 'generic-folder-watch',
+            firstEventAt: receivedAt,
+            lastEventAt: receivedAt,
+            eventCount: 1,
+            pathCount,
+            mergedCycleCount: 1
+        };
+    }
+
+    return {
+        ...current,
+        lastEventAt: receivedAt,
+        eventCount: current.eventCount + 1,
+        pathCount: current.pathCount + pathCount,
+        mergedCycleCount: current.mergedCycleCount ?? 1
+    };
+};
+
+const mergeInvokePerfContext = (
+    current: InvokeLiveWatchPerfContext | null,
+    pathCount: number,
+    receivedAt: number
+): InvokeLiveWatchPerfContext => {
+    if (!current) {
+        return {
+            cycleId: createLiveWatchPerfId('invoke-live'),
+            firstEventAt: receivedAt,
+            lastEventAt: receivedAt,
+            eventCount: 1,
+            pathCount,
+            debounceScheduledAt: receivedAt,
+            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS,
+            debounceFireDelayMs: 0,
+            mergedCycleCount: 1
+        };
+    }
+
+    return {
+        ...current,
+        lastEventAt: receivedAt,
+        eventCount: current.eventCount + 1,
+        pathCount: current.pathCount + pathCount,
+        mergedCycleCount: current.mergedCycleCount ?? 1
+    };
+};
+
 export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onNewImageDetected }) => {
     const { settings, isLoaded } = useSettings();
     const { startInvokeSync, startTargetedLiveSync } = useSync();
@@ -28,6 +94,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const [lastWatcherEvent, setLastWatcherEvent] = React.useState<number>(0);
     const maintenanceCounts = useLibraryStore(s => s.maintenanceCounts);
     const setMaintenanceCounts = useLibraryStore(s => s.setMaintenanceCounts);
+    const startLiveWatchSession = useLibraryStore(s => s.startLiveWatchSession);
 
     const refreshMaintenanceCounts = useCallback(async () => {
         if (!isLoaded) return;
@@ -57,6 +124,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
+    const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
+    const pendingInvokePerfRef = useRef<InvokeLiveWatchPerfContext | null>(null);
     const genericLiveDrainPromiseRef = useRef<Promise<void> | null>(null);
 
     useEffect(() => {
@@ -68,22 +137,54 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
             .map(path => path.replace(/\\/g, '/'))
             .forEach(path => pendingGenericPathsRef.current.add(path));
 
+        const pendingPathCount = pendingGenericPathsRef.current.size;
+
         if (genericLiveDrainPromiseRef.current) {
+            debugLiveWatchPerf('Generic live paths merged into active queue', {
+                cycleId: pendingGenericPerfRef.current?.cycleId,
+                pendingPathCount,
+                eventCount: pendingGenericPerfRef.current?.eventCount,
+                mergedCycleCount: pendingGenericPerfRef.current?.mergedCycleCount ?? 1
+            });
             return genericLiveDrainPromiseRef.current;
         }
 
         const drainPromise = (async () => {
             while (pendingGenericPathsRef.current.size > 0) {
+                const perfContext = pendingGenericPerfRef.current;
                 const nextBatch = Array.from(pendingGenericPathsRef.current);
                 pendingGenericPathsRef.current.clear();
+                pendingGenericPerfRef.current = null;
+                const cycleStartAt = liveWatchNow();
+
+                debugLiveWatchPerf('Generic live sync started', {
+                    cycleId: perfContext?.cycleId,
+                    batchPathCount: nextBatch.length,
+                    eventCount: perfContext?.eventCount,
+                    mergedCycleCount: perfContext?.mergedCycleCount ?? 1,
+                    watcherToImportStartMs: perfContext ? elapsedMs(perfContext.firstEventAt) : undefined
+                });
 
                 const cb = callbacksRef.current;
-                const liveResult = await cb.startTargetedLiveSync(nextBatch);
+                const liveResult = await cb.startTargetedLiveSync(
+                    nextBatch,
+                    perfContext ? { ...perfContext, queueDepthAtStart: nextBatch.length } : undefined
+                );
 
                 if (liveResult.handledPaths.length > 0) {
                     await cb.onNewImageDetected?.('images-only');
                     await cb.refreshMaintenanceCounts();
                 }
+
+                infoLiveWatchPerf('Generic live cycle complete', {
+                    cycleId: perfContext?.cycleId,
+                    batchPathCount: nextBatch.length,
+                    handledPathCount: liveResult.handledPaths.length,
+                    failedPathCount: liveResult.failedPaths.length,
+                    importedCount: liveResult.importedCount,
+                    cycleMs: elapsedMs(cycleStartAt),
+                    watcherToFinishMs: perfContext ? elapsedMs(perfContext.firstEventAt) : undefined
+                });
             }
         })();
 
@@ -124,7 +225,10 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
             await watcherService.startWatching(pathsToWatch, async (paths?: string[]) => {
                 if (!paths || paths.length === 0) return;
-                console.log(`[WatcherContext] Targeted change detected for ${paths.length} files`);
+                const eventReceivedAt = liveWatchNow();
+                debugLiveWatchPerf('folder-change-event received', {
+                    pathCount: paths.length
+                });
                 
                 const cb = callbacksRef.current;
                 
@@ -149,9 +253,30 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                     }
                 });
 
+                debugLiveWatchPerf('folder-change-event split', {
+                    totalPathCount: paths.length,
+                    genericPathCount: genericPaths.length,
+                    invokePathCount: invokePaths.length
+                });
+
                 // Use O(1) targeted import strictly for non-Invoke generic folder drops
                 if (genericPaths.length > 0) {
-                    await drainGenericLiveChanges(genericPaths);
+                    startLiveWatchSession('generic', {
+                        phase: 'watching',
+                        message: 'Detected new files. Preparing live import...'
+                    });
+                    pendingGenericPerfRef.current = mergeTargetedPerfContext(
+                        pendingGenericPerfRef.current,
+                        genericPaths.length,
+                        eventReceivedAt
+                    );
+                    debugLiveWatchPerf('Generic live activity detected', {
+                        cycleId: pendingGenericPerfRef.current.cycleId,
+                        receivedPathCount: genericPaths.length,
+                        eventCount: pendingGenericPerfRef.current.eventCount,
+                        pathCount: pendingGenericPerfRef.current.pathCount
+                    });
+                    void drainGenericLiveChanges(genericPaths);
                 }
 
                 // Signal consumers (like useFolderMonitor) that a change occurred
@@ -159,28 +284,87 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
                 // Immediately Trigger full InvokeAI SQLite Sync evaluation if an Invoke local path dropped
                 if (invokePaths.length > 0 && cb.settings.invokeAiPath) {
-                    console.log(`[WatcherContext] Activity detected in InvokeAI database. Debouncing sync...`);
+                    startLiveWatchSession('invoke', {
+                        phase: 'watching',
+                        message: 'Detected InvokeAI activity. Waiting for completed images...'
+                    });
+                    pendingInvokePerfRef.current = mergeInvokePerfContext(
+                        pendingInvokePerfRef.current,
+                        invokePaths.length,
+                        eventReceivedAt
+                    );
+                    debugLiveWatchPerf('Invoke DB activity detected', {
+                        cycleId: pendingInvokePerfRef.current.cycleId,
+                        receivedPathCount: invokePaths.length,
+                        eventCount: pendingInvokePerfRef.current.eventCount,
+                        pathCount: pendingInvokePerfRef.current.pathCount
+                    });
                     
                     if (invokeSyncTimeoutRef.current) {
                         clearTimeout(invokeSyncTimeoutRef.current);
+                        debugLiveWatchPerf('Invoke debounce rescheduled', {
+                            cycleId: pendingInvokePerfRef.current.cycleId,
+                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                        });
                     }
-                    
+
+                    pendingInvokePerfRef.current = {
+                        ...pendingInvokePerfRef.current,
+                        debounceScheduledAt: liveWatchNow(),
+                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                    };
+                    debugLiveWatchPerf('Invoke sync scheduled', {
+                        cycleId: pendingInvokePerfRef.current.cycleId,
+                        eventCount: pendingInvokePerfRef.current.eventCount,
+                        pathCount: pendingInvokePerfRef.current.pathCount,
+                        debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                    });
                     invokeSyncTimeoutRef.current = setTimeout(() => {
-                        console.log(`[WatcherContext] Triggering SQLite-driven sync for InvokeAI via Live Watch...`);
-                        cb.startInvokeSync({ mode: 'live' });
                         invokeSyncTimeoutRef.current = null;
-                    }, 1000);
+                        const perfContext = pendingInvokePerfRef.current;
+                        pendingInvokePerfRef.current = null;
+                        if (!perfContext) {
+                            return;
+                        }
+
+                        const firedAt = liveWatchNow();
+                        const resolvedPerfContext: InvokeLiveWatchPerfContext = {
+                            ...perfContext,
+                            debounceFireDelayMs: Math.round(firedAt - perfContext.debounceScheduledAt),
+                            debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
+                        };
+
+                        debugLiveWatchPerf('Invoke debounce fired', {
+                            cycleId: resolvedPerfContext.cycleId,
+                            eventCount: resolvedPerfContext.eventCount,
+                            pathCount: resolvedPerfContext.pathCount,
+                            debounceFireDelayMs: resolvedPerfContext.debounceFireDelayMs,
+                            watcherToSyncStartMs: Math.round(firedAt - resolvedPerfContext.firstEventAt)
+                        });
+                        void cb.startInvokeSync({ mode: 'live', perfContext: resolvedPerfContext });
+                        invokeSyncTimeoutRef.current = null;
+                    }, INVOKE_LIVE_DEBOUNCE_MS);
                 }
             });
 
+            debugLiveWatchPerf('Native watcher initialized', {
+                watchedPathCount: pathsToWatch.length,
+                invokeDebounceMs: INVOKE_LIVE_DEBOUNCE_MS
+            });
 
         };
 
         // Debounce initialization
-        const timer = setTimeout(initWatcher, 500);
-        return () => clearTimeout(timer);
+        const timer = setTimeout(initWatcher, WATCHER_INIT_DEBOUNCE_MS);
+        return () => {
+            clearTimeout(timer);
+            if (invokeSyncTimeoutRef.current) {
+                clearTimeout(invokeSyncTimeoutRef.current);
+                invokeSyncTimeoutRef.current = null;
+            }
+        };
 
-    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges]);
+    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges, startLiveWatchSession]);
 
     // Maintenance interval
     useEffect(() => {

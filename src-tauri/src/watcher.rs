@@ -1,8 +1,41 @@
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
+
+const WATCHER_THROTTLE_MS: u64 = 1_000;
+const WATCHER_TIMEOUT_MS: u64 = 250;
+
+fn path_extension_label(path: &str) -> String {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".db-wal") {
+        return "db-wal".to_string();
+    }
+
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .filter(|ext| !ext.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn summarize_path_types(paths: &[String]) -> String {
+    let mut counts = BTreeMap::new();
+
+    for path in paths {
+        let ext = path_extension_label(path);
+        *counts.entry(ext).or_insert(0usize) += 1;
+    }
+
+    counts
+        .into_iter()
+        .map(|(ext, count)| format!("{ext}:{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
 pub struct WatcherState {
     pub watcher: Mutex<Option<RecommendedWatcher>>,
@@ -48,17 +81,28 @@ pub fn start_native_folder_watcher(
     tauri::async_runtime::spawn(async move {
         let mut buffer = std::collections::HashSet::new();
         let mut first_event_time: Option<tokio::time::Instant> = None;
-        let throttle_duration = tokio::time::Duration::from_secs(2);
+        let throttle_duration = tokio::time::Duration::from_millis(WATCHER_THROTTLE_MS);
 
         loop {
-            match tokio::time::timeout(tokio::time::Duration::from_millis(500), rx.recv()).await {
+            match tokio::time::timeout(tokio::time::Duration::from_millis(WATCHER_TIMEOUT_MS), rx.recv()).await {
                 Ok(Some(paths)) => {
                     buffer.extend(paths);
                     if first_event_time.is_none() {
                         first_event_time = Some(tokio::time::Instant::now());
-                    } else if first_event_time.unwrap().elapsed() >= throttle_duration {
+                    } else if first_event_time
+                        .map(|started_at| started_at.elapsed() >= throttle_duration)
+                        .unwrap_or(false)
+                    {
+                        let batch_age_ms = first_event_time
+                            .map(|started_at| started_at.elapsed().as_millis())
+                            .unwrap_or(0);
                         let to_emit: Vec<String> = buffer.drain().collect();
-                        println!("[Rust Watcher] Emitting throttled batch of {} paths", to_emit.len());
+                        println!(
+                            "[LiveWatchPerf] watcher batch emitted | reason=throttle | paths={} | age_ms={} | types={}",
+                            to_emit.len(),
+                            batch_age_ms,
+                            summarize_path_types(&to_emit)
+                        );
                         let _ = app_handle.emit("folder-change-event", to_emit);
                         first_event_time = None;
                     }
@@ -66,8 +110,16 @@ pub fn start_native_folder_watcher(
                 Ok(None) => break, // Channel closed
                 Err(_) => { // Timeout elapsed
                     if !buffer.is_empty() {
+                        let batch_age_ms = first_event_time
+                            .map(|started_at| started_at.elapsed().as_millis())
+                            .unwrap_or(0);
                         let to_emit: Vec<String> = buffer.drain().collect();
-                        println!("[Rust Watcher] Emitting debounced batch of {} paths", to_emit.len());
+                        println!(
+                            "[LiveWatchPerf] watcher batch emitted | reason=timeout | paths={} | age_ms={} | types={}",
+                            to_emit.len(),
+                            batch_age_ms,
+                            summarize_path_types(&to_emit)
+                        );
                         let _ = app_handle.emit("folder-change-event", to_emit);
                         first_event_time = None;
                     }
@@ -115,6 +167,8 @@ pub fn start_native_folder_watcher(
                         return;
                     }
 
+                    let raw_path_count = event.paths.len();
+                    let event_kind = format!("{:?}", event.kind);
                     let valid_paths: Vec<String> = event
                         .paths
                         .into_iter()
@@ -133,6 +187,13 @@ pub fn start_native_folder_watcher(
                         .collect();
 
                     if !valid_paths.is_empty() {
+                        println!(
+                            "[LiveWatchPerf] watcher event received | kind={} | raw_paths={} | matched_paths={} | types={}",
+                            event_kind,
+                            raw_path_count,
+                            valid_paths.len(),
+                            summarize_path_types(&valid_paths)
+                        );
                         let _ = tx.blocking_send(valid_paths);
                     }
                 }

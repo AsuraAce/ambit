@@ -7,6 +7,14 @@ import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
+import {
+    createLiveWatchPerfId,
+    debugLiveWatchPerf,
+    elapsedMs,
+    infoLiveWatchPerf,
+    liveWatchNow,
+    TargetedLiveSyncPerfContext,
+} from '../utils/liveWatchPerf';
 
 /**
  * Queries the database for paths that already exist.
@@ -56,6 +64,7 @@ export interface ImportOptions {
     isStartup?: boolean;
     forceRescan?: boolean;
     skipThumbnail?: boolean;
+    perfContext?: TargetedLiveSyncPerfContext;
 }
 
 interface FileEntry {
@@ -84,10 +93,12 @@ async function processFileEntries(
     options: ImportOptions = {},
     defaultTool?: GeneratorTool
 ): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[] }> {
-    const { onProgress, abortSignal, forceRescan, skipThumbnail = true } = options;
+    const { onProgress, abortSignal, forceRescan, skipThumbnail = true, perfContext } = options;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
     const failedPaths: string[] = [];
+    const importStartedAt = liveWatchNow();
+    const cycleId = perfContext?.cycleId ?? createLiveWatchPerfId('import');
 
     // Sort by Modified Date (Newest First)
     entries.sort((a, b) => b.modified - a.modified);
@@ -99,12 +110,32 @@ async function processFileEntries(
     if (!forceRescan) {
         if (onProgress) onProgress(0, allPaths.length, 'Checking for duplicates...');
 
+        const existingLookupStartedAt = liveWatchNow();
         const existingPaths = await getExistingPaths(allPaths);
         pathsToProcess = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
         stats.skipped += (allPaths.length - pathsToProcess.length);
+        debugLiveWatchPerf('Import duplicate check complete', {
+            cycleId,
+            candidatePathCount: allPaths.length,
+            existingPathCount: existingPaths.size,
+            skippedPathCount: allPaths.length - pathsToProcess.length,
+            duplicateCheckMs: elapsedMs(existingLookupStartedAt)
+        });
     }
 
     if (pathsToProcess.length === 0) {
+        infoLiveWatchPerf('Import processing complete', {
+            cycleId,
+            source: perfContext?.source,
+            candidatePathCount: allPaths.length,
+            processedPathCount: stats.processed,
+            importedCount: stats.imported,
+            skippedCount: stats.skipped,
+            errorCount: stats.errors,
+            handledPathCount: handledPaths.length,
+            failedPathCount: failedPaths.length,
+            totalMs: elapsedMs(importStartedAt)
+        });
         return { images: [], handledPaths, failedPaths };
     }
 
@@ -122,6 +153,7 @@ async function processFileEntries(
 
         let unlisten: (() => void) | null = null;
         try {
+            const batchStartedAt = liveWatchNow();
             // Setup listener for native progress stream for silky smooth UI loading bars
             const { listen } = await import('@tauri-apps/api/event');
             unlisten = await listen<{current: number, total: number, message: string}>('import_progress', (e) => {
@@ -132,7 +164,9 @@ async function processFileEntries(
             });
 
             // true for extractWorkflow (always want full metadata)
+            const scanStartedAt = liveWatchNow();
             const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool);
+            const scanMs = elapsedMs(scanStartedAt);
 
 
             const batchImages: AIImage[] = [];
@@ -178,7 +212,9 @@ async function processFileEntries(
                 // console.time(`insertBatch-${i}`);
                 const ids = batchImages.map(img => img.id);
                 const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
+                const existingMetaStartedAt = liveWatchNow();
                 const existingMeta = await getExistingMetadata(ids);
+                const existingMetadataMs = elapsedMs(existingMetaStartedAt);
 
                 batchImages.forEach(img => {
                     const existing = existingMeta.get(img.id);
@@ -205,11 +241,39 @@ async function processFileEntries(
                     return false;
                 });
 
+                let upsertMs = 0;
                 if (imagesToUpdate.length > 0) {
+                    const upsertStartedAt = liveWatchNow();
                     await insertImagesBatch(imagesToUpdate);
+                    upsertMs = elapsedMs(upsertStartedAt);
                     stats.imported += imagesToUpdate.length;
                 }
+                debugLiveWatchPerf('Import batch stage timings', {
+                    cycleId,
+                    batchIndex: Math.floor(i / BATCH_SIZE) + 1,
+                    batchPathCount: chunk.length,
+                    scannedPathCount: results.length,
+                    batchImageCount: batchImages.length,
+                    upsertCount: imagesToUpdate.length,
+                    scanMs,
+                    existingMetadataMs,
+                    upsertMs,
+                    batchMs: elapsedMs(batchStartedAt)
+                });
                 // console.timeEnd(`insertBatch-${i}`);
+            } else {
+                debugLiveWatchPerf('Import batch stage timings', {
+                    cycleId,
+                    batchIndex: Math.floor(i / BATCH_SIZE) + 1,
+                    batchPathCount: chunk.length,
+                    scannedPathCount: results.length,
+                    batchImageCount: 0,
+                    upsertCount: 0,
+                    scanMs,
+                    existingMetadataMs: 0,
+                    upsertMs: 0,
+                    batchMs: elapsedMs(batchStartedAt)
+                });
             }
 
             newImages.push(...batchImages);
@@ -228,6 +292,19 @@ async function processFileEntries(
             unlisten?.();
         }
     }
+
+    infoLiveWatchPerf('Import processing complete', {
+        cycleId,
+        source: perfContext?.source,
+        candidatePathCount: allPaths.length,
+        processedPathCount: stats.processed,
+        importedCount: stats.imported,
+        skippedCount: stats.skipped,
+        errorCount: stats.errors,
+        handledPathCount: handledPaths.length,
+        failedPathCount: failedPaths.length,
+        totalMs: elapsedMs(importStartedAt)
+    });
 
     return { images: newImages, handledPaths, failedPaths };
 }
@@ -475,6 +552,7 @@ export const processTargetedFiles = async (
     };
 
     if (paths.length === 0) return result;
+    const targetedImportStartedAt = liveWatchNow();
 
     const entries: FileEntry[] = paths.map(p => ({ 
         path: p, 
@@ -491,6 +569,15 @@ export const processTargetedFiles = async (
     // Removed synchronous rebuildFacetCache.
     // Live Watch relies on the 60s idle timeout `useLibraryStore.getState().reportLiveImagesReceived()` 
     // managed in SyncContext to gracefully handle heavy aggregations off-thread.
+    infoLiveWatchPerf('Targeted import complete', {
+        cycleId: options.perfContext?.cycleId,
+        source: options.perfContext?.source,
+        inputPathCount: paths.length,
+        handledPathCount: result.handledPaths.length,
+        failedPathCount: result.failedPaths.length,
+        importedCount: result.stats.imported,
+        totalMs: elapsedMs(targetedImportStartedAt)
+    });
     return result;
 };
 

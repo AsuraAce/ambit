@@ -4,6 +4,12 @@ import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
+import {
+    debugLiveWatchPerf,
+    elapsedMs,
+    infoLiveWatchPerf,
+    liveWatchNow,
+} from '../../utils/liveWatchPerf';
 
 export const insertImage = async (image: AIImage) => {
     await dbMutex.dispatch(async () => {
@@ -47,6 +53,7 @@ export const insertImage = async (image: AIImage) => {
 
 export const insertImagesBatch = async (images: AIImage[]) => {
     if (images.length === 0) return;
+    const insertStartedAt = liveWatchNow();
 
     await dbMutex.dispatch(async () => {
         const records = images.map(img => ({
@@ -80,7 +87,13 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         for (let i = 0; i < records.length; i += CHUNK_SIZE) {
             const chunk = records.slice(i, i + CHUNK_SIZE);
             try {
+                const chunkStartedAt = liveWatchNow();
                 await unwrap(commands.saveImagesBatch(chunk));
+                debugLiveWatchPerf('DB image batch persisted', {
+                    batchIndex: Math.floor(i / CHUNK_SIZE) + 1,
+                    chunkSize: chunk.length,
+                    chunkMs: elapsedMs(chunkStartedAt)
+                });
             } catch (e) {
                 console.error('[DB] Rust batch insert failed', e);
                 throw e;
@@ -88,8 +101,17 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         }
     });
 
+    const cleanupStartedAt = liveWatchNow();
     const db = await getDb();
     await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
+    debugLiveWatchPerf('DB user_masked cleanup complete', {
+        imageCount: images.length,
+        cleanupMs: elapsedMs(cleanupStartedAt)
+    });
+    infoLiveWatchPerf('insertImagesBatch complete', {
+        imageCount: images.length,
+        totalMs: elapsedMs(insertStartedAt)
+    });
 
     // rebuildFacetCache() is no longer called automatically per batch to avoid O(N^2) behavior during syncs.
     // It should be called once at the end of the sync/import process.
