@@ -4,16 +4,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Shield, FlaskConical, Terminal, Link, Sparkles } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { GeneralTab, PrivacyTab, IntelligenceTab, DevTab, AdvancedTab, ConnectionsTab } from './';
-import { APP_NAME, APP_VERSION } from '../../../constants/app';
+import { APP_NAME } from '../../../constants/app';
+import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
+import { useAppVersion } from '../../../hooks/useAppVersion';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
+  canCheckForUpdates: boolean;
   initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
   onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
+  hasPendingUpdate: boolean;
+  pendingUpdateVersion: string | null;
+  updateErrorMessage: string | null;
+  updateStatus: AppUpdaterStatus;
+  onCheckForUpdates: () => Promise<void>;
+  onOpenUpdatePrompt: () => void;
 }
 
 type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
@@ -56,10 +65,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   onClose,
   settings,
   onSave,
+  canCheckForUpdates,
   initialTab = 'general',
   onScanFolder,
-  onInvokeSync
+  onInvokeSync,
+  hasPendingUpdate,
+  pendingUpdateVersion,
+  updateErrorMessage,
+  updateStatus,
+  onCheckForUpdates,
+  onOpenUpdatePrompt
 }) => {
+  const appVersion = useAppVersion();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<'folders' | 'invokeai' | 'a1111' | 'comfyui' | undefined>(undefined);
 
@@ -147,7 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
               </div>
 
               <div className="mt-auto relative z-10 text-xs text-gray-500 px-4">
-                v{APP_VERSION}
+                v{appVersion ?? '...'}
               </div>
             </div>
 
@@ -179,7 +196,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                 )}
                 {activeTab === 'intelligence' && <IntelligenceTab settings={settings} setSettings={handleSettingsChange} />}
                 {activeTab === 'privacy' && <PrivacyTab settings={settings} setSettings={handleSettingsChange} />}
-                {activeTab === 'advanced' && <AdvancedTab settings={settings} setSettings={handleSettingsChange} />}
+                {activeTab === 'advanced' && (
+                  <AdvancedTab
+                    settings={settings}
+                    setSettings={handleSettingsChange}
+                    canCheckForUpdates={canCheckForUpdates}
+                    hasPendingUpdate={hasPendingUpdate}
+                    pendingUpdateVersion={pendingUpdateVersion}
+                    updateErrorMessage={updateErrorMessage}
+                    updateStatus={updateStatus}
+                    onCheckForUpdates={onCheckForUpdates}
+                    onOpenUpdatePrompt={onOpenUpdatePrompt}
+                  />
+                )}
                 {activeTab === 'dev' && <DevTab />}
               </div>
 

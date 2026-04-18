@@ -5,6 +5,7 @@ import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
+import { UpdateDialog } from './components/ui/UpdateDialog';
 import { OnboardingWizard } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
 import { ImageViewer } from './features/viewer/components/ImageViewer';
@@ -32,6 +33,8 @@ import { useDragDrop } from './hooks/useDragDrop';
 import { useFolderMonitor } from './hooks/useFolderMonitor';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppActions } from './hooks/useAppActions';
+import { useAppUpdater } from './hooks/useAppUpdater';
+import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useSync } from './contexts/SyncContext';
@@ -50,6 +53,7 @@ const queryClient = new QueryClient({
 export default function App() {
     const { addToast } = useToast();
     const modals = useModalManager();
+    const appVersion = useAppVersion();
 
     // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -105,6 +109,11 @@ export default function App() {
     // const setRecentSearches = useSearchStore(s => s.setRecentSearches);
 
     const isLoaded = isSettingsLoaded && isCollectionsLoaded;
+    const updater = useAppUpdater({
+        addToast,
+        autoCheckEnabled: settings.autoCheckForUpdates !== false,
+        isSettingsLoaded,
+    });
 
     // --- Background Processes ---
     // Initialize background thumbnail auto-healing (runs after app startup delay)
@@ -426,6 +435,7 @@ export default function App() {
                     setModals={modals.setModals}
                     selectedIds={selectedIds}
                     filteredImages={images}
+                    canCheckForUpdates={updater.canCheckForUpdates}
                     onSettingsSave={setSettings}
                     onExportConfirm={(name, folder) => {
                         actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
@@ -475,7 +485,29 @@ export default function App() {
                     onSaveCollectionFilters={colOps.updateCollectionFilters}
                     onScanFolder={fileOps.handleImportFolders}
                     onInvokeSync={fileOps.handleInvokeSync}
+                    hasPendingUpdate={Boolean(updater.update)}
+                    pendingUpdateVersion={updater.update?.version ?? null}
+                    updateErrorMessage={updater.errorMessage}
+                    updateStatus={updater.status}
+                    onCheckForUpdates={async () => {
+                        await updater.checkForUpdates({ manual: true });
+                    }}
+                    onOpenUpdatePrompt={updater.openUpdateDialog}
                 />
+
+                {updater.update && (
+                    <UpdateDialog
+                        isOpen={updater.isDialogOpen}
+                        currentVersion={appVersion}
+                        availableVersion={updater.update.version}
+                        notes={updater.update.body}
+                        publishedAt={updater.update.date}
+                        status={updater.status}
+                        errorMessage={updater.errorMessage}
+                        onClose={updater.dismissUpdateDialog}
+                        onInstall={updater.installUpdate}
+                    />
+                )}
 
                 <AnimatePresence>
                     {displayedViewerImage && (

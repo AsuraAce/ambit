@@ -11,7 +11,8 @@ import { ArchitectureSection } from './ArchitectureSection';
 import { ResourceSection } from './ResourceSection';
 import { DateRangeSection } from './DateRangeSection';
 import { GuidanceSection } from './GuidanceSection';
-import { APP_NAME, APP_VERSION } from '../../../constants/app';
+import { APP_NAME } from '../../../constants/app';
+import { useAppVersion } from '../../../hooks/useAppVersion';
 
 interface FilterPanelProps {
     filters: FilterState;
@@ -56,6 +57,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     isVisible = true,
     className
 }) => {
+    const appVersion = useAppVersion();
 
     const {
         filters: storeFilters,
@@ -391,7 +393,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100">
                         <Github className="w-3 h-3" />
                     </a>
-                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{APP_VERSION}</span>
+                    <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{appVersion ?? '...'}</span>
                 </div>
             </div>
         </div>

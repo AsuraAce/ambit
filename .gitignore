@@ -28,6 +28,7 @@ dist-ssr
 .gemini/
 gha-creds-*.json
 .worktrees/
+.tauri/
 
 # Keep generated or scratch docs ignored by default, but track the canonical agent docs.
 docs/*

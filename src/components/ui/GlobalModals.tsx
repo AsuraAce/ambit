@@ -13,6 +13,7 @@ import { ExportModal } from '../../features/library/components/ExportModal';
 import { CommandPalette } from './CommandPalette';
 import { AddToCollectionModal } from '../../features/collections/components/AddToCollectionModal';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
+import { AppUpdaterStatus } from '../../hooks/useAppUpdater';
 
 interface GlobalModalsProps {
   // Modal Visibility States
@@ -39,6 +40,7 @@ interface GlobalModalsProps {
 
   // Actions
   onSettingsSave?: (s: AppSettings) => void;
+  canCheckForUpdates?: boolean;
   onExportConfirm: (filename: string, folder: string) => void;
   onDeleteConfirm: () => void;
   onDeleteCollectionConfirm: () => void;
@@ -55,6 +57,12 @@ interface GlobalModalsProps {
   isRecoveringMetadata: boolean;
   isExporting: boolean;
   slideshowShuffle: boolean;
+  hasPendingUpdate?: boolean;
+  pendingUpdateVersion?: string | null;
+  updateErrorMessage?: string | null;
+  updateStatus?: AppUpdaterStatus;
+  onCheckForUpdates?: () => Promise<void>;
+  onOpenUpdatePrompt?: () => void;
   initialSettingsTab: 'general' | 'experiments' | 'intelligence';
   shortcutsModalTab: 'shortcuts' | 'search';
 
@@ -79,6 +87,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   selectedIds,
   filteredImages,
   onSettingsSave,
+  canCheckForUpdates = false,
   onExportConfirm,
   onDeleteConfirm,
   onDeleteCollectionConfirm,
@@ -93,6 +102,12 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   isRecoveringMetadata,
   isExporting,
   slideshowShuffle,
+  hasPendingUpdate = false,
+  pendingUpdateVersion = null,
+  updateErrorMessage = null,
+  updateStatus = 'idle',
+  onCheckForUpdates = async () => { },
+  onOpenUpdatePrompt = () => { },
   initialSettingsTab,
   shortcutsModalTab,
   commandPaletteProps
@@ -113,6 +128,13 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         onClose={() => close('settings')}
         settings={settings}
         onSave={onSettingsSave || setSettings}
+        canCheckForUpdates={canCheckForUpdates}
+        hasPendingUpdate={hasPendingUpdate}
+        pendingUpdateVersion={pendingUpdateVersion}
+        updateErrorMessage={updateErrorMessage}
+        updateStatus={updateStatus}
+        onCheckForUpdates={onCheckForUpdates}
+        onOpenUpdatePrompt={onOpenUpdatePrompt}
         initialTab={initialSettingsTab}
       />
 

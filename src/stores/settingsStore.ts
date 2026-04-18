@@ -3,6 +3,8 @@ import { devtools } from 'zustand/middleware';
 import { AppSettings } from '../types';
 import { appRepository } from '../services/repository';
 import { commands } from '../bindings';
+import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from '../services/assetScope';
+import { normalizeInvokeRoot } from '../utils/pathUtils';
 
 interface SettingsState {
     settings: AppSettings;
@@ -23,6 +25,7 @@ interface SettingsState {
 const DEFAULT_SETTINGS: AppSettings = {
     theme: 'dark',
     thumbnailSize: 200,
+    autoCheckForUpdates: true,
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
@@ -72,21 +75,17 @@ export const useSettingsStore = create<SettingsState>()(
             },
 
             setSettings: (update) => {
+                let previousSettings: AppSettings | null = null;
+                let nextSettings: AppSettings | null = null;
+
                 set((state) => {
+                    previousSettings = state.settings;
                     const newSettings = typeof update === 'function'
                         ? { ...state.settings, ...update(state.settings) }
                         : { ...state.settings, ...update };
+                    nextSettings = newSettings;
 
                     // Register new folders with Tauri scope immediately if they changed
-                    const oldFolders = new Set(state.settings.monitoredFolders.map(f => f.path));
-                    newSettings.monitoredFolders.forEach(folder => {
-                        if (!oldFolders.has(folder.path)) {
-                            commands.registerLibraryPath(folder.path).catch(e =>
-                                console.error('[SettingsStore] Failed to register new folder scope:', e)
-                            );
-                        }
-                    });
-
                     // Trigger auto-save
                     if (saveTimeout) clearTimeout(saveTimeout);
                     saveTimeout = setTimeout(async () => {
@@ -104,6 +103,26 @@ export const useSettingsStore = create<SettingsState>()(
 
                     return { settings: newSettings };
                 });
+
+                if (previousSettings && nextSettings) {
+                    const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
+
+                    nextSettings.monitoredFolders.forEach((folder) => {
+                        if (!oldFolders.has(folder.path)) {
+                            void ensureAssetPathAccessible(folder.path, { assumeDirectory: true }).catch((error) =>
+                                console.error('[SettingsStore] Failed to register new folder scope:', error)
+                            );
+                        }
+                    });
+
+                    const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
+                    const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
+                    if (nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
+                        void ensureAssetPathAccessible(nextInvokeRoot, { assumeDirectory: true }).catch((error) =>
+                            console.error('[SettingsStore] Failed to register InvokeAI scope:', error)
+                        );
+                    }
+                }
             },
 
             setPrivacyEnabled: (enabled) => set({ privacyEnabled: enabled }),
@@ -164,12 +183,7 @@ export const useSettingsStore = create<SettingsState>()(
                             mergedSettings.devMode = true;
                         }
 
-                        // Register all monitored folders with Tauri scope on load
-                        mergedSettings.monitoredFolders.forEach(folder => {
-                            commands.registerLibraryPath(folder.path).catch(e =>
-                                console.error('[SettingsStore] Failed to register folder scope on init:', e)
-                            );
-                        });
+                        await ensureConfiguredAssetPathsAccessible(mergedSettings);
 
                         set({ settings: mergedSettings, geminiApiKey: apiKey ?? null, isLoaded: true });
                     } else {

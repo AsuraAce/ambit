@@ -2,12 +2,14 @@
 
 import * as React from 'react';
 import { memo, useRef } from 'react';
-import { motion, MotionProps } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { AIImage } from '../../../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { commands } from '../../../bindings';
+import { normalizePath, urlToPath } from '../../../utils/pathUtils';
 
 interface GridItemProps {
     image: AIImage;
@@ -47,10 +49,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
     // Unified Masking Logic
     const isMasked = isImageMasked(image, privacyEnabled, maskedKeywords);
 
-    // Retry tracking for error recovery (max 2 attempts)
-    // Retry tracking for error recovery (max 2 attempts)
-    const MAX_THUMB_RETRIES = 2;
-    const retryCountRef = useRef(0);
+    const isVerifyingMissingRef = useRef(false);
 
     // Feature Flag: Scroll-triggered generation
     // Disabled (2025-01-23) to prevent "scroll thrashing" and UI stutter.
@@ -86,52 +85,34 @@ export const GridItem: React.FC<GridItemProps> = memo(({
 
     // Error Handler: If real thumbnail fails to load, regenerate it (with retry limit)
     const handleImageError = () => {
-        // Check retry limit to prevent infinite loops
-        if (retryCountRef.current >= MAX_THUMB_RETRIES) {
-            if (!image.isMissing) {
+        const sourcePath = normalizePath(urlToPath(image.url) || image.id);
+        if (!sourcePath || image.isMissing || isVerifyingMissingRef.current) {
+            return;
+        }
+
+        isVerifyingMissingRef.current = true;
+        void commands.verifyImagePaths([sourcePath])
+            .then((result) => {
+                if (result.status === 'error') {
+                    throw new Error(result.error);
+                }
+
+                const isActuallyMissing = result.data.includes(sourcePath);
+                if (!isActuallyMissing) {
+                    console.warn('[GridItem] Image load failed but file still exists', sourcePath);
+                    return;
+                }
+
                 setImages(prev => prev.map(img =>
                     img.id === image.id ? { ...img, isMissing: true } : img
                 ));
-            }
-            return;
-        }
-
-        // If we have a thumbnail URL that differs from source, try to regenerate
-        // If we have a thumbnail URL that differs from source, try to regenerate?
-        // NO: This causes infinite loops if the generated thumbnail is invalid or browser rejects it.
-        // VirtualGrid remounting means we lose retry history, causing CPU burn on scroll.
-        // Fallback to source is safer. Background healing can fix broken thumbs later.
-        /*
-        if (image.thumbnailUrl && image.thumbnailUrl !== image.url && !image.isMissing) {
-            retryCountRef.current++;
-            import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
-                generateSingleThumbnail(image.id).then((newThumb) => {
-                    if (newThumb) {
-                        setImages(prev => prev.map(img =>
-                            img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
-                        ));
-                        // Persist regenerated thumbnail
-                        import('../../../services/db/imageRepo').then(({ updateThumbnailPath }) => {
-                            updateThumbnailPath(image.id, newThumb);
-                        });
-                    } else {
-                        // Generation failed: fallback to source
-                        setImages(prev => prev.map(img =>
-                            img.id === image.id ? { ...img, thumbnailUrl: img.url } : img
-                        ));
-                    }
-                }).catch(() => {
-                    setImages(prev => prev.map(img => img.id === image.id ? { ...img, isMissing: true } : img));
-                });
+            })
+            .catch((error) => {
+                console.error('[GridItem] Failed to verify image path after load error', error);
+            })
+            .finally(() => {
+                isVerifyingMissingRef.current = false;
             });
-            return;
-        }
-        */
-
-        // Source image failed: mark as missing
-        if (!image.isMissing) {
-            setImages(prev => prev.map(img => img.id === image.id ? { ...img, isMissing: true } : img));
-        }
     };
 
     const isStack = image.stack && image.stack.length > 1;

@@ -112,6 +112,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(WatcherState::default())
@@ -120,6 +121,9 @@ pub fn run() {
         .manage(ReparseState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             // 1. Initialize DB settings (WAL mode, etc.)
             let handle_for_db = app.handle().clone();
             tauri::async_runtime::spawn(async move {
