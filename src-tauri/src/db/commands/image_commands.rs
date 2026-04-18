@@ -43,11 +43,11 @@ pub async fn save_images_batch(
                             thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
                             micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
                             thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
-                            is_favorite=COALESCE(images.is_favorite, excluded.is_favorite),
-                            is_pinned=COALESCE(images.is_pinned, excluded.is_pinned),
-                            group_id=COALESCE(images.group_id, excluded.group_id),
-                            board_id=COALESCE(images.board_id, excluded.board_id),
-                            notes=COALESCE(images.notes, excluded.notes),
+                           is_favorite=excluded.is_favorite,
+                           is_pinned=excluded.is_pinned,
+                           group_id=COALESCE(images.group_id, excluded.group_id),
+                           board_id=excluded.board_id,
+                           notes=COALESCE(images.notes, excluded.notes),
                             original_metadata_json=excluded.original_metadata_json,
                             original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
                             is_corrupt=excluded.is_corrupt,
@@ -64,6 +64,9 @@ pub async fn save_images_batch(
                          WHERE images.metadata_json != excluded.metadata_json 
                             OR images.timestamp != excluded.timestamp 
                             OR images.file_size != excluded.file_size
+                            OR images.is_favorite IS NOT excluded.is_favorite
+                            OR images.is_pinned IS NOT excluded.is_pinned
+                            OR images.board_id IS NOT excluded.board_id
                             OR images.original_metadata_json IS NULL
                             OR images.original_metadata_json != excluded.original_metadata_json"
                     ).map_err(|e| e.to_string())?;
@@ -310,4 +313,75 @@ pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult,
         tx.commit().map_err(|e| e.to_string())?;
         Ok(IntegrityResult { missing: missing_count, recovered: ids_to_mark_found.len(), broken_thumbs: thumb_count })
     }).await
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::{params, Connection};
+
+    #[test]
+    fn upsert_updates_live_sync_controlled_fields_even_when_metadata_is_unchanged() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+
+        conn.execute_batch(
+            "
+            CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                metadata_json TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                file_size INTEGER NOT NULL,
+                is_favorite INTEGER,
+                is_pinned INTEGER,
+                board_id TEXT,
+                original_metadata_json TEXT
+            );
+            ",
+        )
+        .expect("schema");
+
+        let upsert_sql = "
+            INSERT INTO images (id, metadata_json, timestamp, file_size, is_favorite, is_pinned, board_id, original_metadata_json)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            ON CONFLICT(id) DO UPDATE SET
+                metadata_json = excluded.metadata_json,
+                timestamp = excluded.timestamp,
+                file_size = excluded.file_size,
+                is_favorite = excluded.is_favorite,
+                is_pinned = excluded.is_pinned,
+                board_id = excluded.board_id,
+                original_metadata_json = excluded.original_metadata_json
+            WHERE images.metadata_json != excluded.metadata_json
+                OR images.timestamp != excluded.timestamp
+                OR images.file_size != excluded.file_size
+                OR images.is_favorite IS NOT excluded.is_favorite
+                OR images.is_pinned IS NOT excluded.is_pinned
+                OR images.board_id IS NOT excluded.board_id
+                OR images.original_metadata_json IS NULL
+                OR images.original_metadata_json != excluded.original_metadata_json
+        ";
+
+        conn.execute(upsert_sql, params!["img-1", "{}", 123_i64, 456_i64, 0_i64, 0_i64, Option::<String>::None, "{}"])
+            .expect("initial insert");
+
+        conn.execute(upsert_sql, params!["img-1", "{}", 123_i64, 456_i64, 1_i64, 1_i64, Some("board-1"), "{}"])
+            .expect("conflict update");
+
+        let updated = conn
+            .query_row(
+                "SELECT is_favorite, is_pinned, board_id FROM images WHERE id = ?1",
+                ["img-1"],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .expect("fetch row");
+
+        assert_eq!(updated.0, 1);
+        assert_eq!(updated.1, 1);
+        assert_eq!(updated.2.as_deref(), Some("board-1"));
+    }
 }

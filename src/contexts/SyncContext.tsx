@@ -7,11 +7,12 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
+import { MetadataRefreshScope } from '../types';
 
 
 interface SyncContextType {
     startInvokeSync: (options?: any) => Promise<void>;
-    startTargetedLiveSync: (paths: string[]) => Promise<void>;
+    startTargetedLiveSync: (paths: string[]) => Promise<TargetedLiveSyncResult>;
     cancelSync: () => void;
     syncStatus: 'idle' | 'syncing' | 'complete' | 'error';
     syncState: {
@@ -25,7 +26,13 @@ interface SyncContextType {
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () => void }> = ({ children, onSyncComplete }) => {
+export interface TargetedLiveSyncResult {
+    handledPaths: string[];
+    failedPaths: string[];
+    importedCount: number;
+}
+
+export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
     const { settings, settingsRef, setSettings } = useSettings();
     const { setCollections } = useCollections();
     const { addToast } = useToast();
@@ -43,6 +50,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
     const cancelSyncAction = useLibraryStore(s => s.cancelSync);
 
     const isLiveSyncingRef = useRef(false);
+    const pendingInvokeLiveSyncRef = useRef(false);
+    const pendingTargetedPathsRef = useRef<Set<string>>(new Set());
+    const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
 
     const startInvokeSync = useCallback(async (optionsInput?: any) => {
         const options = {
@@ -55,10 +65,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
 
         if (syncStatus === 'syncing' && (options.mode === 'manual' || options.mode === 'startup')) return;
         if ((syncStatus === 'syncing' || isLiveSyncingRef.current) && options.mode === 'live') {
+            pendingInvokeLiveSyncRef.current = true;
             return;
         }
 
         if (options.mode === 'live') {
+            pendingInvokeLiveSyncRef.current = false;
             isLiveSyncingRef.current = true;
             setIsLiveSyncing(true);
             setSyncProgress({ current: 0, total: 0, message: undefined });
@@ -185,7 +197,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                     }
                     
                     if (options.mode !== 'startup') {
-                        onSyncComplete?.();
+                        await onSyncComplete?.('full');
                     } else {
                         setSyncStatus('complete');
                     }
@@ -201,7 +213,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
 
-            if (onSyncComplete) onSyncComplete();
+            if (onSyncComplete) {
+                await onSyncComplete(options.mode === 'live' ? 'images-only' : 'full');
+            }
 
             if (totalProcessed === 0 && options.mode === 'manual') {
                 addToast('Synchronization complete: No new changes.', 'info');
@@ -219,42 +233,89 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: () =
             if (options.mode === 'live') {
                 isLiveSyncingRef.current = false;
                 setIsLiveSyncing(false);
+                if (pendingInvokeLiveSyncRef.current) {
+                    pendingInvokeLiveSyncRef.current = false;
+                    void startInvokeSync({ mode: 'live' });
+                }
             }
         }
     }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[]) => {
-        if (!paths || paths.length === 0) return;
-        try {
-            const { processTargetedFiles } = await import('../services/importService');
-            const result = await processTargetedFiles(paths, { forceRescan: true });
-            
-            // Advance the Live Watch Session Idle Timer
-            const count = result?.images?.length || paths.length;
-            useLibraryStore.getState().reportLiveImagesReceived(count);
+        if (!paths || paths.length === 0) {
+            return { handledPaths: [], failedPaths: [], importedCount: 0 };
+        }
 
-            // IMPORTANT: Bump the `lastScanned` timestamp for matching monitored folders!
-            // This prevents `useFolderMonitor`'s generic Startup Catch-up scan from finding these explicitly handled OS-level files.
-            // Without this, turning Live Watch off and on again would redundantly scan every single file generated in the previous session.
-            if (count > 0) {
-                const { updateFolderLastScanned } = useSettingsStore.getState();
-                const monitoredFolders = settingsRef.current.monitoredFolders || [];
-                const now = Date.now();
-                const updatedFolderIds = new Set<string>();
-                
-                paths.forEach(p => {
-                    const lowerPath = p.replace(/\\/g, '/').toLowerCase();
-                    const folder = monitoredFolders.find(f => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
-                    if (folder && !updatedFolderIds.has(folder.id)) {
-                        updatedFolderIds.add(folder.id);
-                        updateFolderLastScanned(folder.id, now);
+        paths
+            .map(path => path.replace(/\\/g, '/'))
+            .forEach(path => pendingTargetedPathsRef.current.add(path));
+
+        if (targetedLiveDrainPromiseRef.current) {
+            return targetedLiveDrainPromiseRef.current;
+        }
+
+        const drainPromise = (async (): Promise<TargetedLiveSyncResult> => {
+            const handledPaths = new Set<string>();
+            const failedPaths = new Set<string>();
+            let importedCount = 0;
+
+            while (pendingTargetedPathsRef.current.size > 0) {
+                const nextBatch = Array.from(pendingTargetedPathsRef.current);
+                pendingTargetedPathsRef.current.clear();
+
+                try {
+                    const { processTargetedFiles } = await import('../services/importService');
+                    const result = await processTargetedFiles(nextBatch, { forceRescan: true });
+
+                    result.handledPaths.forEach(path => {
+                        handledPaths.add(path);
+                        failedPaths.delete(path);
+                    });
+                    result.failedPaths.forEach(path => {
+                        if (!handledPaths.has(path)) {
+                            failedPaths.add(path);
+                        }
+                    });
+                    importedCount += result.stats.imported;
+
+                    if (result.stats.imported > 0) {
+                        useLibraryStore.getState().reportLiveImagesReceived(result.stats.imported);
                     }
-                });
+
+                    if (result.handledPaths.length > 0) {
+                        // Keep the catch-up cursor aligned only for files we actually handled.
+                        const { updateFolderLastScanned } = useSettingsStore.getState();
+                        const monitoredFolders = settingsRef.current.monitoredFolders || [];
+                        const now = Date.now();
+                        const updatedFolderIds = new Set<string>();
+
+                        result.handledPaths.forEach(path => {
+                            const lowerPath = path.toLowerCase();
+                            const folder = monitoredFolders.find(f => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
+                            if (folder && !updatedFolderIds.has(folder.id)) {
+                                updatedFolderIds.add(folder.id);
+                                updateFolderLastScanned(folder.id, now);
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error('[LiveSync] Targeted sync failed', e);
+                    nextBatch.forEach(path => failedPaths.add(path));
+                }
             }
 
-        } catch (e) {
-            console.error('[LiveSync] Targeted sync failed', e);
-        }
+            return {
+                handledPaths: Array.from(handledPaths),
+                failedPaths: Array.from(failedPaths),
+                importedCount
+            };
+        })();
+
+        targetedLiveDrainPromiseRef.current = drainPromise.finally(() => {
+            targetedLiveDrainPromiseRef.current = null;
+        });
+
+        return targetedLiveDrainPromiseRef.current;
     }, []);
 
     const cancelSync = useCallback(() => {

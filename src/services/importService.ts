@@ -46,6 +46,8 @@ export interface ImportStats {
 export interface ImportResult {
     images: AIImage[];
     stats: ImportStats;
+    handledPaths: string[];
+    failedPaths: string[];
 }
 
 export interface ImportOptions {
@@ -81,9 +83,11 @@ async function processFileEntries(
     stats: ImportStats,
     options: ImportOptions = {},
     defaultTool?: GeneratorTool
-): Promise<AIImage[]> {
+): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[] }> {
     const { onProgress, abortSignal, forceRescan, skipThumbnail = true } = options;
     const newImages: AIImage[] = [];
+    const handledPaths: string[] = [];
+    const failedPaths: string[] = [];
 
     // Sort by Modified Date (Newest First)
     entries.sort((a, b) => b.modified - a.modified);
@@ -100,7 +104,9 @@ async function processFileEntries(
         stats.skipped += (allPaths.length - pathsToProcess.length);
     }
 
-    if (pathsToProcess.length === 0) return [];
+    if (pathsToProcess.length === 0) {
+        return { images: [], handledPaths, failedPaths };
+    }
 
     const BATCH_SIZE = 300;
     const totalToProcess = pathsToProcess.length;
@@ -114,10 +120,11 @@ async function processFileEntries(
         const chunk = pathsToProcess.slice(i, i + BATCH_SIZE);
         // console.log(`[Import] Processing batch ${i / BATCH_SIZE + 1} (${chunk.length} files)`);
 
+        let unlisten: (() => void) | null = null;
         try {
             // Setup listener for native progress stream for silky smooth UI loading bars
             const { listen } = await import('@tauri-apps/api/event');
-            const unlisten = await listen<{current: number, total: number, message: string}>('import_progress', (e) => {
+            unlisten = await listen<{current: number, total: number, message: string}>('import_progress', (e) => {
                 if (onProgress) {
                     const absCurrent = Math.min(i + e.payload.current, totalToProcess);
                     onProgress(absCurrent, totalToProcess, e.payload.message);
@@ -126,8 +133,6 @@ async function processFileEntries(
 
             // true for extractWorkflow (always want full metadata)
             const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool);
-            
-            unlisten(); // Clean up IPC listener immediately after the chunk is done
 
 
             const batchImages: AIImage[] = [];
@@ -139,6 +144,7 @@ async function processFileEntries(
                 if (info.errorReason) {
                     stats.errors++;
                     console.warn(`Scan error for ${path}:`, info.errorReason);
+                    failedPaths.push(normalizePath(path));
                     continue; // Skip valid object creation if hard error
                 }
 
@@ -174,6 +180,17 @@ async function processFileEntries(
                 const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
                 const existingMeta = await getExistingMetadata(ids);
 
+                batchImages.forEach(img => {
+                    const existing = existingMeta.get(img.id);
+                    if (!existing) return;
+
+                    img.isFavorite = existing.isFavorite;
+                    img.isPinned = existing.isPinned;
+                    img.boardId = existing.boardId;
+                    img.groupId = existing.groupId;
+                    img.notes = existing.notes;
+                });
+
                 const imagesToUpdate = batchImages.filter(img => {
                     const existing = existingMeta.get(img.id);
                     if (!existing) return true; // New
@@ -196,6 +213,7 @@ async function processFileEntries(
             }
 
             newImages.push(...batchImages);
+            handledPaths.push(...batchImages.map(img => img.id));
             stats.processed += chunk.length;
 
             if (onProgress) {
@@ -205,10 +223,13 @@ async function processFileEntries(
         } catch (e) {
             console.error('Import batch error:', e);
             stats.errors += chunk.length;
+            failedPaths.push(...chunk.map(path => normalizePath(path)));
+        } finally {
+            unlisten?.();
         }
     }
 
-    return newImages;
+    return { images: newImages, handledPaths, failedPaths };
 }
 
 // --- Unified Folder Import ---
@@ -223,7 +244,9 @@ export async function processFoldersUnified(
 ): Promise<ImportResult> {
     const result: ImportResult = {
         images: [],
-        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 }
+        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
+        handledPaths: [],
+        failedPaths: []
     };
 
     const { onProgress, abortSignal } = options;
@@ -325,7 +348,9 @@ export async function processFoldersUnified(
             task.variant
         );
 
-        result.images.push(...imported);
+        result.images.push(...imported.images);
+        result.handledPaths.push(...imported.handledPaths);
+        result.failedPaths.push(...imported.failedPaths);
 
         // precise increment
         globalProcessed += task.files.length;
@@ -390,7 +415,9 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
             imported: newImages.length,
             skipped,
             errors
-        }
+        },
+        handledPaths: [],
+        failedPaths: []
     };
 };
 
@@ -442,7 +469,9 @@ export const processTargetedFiles = async (
 ): Promise<ImportResult> => {
     const result: ImportResult = {
         images: [],
-        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 }
+        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
+        handledPaths: [],
+        failedPaths: []
     };
 
     if (paths.length === 0) return result;
@@ -455,7 +484,9 @@ export const processTargetedFiles = async (
 
     console.log(`[Import] Processing ${paths.length} targeted paths...`);
     const imported = await processFileEntries(entries, result.stats, options, defaultTool);
-    result.images = imported;
+    result.images = imported.images;
+    result.handledPaths = imported.handledPaths;
+    result.failedPaths = imported.failedPaths;
 
     // Removed synchronous rebuildFacetCache.
     // Live Watch relies on the 60s idle timeout `useLibraryStore.getState().reportLiveImagesReceived()` 

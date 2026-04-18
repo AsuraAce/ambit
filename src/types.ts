@@ -177,6 +177,8 @@ export interface SmartCollection extends Collection {
 
 export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';
 
+export type MetadataRefreshScope = 'full' | 'images-only';
+
 export type FacetSortOption =
   | 'count_desc' | 'count_asc'
   | 'name_asc' | 'name_desc'

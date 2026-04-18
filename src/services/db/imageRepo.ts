@@ -641,6 +641,11 @@ export interface ExistingMetadata {
     timestamp: number;
     fileSize: number;
     metadataJson: string;
+    isFavorite: boolean;
+    isPinned: boolean;
+    boardId?: string;
+    groupId?: string;
+    notes?: string;
 }
 
 export const getExistingMetadata = async (ids: string[]): Promise<Map<string, ExistingMetadata>> => {
@@ -655,8 +660,8 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
         const placeholders = chunk.map(() => '?').join(',');
 
         try {
-            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string }[]>(
-                `SELECT id, timestamp, file_size, metadata_json FROM images WHERE id IN (${placeholders})`,
+            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string, is_favorite: number, is_pinned: number, board_id?: string | null, group_id?: string | null, notes?: string | null }[]>(
+                `SELECT id, timestamp, file_size, metadata_json, is_favorite, is_pinned, board_id, group_id, notes FROM images WHERE id IN (${placeholders})`,
                 chunk
             );
 
@@ -664,7 +669,12 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
                 map.set(r.id, {
                     timestamp: r.timestamp,
                     fileSize: r.file_size,
-                    metadataJson: r.metadata_json
+                    metadataJson: r.metadata_json,
+                    isFavorite: !!r.is_favorite,
+                    isPinned: !!r.is_pinned,
+                    boardId: r.board_id ?? undefined,
+                    groupId: r.group_id ?? undefined,
+                    notes: r.notes ?? undefined
                 });
             });
         } catch (e) {

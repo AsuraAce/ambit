@@ -2,12 +2,11 @@ import * as React from 'react';
 import { createContext, useContext, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { useSettings } from './SettingsContext';
 import { useSync } from './SyncContext';
-import { useToast } from '../hooks/useToast';
 import { watcherService } from '../services/WatcherService';
-import { startLiveLink } from '../services/invoke/liveLink';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
+import { MetadataRefreshScope } from '../types';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -19,10 +18,9 @@ interface WatcherContextType {
 
 const WatcherContext = createContext<WatcherContextType | undefined>(undefined);
 
-export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: () => void }> = ({ children, onNewImageDetected }) => {
+export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onNewImageDetected }) => {
     const { settings, isLoaded } = useSettings();
     const { startInvokeSync, startTargetedLiveSync } = useSync();
-    const { addToast } = useToast();
 
     // Zustand State
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
@@ -47,16 +45,54 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     }, [isLoaded, refreshMaintenanceCounts]);
 
     // Unified Watcher Logic (Live Sync)
-    const monitoredFoldersConfig = JSON.stringify(settings.monitoredFolders);
+    const monitoredFoldersConfig = React.useMemo(() => JSON.stringify(
+        (settings.monitoredFolders || []).map(folder => ({
+            path: folder.path,
+            isActive: folder.isActive
+        }))
+    ), [settings.monitoredFolders]);
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
     const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingGenericPathsRef = useRef<Set<string>>(new Set());
+    const genericLiveDrainPromiseRef = useRef<Promise<void> | null>(null);
 
     useEffect(() => {
         callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync };
     });
+
+    const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
+        paths
+            .map(path => path.replace(/\\/g, '/'))
+            .forEach(path => pendingGenericPathsRef.current.add(path));
+
+        if (genericLiveDrainPromiseRef.current) {
+            return genericLiveDrainPromiseRef.current;
+        }
+
+        const drainPromise = (async () => {
+            while (pendingGenericPathsRef.current.size > 0) {
+                const nextBatch = Array.from(pendingGenericPathsRef.current);
+                pendingGenericPathsRef.current.clear();
+
+                const cb = callbacksRef.current;
+                const liveResult = await cb.startTargetedLiveSync(nextBatch);
+
+                if (liveResult.handledPaths.length > 0) {
+                    await cb.onNewImageDetected?.('images-only');
+                    await cb.refreshMaintenanceCounts();
+                }
+            }
+        })();
+
+        genericLiveDrainPromiseRef.current = drainPromise.finally(() => {
+            genericLiveDrainPromiseRef.current = null;
+        });
+
+        return genericLiveDrainPromiseRef.current;
+    }, []);
 
     useEffect(() => {
         if (!isLoaded) return;
@@ -115,11 +151,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
                 // Use O(1) targeted import strictly for non-Invoke generic folder drops
                 if (genericPaths.length > 0) {
-                    if (cb.startTargetedLiveSync) {
-                        await cb.startTargetedLiveSync(genericPaths);
-                    }
-                    if (cb.onNewImageDetected) cb.onNewImageDetected();
-                    await cb.refreshMaintenanceCounts();
+                    await drainGenericLiveChanges(genericPaths);
                 }
 
                 // Signal consumers (like useFolderMonitor) that a change occurred
@@ -148,7 +180,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         const timer = setTimeout(initWatcher, 500);
         return () => clearTimeout(timer);
 
-    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, addToast]);
+    }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges]);
 
     // Maintenance interval
     useEffect(() => {
