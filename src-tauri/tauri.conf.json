@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: https://grainy-gradients.vercel.app; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://generativelanguage.googleapis.com;",
+      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost https://grainy-gradients.vercel.app; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://generativelanguage.googleapis.com;",
       "capabilities": [
         "default"
       ],
@@ -37,6 +37,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -45,5 +46,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI2QjlGRkJGQTg4QUFBMQpSV1NocW9qNis1OXJDM3Juc2pkbi9JbHJJdzZ4NCtWb2N1OHk2eFhuVTJqOG4xcWlyemRHREpZNAo=",
+      "endpoints": [
+        "https://github.com/AsuraAce/ambit/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -25,6 +25,9 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: verify version consistency
+        run: pnpm check:versions
+
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -54,6 +57,9 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+
+      - name: verify version consistency
+        run: pnpm check:versions
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile

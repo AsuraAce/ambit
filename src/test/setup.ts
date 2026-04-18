@@ -6,6 +6,11 @@ vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
 }));
 
+// Mock Tauri App
+vi.mock('@tauri-apps/api/app', () => ({
+    getVersion: vi.fn().mockResolvedValue('0.3.0'),
+}));
+
 // Mock Tauri Event
 vi.mock('@tauri-apps/api/event', () => ({
     listen: vi.fn().mockResolvedValue(() => { }),
@@ -38,6 +43,16 @@ vi.mock('@tauri-apps/plugin-shell', () => ({
         execute = vi.fn().mockResolvedValue({ code: 0, stdout: '', stderr: '' });
         spawn = vi.fn().mockResolvedValue({});
     },
+}));
+
+// Mock Tauri Process Plugin
+vi.mock('@tauri-apps/plugin-process', () => ({
+    relaunch: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock Tauri Updater Plugin
+vi.mock('@tauri-apps/plugin-updater', () => ({
+    check: vi.fn().mockResolvedValue(null),
 }));
 
 // Mock Tauri FS Plugin

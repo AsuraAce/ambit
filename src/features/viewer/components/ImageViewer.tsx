@@ -11,6 +11,7 @@ import { usePalette } from '../../../hooks/usePalette';
 import { useImageAI } from '../../../hooks/useImageAI';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useCollectionStore } from '../../../stores/collectionStore';
+import { ensureAssetPathAccessible } from '../../../services/assetScope';
 import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
@@ -159,6 +160,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         displayImage.originalMetadata,
         resetZoom
     ]);
+
+    useEffect(() => {
+        void ensureAssetPathAccessible(displayImage.url).catch((error) => {
+            console.warn('[ImageViewer] Failed to register image path for viewer', error);
+        });
+    }, [displayImage.url]);
 
     // Theater Mode Controls Auto-Hide
     useEffect(() => {

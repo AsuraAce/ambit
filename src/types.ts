@@ -205,6 +205,7 @@ export interface AppSettings {
   hasCompletedOnboarding: boolean;
   theme: 'dark' | 'light';
   thumbnailSize: number;
+  autoCheckForUpdates?: boolean;
   confirmDelete: boolean;
   defaultTheaterMode: boolean; // Persist sidebar state
   monitoredFolders: MonitoredFolder[];

@@ -11,12 +11,14 @@ import { CompareModal } from '../features/viewer/components/CompareModal';
 import { DonationModal } from './ui/DonationModal';
 import { CollectionEditorModal } from '../features/collections/components/CollectionEditorModal';
 import { AIImage, AppSettings } from '../types';
+import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 
 interface GlobalModalsProps {
     modals: Record<string, boolean>;
     setModals: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     selectedIds: Set<string>;
     filteredImages: AIImage[];
+    canCheckForUpdates: boolean;
     onSettingsSave: (settings: AppSettings) => void;
     onExportConfirm: (name: string, folder: string) => void;
     onDeleteConfirm: () => void;
@@ -52,6 +54,12 @@ interface GlobalModalsProps {
     onSaveCollectionFilters?: (id: string, filters: any) => void;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
+    hasPendingUpdate: boolean;
+    pendingUpdateVersion: string | null;
+    updateErrorMessage: string | null;
+    updateStatus: AppUpdaterStatus;
+    onCheckForUpdates: () => Promise<void>;
+    onOpenUpdatePrompt: () => void;
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
@@ -59,6 +67,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     setModals,
     selectedIds,
     filteredImages,
+    canCheckForUpdates,
     onSettingsSave,
     onExportConfirm,
     onDeleteConfirm,
@@ -85,7 +94,13 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     collectionToEditId,
     onSaveCollectionFilters,
     onScanFolder, // Added
-    onInvokeSync // Added for managed InvokeAI sync
+    onInvokeSync, // Added for managed InvokeAI sync
+    hasPendingUpdate,
+    pendingUpdateVersion,
+    updateErrorMessage,
+    updateStatus,
+    onCheckForUpdates,
+    onOpenUpdatePrompt
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
@@ -96,9 +111,16 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 onClose={() => closeModal('settings')}
                 onSave={onSettingsSave}
                 settings={settings}
+                canCheckForUpdates={canCheckForUpdates}
                 initialTab={initialSettingsTab as any}
                 onScanFolder={onScanFolder}
                 onInvokeSync={onInvokeSync}
+                hasPendingUpdate={hasPendingUpdate}
+                pendingUpdateVersion={pendingUpdateVersion}
+                updateErrorMessage={updateErrorMessage}
+                updateStatus={updateStatus}
+                onCheckForUpdates={onCheckForUpdates}
+                onOpenUpdatePrompt={onOpenUpdatePrompt}
             />
 
             <ExportModal

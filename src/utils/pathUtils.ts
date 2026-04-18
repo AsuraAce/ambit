@@ -6,6 +6,14 @@ export const normalizePath = (path: string): string => {
     return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 };
 
+const trimTrailingSlash = (path: string): string => {
+    if (/^[A-Za-z]:\/$/.test(path)) {
+        return path;
+    }
+
+    return path.replace(/\/+$/, '');
+};
+
 /**
  * Forces backslashes for Windows path compatibility.
  * Useful for APIs that strictly require OS-native paths (like some Tauri asset protocols).
@@ -29,7 +37,13 @@ export const getFilename = (path: string): string => {
  */
 export const repairAssetUrl = (url: string): string => {
     if (!url) return '';
-    if (url.startsWith('http://asset.localhost/') || url.startsWith('asset:')) {
+    if (
+        url.startsWith('http://asset.localhost/') ||
+        url.startsWith('https://asset.localhost/') ||
+        url.startsWith('http://localhost/_up_/') ||
+        url.startsWith('https://localhost/_up_/') ||
+        url.startsWith('asset:')
+    ) {
         // Decode both slashes and colons - Tauri's asset protocol needs plain paths
         return url
             .replace(/%2F/gi, '/')
@@ -48,8 +62,11 @@ export const urlToPath = (url: string | undefined): string => {
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
 
     // Strip common Tauri asset prefixes
-    // Supports: https://asset.localhost/, http://asset.localhost/, tauri://localhost/
-    let path = url.replace(/^(https?:\/\/(?:asset|tauri)\.localhost(?::\d+)?\/|https?:\/\/localhost(?::\d+)?\/_up_\/)/i, '');
+    // Supports: https://asset.localhost/, http://asset.localhost/, tauri://localhost/, asset://localhost/, asset://
+    let path = url.replace(
+        /^(https?:\/\/(?:asset|tauri)\.localhost(?::\d+)?\/|https?:\/\/localhost(?::\d+)?\/_up_\/|asset:\/\/(?:localhost\/)?|tauri:\/\/localhost\/)/i,
+        ''
+    );
 
     // Decode URI components (fixes %3A -> :, %20 -> space etc)
     try {
@@ -58,7 +75,40 @@ export const urlToPath = (url: string | undefined): string => {
         // Fallback if malformed
     }
 
+    if (/^\/[A-Za-z]:\//.test(path)) {
+        path = path.slice(1);
+    }
+
     return normalizePath(path);
+};
+
+/**
+ * Returns the parent directory for a normalized file path.
+ * If the path is already a directory root, the same root is returned.
+ */
+export const getDirectoryPath = (path: string): string => {
+    const normalized = trimTrailingSlash(normalizePath(path));
+    const lastSlash = normalized.lastIndexOf('/');
+
+    if (lastSlash < 0) {
+        return normalized;
+    }
+
+    if (lastSlash <= 2 && /^[A-Za-z]:/.test(normalized)) {
+        return `${normalized.slice(0, 2)}/`;
+    }
+
+    return normalized.slice(0, lastSlash);
+};
+
+/**
+ * Case-insensitive path containment check for normalized local file paths.
+ */
+export const isPathWithinDirectory = (path: string, directory: string): boolean => {
+    const normalizedPath = trimTrailingSlash(normalizePath(path)).toLowerCase();
+    const normalizedDirectory = trimTrailingSlash(normalizePath(directory)).toLowerCase();
+
+    return normalizedPath === normalizedDirectory || normalizedPath.startsWith(`${normalizedDirectory}/`);
 };
 
 /**

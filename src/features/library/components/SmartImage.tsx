@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { ImageOff, AlertCircle } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { ensureAssetPathAccessible } from '../../../services/assetScope';
 import { repairAssetUrl } from '../../../utils/pathUtils';
 
 interface SmartImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
@@ -62,6 +63,20 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     }
   }, [status, currentSrc, microSrc]);
 
+  useEffect(() => {
+    void ensureAssetPathAccessible(currentSrc).catch((error) => {
+      console.warn('[SmartImage] Failed to register current image path', error);
+    });
+  }, [currentSrc]);
+
+  useEffect(() => {
+    if (!fallbackSrc) return;
+
+    void ensureAssetPathAccessible(fallbackSrc).catch((error) => {
+      console.warn('[SmartImage] Failed to register fallback image path', error);
+    });
+  }, [fallbackSrc]);
+
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     setStatus('loaded');
     if (onLoad) onLoad(e);
@@ -80,10 +95,17 @@ export const SmartImage: React.FC<SmartImageProps> = ({
         setRetryCount(c => c + 1);
       }, Math.pow(2, retryCount) * 500);
     } else if (fallbackSrc && currentSrc !== fallbackSrc) {
-      // Notify parent that thumbnail failed (triggers lazy generation)
-      setCurrentSrc(fallbackSrc);
-      setRetryCount(0);
-      setStatus('loading');
+      // Make sure release builds have scope access before switching to the source image.
+      void ensureAssetPathAccessible(fallbackSrc)
+        .catch((error) => {
+          console.warn('[SmartImage] Failed to register fallback before swap', error);
+        })
+        .finally(() => {
+          setCurrentSrc(fallbackSrc);
+          setRetryCount(0);
+          setStatus('loading');
+          setShowShimmer(false);
+        });
     } else {
       setStatus('error');
       if (onImageError) onImageError();

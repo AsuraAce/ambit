@@ -10,13 +10,32 @@ import { BackupSettings } from './BackupSettings';
 import { commands } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { APP_NAME } from '../../../constants/app';
+import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
+import { IntegrityResult } from '../../../bindings';
 
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
+    canCheckForUpdates: boolean;
+    hasPendingUpdate: boolean;
+    pendingUpdateVersion: string | null;
+    updateErrorMessage: string | null;
+    updateStatus: AppUpdaterStatus;
+    onCheckForUpdates: () => Promise<void>;
+    onOpenUpdatePrompt: () => void;
 }
 
-export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
+export const AdvancedTab: React.FC<TabProps> = ({
+    settings,
+    setSettings,
+    canCheckForUpdates,
+    hasPendingUpdate,
+    pendingUpdateVersion,
+    updateErrorMessage,
+    updateStatus,
+    onCheckForUpdates,
+    onOpenUpdatePrompt,
+}) => {
     const { fetchData, setSettings: updateContextSettings, cleanLibrary } = useLibraryContext();
     const { addToast } = useToast();
 
@@ -31,6 +50,40 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
     // Danger Zone State
     const [confirmAction, setConfirmAction] = useState<{ type: 'reset' | 'purge' | 'clear_thumbnails' | null, isOpen: boolean }>({ type: null, isOpen: false });
     const closeConfirm = () => setConfirmAction({ type: null, isOpen: false });
+
+    const autoUpdateEnabled = settings.autoCheckForUpdates !== false;
+    const isCheckingForUpdates = updateStatus === 'checking';
+    const isInstallingUpdate = updateStatus === 'downloading' || updateStatus === 'installing';
+
+    const updaterStatusLabel = (() => {
+        if (!canCheckForUpdates) {
+            return 'Update checks are disabled while running in development.';
+        }
+
+        if (updateStatus === 'available') {
+            return pendingUpdateVersion
+                ? `Version ${pendingUpdateVersion} is ready to install.`
+                : 'A new version is ready to install.';
+        }
+
+        if (updateStatus === 'downloading') {
+            return 'Downloading the selected update package.';
+        }
+
+        if (updateStatus === 'installing') {
+            return 'Installing update. Ambit may restart or close to finish.';
+        }
+
+        if (updateStatus === 'error' && updateErrorMessage) {
+            return updateErrorMessage;
+        }
+
+        if (updateStatus === 'checking') {
+            return 'Checking GitHub Releases for a newer build.';
+        }
+
+        return 'Automatically checks GitHub Releases once each time Ambit starts.';
+    })();
 
     const handlePurge = async () => {
         setIsPurging(true);
@@ -203,6 +256,54 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                     </div>
 
                     <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl overflow-hidden divide-y divide-gray-100 dark:divide-white/5">
+                        <div className="p-6 space-y-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Automatic Updates</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        Keep {APP_NAME} ready to install newer public releases after you confirm the update prompt.
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const nextValue = !autoUpdateEnabled;
+                                        setSettings((prev) => ({ ...prev, autoCheckForUpdates: nextValue }));
+                                        addToast(nextValue ? 'Automatic update checks enabled' : 'Automatic update checks disabled', 'success');
+                                    }}
+                                    className={`w-12 h-7 rounded-full relative transition-colors ${autoUpdateEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                                >
+                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${autoUpdateEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            <div className={`rounded-2xl border p-4 text-xs leading-relaxed ${updateStatus === 'error'
+                                ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100'
+                                : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300'
+                                }`}>
+                                {updaterStatusLabel}
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (hasPendingUpdate) {
+                                            onOpenUpdatePrompt();
+                                            return;
+                                        }
+
+                                        void onCheckForUpdates();
+                                    }}
+                                    disabled={!canCheckForUpdates || isCheckingForUpdates || isInstallingUpdate}
+                                    className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                >
+                                    {isCheckingForUpdates || isInstallingUpdate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                    {hasPendingUpdate ? 'View Update' : 'Check for Updates'}
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Reset Onboarding */}
                         <div className="p-6 flex items-center justify-between">
                             <div>
@@ -212,8 +313,8 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    updateContextSettings((p: any) => ({
-                                        ...p,
+                                    updateContextSettings((prev: AppSettings) => ({
+                                        ...prev,
                                         hasCompletedOnboarding: false,
                                         hideImportModal: false
                                     }));
@@ -323,18 +424,19 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                                 onClick={async () => {
                                     setIsVerifying(true);
                                     try {
-                                        // Cast to any because bindings.ts isn't regenerated yet
-                                        const res = await (commands as any).verifyLibraryIntegrity();
-                                        // res = { missing, recovered, broken_thumbs }
+                                        const result = await commands.verifyLibraryIntegrity();
+                                        if (result.status === 'error') {
+                                            throw new Error(result.error);
+                                        }
+
+                                        const res: IntegrityResult = result.data;
+
                                         if (res.broken_thumbs > 0 || res.missing > 0 || res.recovered > 0) {
                                             addToast(`Integrity check complete: ${res.recovered} found, ${res.missing} missing, ${res.broken_thumbs} broken thumbs cleared.`, 'success');
                                         } else {
                                             addToast('Library verification complete. No issues found.', 'success');
                                         }
-                                        // Trigger a reload of data to reflect changes
-                                        // We can't easily trigger fetchData from here without passing it down or context, 
-                                        // but useLibraryContext is available in this component.
-                                        fetchData(false);
+                                        await fetchData(false);
                                     } catch (e) {
                                         console.error(e);
                                         addToast('Failed to verify library', 'error');
@@ -358,7 +460,7 @@ export const AdvancedTab: React.FC<TabProps> = ({ settings, setSettings }) => {
                 message={`This will reset the "Last Synced" timestamp. The next sync operation will scan your ENTIRE external library from the beginning. This process may take some time.`}
                 confirmLabel="Reset Cursor"
                 onConfirm={() => {
-                    updateContextSettings((p: any) => ({ ...p, lastSyncedAt: null }));
+                    updateContextSettings((prev: AppSettings) => ({ ...prev, lastSyncedAt: null }));
                     closeConfirm();
                     addToast('Sync cursor reset', 'success');
                 }}
