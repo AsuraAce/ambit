@@ -61,16 +61,22 @@ describe('ActivityDock', () => {
             progress: { current: 0, total: 0, message: undefined }
         });
 
-        render(<ActivityDock />);
+        const { container } = render(<ActivityDock />);
+        const card = container.querySelector('[layoutid="dock-content"]');
+        const progressFill = container.querySelector('.bg-violet-400');
 
         expect(screen.getByText('Live Watch')).toBeTruthy();
         expect(screen.getByText('Preparing live InvokeAI sync...')).toBeTruthy();
         expect(screen.queryByText('Syncing')).toBeNull();
         expect(screen.queryByText('Cancel')).toBeNull();
+        expect(screen.queryByText('0 / 0')).toBeNull();
+        expect(card?.className).toContain('w-[min(360px,calc(100vw-2rem))]');
+        expect(progressFill).toBeTruthy();
+        expect(container.querySelector('.text-sage-600')).toBeNull();
     });
 
     it('keeps the same Live Watch card through summary updates', () => {
-        render(<ActivityDock />);
+        const { container } = render(<ActivityDock />);
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
@@ -91,5 +97,8 @@ describe('ActivityDock', () => {
         expect(screen.getByText('2 images received this session. Watching for more...')).toBeTruthy();
         expect(screen.queryByText('Syncing')).toBeNull();
         expect(screen.queryByText('Cancel')).toBeNull();
+        expect(screen.getByText('Live Watch stays active in the background.')).toBeTruthy();
+        expect(container.querySelector('.bg-violet-400')).toBeTruthy();
+        expect(container.querySelector('.bg-gradient-to-r')).toBeNull();
     });
 });

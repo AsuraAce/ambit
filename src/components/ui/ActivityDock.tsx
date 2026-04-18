@@ -37,6 +37,8 @@ export const ActivityDock: React.FC = () => {
 
     // Show Live Watch if active and nothing else is overriding it
     const isLiveWatchActive = liveWatchSession.active && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
+    const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
+    const isLiveWatchTone = isLiveWatchActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
 
@@ -86,17 +88,30 @@ export const ActivityDock: React.FC = () => {
             message: liveWatchSession.message
         };
         label = "Live Watch";
-        isLowPriority = liveWatchSession.phase === 'watching' || liveWatchSession.phase === 'summary';
-        footerMessage = liveWatchSession.phase === 'summary'
-            ? 'Watching for more images in this session.'
-            : 'Live Watch stays active in the background.';
+        isLowPriority = true;
+        footerMessage = 'Live Watch stays active in the background.';
     }
 
     const current = progress?.current || 0;
     const total = progress?.total || 0;
     const message = progress?.message || (isLiveWatchActive ? liveWatchSession.message || '' : '');
-    const percent = total > 0 ? Math.round((current / total) * 100) : (active ? 0 : 0);
-    const showIndeterminateProgress = total === 0 && active && (!isLiveWatchActive || liveWatchSession.phase !== 'summary');
+    const percent = isLiveWatchSummary ? 100 : total > 0 ? Math.round((current / total) * 100) : (active ? 0 : 0);
+    const showIndeterminateProgress = total === 0 && active && (!isLiveWatchActive || !isLiveWatchSummary);
+    const accentClasses = isLiveWatchTone || isLowPriority
+        ? {
+            iconText: 'text-violet-600 dark:text-violet-400',
+            iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+            fill: 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]',
+            pillHover: 'hover:shadow-[0_0_15px_rgba(139,92,246,0.2)]',
+            percentText: 'text-violet-600 dark:text-violet-400'
+        }
+        : {
+            iconText: 'text-sage-600 dark:text-sage-400',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]',
+            pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]',
+            percentText: 'text-sage-600 dark:text-sage-400'
+        };
 
     // Should we show the dock? Active AND not dismissed.
     const shouldShow = active && !isActivityDockDismissed;
@@ -117,15 +132,15 @@ export const ActivityDock: React.FC = () => {
                         <motion.div
                             layoutId="dock-content"
                             onClick={() => setIsActivityDockMinimized(false)}
-                            className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${isLowPriority ? 'hover:shadow-[0_0_15px_rgba(139,92,246,0.2)]' : 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]'}`}
+                            className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${accentClasses.pillHover}`}
                             title="Click to expand details"
                         >
-                            <motion.div layout="position" className={`${isLowPriority ? 'text-violet-600 dark:text-violet-400' : 'text-sage-600 dark:text-sage-400'}`}>
-                                {isLowPriority ? <Sparkles className="w-5 h-5 animate-pulse" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                            <motion.div layout="position" className={accentClasses.iconText}>
+                                {isLiveWatchTone || isLowPriority ? <Sparkles className="w-5 h-5 animate-pulse" /> : <Loader2 className="w-5 h-5 animate-spin" />}
                             </motion.div>
                             <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
                                 <div
-                                    className={`h-full ${isLowPriority ? 'bg-violet-500' : 'bg-sage-500'}`}
+                                    className={`h-full ${isLiveWatchTone || isLowPriority ? 'bg-violet-500' : 'bg-sage-500'}`}
                                     style={{ width: `${percent}%` }}
                                 />
                             </motion.div>
@@ -134,19 +149,19 @@ export const ActivityDock: React.FC = () => {
                         // Maximized Card View
                         <motion.div
                             layoutId="dock-content"
-                            className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/20 dark:border-white/10 p-4 rounded-2xl shadow-2xl flex flex-col min-w-[320px] max-w-[400px] gap-3 group"
+                            className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/20 dark:border-white/10 p-4 rounded-2xl shadow-2xl flex flex-col w-[min(360px,calc(100vw-2rem))] gap-3 group"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
-                                    <motion.div layout="position" className={`p-2 rounded-lg ${isLowPriority ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'bg-sage-500/10 text-sage-600 dark:text-sage-400'}`}>
-                                        {isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                                    <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
+                                        {isLiveWatchTone || isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                     </motion.div>
                                     <motion.div layout="position">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
                                         <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                             {label}
-                                            {total > 0 && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
+                                            {total > 0 && !isLiveWatchActive && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
                                         </p>
                                     </motion.div>
                                 </div>
@@ -175,7 +190,7 @@ export const ActivityDock: React.FC = () => {
                                         initial={{ width: 0 }}
                                         animate={{ width: `${percent}%` }}
                                         transition={{ duration: 0.5, ease: "easeOut" }}
-                                        className={`h-full ${isLowPriority ? 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]' : 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]'}`}
+                                        className={`h-full ${accentClasses.fill}`}
                                     />
                                     {showIndeterminateProgress && (
                                         <motion.div
@@ -187,11 +202,11 @@ export const ActivityDock: React.FC = () => {
                                     )}
                                 </div>
                                 <div className="flex justify-between items-center px-0.5">
-                                    <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4">
+                                    <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
                                     {!isLiveWatchActive && (
-                                        <span className={`text-[11px] font-black font-mono italic ${isLowPriority ? 'text-violet-600 dark:text-violet-400' : 'text-sage-600 dark:text-sage-400'}`}>
+                                        <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
                                             {percent}%
                                         </span>
                                     )}

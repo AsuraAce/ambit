@@ -67,8 +67,10 @@ export const AppHeader = React.memo(({
     } = useLibraryStore();
 
     const isManualSyncing = syncStatus === 'syncing';
-    const isLiveWatchActive = liveWatchSession.active && liveWatchSession.phase !== 'summary';
-    const isHighPriority = isImporting || isManualSyncing || isLiveWatchActive || isResolvingModels || isScanningDiscovery;
+    const isLiveWatchActive = liveWatchSession.active;
+    const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
+    const isNonLiveTaskActive = isImporting || isManualSyncing || isResolvingModels || isScanningDiscovery;
+    const isHighPriority = isNonLiveTaskActive || isLiveWatchActive;
     const active = isHighPriority || isBackgroundHealingActive;
 
     const progress = (isImporting && importProgress)
@@ -76,16 +78,21 @@ export const AppHeader = React.memo(({
         : (isManualSyncing
             ? syncProgress
             : (isLiveWatchActive
-                ? (liveWatchSession.progress || { current: 0, total: 0, message: liveWatchSession.message })
+                ? (liveWatchSession.progress || {
+                    current: isLiveWatchSummary ? 1 : 0,
+                    total: isLiveWatchSummary ? 1 : 0,
+                    message: liveWatchSession.message
+                })
                 : (isResolvingModels
                     ? modelResolutionProgress
                     : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null)))));
 
     // Determine color
     const isBackgroundOnly = isBackgroundHealingActive && !isHighPriority;
-    const progressColorInfo = isBackgroundOnly
+    const progressColorInfo = isLiveWatchActive || isBackgroundOnly
         ? { bar: 'bg-violet-500', shadow: 'shadow-[0_0_10px_rgba(139,92,246,0.3)]', bg: 'bg-violet-500/10' }
         : { bar: 'bg-sage-500', shadow: 'shadow-[0_0_10px_rgba(110,121,107,0.5)]', bg: 'bg-sage-500/10' };
+    const shouldHighlightImport = isNonLiveTaskActive || isBackgroundHealingActive;
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
@@ -124,7 +131,7 @@ export const AppHeader = React.memo(({
                     <div className="flex items-center gap-1">
                         <button
                             onClick={onImport}
-                            className={`p-2 rounded-xl transition-all border relative group ${active ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                            className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             title="Import images. For automatic sync with favorites & boards, set up an Integration in Settings."
                         >
                             <Import className="w-4 h-4" />
