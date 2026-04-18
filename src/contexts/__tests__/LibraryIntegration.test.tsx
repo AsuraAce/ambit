@@ -12,8 +12,30 @@ const mocks = vi.hoisted(() => ({
     countImages: vi.fn().mockResolvedValue(0),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStats: vi.fn().mockResolvedValue({ totalImages: 0 }),
+    syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map() }),
     getAllCollectionsWithStats: vi.fn().mockResolvedValue([
-        { id: 'smart1', name: 'Smart Col', filters: { searchQuery: 'ai', models: [], loras: [], tools: [], controlNets: [], ipAdapters: [] }, source: 'ambit' }
+        {
+            id: 'smart1',
+            name: 'Smart Col',
+            filters: {
+                searchQuery: 'ai',
+                models: [],
+                tools: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                samplers: [],
+                generationTypes: [],
+                controlNets: [],
+                ipAdapters: [],
+                dateRange: 'all',
+                favoritesOnly: false,
+                collectionId: null,
+                showIntermediates: false,
+                showGrids: false
+            },
+            source: 'ambit'
+        }
     ]),
     appRepository: {
         load: vi.fn().mockResolvedValue({
@@ -67,7 +89,7 @@ vi.mock('../../services/WatcherService', () => ({
 }));
 
 vi.mock('../../services/invoke/syncService', () => ({
-    syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: [] })
+    syncImages: (...args: any[]) => mocks.syncImages(...args)
 }));
 
 vi.mock('../../services/invoke/orphanScanner', () => ({
@@ -166,5 +188,45 @@ describe('Library Integration (Provider Stack)', () => {
             expect(mocks.searchImages).toHaveBeenCalled();
             expect(mocks.getFacets).toHaveBeenCalled();
         }, { timeout: 5000 });
+    });
+
+    it('does not refresh image queries after a no-op live Invoke cycle', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 0,
+            updated: 0,
+            maxTimestamp: 100,
+            syncedIds: new Set(),
+            boardMapping: new Map()
+        });
+        mocks.searchImages.mockClear();
+        mocks.getFacets.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'live' });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'live' })
+        );
+        expect(mocks.searchImages).not.toHaveBeenCalled();
+        expect(mocks.getFacets).not.toHaveBeenCalled();
     });
 });

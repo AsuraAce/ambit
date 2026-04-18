@@ -2,6 +2,12 @@ import { ImageMetadata, GeneratorTool, ParseResult, AIImage } from '../types';
 import { commands, ScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { getFilename } from '../utils/pathUtils';
+import {
+    debugLiveWatchPerf,
+    elapsedMs,
+    infoLiveWatchPerf,
+    liveWatchNow,
+} from '../utils/liveWatchPerf';
 
 // Initializing the worker
 // Using ?worker&inline might be needed depending on Vite config, 
@@ -27,10 +33,12 @@ const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool
 
         // Let's implement a simple Request ID system.
         const requestId = Math.random().toString(36).substring(7);
+        let timeoutId: ReturnType<typeof setTimeout>;
 
         const handler = (e: MessageEvent) => {
             if (e.data.requestId === requestId) {
                 worker.removeEventListener('message', handler);
+                clearTimeout(timeoutId);
                 if (e.data.error) reject(e.data.error);
                 else resolve(e.data);
             }
@@ -40,7 +48,7 @@ const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool
         worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId, path, defaultTool });
 
         // Timeout safety
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
             worker.removeEventListener('message', handler);
             reject(new Error("Worker timed out"));
         }, 5000);
@@ -92,10 +100,15 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
     // from chunks, and is_intermediate is only set if explicit in metadata.
 
     const filename = path.split(/[\\/]/).pop() || "unknown";
+    const workerStartedAt = liveWatchNow();
 
     try {
         const { metadata, extra, isIntermediate } = (await parseInWorker(info.chunks, filename, path, defaultTool)) as any;
         const finalIsIntermediate = isIntermediate || metadata.isIntermediate;
+        debugLiveWatchPerf('Worker parse complete', {
+            filename,
+            workerMs: elapsedMs(workerStartedAt)
+        });
         return {
             metadata: {
                 ...metadata,
@@ -115,6 +128,11 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             errorReason: (info as any).error
         };
     } catch (workerError) {
+        debugLiveWatchPerf('Worker parse failed', {
+            filename,
+            workerMs: elapsedMs(workerStartedAt),
+            error: workerError instanceof Error ? workerError.message : String(workerError)
+        });
         console.error(`Worker parse failed/timed out for ${path}:`, workerError);
         return {
             metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
@@ -152,14 +170,25 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
 
 export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult[]> => {
     try {
+        const bulkScanStartedAt = liveWatchNow();
+        const nativeScanStartedAt = liveWatchNow();
         const results = await unwrap(commands.scanImagesBulk(paths, thumbnailDir || null, skipThumbnail, extractWorkflow, defaultTool || null));
+        const nativeScanMs = elapsedMs(nativeScanStartedAt);
 
         const tasks = results.map((info, index) => {
             const path = paths[index];
             return processScanResult(info, path, defaultTool);
         });
 
-        return Promise.all(tasks);
+        const postProcessStartedAt = liveWatchNow();
+        const parsedResults = await Promise.all(tasks);
+        infoLiveWatchPerf('scanImagesBulk complete', {
+            pathCount: paths.length,
+            nativeScanMs,
+            postProcessMs: elapsedMs(postProcessStartedAt),
+            totalMs: elapsedMs(bulkScanStartedAt)
+        });
+        return parsedResults;
     } catch (e) {
         console.error("Bulk scan invocation failed", e);
         return [];

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, FilterState, SortOption, FacetType } from '../types';
+import { AIImage, FilterState, SortOption, FacetType, MetadataRefreshScope } from '../types';
 import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
@@ -38,7 +38,7 @@ interface SearchContextType {
     isFiltering: boolean;
     activeSqlWhere: string;
     activeSqlParams: any[];
-    refreshMetadata: () => Promise<void>;
+    refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
     fetchData: (isLoadMore: boolean, isSilent?: boolean) => Promise<void>;
     recentSearches: string[];
     setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
@@ -168,13 +168,19 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const queryClient = useQueryClient();
 
-    const refreshMetadata = useCallback(async () => {
-        // Invalidate queries to trigger refetch
-        await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['images'] }),
-            queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-            refreshCollections()
-        ]);
+    const refreshMetadata = useCallback(async (scope: MetadataRefreshScope = 'full') => {
+        const refreshTasks: Promise<unknown>[] = [
+            queryClient.invalidateQueries({ queryKey: ['images'] })
+        ];
+
+        if (scope === 'full') {
+            refreshTasks.push(
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                refreshCollections()
+            );
+        }
+
+        await Promise.all(refreshTasks);
     }, [queryClient, refreshCollections]);
 
 

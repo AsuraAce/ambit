@@ -7,6 +7,7 @@ import { CollectionProvider, useCollections } from './CollectionContext';
 import { SearchProvider, useSearch } from './SearchContext';
 import { WatcherProvider, useWatchers } from './WatcherContext';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { MetadataRefreshScope } from '../types';
 
 // Existing type for backward compatibility
 export interface LibraryContextType {
@@ -71,7 +72,7 @@ export interface LibraryContextType {
   toggleFavorite: (id: string) => Promise<void>;
   togglePin: (id: string, isPinned?: boolean) => Promise<void>;
   clearAllFilters: () => void;
-  refreshMetadata: () => Promise<void>;
+  refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
   fetchData: (loadMore: boolean) => Promise<void>;
   refreshCollections: () => Promise<void>;
   refreshCollectionThumbnails: () => Promise<void>;
@@ -114,13 +115,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 // Wrappers to inject cross-context callbacks
 const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { fetchData, refreshMetadata } = useSearch();
-  const { refreshCollections } = useCollections();
 
-  const handleSyncComplete = useCallback(async () => {
-    // Consolidated refresh
-    await refreshMetadata();
-    await refreshCollections();
-  }, [refreshMetadata, refreshCollections]);
+  const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope = 'full') => {
+    // SearchContext owns the scope-aware metadata refresh strategy.
+    await refreshMetadata(scope);
+  }, [refreshMetadata]);
 
   return (
     <SyncProvider onSyncComplete={handleSyncComplete}>
@@ -132,9 +131,9 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
 const WatcherProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { fetchData, refreshMetadata } = useSearch();
 
-  const handleNewImage = useCallback(async () => {
-    // refreshMetadata invalidates 'images' and 'libraryStats' queries
-    await refreshMetadata();
+  const handleNewImage = useCallback(async (scope: MetadataRefreshScope = 'images-only') => {
+    // Generic Live Watch keeps the grid fresh immediately, then waits for idle rebuilds
+    await refreshMetadata(scope);
   }, [refreshMetadata]);
 
   return (

@@ -4,17 +4,47 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
-import { getDb } from '../db/connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage } from '../../types';
+import {
+    debugLiveWatchPerf,
+    elapsedMs,
+    infoLiveWatchPerf,
+    InvokeLiveWatchPerfContext,
+    liveWatchNow,
+} from '../../utils/liveWatchPerf';
+
+interface InvokeSyncOptions {
+    syncFavorites?: boolean;
+    syncBoards?: boolean;
+    afterTimestamp?: any;
+    importIntermediates?: boolean;
+    starredAs?: 'favorite' | 'pin' | 'both' | 'none';
+    perfContext?: InvokeLiveWatchPerfContext;
+    mode?: 'manual' | 'startup' | 'live';
+}
 
 export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number, message?: string) => void,
     signal?: AbortSignal,
-    options: { syncFavorites?: boolean, syncBoards?: boolean, afterTimestamp?: any, importIntermediates?: boolean, starredAs?: 'favorite' | 'pin' | 'both' | 'none' } = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
+    options: InvokeSyncOptions = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
 ): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }> }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
+    const syncStartedAt = liveWatchNow();
+    const cycleId = options.perfContext?.cycleId;
+    const logSyncDebug = (label: string, data?: Record<string, unknown>) => {
+        debugLiveWatchPerf(label, {
+            cycleId,
+            ...(data ?? {})
+        });
+    };
+    const logSyncInfo = (label: string, data?: Record<string, unknown>) => {
+        infoLiveWatchPerf(label, {
+            cycleId,
+            ...(data ?? {})
+        });
+    };
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
@@ -30,19 +60,31 @@ export const syncImages = async (
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb;
+    const connectStartedAt = liveWatchNow();
     try {
         invokeDb = await Database.load(connectionString);
     } catch (e) {
         throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
     }
+    logSyncDebug('Invoke DB connect complete', {
+        dbPath,
+        connectMs: elapsedMs(connectStartedAt)
+    });
 
     onProgress(0, 0, 'Analyzing database schema...');
+    const schemaStartedAt = liveWatchNow();
     const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)');
     const columns = tableInfo.map(c => c.name);
 
     const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'");
     const allTables = allTablesRows.map((t: any) => t.name);
     const hasGraphsTable = allTables.includes('graphs');
+    logSyncDebug('Invoke DB schema analyzed', {
+        schemaMs: elapsedMs(schemaStartedAt),
+        columnCount: columns.length,
+        tableCount: allTables.length,
+        hasGraphsTable
+    });
 
     const hasMetadataJson = columns.includes('metadata_json');
     const hasMetadata = columns.includes('metadata');
@@ -57,21 +99,6 @@ export const syncImages = async (
 
     if (!metaCol) {
         throw new Error("Could not find metadata column (checked 'metadata_json' and 'metadata')");
-    }
-
-    let hasBoardsTable = false;
-    try {
-        const boardsTable = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
-        hasBoardsTable = boardsTable.length > 0;
-    } catch (e) { }
-
-    let imageToBoardId = new Map<string, string>();
-    let boards = new Map<string, { name: string, createdAt: number }>();
-    if (options.syncBoards && hasBoardsTable) {
-        onProgress(0, 0, 'Fetching board mappings...');
-        const result = await fetchBoardMappings(invokeDb);
-        imageToBoardId = result.imageToBoardId;
-        boards = result.boards;
     }
 
     const conditions: string[] = [];
@@ -93,33 +120,75 @@ export const syncImages = async (
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
-    const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause} `);
-    const totalToImport = countRes[0]?.count || 0;
+    let totalToImport = 0;
+    let hasCandidates = true;
+    let boards = new Map<string, { name: string, createdAt: number }>();
 
-    onProgress(0, 0, `Scanning ${APP_NAME} library...`);
-    const { getDb, insertImagesBatch } = await import('../db');
-    const ambitDb = await getDb();
-    const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
-    const ambitExistingIds = new Set(existingRows.map(r => r.id));
+    if (options.mode === 'live') {
+        const candidateCheckStartedAt = liveWatchNow();
+        const candidateRes = await (invokeDb as any).select(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
+        hasCandidates = candidateRes.length > 0;
+        logSyncDebug('Invoke live candidate detection complete', {
+            hasCandidates,
+            candidateCheckMs: elapsedMs(candidateCheckStartedAt)
+        });
+    }
 
-    // Fetch existing states for favorite/pin/board to preserve them if sync is disabled for those fields
-    const { getImagesByIds } = await import('../db/imageRepo');
-    const existingImagesMeta = new Map<string, { isFavorite: boolean, isPinned: boolean, boardId?: string }>();
+    if (hasCandidates) {
+        const countStartedAt = liveWatchNow();
+        const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause} `);
+        totalToImport = countRes[0]?.count || 0;
+        logSyncDebug('Invoke sync candidate count computed', {
+            totalToImport,
+            countMs: elapsedMs(countStartedAt),
+            hasUpdatedAt,
+            importIntermediates: options.importIntermediates ?? false
+        });
+    } else {
+        logSyncDebug('Invoke sync candidate count computed', {
+            totalToImport,
+            countMs: 0,
+            hasUpdatedAt,
+            importIntermediates: options.importIntermediates ?? false
+        });
+    }
 
     const syncedIds = new Set<string>();
 
     if (totalToImport === 0) {
-        if (options.syncBoards && imageToBoardId.size > 0) {
-            try {
-                const mappingObj: Record<string, string> = {};
-                imageToBoardId.forEach((val, key) => { mappingObj[key] = val; });
-                await unwrap(commands.refreshBoardsNative(mappingObj));
-                const { syncCollectionImages } = await import('../db/imageRepo');
-                await syncCollectionImages();
-            } catch (e) { }
-        }
+        logSyncInfo('Invoke sync service complete', {
+            totalToImport,
+            importedCount: 0,
+            updatedCount: 0,
+            batchCount: 0,
+            totalMs: elapsedMs(syncStartedAt)
+        });
         return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map() };
     }
+
+    let hasBoardsTable = false;
+    try {
+        const boardsTable = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
+        hasBoardsTable = boardsTable.length > 0;
+    } catch (e) { }
+
+    let imageToBoardId = new Map<string, string>();
+    if (options.syncBoards && hasBoardsTable) {
+        onProgress(0, 0, 'Fetching board mappings...');
+        const boardMappingStartedAt = liveWatchNow();
+        const result = await fetchBoardMappings(invokeDb);
+        imageToBoardId = result.imageToBoardId;
+        boards = result.boards;
+        logSyncDebug('Invoke board mappings loaded', {
+            boardCount: boards.size,
+            imageBoardLinks: imageToBoardId.size,
+            boardMappingMs: elapsedMs(boardMappingStartedAt)
+        });
+    }
+
+    onProgress(0, 0, `Scanning ${APP_NAME} library...`);
+    const { insertImagesBatch } = await import('../db');
+    const { getImagesByIds } = await import('../db/imageRepo');
 
     let processed = 0;
     let newImportedCount = 0;
@@ -135,10 +204,13 @@ export const syncImages = async (
     const intermediateCol = hasIsIntermediate ? ', i.is_intermediate' : '';
 
     const createdBoardIds = new Set<string>();
+    let batchCount = 0;
 
     while (true) {
         if (signal?.aborted) throw new Error('Aborted');
 
+        const batchStartedAt = liveWatchNow();
+        const batchIndex = batchCount + 1;
         const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
             SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol}
@@ -148,8 +220,11 @@ export const syncImages = async (
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
 `;
 
+        const batchQueryStartedAt = liveWatchNow();
         const rows = await (invokeDb as any).select(query);
+        const batchQueryMs = elapsedMs(batchQueryStartedAt);
         if (rows.length === 0) break;
+        batchCount++;
 
         const batchPaths = rows.map((row: any) => {
             const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
@@ -157,16 +232,21 @@ export const syncImages = async (
         });
 
         let sizes: number[] = [];
+        const fileSizeProbeStartedAt = liveWatchNow();
         try {
             sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
         } catch (e) {
             sizes = new Array(rows.length).fill(0);
         }
+        const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
+        const existingLookupStartedAt = liveWatchNow();
         const existingImagesInBatch = await getImagesByIds(batchPaths);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+        const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: any[] = [];
+        const batchBuildStartedAt = liveWatchNow();
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const fullPath = batchPaths[i];
@@ -360,7 +440,6 @@ export const syncImages = async (
 
                 if (!existing) {
                     newImportedCount++;
-                    ambitExistingIds.add(fullPath);
                 } else {
                     totalUpdated++;
                 }
@@ -370,11 +449,16 @@ export const syncImages = async (
                 processed++;
             } catch (e) { }
         }
+        const batchBuildMs = elapsedMs(batchBuildStartedAt);
 
+        let boardCreateMs = 0;
+        let insertMs = 0;
+        let collectionSyncMs = 0;
         if (currentBatch.length > 0) {
             // Lazy Board Creation
             if (options.syncBoards) {
                 const { upsertCollection } = await import('../db/collectionRepo');
+                const boardCreateStartedAt = liveWatchNow();
                 const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
                     const boardInfo = boards.get(bId!);
@@ -388,28 +472,58 @@ export const syncImages = async (
                         createdBoardIds.add(bId!);
                     }
                 }
+                boardCreateMs = elapsedMs(boardCreateStartedAt);
             }
 
+            const insertStartedAt = liveWatchNow();
             await insertImagesBatch(currentBatch);
+            insertMs = elapsedMs(insertStartedAt);
 
             // Incremental Linking
             if (options.syncBoards) {
                 const { syncCollectionImages } = await import('../db/imageRepo');
+                const collectionSyncStartedAt = liveWatchNow();
                 await syncCollectionImages(currentBatch.map(img => img.id));
+                collectionSyncMs = elapsedMs(collectionSyncStartedAt);
             }
         }
+        logSyncDebug('Invoke sync batch complete', {
+            batchIndex,
+            rowCount: rows.length,
+            upsertCount: currentBatch.length,
+            queryMs: batchQueryMs,
+            fileSizeProbeMs,
+            existingLookupMs,
+            batchBuildMs,
+            boardCreateMs,
+            insertMs,
+            collectionSyncMs,
+            batchMs: elapsedMs(batchStartedAt)
+        });
         offset += rows.length;
         onProgress(Math.min(processed, totalToImport), totalToImport, `Importing: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
         await new Promise(r => setTimeout(r, 0));
     }
 
     // Final cleanup / sync (optional fallback)
-    if (options.syncBoards && boards.size > 0) {
+    if (options.syncBoards && boards.size > 0 && options.mode !== 'live') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
         const { syncCollectionImages } = await import('../db/imageRepo');
+        const finalCollectionSyncStartedAt = liveWatchNow();
         await syncCollectionImages();
+        logSyncDebug('Invoke final collection sync complete', {
+            collectionSyncMs: elapsedMs(finalCollectionSyncStartedAt)
+        });
     }
+
+    logSyncInfo('Invoke sync service complete', {
+        totalToImport,
+        importedCount: newImportedCount,
+        updatedCount: totalUpdated,
+        batchCount,
+        totalMs: elapsedMs(syncStartedAt)
+    });
 
     return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds, boardMapping: boards };
 };
