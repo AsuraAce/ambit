@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="tile" x1="82" y1="68" x2="432" y2="444" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#262823"/>
+      <stop offset="0.58" stop-color="#171916"/>
+      <stop offset="1" stop-color="#0B0C0A"/>
+    </linearGradient>
+    <radialGradient id="ambient" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(248 228) rotate(90) scale(220)">
+      <stop offset="0" stop-color="#32362C"/>
+      <stop offset="1" stop-color="#32362C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="132" y1="132" x2="374" y2="386" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E7C777"/>
+      <stop offset="0.72" stop-color="#D9C881"/>
+      <stop offset="1" stop-color="#91A168"/>
+    </linearGradient>
+    <linearGradient id="field" x1="106" y1="334" x2="404" y2="362" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8353"/>
+      <stop offset="1" stop-color="#415338"/>
+    </linearGradient>
+    <linearGradient id="horizon" x1="112" y1="306" x2="398" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#DDE0A4"/>
+      <stop offset="0.52" stop-color="#F0E5A8"/>
+      <stop offset="1" stop-color="#E7C777"/>
+    </linearGradient>
+    <clipPath id="scope">
+      <circle cx="256" cy="266" r="146"/>
+    </clipPath>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#tile)"/>
+  <rect x="22" y="22" width="468" height="468" rx="106" stroke="white" stroke-opacity="0.06" stroke-width="4"/>
+  <circle cx="256" cy="256" r="176" fill="url(#ambient)"/>
+
+  <g transform="translate(256 266) scale(1.55) translate(-256 -266)">
+    <circle
+      cx="256"
+      cy="266"
+      r="146"
+      stroke="url(#ring)"
+      stroke-width="24"
+      stroke-linecap="round"
+      stroke-dasharray="816 102"
+      transform="rotate(-49 256 266)"
+    />
+
+    <g clip-path="url(#scope)">
+      <path
+        d="M86 334C139 304 196 295 248 302C304 309 355 327 426 308V418H86V334Z"
+        fill="url(#field)"
+      />
+      <path
+        d="M86 302C146 294 202 296 251 304C300 312 351 314 426 294V324C358 333 304 333 250 326C199 319 143 315 86 320V302Z"
+        fill="url(#horizon)"
+      />
+    </g>
+
+    <circle cx="338" cy="157" r="23" fill="#E8CB79"/>
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Gift, HelpCircle, Settings, Aperture, Pin } from 'lucide-react';
+import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Gift, HelpCircle, Settings, Pin } from 'lucide-react';
 import { ViewMode, FilterState } from '../../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -28,10 +28,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onOpenDonation,
   showSupportPulse
 }) => {
+  const brandGlyphSrc = '/branding/ambit-glyph.svg';
+
   return (
     <aside className="hidden md:flex w-20 flex-col items-center py-6 h-full rounded-3xl bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 z-20 shadow-2xl transition-all duration-500 ease-spring">
       <div className="mb-8 p-3 bg-sage-500/10 dark:bg-sage-500/20 rounded-2xl shadow-lg border border-sage-500/20">
-        <Aperture className="w-6 h-6 text-sage-600 dark:text-sage-300" />
+        <img
+          src={brandGlyphSrc}
+          alt=""
+          className="w-10 h-10 drop-shadow-[0_4px_12px_rgba(0,0,0,0.25)]"
+        />
       </div>
 
       <nav className="flex-1 flex flex-col gap-6 w-full items-center">
