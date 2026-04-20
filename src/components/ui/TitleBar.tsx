@@ -1,15 +1,14 @@
 import { useState, useEffect } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, Square, X, Monitor, Loader2 } from "lucide-react";
-import { useLibraryContext } from "../../hooks/useLibraryContext";
+import type { Window as TauriWindow } from "@tauri-apps/api/window";
+import { Minus, Square, X } from "lucide-react";
 import { APP_NAME } from "../../constants/app";
-
-
-
 import { useSettingsStore } from "../../stores/settingsStore";
 
+const BRAND_GLYPH_SRC = "/branding/ambit-glyph.svg";
+const BRAND_WINDOW_ICON_SRC = "/branding/ambit-window-icon.png";
+
 export const TitleBar = () => {
-    const [appWindow, setAppWindow] = useState<any>(null);
+    const [appWindow, setAppWindow] = useState<TauriWindow | null>(null);
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showOnHover, setShowOnHover] = useState(false);
@@ -21,6 +20,12 @@ export const TitleBar = () => {
                 const { getCurrentWindow } = await import("@tauri-apps/api/window");
                 const win = getCurrentWindow();
                 setAppWindow(win);
+
+                try {
+                    await win.setIcon(BRAND_WINDOW_ICON_SRC);
+                } catch (iconError) {
+                    console.warn("TitleBar: Failed to set window icon", iconError);
+                }
 
                 setIsMaximized(await win.isMaximized());
                 setIsFullscreen(await win.isFullscreen());
@@ -90,9 +95,15 @@ export const TitleBar = () => {
                 onMouseLeave={() => setShowOnHover(false)}
                 className={`${containerClasses} flex items-center justify-between px-4 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border-b border-gray-200 dark:border-white/10 select-none transition-all duration-300 shadow-xl`}
             >
-                <div className="flex items-center gap-2 pointer-events-none">
-                    <div className="w-3 h-3 bg-sage-500 rounded-full" />
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{APP_NAME.toUpperCase()}</span>
+                <div className="flex items-center gap-3 pointer-events-none">
+                    <img
+                        src={BRAND_GLYPH_SRC}
+                        alt=""
+                        className="h-7 w-7 shrink-0 drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
+                    />
+                    <span className="text-[13px] font-semibold tracking-[0.18em] text-zinc-700 dark:text-zinc-300">
+                        {APP_NAME.toUpperCase()}
+                    </span>
                     {devModeEnabled && (
                         <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] font-bold rounded animate-pulse">
                             DEV

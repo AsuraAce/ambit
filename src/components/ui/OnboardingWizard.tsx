@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Aperture, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
+import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
 import { verifyApiKey } from '../../services/geminiService';
@@ -20,6 +20,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     onComplete,
     onOpenSettings
 }) => {
+    const brandGlyphSrc = '/branding/ambit-glyph.svg';
     const { geminiApiKey, setGeminiApiKey } = useSettingsStore();
     const [step, setStep] = useState(1);
     const [apiKey, setApiKey] = useState(geminiApiKey || '');
@@ -113,9 +114,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             animate={{ opacity: 1, x: 0 }}
                             className="w-14 h-14 bg-white/5 backdrop-blur-xl rounded-2xl flex items-center justify-center mb-8 border border-white/10 shadow-xl"
                         >
-                            <Aperture className="w-8 h-8 text-sage-400" />
+                            <img src={brandGlyphSrc} alt="" className="w-10 h-10 drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
                         </motion.div>
-                        <h1 className="text-3xl font-bold leading-tight mb-2 tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">{APP_NAME}</h1>
+                        <h1 className="text-3xl font-semibold leading-tight mb-2 tracking-[0.18em] text-white/92 uppercase">{APP_NAME}</h1>
                         <p className="text-sage-100/50 text-sm leading-relaxed">Your professional local first generative art studio.</p>
                     </div>
 

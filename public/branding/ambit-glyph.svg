@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="ring" x1="134" y1="122" x2="378" y2="382" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E7C777"/>
+      <stop offset="0.72" stop-color="#D9C881"/>
+      <stop offset="1" stop-color="#91A168"/>
+    </linearGradient>
+    <linearGradient id="field" x1="108" y1="330" x2="402" y2="358" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#748A58"/>
+      <stop offset="1" stop-color="#44583A"/>
+    </linearGradient>
+    <linearGradient id="horizon" x1="114" y1="302" x2="396" y2="318" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E2E4AA"/>
+      <stop offset="0.54" stop-color="#F2E7AC"/>
+      <stop offset="1" stop-color="#E7C777"/>
+    </linearGradient>
+    <clipPath id="scope">
+      <circle cx="256" cy="266" r="148"/>
+    </clipPath>
+  </defs>
+
+  <g transform="translate(256 266) scale(1.35) translate(-256 -266)">
+    <circle
+      cx="256"
+      cy="266"
+      r="148"
+      stroke="url(#ring)"
+      stroke-width="28"
+      stroke-linecap="round"
+      stroke-dasharray="828 112"
+      transform="rotate(-49 256 266)"
+    />
+
+    <g clip-path="url(#scope)">
+      <path
+        d="M84 334C140 303 197 294 248 301C304 309 356 326 428 307V420H84V334Z"
+        fill="url(#field)"
+      />
+      <path
+        d="M84 302C146 294 203 296 252 304C301 312 352 314 428 294V325C359 334 304 334 251 326C199 319 143 315 84 320V302Z"
+        fill="url(#horizon)"
+      />
+    </g>
+
+    <circle cx="340" cy="156" r="26" fill="#E8CB79"/>
+  </g>
+</svg>
