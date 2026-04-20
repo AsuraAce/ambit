@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ambit | Local AI Workspace</title>
   <link rel="icon" type="image/svg+xml" href="/branding/ambit-mark.svg" />
+  <link rel="preload" href="/branding/ambit-mark.svg" as="image" type="image/svg+xml" />
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
     rel="stylesheet">
@@ -19,77 +20,116 @@
       overflow: hidden !important;
     }
 
-    /* Static loading screen - matches React LoadingScreen exactly */
+    /* Static loading screen - visible before React mounts */
     .static-loading {
       position: fixed;
       inset: 0;
-      background-color: #020617;
-      /* slate-950 */
+      background:
+        radial-gradient(circle at 50% 35%, rgba(78, 91, 60, 0.18), transparent 32%),
+        linear-gradient(180deg, #10130f 0%, #09090b 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1rem;
-      /* gap-4 */
+      gap: 1.25rem;
       font-family: 'Inter', system-ui, sans-serif;
       z-index: 9999;
       opacity: 1;
       transition: opacity 0.4s ease-out;
     }
 
-    .static-loading__spinner-container {
+    .static-loading__brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      opacity: 0;
+      transform: translateY(10px) scale(0.985);
+      animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms forwards;
+    }
+
+    .static-loading__mark-container {
       position: relative;
+      width: 6rem;
+      height: 6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .static-loading__glow {
       position: absolute;
-      inset: 0;
-      background-color: rgba(115, 140, 85, 0.2);
-      /* sage-500/20 */
-      filter: blur(24px);
-      /* blur-xl */
+      inset: 0.35rem;
+      background: radial-gradient(circle, rgba(214, 193, 116, 0.18) 0%, rgba(122, 143, 90, 0.14) 42%, transparent 72%);
+      filter: blur(22px);
       border-radius: 9999px;
       animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
 
-    .static-loading__spinner {
-      width: 3rem;
-      /* w-12 = 48px */
-      height: 3rem;
-      /* h-12 = 48px */
-      color: #8ca36b;
-      /* sage-400 */
-      animation: spin 1s linear infinite;
+    .static-loading__mark {
+      width: 5.5rem;
+      height: 5.5rem;
       position: relative;
       z-index: 10;
+      filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.38));
     }
 
     .static-loading__text {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.5rem;
-      /* gap-2 */
+      gap: 0.4rem;
     }
 
     .static-loading__title {
-      font-size: 1.5rem;
-      /* text-2xl */
-      font-weight: bold;
-      color: white;
-      letter-spacing: -0.025em;
-      /* tracking-tight */
+      font-size: 1.65rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
       margin: 0;
     }
 
     .static-loading__subtitle {
       font-size: 0.875rem;
-      /* text-sm */
-      color: #9ca3af;
-      /* gray-400 */
+      color: rgba(204, 211, 199, 0.68);
       font-weight: 500;
-      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       margin: 0;
+    }
+
+    .static-loading__status {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      min-width: 11rem;
+      opacity: 0;
+      transform: translateY(6px);
+      animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 150ms forwards;
+    }
+
+    .static-loading__spinner {
+      width: 1rem;
+      height: 1rem;
+      color: #d8c780;
+      animation: spin 1s linear infinite;
+    }
+
+    .static-loading__progress {
+      width: 10rem;
+      height: 0.2rem;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    .static-loading__progress-bar {
+      width: 45%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #d6c174 0%, #a1b377 100%);
+      animation: loading-bar 1.35s ease-in-out infinite alternate;
     }
 
     @keyframes spin {
@@ -109,6 +149,28 @@
         opacity: 0.5;
       }
     }
+
+    @keyframes loading-bar {
+      from {
+        transform: translateX(-65%);
+      }
+
+      to {
+        transform: translateX(145%);
+      }
+    }
+
+    @keyframes brand-in {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.985);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
   </style>
 </head>
 
@@ -116,16 +178,25 @@
   <div id="root"></div>
   <!-- Static loading screen - persists until removed by App.tsx -->
   <div id="static-loading" class="static-loading">
-    <div class="static-loading__spinner-container">
-      <div class="static-loading__glow"></div>
+    <div class="static-loading__brand">
+      <div class="static-loading__mark-container">
+        <div class="static-loading__glow"></div>
+        <img class="static-loading__mark" src="/branding/ambit-mark.svg" alt="Ambit logo" fetchpriority="high" decoding="sync" />
+      </div>
+      <div class="static-loading__text">
+        <h1 class="static-loading__title">AMBIT</h1>
+        <p class="static-loading__subtitle">Local AI workspace for large image libraries.</p>
+      </div>
+    </div>
+    <div class="static-loading__status" aria-live="polite">
       <!-- Lucide Loader2 icon SVG -->
       <svg class="static-loading__spinner" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
       </svg>
-    </div>
-    <div class="static-loading__text">
-      <h1 class="static-loading__title">Ambit</h1>
+      <div class="static-loading__progress" aria-hidden="true">
+        <div class="static-loading__progress-bar"></div>
+      </div>
       <p class="static-loading__subtitle">Initializing library...</p>
     </div>
   </div>
