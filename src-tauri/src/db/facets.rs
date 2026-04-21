@@ -191,36 +191,57 @@ pub async fn rebuild_facet_cache_incremental(
     app: tauri::AppHandle,
     facet_type: String,
 ) -> Result<usize, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let db_path = resolve_db_path(&app)?;
-        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-        configure_connection(&conn).map_err(|e| e.to_string())?;
+    rebuild_facet_cache_incremental_batch(app, vec![facet_type]).await
+}
 
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
+fn normalize_facet_type(facet_type: &str) -> Result<&'static str, String> {
+    match facet_type {
+        "checkpoints" => Ok("checkpoints"),
+        "tools" => Ok("tools"),
+        "loras" => Ok("loras"),
+        "embeddings" => Ok("embeddings"),
+        "hypernetworks" => Ok("hypernetworks"),
+        "controlNets" | "control_nets" => Ok("control_nets"),
+        "ipAdapters" | "ip_adapters" => Ok("ip_adapters"),
+        _ => Err(format!(
+            "Unknown facet type for incremental build: {}",
+            facet_type
+        )),
+    }
+}
 
-        // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
-        harvest_models(&tx)?;
+fn rebuild_incremental_facet_types(
+    conn: &mut rusqlite::Connection,
+    facet_types: &[String],
+) -> Result<Vec<String>, String> {
+    let mut normalized_types: Vec<String> = Vec::new();
 
-        // Map frontend types to DB types if necessary
-        let db_facet_type = match facet_type.as_str() {
-            "checkpoints" => "checkpoints",
-            "tools" => "tools",
-            "loras" => "loras",
-            "embeddings" => "embeddings",
-            "hypernetworks" => "hypernetworks",
-            "controlNets" | "control_nets" => "control_nets",
-            "ipAdapters" | "ip_adapters" => "ip_adapters",
-            other => other,
-        };
+    for facet_type in facet_types {
+        let db_facet_type = normalize_facet_type(facet_type)?.to_string();
+        if !normalized_types.contains(&db_facet_type) {
+            normalized_types.push(db_facet_type);
+        }
+    }
 
-        // Clear existing cache for this specific type
+    if normalized_types.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
+    harvest_models(&tx)?;
+
+    for db_facet_type in &normalized_types {
+        let facet_started_at = std::time::Instant::now();
+
         tx.execute(
             "DELETE FROM facet_cache WHERE facet_type = ?1",
             [db_facet_type],
         )
         .map_err(|e| e.to_string())?;
 
-        match db_facet_type {
+        match db_facet_type.as_str() {
             "checkpoints" => build_checkpoint_facets(&tx)?,
             "tools" => build_tool_facets(&tx)?,
             "loras" => build_resource_facets(&tx, "loras", "loras")?,
@@ -228,26 +249,55 @@ pub async fn rebuild_facet_cache_incremental(
             "hypernetworks" => build_resource_facets(&tx, "hypernetworks", "hypernetworks")?,
             "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets")?,
             "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters")?,
-            _ => {
-                return Err(format!(
-                    "Unknown facet type for incremental build: {}",
-                    facet_type
-                ))
-            }
+            _ => unreachable!("facet types are normalized before rebuild"),
         }
 
-        tx.commit().map_err(|e| e.to_string())?;
+        println!(
+            "[FacetCache] Incremental rebuild for {} completed in {:?}.",
+            db_facet_type,
+            facet_started_at.elapsed()
+        );
+    }
 
-        // Return current count for this type
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = ?1",
-                [db_facet_type],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
-        Ok(count as usize)
+    Ok(normalized_types)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn rebuild_facet_cache_incremental_batch(
+    app: tauri::AppHandle,
+    facet_types: Vec<String>,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let start_total = std::time::Instant::now();
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        let normalized_types = rebuild_incremental_facet_types(&mut conn, &facet_types)?;
+
+        let mut total_count = 0_i64;
+        for db_facet_type in &normalized_types {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM facet_cache WHERE facet_type = ?1",
+                    [db_facet_type],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            total_count += count;
+        }
+
+        println!(
+            "[FacetCache] Incremental rebuild complete in {:?}. Facets: {:?}. Total entries: {}",
+            start_total.elapsed(),
+            normalized_types,
+            total_count
+        );
+
+        Ok(total_count as usize)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1543,6 +1593,85 @@ mod tests {
         assert_eq!(safe_thumb, "safe.webp");
         assert_eq!(image_id, "unsafe-img");
         assert_eq!(sensitive, 1);
+    }
+
+    #[test]
+    fn test_rebuild_incremental_facet_types_rebuilds_only_requested_types() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        let metadata = r#"{
+            "model": "Flux Base",
+            "modelHash": "flux-hash",
+            "tool": "InvokeAI"
+        }"#;
+
+        conn.execute(
+            "INSERT INTO images (id, path, metadata_json, timestamp, tool, thumbnail_path, resolved_model_name, model_hash)
+             VALUES ('img1', 'test.png', ?1, 100, 'InvokeAI', 'thumb1.png', 'Flux Base', 'flux-hash')",
+            params![metadata],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'CinematicDetail')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img1', 'UnusedEmbedding')",
+            [],
+        )
+        .unwrap();
+
+        let rebuilt = rebuild_incremental_facet_types(
+            &mut conn,
+            &[
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string(),
+                "checkpoints".to_string(),
+            ],
+        )
+        .unwrap();
+
+        let facet_types: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT facet_type FROM facet_cache ORDER BY facet_type")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+
+        assert_eq!(
+            rebuilt,
+            vec![
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string()
+            ]
+        );
+        assert_eq!(
+            facet_types,
+            vec![
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string()
+            ]
+        );
+
+        let embedding_facets: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'embeddings'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(embedding_facets, 0);
     }
 
     #[test]

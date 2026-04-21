@@ -33,7 +33,11 @@ vi.mock('../metadataMapper', () => ({
         sampler: 'Euler',
         positivePrompt: 'test',
         negativePrompt: '',
-        generationType: 'txt2img'
+        generationType: 'txt2img',
+        loras: ['DetailBoost'],
+        embeddings: ['EasyNegative'],
+        controlNets: ['Depth Control'],
+        ipAdapters: ['Face Adapter']
     }))
 }));
 
@@ -102,6 +106,7 @@ describe('syncImages live mode', () => {
 
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
+        expect(result.touchedFacetTypes).toEqual([]);
         expect(fetchBoardMappings).not.toHaveBeenCalled();
         expect(getImagesByIds).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
@@ -208,6 +213,14 @@ describe('syncImages live mode', () => {
         );
 
         expect(result.imported).toBe(1);
+        expect(result.touchedFacetTypes).toEqual([
+            'checkpoints',
+            'loras',
+            'embeddings',
+            'controlNets',
+            'ipAdapters',
+            'tools'
+        ]);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([

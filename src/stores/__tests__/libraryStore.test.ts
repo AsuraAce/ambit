@@ -1,7 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../libraryStore';
-import { rebuildFacetCache } from '../../services/db/imageRepo';
 
 vi.mock('../../bindings', () => ({
     commands: {
@@ -12,10 +11,6 @@ vi.mock('../../bindings', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn().mockResolvedValue(undefined)
-}));
-
-vi.mock('../../services/db/imageRepo', () => ({
-    rebuildFacetCache: vi.fn().mockResolvedValue(undefined)
 }));
 
 const resetLibraryStore = () => {
@@ -54,7 +49,6 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
@@ -70,17 +64,16 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(1000);
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
-        expect(rebuildFacetCache).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
     });
 
-    it('skips the idle facet rebuild when no images were received', async () => {
+    it('ends the live session immediately when the session is closed manually', async () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
@@ -93,7 +86,7 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
     });
 
     it('cancels duplicate hashing when an import starts', () => {

@@ -1,9 +1,11 @@
+import { invoke } from '@tauri-apps/api/core';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, GeneratorTool } from '../../types';
+import { AIImage, FacetType, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
+import { orderFacetTypes } from '../../utils/touchedFacetTypes';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -107,6 +109,51 @@ const persistImageRecords = async (
     await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
 };
 
+const clearFacetRelatedStatsCache = async () => {
+    const { clearLibraryStatsCache } = await import('./searchRepo');
+    clearLibraryStatsCache();
+};
+
+const normalizeFacetType = (type: string): FacetType | null => {
+    switch (type) {
+        case 'checkpoints':
+        case 'loras':
+        case 'embeddings':
+        case 'hypernetworks':
+        case 'controlNets':
+        case 'ipAdapters':
+        case 'tools':
+            return type;
+        case 'control_nets':
+            return 'controlNets';
+        case 'ip_adapters':
+            return 'ipAdapters';
+        default:
+            return null;
+    }
+};
+
+const runRebuildFacetCache = async (): Promise<number> => {
+    const count = await unwrap(commands.rebuildFacetCache());
+    await clearFacetRelatedStatsCache();
+    return count;
+};
+
+const runRebuildFacetCacheIncrementalBatch = async (types: string[]): Promise<number> => {
+    const facetTypes = orderFacetTypes(
+        types
+            .map(normalizeFacetType)
+            .filter((type): type is FacetType => type !== null)
+    );
+    if (facetTypes.length === 0) {
+        return 0;
+    }
+
+    const count = await invoke<number>('rebuild_facet_cache_incremental_batch', { facetTypes });
+    await clearFacetRelatedStatsCache();
+    return count;
+};
+
 export const insertImage = async (image: AIImage) => {
     if (isBrowserMockMode()) return;
 
@@ -159,16 +206,19 @@ export const rebuildFacetCache = async (): Promise<number> => {
     if (isBrowserMockMode()) return 0;
 
     try {
-        const { clearLibraryStatsCache } = await import('./searchRepo');
-        clearLibraryStatsCache();
-        
-        const count = await unwrap(commands.rebuildFacetCache());
+        const count = await runRebuildFacetCache();
         console.log(`[DB] Rebuilt facet cache with ${count} entries`);
         return count;
     } catch (e) {
         console.error('[DB] Failed to rebuild facet cache', e);
         return 0;
     }
+};
+
+export const rebuildFacetCacheStrict = async (): Promise<number> => {
+    const count = await runRebuildFacetCache();
+    console.log(`[DB] Rebuilt facet cache with ${count} entries`);
+    return count;
 };
 
 /**
@@ -180,10 +230,7 @@ export const rebuildFacetCacheIncremental = async (type: string): Promise<number
     if (isBrowserMockMode()) return 0;
 
     try {
-        const { clearLibraryStatsCache } = await import('./searchRepo');
-        clearLibraryStatsCache();
-
-        const count = await unwrap(commands.rebuildFacetCacheIncremental(type));
+        const count = await runRebuildFacetCacheIncrementalBatch([type]);
         console.log(`[DB] Rebuilt incremental facet cache for ${type}: ${count} entries`);
         return count;
     } catch (e) {
@@ -192,9 +239,32 @@ export const rebuildFacetCacheIncremental = async (type: string): Promise<number
     }
 };
 
+export const rebuildFacetCacheIncrementalBatch = async (types: string[]): Promise<number> => {
+    try {
+        const count = await runRebuildFacetCacheIncrementalBatch(types);
+        console.log(`[DB] Rebuilt incremental facet cache for ${types.join(', ')}: ${count} entries`);
+        return count;
+    } catch (e) {
+        console.error(`[DB] Failed to rebuild incremental facet cache batch for ${types.join(', ')}`, e);
+        return 0;
+    }
+};
+
+export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[]): Promise<number> => {
+    const count = await runRebuildFacetCacheIncrementalBatch(types);
+    console.log(`[DB] Rebuilt incremental facet cache for ${types.join(', ')}: ${count} entries`);
+    return count;
+};
+
 export const rebuildThumbnailFacetCache = async (): Promise<void> => {
-    const types = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'control_nets', 'ip_adapters'];
-    await Promise.all(types.map(type => rebuildFacetCacheIncremental(type)));
+    await rebuildFacetCacheIncrementalBatch([
+        'checkpoints',
+        'loras',
+        'embeddings',
+        'hypernetworks',
+        'controlNets',
+        'ipAdapters'
+    ]);
 };
 
 

@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
     countImages: vi.fn().mockResolvedValue(0),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStats: vi.fn().mockResolvedValue({ totalImages: 0 }),
-    syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map() }),
+    syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [] }),
+    rebuildFacetCache: vi.fn().mockResolvedValue(0),
+    rebuildFacetCacheStrict: vi.fn().mockResolvedValue(0),
+    rebuildFacetCacheIncrementalBatchStrict: vi.fn().mockResolvedValue(0),
     getInvokeDbSnapshot: vi.fn().mockResolvedValue({
         status: 'ok',
         data: {
@@ -95,7 +98,9 @@ vi.mock('../../services/db/maintenanceRepo', () => ({
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
-    rebuildFacetCache: vi.fn().mockResolvedValue({}),
+    rebuildFacetCache: (...args: any[]) => mocks.rebuildFacetCache(...args),
+    rebuildFacetCacheStrict: (...args: any[]) => mocks.rebuildFacetCacheStrict(...args),
+    rebuildFacetCacheIncrementalBatchStrict: (...args: any[]) => mocks.rebuildFacetCacheIncrementalBatchStrict(...args),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue(false)
 }));
 
@@ -239,7 +244,8 @@ describe('Library Integration (Provider Stack)', () => {
             updated: 0,
             maxTimestamp: 100,
             syncedIds: new Set(),
-            boardMapping: new Map()
+            boardMapping: new Map(),
+            touchedFacetTypes: []
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
@@ -280,7 +286,8 @@ describe('Library Integration (Provider Stack)', () => {
             updated: 0,
             maxTimestamp: 100,
             syncedIds: new Set(),
-            boardMapping: new Map()
+            boardMapping: new Map(),
+            touchedFacetTypes: []
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
@@ -297,6 +304,59 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+    });
+
+    it('refreshes grid and facets after a live Invoke cycle without falling back to the full rebuild', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 1,
+            updated: 0,
+            maxTimestamp: 101,
+            syncedIds: new Set(['new-image.png']),
+            boardMapping: new Map(),
+            touchedFacetTypes: ['checkpoints', 'loras', 'tools']
+        });
+        mocks.searchImages.mockClear();
+        mocks.getFacets.mockClear();
+        mocks.getLibraryStats.mockClear();
+        mocks.rebuildFacetCache.mockClear();
+        mocks.rebuildFacetCacheStrict.mockClear();
+        mocks.rebuildFacetCacheIncrementalBatchStrict.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'live' });
+        });
+
+        await waitFor(() => {
+            expect(mocks.rebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledWith([
+                'checkpoints',
+                'loras',
+                'tools'
+            ]);
+        });
+
+        await waitFor(() => {
+            expect(mocks.searchImages).toHaveBeenCalled();
+            expect(mocks.getFacets).toHaveBeenCalled();
+            expect(mocks.getLibraryStats).toHaveBeenCalled();
+        });
+
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+        expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
     });
 
     it('skips startup Invoke SQLite sync when the saved DB snapshot is unchanged', async () => {

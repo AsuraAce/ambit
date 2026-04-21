@@ -424,21 +424,6 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     },
     endLiveImageSession: async () => {
         clearLiveWatchSessionEnd();
-        const { liveWatchSession } = useLibraryStore.getState();
-        const shouldRebuildFacetCache = liveWatchSession.receivedCount > 0;
         set({ liveWatchSession: createInitialLiveWatchSessionState() });
-
-        if (!shouldRebuildFacetCache) {
-            return;
-        }
-
-        try {
-            console.log('[LiveWatch] Idle timeout reached. Rebuilding Facet Cache.');
-            const { rebuildFacetCache } = await import('../services/db/imageRepo');
-            await rebuildFacetCache();
-            useLibraryStore.getState().incrementFacetCacheVersion();
-        } catch(e) { 
-            console.error('[LiveWatch] Failed facet cache rebuild after idle timeout', e); 
-        }
     },
 }));

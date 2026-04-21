@@ -167,7 +167,6 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 );
 
                 if (liveResult.handledPaths.length > 0) {
-                    await cb.onNewImageDetected?.('images-only');
                     await cb.refreshMaintenanceCounts();
                 }
 

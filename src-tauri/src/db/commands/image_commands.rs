@@ -108,6 +108,188 @@ pub fn refresh_privacy_mask_index_for_conn(
     })
 }
 
+fn save_images_batch_inner(
+    conn: &rusqlite::Connection,
+    images: &[ImageRecord],
+) -> Result<usize, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    {
+        use crate::metadata::CURRENT_PARSER_VERSION;
+
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+                    json_extract(?8, '$.modelHash'),
+                    json_extract(?8, '$.model'),
+                    json_extract(?8, '$.tool'),
+                    COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?8, '$.modelHash')), json_extract(?8, '$.model')),
+                    CAST(json_extract(?8, '$.steps') AS INTEGER),
+                    CAST(json_extract(?8, '$.cfg') AS REAL),
+                    REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
+                    json_extract(?8, '$.generationType'),
+                    ?23,
+                    ?8,
+                    COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
+                    COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    path=excluded.path,
+                    timestamp=excluded.timestamp,
+                    file_size=excluded.file_size,
+                    file_hash=excluded.file_hash,
+                    metadata_json=excluded.metadata_json,
+                    thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
+                    micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
+                    thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
+                    is_favorite=excluded.is_favorite,
+                    is_pinned=excluded.is_pinned,
+                    group_id=COALESCE(images.group_id, excluded.group_id),
+                    board_id=excluded.board_id,
+                    notes=COALESCE(images.notes, excluded.notes),
+                    original_metadata_json=excluded.original_metadata_json,
+                    original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
+                    is_corrupt=excluded.is_corrupt,
+                    model_hash=excluded.model_hash,
+                    model_name=excluded.model_name,
+                    tool=excluded.tool,
+                    resolved_model_name=excluded.resolved_model_name,
+                    steps=excluded.steps,
+                    cfg=excluded.cfg,
+                    sampler=excluded.sampler,
+                    generation_type=excluded.generation_type,
+                    parser_version=excluded.parser_version,
+                    original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json),
+                    positive_prompt=excluded.positive_prompt,
+                    negative_prompt=excluded.negative_prompt
+                WHERE images.metadata_json != excluded.metadata_json
+                    OR images.timestamp != excluded.timestamp
+                    OR images.file_size != excluded.file_size
+                    OR images.file_hash IS NOT excluded.file_hash
+                    OR images.is_favorite IS NOT excluded.is_favorite
+                    OR images.is_pinned IS NOT excluded.is_pinned
+                    OR images.board_id IS NOT excluded.board_id
+                    OR images.original_metadata_json IS NULL
+                    OR images.original_metadata_json != excluded.original_metadata_json"
+        ).map_err(|e| e.to_string())?;
+
+        let mut delete_loras = tx.prepare_cached("DELETE FROM image_loras WHERE image_id = ?1").map_err(|e| e.to_string())?;
+        let mut delete_controlnets = tx.prepare_cached("DELETE FROM image_controlnets WHERE image_id = ?1").map_err(|e| e.to_string())?;
+        let mut delete_ipadapters = tx.prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1").map_err(|e| e.to_string())?;
+        let mut delete_embeddings = tx.prepare_cached("DELETE FROM image_embeddings WHERE image_id = ?1").map_err(|e| e.to_string())?;
+        let mut delete_hypernetworks = tx.prepare_cached("DELETE FROM image_hypernetworks WHERE image_id = ?1").map_err(|e| e.to_string())?;
+
+        let mut lora_stmt = tx.prepare_cached("
+            INSERT OR IGNORE INTO image_loras (image_id, lora_name)
+            SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+            FROM json_each(?2, '$.loras')
+            WHERE value IS NOT NULL AND value != ''
+        ").map_err(|e| e.to_string())?;
+
+        let mut cn_stmt = tx.prepare_cached("
+            INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
+            SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+            FROM json_each(?2, '$.controlNets')
+            WHERE value IS NOT NULL AND value != ''
+        ").map_err(|e| e.to_string())?;
+
+        let mut ip_stmt = tx.prepare_cached("
+            INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
+            SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+            FROM json_each(?2, '$.ipAdapters')
+            WHERE value IS NOT NULL AND value != ''
+        ").map_err(|e| e.to_string())?;
+
+        let mut emb_stmt = tx.prepare_cached("
+            INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
+            SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+            FROM json_each(?2, '$.embeddings')
+            WHERE value IS NOT NULL AND value != ''
+        ").map_err(|e| e.to_string())?;
+
+        let mut hn_stmt = tx.prepare_cached("
+            INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
+            SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+            FROM json_each(?2, '$.hypernetworks')
+            WHERE value IS NOT NULL AND value != ''
+        ").map_err(|e| e.to_string())?;
+
+        for img in images {
+            let rows_affected = stmt.execute(params![
+                img.id, img.path, img.width, img.height, img.file_size as i64, img.file_hash, img.timestamp as i64,
+                img.metadata_json, img.thumbnail_path, img.micro_thumbnail, img.thumbnail_source,
+                img.is_favorite, img.is_pinned, img.is_deleted, img.is_missing, img.user_masked,
+                img.group_id, img.board_id, img.notes, img.original_metadata_json, img.original_state_json,
+                img.is_corrupt, CURRENT_PARSER_VERSION
+            ]).map_err(|e| e.to_string())?;
+
+            if rows_affected > 0 {
+                delete_loras.execute(params![img.id]).map_err(|e| e.to_string())?;
+                delete_controlnets.execute(params![img.id]).map_err(|e| e.to_string())?;
+                delete_ipadapters.execute(params![img.id]).map_err(|e| e.to_string())?;
+                delete_embeddings.execute(params![img.id]).map_err(|e| e.to_string())?;
+                delete_hypernetworks.execute(params![img.id]).map_err(|e| e.to_string())?;
+
+                lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+            }
+        }
+
+        drop(stmt);
+        drop(delete_loras);
+        drop(delete_controlnets);
+        drop(delete_ipadapters);
+        drop(delete_embeddings);
+        drop(delete_hypernetworks);
+        drop(lora_stmt);
+        drop(cn_stmt);
+        drop(ip_stmt);
+        drop(emb_stmt);
+        drop(hn_stmt);
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(images.len())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn refresh_privacy_mask_index(
@@ -129,167 +311,7 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
         let mut retry_delay_ms = 100;
         
         for attempt in 0..max_retries {
-            let result = (|| -> Result<usize, String> {
-                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-
-                {
-                    use crate::metadata::CURRENT_PARSER_VERSION;
-                    
-                    let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
-                             json_extract(?8, '$.modelHash'),
-                             json_extract(?8, '$.model'),
-                             json_extract(?8, '$.tool'),
-                             COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?8, '$.modelHash')), json_extract(?8, '$.model')),
-                             CAST(json_extract(?8, '$.steps') AS INTEGER),
-                             CAST(json_extract(?8, '$.cfg') AS REAL),
-                             REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
-                             json_extract(?8, '$.generationType'),
-                             ?23,
-                             ?8,
-                             COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
-                             COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
-                         )
-                         ON CONFLICT(id) DO UPDATE SET 
-                            path=excluded.path,
-                            timestamp=excluded.timestamp, 
-                            file_size=excluded.file_size,
-                            file_hash=excluded.file_hash,
-                            metadata_json=excluded.metadata_json,
-                            thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
-                            micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
-                            thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
-                           is_favorite=excluded.is_favorite,
-                           is_pinned=excluded.is_pinned,
-                           group_id=COALESCE(images.group_id, excluded.group_id),
-                           board_id=excluded.board_id,
-                           notes=COALESCE(images.notes, excluded.notes),
-                            original_metadata_json=excluded.original_metadata_json,
-                            original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
-                            is_corrupt=excluded.is_corrupt,
-                            model_hash=excluded.model_hash,
-                            model_name=excluded.model_name,
-                            tool=excluded.tool,
-                            resolved_model_name=excluded.resolved_model_name,
-                            steps=excluded.steps,
-                            cfg=excluded.cfg,
-                            sampler=excluded.sampler,
-                            generation_type=excluded.generation_type,
-                            parser_version=excluded.parser_version,
-                            original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json),
-                            positive_prompt=excluded.positive_prompt,
-                            negative_prompt=excluded.negative_prompt
-                         WHERE images.metadata_json != excluded.metadata_json 
-                            OR images.timestamp != excluded.timestamp 
-                            OR images.file_size != excluded.file_size
-                            OR images.file_hash IS NOT excluded.file_hash
-                            OR images.is_favorite IS NOT excluded.is_favorite
-                            OR images.is_pinned IS NOT excluded.is_pinned
-                            OR images.board_id IS NOT excluded.board_id
-                            OR images.original_metadata_json IS NULL
-                            OR images.original_metadata_json != excluded.original_metadata_json"
-                    ).map_err(|e| e.to_string())?;
-
-                    let mut lora_stmt = tx.prepare_cached("
-                        INSERT OR IGNORE INTO image_loras (image_id, lora_name)
-                        SELECT ?1, 
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                CASE 
-                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                    ELSE value 
-                                END, 
-                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
-                        FROM json_each(?2, '$.loras')
-                        WHERE value IS NOT NULL AND value != ''
-                    ").map_err(|e| e.to_string())?;
-
-                    let mut cn_stmt = tx.prepare_cached("
-                        INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
-                        SELECT ?1, 
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                CASE 
-                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                    ELSE value 
-                                END, 
-                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
-                        FROM json_each(?2, '$.controlNets')
-                        WHERE value IS NOT NULL AND value != ''
-                    ").map_err(|e| e.to_string())?;
-
-                    let mut ip_stmt = tx.prepare_cached("
-                        INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
-                        SELECT ?1, 
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                CASE 
-                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                    ELSE value 
-                                END, 
-                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
-                        FROM json_each(?2, '$.ipAdapters')
-                        WHERE value IS NOT NULL AND value != ''
-                    ").map_err(|e| e.to_string())?;
-
-                    let mut emb_stmt = tx.prepare_cached("
-                        INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
-                        SELECT ?1, 
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                CASE 
-                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                    ELSE value 
-                                END, 
-                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
-                        FROM json_each(?2, '$.embeddings')
-                        WHERE value IS NOT NULL AND value != ''
-                    ").map_err(|e| e.to_string())?;
-
-                    let mut hn_stmt = tx.prepare_cached("
-                        INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
-                        SELECT ?1, 
-                            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                                CASE 
-                                    WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
-                                    WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
-                                    ELSE value 
-                                END, 
-                            '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
-                        FROM json_each(?2, '$.hypernetworks')
-                        WHERE value IS NOT NULL AND value != ''
-                    ").map_err(|e| e.to_string())?;
-
-                    for img in &images {
-                        let rows_affected = stmt.execute(params![
-                            img.id, img.path, img.width, img.height, img.file_size as i64, img.file_hash, img.timestamp as i64,
-                            img.metadata_json, img.thumbnail_path, img.micro_thumbnail, img.thumbnail_source,
-                            img.is_favorite, img.is_pinned, img.is_deleted, img.is_missing, img.user_masked,
-                            img.group_id, img.board_id, img.notes, img.original_metadata_json, img.original_state_json,
-                            img.is_corrupt, CURRENT_PARSER_VERSION
-                        ]).map_err(|e| e.to_string())?;
-
-                        if rows_affected > 0 {
-                            lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                            emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                            hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                            cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                            ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                        }
-                    }
-                    // Explicitly drop statements before transaction commit
-                    drop(stmt);
-                    drop(lora_stmt);
-                    drop(cn_stmt);
-                    drop(ip_stmt);
-                    drop(emb_stmt);
-                    drop(hn_stmt);
-                }
-
-                tx.commit().map_err(|e| e.to_string())?;
-                Ok(images.len())
-            })();
+            let result = save_images_batch_inner(conn, &images);
             
             match result {
                 Ok(count) => return Ok(count),
@@ -483,6 +505,33 @@ pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult,
 #[cfg(test)]
 mod tests {
     use rusqlite::{params, Connection};
+    use crate::db::{migrations::init_db, ImageRecord};
+
+    fn create_image_record(id: &str, timestamp: u64, file_size: u64, metadata_json: &str) -> ImageRecord {
+        ImageRecord {
+            id: id.to_string(),
+            path: format!("C:/library/{}.png", id),
+            width: 1024,
+            height: 1024,
+            file_size,
+            timestamp,
+            metadata_json: metadata_json.to_string(),
+            thumbnail_path: format!("C:/thumbs/{}.webp", id),
+            micro_thumbnail: None,
+            thumbnail_source: Some("ambit".to_string()),
+            is_favorite: false,
+            is_pinned: false,
+            is_deleted: false,
+            is_missing: false,
+            is_corrupt: false,
+            user_masked: None,
+            group_id: None,
+            board_id: None,
+            notes: None,
+            original_metadata_json: Some(metadata_json.to_string()),
+            original_state_json: None,
+        }
+    }
 
     #[test]
     fn upsert_updates_live_sync_controlled_fields_even_when_metadata_is_unchanged() {
@@ -630,5 +679,80 @@ mod tests {
 
         assert!(!second.changed);
         assert_eq!(second.updated, 0);
+    }
+
+    #[test]
+    fn save_images_batch_replaces_existing_junction_rows_when_metadata_changes() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).expect("apply migrations");
+        }
+
+        let initial_metadata = r#"{
+            "model": "Base Model",
+            "modelHash": "hash-1",
+            "tool": "ComfyUI",
+            "loras": ["OldLora:1.0"],
+            "embeddings": ["OldEmbedding"],
+            "controlNets": ["OldControl"]
+        }"#;
+        let updated_metadata = r#"{
+            "model": "Base Model",
+            "modelHash": "hash-1",
+            "tool": "ComfyUI",
+            "loras": ["NewLora:1.0"],
+            "ipAdapters": ["Face Adapter"]
+        }"#;
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record("img-1", 100, 200, initial_metadata)],
+        )
+        .expect("initial save");
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record("img-1", 200, 300, updated_metadata)],
+        )
+        .expect("updated save");
+
+        let lora_rows: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT lora_name FROM image_loras WHERE image_id = 'img-1' ORDER BY lora_name")
+                .expect("prepare lora query");
+            stmt.query_map([], |row| row.get(0))
+                .expect("query loras")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect loras")
+        };
+        let embedding_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_embeddings WHERE image_id = 'img-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("embedding count");
+        let controlnet_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_controlnets WHERE image_id = 'img-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("controlnet count");
+        let ipadapter_rows: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT ipadapter_name FROM image_ipadapters WHERE image_id = 'img-1' ORDER BY ipadapter_name")
+                .expect("prepare ipadapter query");
+            stmt.query_map([], |row| row.get(0))
+                .expect("query ipadapters")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect ipadapters")
+        };
+
+        assert_eq!(lora_rows, vec!["NewLora".to_string()]);
+        assert_eq!(embedding_count, 0);
+        assert_eq!(controlnet_count, 0);
+        assert_eq!(ipadapter_rows, vec!["Face Adapter".to_string()]);
     }
 }

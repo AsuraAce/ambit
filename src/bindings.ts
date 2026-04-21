@@ -128,6 +128,14 @@ async rebuildFacetCacheIncremental(facetType: string) : Promise<Result<number, s
     else return { status: "error", error: e  as any };
 }
 },
+async rebuildFacetCacheIncrementalBatch(facetTypes: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache_incremental_batch", { facetTypes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Get distinct facet names that exist in the current filtered result set.
  * This is used for drill-down filtering - hiding facets that have no images

@@ -3,6 +3,7 @@ import { commands, ParameterRanges } from '../bindings';
 import { FilterState } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useCollections } from '../contexts/CollectionContext';
+import { useLibraryStore } from '../stores/libraryStore';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockImages } from '../services/browserMockData';
@@ -19,6 +20,7 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { settings, privacyEnabled } = useSettings();
     const { collections: allCollections } = useCollections();
     const browserMockMode = isBrowserMockMode();
+    const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
 
     return useQuery<ParameterRanges>({
         // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
@@ -29,6 +31,7 @@ export function useParameterRangesQuery(filters: FilterState) {
             filters.models,
             filters.tools,
             filters.loras,
+            facetCacheVersion,
             // Intentionally EXCLUDE samplers and generationTypes from query key
             // so selecting them doesn't cause a refetch (Disjunctive)
             settings.maskingMode,
