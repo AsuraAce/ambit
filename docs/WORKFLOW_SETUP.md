@@ -51,7 +51,11 @@ Ambit now uses Tauri's updater plugin with GitHub Releases as the public update 
 4.  PRs into `main` must pass the `frontend-checks` and `rust-tests` GitHub Actions jobs.
 5.  **Squash and merge** the PR into `main` so the squashed commit title is the Conventional Commit that lands on the release branch.
 6.  `release-please` will automatically open or refresh a release PR.
-7.  Merge the release PR to trigger the `release.yml` workflow, which builds the installers for macOS, Windows, and Linux.
+7.  Merge the release PR to trigger the `release.yml` workflow, which currently publishes the Windows release artifacts only.
+
+## Current Platform Support
+*   Official release builds are temporarily **Windows-only** while Linux and macOS go through explicit validation.
+*   Cross-platform code paths remain in the repository, but Linux and macOS installers are not currently published from CI.
 
 ## Release Tag Notes
 *   Release tags are intended to normalize to `vX.Y.Z`.

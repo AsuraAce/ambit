@@ -32,7 +32,9 @@ Ambit is a local-first desktop app for cataloging, searching, and managing large
 
 Ambit is currently in a private alpha phase. Invited testers can download current builds from [GitHub Releases](https://github.com/AsuraAce/ambit/releases).
 
-1.  Download the installer for your platform.
+Official release builds are currently available for **Windows only** while macOS and Linux support is being validated.
+
+1.  Download the Windows installer (`.msi`) from the release assets.
 2.  Install and launch the app.
 3.  Report bugs or feedback through [GitHub Issues](https://github.com/AsuraAce/ambit/issues).
 
