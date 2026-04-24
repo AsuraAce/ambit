@@ -38,6 +38,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 // Mock Tauri Shell Plugin
 vi.mock('@tauri-apps/plugin-shell', () => ({
+    open: vi.fn().mockResolvedValue(undefined),
     Command: class {
         static create = vi.fn();
         execute = vi.fn().mockResolvedValue({ code: 0, stdout: '', stderr: '' });

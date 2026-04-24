@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, Coffee, Github } from 'lucide-react';
+import { Coffee, Github, Heart, X } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
+import { ENABLED_DONATION_PROVIDERS, SUPPORT_CHANNELS } from '../../constants/support';
+import { openExternalUrl } from '../../utils/externalLinks';
 
 interface DonationModalProps {
     isOpen: boolean;
@@ -9,7 +11,9 @@ interface DonationModalProps {
 }
 
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
-
+    const handleOpenLink = async (url: string) => {
+        await openExternalUrl(url);
+    };
 
     return (
         <AnimatePresence>
@@ -50,27 +54,54 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
 
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Support {APP_NAME}</h2>
                             <p className="text-gray-600 dark:text-gray-400 text-sm mb-8 leading-relaxed max-w-xs">
-                                If this tool helps you organize your generative art, consider supporting development. Every coffee helps!
+                                If Ambit helps you manage your image library, optional support helps fund development, testing, packaging, and maintenance.
                             </p>
 
-                            <div className="flex flex-col gap-3 w-full">
-                                <a
-                                    href="https://ko-fi.com"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center justify-center gap-3 w-full py-3 bg-[#FF5E5B] hover:bg-[#ff4845] text-white rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02]"
-                                >
-                                    <Coffee className="w-5 h-5" /> Buy me a Coffee
-                                </a>
+                            {ENABLED_DONATION_PROVIDERS.length > 0 ? (
+                                <div className="flex flex-col gap-3 w-full">
+                                    {ENABLED_DONATION_PROVIDERS.map((provider) => {
+                                        const ProviderIcon = provider.id === 'github-sponsors' ? Github : Coffee;
+                                        const isKoFi = provider.id === 'ko-fi';
 
-                                <a
-                                    href="https://github.com/sponsors"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center justify-center gap-3 w-full py-3 bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900 rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02]"
-                                >
-                                    <Github className="w-5 h-5" /> GitHub Sponsors
-                                </a>
+                                        return (
+                                            <button
+                                                key={provider.id}
+                                                type="button"
+                                                onClick={() => provider.url && handleOpenLink(provider.url)}
+                                                className={`flex items-center justify-center gap-3 w-full py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02] ${isKoFi
+                                                    ? 'bg-[#FF5E5B] hover:bg-[#ff4845] text-white'
+                                                    : 'bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900'
+                                                    }`}
+                                            >
+                                                <ProviderIcon className="w-5 h-5" /> Support via {provider.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="w-full rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/90 dark:bg-black/20 px-4 py-4 text-left">
+                                    <div className="font-semibold text-gray-900 dark:text-white">Donations are not configured yet</div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                                        Add your Ko-fi, GitHub Sponsors, or Patreon URL in <code>src/constants/support.ts</code> when the pages are live.
+                                    </div>
+                                </div>
+                            )}
+
+                            <p className="mt-5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed max-w-xs">
+                                Ambit remains free and open source. There are no paid-only features or priority-support tiers.
+                            </p>
+
+                            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-gray-400">
+                                {SUPPORT_CHANNELS.map((channel) => (
+                                    <button
+                                        key={channel.id}
+                                        type="button"
+                                        onClick={() => handleOpenLink(channel.url)}
+                                        className="hover:text-sage-600 dark:hover:text-sage-300 hover:underline transition-colors"
+                                    >
+                                        {channel.label}
+                                    </button>
+                                ))}
                             </div>
 
                             <div className="mt-8 text-xs text-gray-400">
