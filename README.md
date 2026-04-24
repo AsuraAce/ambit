@@ -34,7 +34,9 @@ Ambit is a next-generation tool designed to catalog, search, and manage massive 
 
 Ambit is currently in **Phase 1 (Private Alpha)**. If you have been invited to test, you can download the latest pre-compiled binaries from the [GitHub Releases](https://github.com/your-username/ambit/releases) page.
 
-1.  **Download**: Choose the installer for your platform (`.msi` for Windows, `.dmg` for macOS, `.AppImage` for Linux).
+Official release builds are currently available for **Windows only** while macOS and Linux support is being validated.
+
+1.  **Download**: Download the Windows installer (`.msi`) from the release assets.
 2.  **Install**: Run the installer and follow the prompts.
 3.  **Feedback**: Please report any bugs or provide feedback by opening a [GitHub Issue](https://github.com/your-username/ambit/issues). Mention "Phase 1 Alpha" in your report.
 
