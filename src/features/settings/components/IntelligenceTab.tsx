@@ -6,6 +6,7 @@ import { verifyApiKey } from '../../../services/geminiService';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { openExternalUrl } from '../../../utils/externalLinks';
 
 interface TabProps {
     settings: AppSettings;
@@ -168,16 +169,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                 Your key is stored locally. Get one at{' '}
                                 <button
                                     type="button"
-                                    onClick={async () => {
-                                        try {
-                                            const { open } = await import('@tauri-apps/plugin-shell');
-                                            await open('https://aistudio.google.com/app/apikey');
-                                        } catch (e) {
-                                            console.error('Failed to open URL:', e);
-                                            // Fallback just in case
-                                            window.open('https://aistudio.google.com/app/apikey', '_blank');
-                                        }
-                                    }}
+                                    onClick={() => openExternalUrl('https://aistudio.google.com/app/apikey')}
                                     className="text-sage-600 hover:underline"
                                 >
                                     Google AI Studio

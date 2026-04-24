@@ -12,7 +12,9 @@ import { ResourceSection } from './ResourceSection';
 import { DateRangeSection } from './DateRangeSection';
 import { GuidanceSection } from './GuidanceSection';
 import { APP_NAME } from '../../../constants/app';
+import { REPOSITORY_URL } from '../../../constants/support';
 import { useAppVersion } from '../../../hooks/useAppVersion';
+import { openExternalUrl } from '../../../utils/externalLinks';
 
 interface FilterPanelProps {
     filters: FilterState;
@@ -390,9 +392,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">{APP_NAME}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100">
+                    <button
+                        type="button"
+                        onClick={() => openExternalUrl(REPOSITORY_URL)}
+                        className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100"
+                        title="Open Ambit on GitHub"
+                    >
                         <Github className="w-3 h-3" />
-                    </a>
+                    </button>
                     <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{appVersion ?? '...'}</span>
                 </div>
             </div>
