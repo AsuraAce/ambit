@@ -10,6 +10,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useToast } from './useToast';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface RefreshProgress {
     current: number;
@@ -27,6 +28,7 @@ interface RefreshResult {
 
 export function useMetadataRefresh() {
     const { addToast } = useToast();
+    const browserMockMode = isBrowserMockMode();
 
     const {
         setIsRefreshingMetadata,
@@ -35,6 +37,8 @@ export function useMetadataRefresh() {
 
     // Listen to progress events from backend
     useEffect(() => {
+        if (browserMockMode) return;
+
         const unlistenProgress = listen<RefreshProgress>('refresh-progress', (event) => {
             setRefreshProgress({
                 current: event.payload.current,
@@ -65,10 +69,15 @@ export function useMetadataRefresh() {
             unlistenProgress.then(f => f());
             unlistenComplete.then(f => f());
         };
-    }, [setIsRefreshingMetadata, setRefreshProgress, addToast]);
+    }, [setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode]);
 
     // Start refresh job
     const startRefresh = useCallback(async (filterTool?: string) => {
+        if (browserMockMode) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         console.log(`[Refresh] Starting backend refresh job${filterTool ? ` (Tool: ${filterTool})` : ''}`);
         setIsRefreshingMetadata(true);
 
@@ -86,20 +95,27 @@ export function useMetadataRefresh() {
             addToast(`Failed to start refresh: ${err}`, 'error');
             setIsRefreshingMetadata(false);
         }
-    }, [setIsRefreshingMetadata, addToast]);
+    }, [setIsRefreshingMetadata, addToast, browserMockMode]);
 
     // Cancel refresh job
     const cancelRefresh = useCallback(async () => {
+        if (browserMockMode) return;
+
         console.log('[Refresh] Cancelling job');
         try {
             await invoke('cancel_reparse_job');
         } catch (err) {
             console.error('[Refresh] Cancel error:', err);
         }
-    }, []);
+    }, [browserMockMode]);
 
     // Force refresh (can be targeted to a folder or tool)
     const forceRefresh = useCallback(async (rootPath?: string, force: boolean = false, filterTool?: string) => {
+        if (browserMockMode) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         console.log(`[Refresh] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}${filterTool ? `, Tool: ${filterTool}` : ''}`);
         setIsRefreshingMetadata(true);
 
@@ -117,10 +133,12 @@ export function useMetadataRefresh() {
             addToast(`Failed to force refresh: ${err}`, 'error');
             setIsRefreshingMetadata(false);
         }
-    }, [setIsRefreshingMetadata, addToast]);
+    }, [setIsRefreshingMetadata, addToast, browserMockMode]);
 
     // Auto-detect stale metadata on startup
     useEffect(() => {
+        if (browserMockMode) return;
+
         // Run after a short delay to allow app to settle
         const timer = setTimeout(async () => {
             try {
@@ -138,7 +156,7 @@ export function useMetadataRefresh() {
         }, 3000);
 
         return () => clearTimeout(timer);
-    }, [startRefresh, addToast]);
+    }, [startRefresh, addToast, browserMockMode]);
 
     return {
         startRefresh,

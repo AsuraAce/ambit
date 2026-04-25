@@ -3,6 +3,8 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { FilterState, SortOption, AppSettings, AIImage, Collection, PaginationCursor } from '../types';
 import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
+import { isBrowserMockMode } from '../services/runtime';
+import { searchBrowserMockImages } from '../services/browserMockData';
 
 interface UseImagesQueryProps {
     filters: FilterState;
@@ -23,6 +25,7 @@ export const useImagesQuery = ({
 }: UseImagesQueryProps) => {
 
     const PAGE_SIZE = 1000;
+    const useBrowserMocks = isBrowserMockMode();
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
@@ -41,6 +44,11 @@ export const useImagesQuery = ({
     return useInfiniteQuery({
         queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async ({ pageParam }) => {
+            if (useBrowserMocks) {
+                const cursor = pageParam as PaginationCursor | undefined;
+                return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id);
+            }
+
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
                 filters,
                 privacyEnabled,

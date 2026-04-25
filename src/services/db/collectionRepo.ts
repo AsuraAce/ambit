@@ -3,6 +3,15 @@ import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
 import { dbMutex } from './connection';
+import { isBrowserMockMode } from '../runtime';
+import {
+    addBrowserMockImagesToCollection,
+    deleteBrowserMockCollection,
+    getBrowserMockCollections,
+    getBrowserMockImages,
+    removeBrowserMockImagesFromCollection,
+    upsertBrowserMockCollection,
+} from '../browserMockData';
 
 export interface DbCollection {
     id: string;
@@ -19,6 +28,8 @@ export interface DbCollection {
 }
 
 export const ensureCollectionSchema = async () => {
+    if (isBrowserMockMode()) return;
+
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         try {
@@ -48,6 +59,11 @@ export const ensureCollectionSchema = async () => {
 };
 
 export const upsertCollection = async (collection: Partial<Collection> & { id: string, name: string }) => {
+    if (isBrowserMockMode()) {
+        upsertBrowserMockCollection(collection);
+        return;
+    }
+
     const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
@@ -90,11 +106,21 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
 };
 
 export const deleteCollectionFromDb = async (id: string) => {
+    if (isBrowserMockMode()) {
+        deleteBrowserMockCollection(id);
+        return;
+    }
+
     const db = await getDb();
     await db.execute('DELETE FROM collections WHERE id = ?', [id]);
 };
 
 export const addImagesToCollection = async (collectionId: string, imageIds: string[]) => {
+    if (isBrowserMockMode()) {
+        addBrowserMockImagesToCollection(collectionId, imageIds);
+        return;
+    }
+
     const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
@@ -111,6 +137,11 @@ export const addImagesToCollection = async (collectionId: string, imageIds: stri
 };
 
 export const removeImagesFromCollection = async (collectionId: string, imageIds: string[]) => {
+    if (isBrowserMockMode()) {
+        removeBrowserMockImagesFromCollection(collectionId, imageIds);
+        return;
+    }
+
     const db = await getDb();
     const placeholders = imageIds.map(() => '?').join(',');
     await db.execute(
@@ -122,6 +153,10 @@ export const removeImagesFromCollection = async (collectionId: string, imageIds:
 };
 
 export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections();
+    }
+
     const db = await getDb();
 
     // Get all collections
@@ -221,6 +256,16 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
  * Returns a map of collectionId -> count for smart collections only.
  */
 export const getSmartCollectionCounts = async (smartCollections: Collection[]): Promise<Record<string, number>> => {
+    if (isBrowserMockMode()) {
+        const collections = getBrowserMockCollections();
+        return Object.fromEntries(
+            smartCollections.map((collection) => [
+                collection.id,
+                collections.find((item) => item.id === collection.id)?.count ?? 0
+            ])
+        );
+    }
+
     if (smartCollections.length === 0) return {};
 
     const db = await getDb();
@@ -266,6 +311,11 @@ export const getSmartCollectionCounts = async (smartCollections: Collection[]): 
 };
 
 export const getCollectionThumbnail = async (imageIds: string[]): Promise<string | undefined> => {
+    if (isBrowserMockMode()) {
+        const imageIdSet = new Set(imageIds);
+        return getBrowserMockImages().find(image => imageIdSet.has(image.id))?.thumbnailUrl;
+    }
+
     if (!imageIds || imageIds.length === 0) return undefined;
     const db = await getDb();
 
@@ -318,6 +368,10 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 };
 
 export const getSmartCollectionThumbnail = async (whereClause: string, params: any[]): Promise<string | undefined> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections().find(collection => collection.filters)?.thumbnail;
+    }
+
     const db = await getDb();
     try {
         const query = `
@@ -348,6 +402,12 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: a
  * Used for Metadata Sidebar to avoid loading thousands of IDs.
  */
 export const getCollectionsForImage = async (imageId: string): Promise<string[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections()
+            .filter(collection => collection.imageIds.includes(imageId))
+            .map(collection => collection.id);
+    }
+
     const db = await getDb();
     try {
         const res = await db.select<{ collection_id: string }[]>(
@@ -366,6 +426,10 @@ export const getCollectionsForImage = async (imageId: string): Promise<string[]>
  * Used for Export and other batch operations.
  */
 export const getCollectionImageIds = async (collectionId: string): Promise<string[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections().find(collection => collection.id === collectionId)?.imageIds ?? [];
+    }
+
     const db = await getDb();
     try {
         const res = await db.select<{ image_id: string }[]>(
@@ -390,6 +454,8 @@ export const hydrateCollections = async () => {
 };
 
 export const purgeInvokeCollections = async () => {
+    if (isBrowserMockMode()) return;
+
     const { dbMutex } = await import('./connection');
     await dbMutex.dispatch(async () => {
         const db = await getDb();

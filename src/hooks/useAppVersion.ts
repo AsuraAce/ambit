@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { isBrowserMockMode } from '../services/runtime';
 
 let cachedVersion: string | null = null;
 let inflightVersionRequest: Promise<string | null> | null = null;
 
 const loadVersion = async (): Promise<string | null> => {
+  if (isBrowserMockMode()) {
+    return import.meta.env.VITE_APP_VERSION ?? 'browser-dev';
+  }
+
   if (cachedVersion) {
     return cachedVersion;
   }

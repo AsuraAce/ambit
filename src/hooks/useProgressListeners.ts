@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useLibraryStore, SyncProgress } from '../stores/libraryStore';
+import { isBrowserMockMode } from '../services/runtime';
 
 export function useProgressListeners() {
     const {
@@ -13,6 +14,8 @@ export function useProgressListeners() {
     } = useLibraryStore();
 
     useEffect(() => {
+        if (isBrowserMockMode()) return;
+
         let unlistenModel: () => void;
         let unlistenDiscovery: () => void;
         let unlistenThumbnails: () => void;

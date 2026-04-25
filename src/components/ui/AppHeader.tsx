@@ -6,6 +6,8 @@ import { useLibraryStore } from '../../stores/libraryStore';
 import { SearchBar } from '../../features/filters/components/SearchBar';
 import { ViewControls } from '../../features/library/components/ViewControls';
 import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
+import { isBrowserMockMode } from '../../services/runtime';
+import { ToastContext } from '../../contexts/ToastContext';
 
 interface AppHeaderProps {
     viewMode: ViewMode;
@@ -55,6 +57,9 @@ export const AppHeader = React.memo(({
         settings, setSettings,
         recentSearches, setRecentSearches,
     } = useLibraryContext() as any;
+    const toast = React.useContext(ToastContext);
+    const addToast = toast?.addToast ?? ((message: string) => console.info(message));
+    const browserMockMode = isBrowserMockMode();
 
     const {
         isLiveWatching, setIsLiveWatching,
@@ -125,19 +130,36 @@ export const AppHeader = React.memo(({
                         recentSearches={recentSearches}
                         setRecentSearches={setRecentSearches}
                     />
+                    {browserMockMode && (
+                        <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            Browser Mock
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1">
                         <button
-                            onClick={onImport}
+                            onClick={() => {
+                                if (browserMockMode) {
+                                    addToast('Unavailable in browser mock mode.', 'info');
+                                    return;
+                                }
+                                onImport();
+                            }}
                             className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             title="Import images. For automatic sync with favorites & boards, set up an Integration in Settings."
                         >
                             <Import className="w-4 h-4" />
                         </button>
                         <button
-                            onClick={() => setIsLiveWatching(!isLiveWatching)}
+                            onClick={() => {
+                                if (browserMockMode) {
+                                    addToast('Unavailable in browser mock mode.', 'info');
+                                    return;
+                                }
+                                setIsLiveWatching(!isLiveWatching);
+                            }}
                             className={`p-2 rounded-xl transition-all border relative group ${isLiveWatching ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/20 animate-pulse' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500'}`}
                             title={isLiveWatching ? "Live Sync Active – Watching for new images in monitored folders" : "Enable Live Sync – Automatically detect and import new images from your generator output folders"}
                         >
