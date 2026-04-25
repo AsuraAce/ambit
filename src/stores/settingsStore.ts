@@ -5,6 +5,7 @@ import { appRepository } from '../services/repository';
 import { commands } from '../bindings';
 import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from '../services/assetScope';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface SettingsState {
     settings: AppSettings;
@@ -58,6 +59,11 @@ export const useSettingsStore = create<SettingsState>()(
             toggleDevMode: () => set(s => ({ devModeEnabled: !s.devModeEnabled })),
 
             setGeminiApiKey: async (key: string | null) => {
+                if (isBrowserMockMode()) {
+                    set({ geminiApiKey: key });
+                    return;
+                }
+
                 try {
                     if (key) {
                         const result = await commands.saveApiKey(key);
@@ -108,7 +114,7 @@ export const useSettingsStore = create<SettingsState>()(
                     const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
 
                     nextSettings.monitoredFolders.forEach((folder) => {
-                        if (!oldFolders.has(folder.path)) {
+                        if (!isBrowserMockMode() && !oldFolders.has(folder.path)) {
                             void ensureAssetPathAccessible(folder.path, { assumeDirectory: true }).catch((error) =>
                                 console.error('[SettingsStore] Failed to register new folder scope:', error)
                             );
@@ -117,7 +123,7 @@ export const useSettingsStore = create<SettingsState>()(
 
                     const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
                     const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
-                    if (nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
+                    if (!isBrowserMockMode() && nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
                         void ensureAssetPathAccessible(nextInvokeRoot, { assumeDirectory: true }).catch((error) =>
                             console.error('[SettingsStore] Failed to register InvokeAI scope:', error)
                         );
@@ -142,13 +148,15 @@ export const useSettingsStore = create<SettingsState>()(
                     let apiKey: string | null = null;
 
                     // 1. Try to load from secure keyring first
-                    try {
-                        const keyResult = await commands.loadApiKey();
-                        if (keyResult.status === 'ok') {
-                            apiKey = keyResult.data;
+                    if (!isBrowserMockMode()) {
+                        try {
+                            const keyResult = await commands.loadApiKey();
+                            if (keyResult.status === 'ok') {
+                                apiKey = keyResult.data;
+                            }
+                        } catch (e) {
+                            console.error('[SettingsStore] Failed to load API key from keyring:', e);
                         }
-                    } catch (e) {
-                        console.error('[SettingsStore] Failed to load API key from keyring:', e);
                     }
 
                     if (state.settings) {
@@ -157,7 +165,7 @@ export const useSettingsStore = create<SettingsState>()(
                         const mergedSettings = { ...DEFAULT_SETTINGS, ...state.settings };
 
                         // 2. Handle Migration: If legacy key exists in JSON but not in keyring
-                        if (mergedSettings.googleGeminiApiKey && !apiKey) {
+                        if (!isBrowserMockMode() && mergedSettings.googleGeminiApiKey && !apiKey) {
                             console.log('[SettingsStore] Migrating API key to secure keyring...');
                             try {
                                 await commands.saveApiKey(mergedSettings.googleGeminiApiKey);
@@ -183,7 +191,9 @@ export const useSettingsStore = create<SettingsState>()(
                             mergedSettings.devMode = true;
                         }
 
-                        await ensureConfiguredAssetPathsAccessible(mergedSettings);
+                        if (!isBrowserMockMode()) {
+                            await ensureConfiguredAssetPathsAccessible(mergedSettings);
+                        }
 
                         set({ settings: mergedSettings, geminiApiKey: apiKey ?? null, isLoaded: true });
                     } else {

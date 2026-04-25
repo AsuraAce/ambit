@@ -2,6 +2,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
+import { isBrowserMockMode } from './runtime';
 
 type WatcherCallback = (paths?: string[]) => void;
 
@@ -11,6 +12,11 @@ export class WatcherService {
     private lastPaths: string[] = [];
 
     async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
+        if (isBrowserMockMode()) {
+            console.info('[WatcherService] Native watcher unavailable in browser mock mode.');
+            return;
+        }
+
         // Skip if already watching the exact same paths
         const pathsChanged = paths.length !== this.lastPaths.length ||
             paths.some((p, i) => p !== this.lastPaths[i]);
@@ -43,6 +49,12 @@ export class WatcherService {
     }
 
     async stopWatching() {
+        if (isBrowserMockMode()) {
+            this.isWatching = false;
+            this.lastPaths = [];
+            return;
+        }
+
         if (!this.unlistenFn && !this.isWatching) return;
 
         this.isWatching = false;

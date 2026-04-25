@@ -8,11 +8,14 @@ import {
     normalizePath,
     urlToPath,
 } from '../utils/pathUtils';
+import { isBrowserMockMode } from './runtime';
 
 const registeredDirectories = new Map<string, Promise<void>>();
 let appLocalDataPromise: Promise<string | null> | null = null;
 
 const getAppLocalDataPath = async (): Promise<string | null> => {
+    if (isBrowserMockMode()) return null;
+
     if (!appLocalDataPromise) {
         appLocalDataPromise = appLocalDataDir()
             .then((path) => normalizePath(path))
@@ -49,6 +52,8 @@ export const ensureAssetPathAccessible = async (
     input: string | null | undefined,
     options?: { assumeDirectory?: boolean }
 ): Promise<void> => {
+    if (isBrowserMockMode()) return;
+
     const resolvedPath = resolveLocalPath(input);
     if (!resolvedPath) return;
 

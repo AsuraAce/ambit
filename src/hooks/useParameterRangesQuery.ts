@@ -4,6 +4,8 @@ import { FilterState } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useCollections } from '../contexts/CollectionContext';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
+import { isBrowserMockMode } from '../services/runtime';
+import { getBrowserMockImages } from '../services/browserMockData';
 
 /**
  * Hook to fetch parameter ranges for dynamic filter UI.
@@ -16,6 +18,7 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
 export function useParameterRangesQuery(filters: FilterState) {
     const { settings, privacyEnabled } = useSettings();
     const { collections: allCollections } = useCollections();
+    const browserMockMode = isBrowserMockMode();
 
     return useQuery<ParameterRanges>({
         // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
@@ -33,6 +36,22 @@ export function useParameterRangesQuery(filters: FilterState) {
             privacyEnabled
         ],
         queryFn: async () => {
+            if (browserMockMode) {
+                const images = getBrowserMockImages();
+                const steps = images.map(image => image.metadata.steps);
+                const cfg = images.map(image => image.metadata.cfg);
+                return {
+                    steps: { min: Math.min(...steps), max: Math.max(...steps) },
+                    cfg: { min: Math.min(...cfg), max: Math.max(...cfg) },
+                    denoisingStrength: null,
+                    samplers: Array.from(new Set(images.map(image => image.metadata.sampler))),
+                    generationTypes: Array.from(new Set(images.map(image => image.metadata.generationType ?? 'unknown'))),
+                    controlNets: Array.from(new Set(images.flatMap(image => image.metadata.controlNets ?? []))),
+                    ipAdapters: Array.from(new Set(images.flatMap(image => image.metadata.ipAdapters ?? []))),
+                    guidanceSubtypes: {}
+                };
+            }
+
             // Build Where Clause EXCLUDING samplers and generationTypes (Disjunctive Faceting)
             // This ensures that selecting "Euler a" doesn't hide other samplers,
             // and selecting "txt2img" doesn't hide other generation types.

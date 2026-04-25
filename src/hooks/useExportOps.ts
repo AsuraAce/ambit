@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { exportImagesToZip } from '../services/exportService';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface UseExportOpsProps {
     images: AIImage[];
@@ -12,6 +13,11 @@ export const useExportOps = ({ images }: UseExportOpsProps) => {
     const [isExporting, setIsExporting] = useState(false);
 
     const exportImages = useCallback(async (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => {
+        if (isBrowserMockMode()) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         const idArray = Array.from(ids);
         if (idArray.length === 0 || !destinationFolder) return;
 
