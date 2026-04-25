@@ -63,11 +63,12 @@ vi.mock('../../services/thumbnailService', () => ({
 
 // Mock Repositories
 vi.mock('../../services/db/imageRepo', () => ({
-    markAsDeleted: vi.fn(),
-    deleteImage: vi.fn(),
+    removeImagesFromLibrary: vi.fn(),
+    deleteImageFromDisk: vi.fn(),
     updateFavorite: vi.fn(),
     updatePinned: vi.fn(),
     getImagesByIds: vi.fn().mockResolvedValue([]),
+    rebuildFacetCache: vi.fn().mockResolvedValue(0),
 }));
 
 describe('useFileOperations', () => {
@@ -110,7 +111,7 @@ describe('useFileOperations', () => {
 
     describe('deleteImages', () => {
         it('should perform soft delete and update local state', async () => {
-            const { markAsDeleted } = await import('../../services/db/imageRepo');
+            const { removeImagesFromLibrary } = await import('../../services/db/imageRepo');
             const { result } = renderHook(() => useFileOperations({
                 images: mockImages,
                 setImages: mockSetImages,
@@ -122,13 +123,14 @@ describe('useFileOperations', () => {
                 await result.current.deleteImages(['1'], false);
             });
 
-            expect(markAsDeleted).toHaveBeenCalledWith(['1'], true);
+            expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockSetImages).toHaveBeenCalled();
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Moved 1 images to Trash'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
         });
 
         it('should perform permanent delete and remove from local state', async () => {
-            const { deleteImage } = await import('../../services/db/imageRepo');
+            const { deleteImageFromDisk, getImagesByIds } = await import('../../services/db/imageRepo');
+            (getImagesByIds as any).mockResolvedValue([mockImages[1]]);
             const { result } = renderHook(() => useFileOperations({
                 images: mockImages,
                 setImages: mockSetImages,
@@ -140,9 +142,9 @@ describe('useFileOperations', () => {
                 await result.current.deleteImages(['2'], true);
             });
 
-            expect(deleteImage).toHaveBeenCalledWith('2');
+            expect(deleteImageFromDisk).toHaveBeenCalledWith('2', '2', 'thumb2');
             expect(mockSetImages).toHaveBeenCalled();
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Permanently deleted 1 images'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Moved 1 file to OS trash'), 'success');
         });
     });
 
@@ -165,6 +167,8 @@ describe('useFileOperations', () => {
         });
 
         it('should bail if no images match the IDs', async () => {
+            const { getImagesByIds } = await import('../../services/db/imageRepo');
+            (getImagesByIds as any).mockResolvedValue([]);
             const { result } = renderHook(() => useFileOperations({
                 images: mockImages,
                 setImages: mockSetImages,

@@ -179,6 +179,16 @@ export const useAppActions = ({
     const executeMetadataRecovery = async (style: any) => {
         const targetId = viewingImageId || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
         if (!targetId) return;
+
+        const { geminiApiKey } = useSettingsStore.getState();
+        if (!settings.enableAI || !geminiApiKey) {
+            closeModal('recovery');
+            modals.setInitialSettingsTab?.('intelligence');
+            openModal('settings');
+            addToast('Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.', 'info');
+            return;
+        }
+
         fileOps.recoverMetadata(targetId, style, () => closeModal('recovery'));
     };
 

@@ -35,8 +35,10 @@ const getExistingPaths = async (paths: string[]): Promise<Set<string>> => {
         const chunk = paths.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
         const rows = await db.select<{ id: string }[]>(
-            `SELECT id FROM images WHERE id IN (${placeholders})`,
-            chunk
+            `SELECT id FROM images WHERE id IN (${placeholders})
+             UNION
+             SELECT id FROM removed_images WHERE id IN (${placeholders})`,
+            [...chunk, ...chunk]
         );
         rows.forEach(r => existingSet.add(r.id));
     }

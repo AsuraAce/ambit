@@ -34,6 +34,12 @@ export const useImportOps = ({
     } = useLibraryStore();
     const { refreshHiddenAvailability, refreshMetadata } = useSearch();
 
+    const extractNativePaths = useCallback((files: File[]): string[] => {
+        return files
+            .map(file => (file as File & { path?: string }).path)
+            .filter((path): path is string => typeof path === 'string' && path.length > 0);
+    }, []);
+
     const commitImportResult = useCallback(async (result: ImportResult, silent = false) => {
         const { images: newImages, stats } = result;
 
@@ -82,27 +88,56 @@ export const useImportOps = ({
         if (!e.target.files) return;
         setIsImporting(true);
         try {
-            const result = await processWebFiles(Array.from(e.target.files));
-            await commitImportResult(result);
-        } catch (error) {
-            addToast("Import failed", "error");
-        } finally {
-            setIsImporting(false);
-            if (e.target) e.target.value = "";
-        }
-    }, [setIsImporting, commitImportResult, addToast]);
+            const files = Array.from(e.target.files);
+            const nativePaths = extractNativePaths(files);
 
-    const handleWebFiles = useCallback(async (files: File[]) => {
-        setIsImporting(true);
-        try {
+            if (nativePaths.length === files.length && nativePaths.length > 0) {
+                const { getThumbnailDir } = await import('../services/thumbnailService');
+                const thumbDir = await getThumbnailDir();
+                const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
+                    setImportProgress({ current, total, message });
+                });
+                await commitImportResult(result);
+                return;
+            }
+
             const result = await processWebFiles(files);
             await commitImportResult(result);
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
             setIsImporting(false);
+            setImportProgress(null);
+            setImportAbortController(null);
+            if (e.target) e.target.value = "";
         }
-    }, [setIsImporting, commitImportResult, addToast]);
+    }, [setIsImporting, setImportProgress, setImportAbortController, extractNativePaths, commitImportResult, addToast]);
+
+    const handleWebFiles = useCallback(async (files: File[]) => {
+        setIsImporting(true);
+        try {
+            const nativePaths = extractNativePaths(files);
+
+            if (nativePaths.length === files.length && nativePaths.length > 0) {
+                const { getThumbnailDir } = await import('../services/thumbnailService');
+                const thumbDir = await getThumbnailDir();
+                const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
+                    setImportProgress({ current, total, message });
+                });
+                await commitImportResult(result);
+                return;
+            }
+
+            const result = await processWebFiles(files);
+            await commitImportResult(result);
+        } catch (error) {
+            addToast("Import failed", "error");
+        } finally {
+            setIsImporting(false);
+            setImportProgress(null);
+            setImportAbortController(null);
+        }
+    }, [setIsImporting, setImportProgress, setImportAbortController, extractNativePaths, commitImportResult, addToast]);
 
     const handleImportPaths = useCallback(async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
         const { isStartup = false, skipStateManagement = false, onProgress: externalOnProgress } = options;

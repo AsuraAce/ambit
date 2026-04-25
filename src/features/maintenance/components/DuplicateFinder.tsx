@@ -129,7 +129,7 @@ const DuplicateGroupCard: React.FC<{
                     </div>
                     <div className="flex-1">
                         <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                            Keep version with best tag data. Others moved to trash bin.
+                            Keep version with best tag data. Others removed from Ambit and kept in the Removed list.
                         </p>
                     </div>
                 </div>

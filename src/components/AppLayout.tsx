@@ -101,6 +101,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     // Stores
     const settings = useSettingsStore(s => s.settings);
+    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
 
     const allCollections = useCollectionStore(s => s.collections);
     const onRefreshCollections = useCollectionStore(s => s.refreshCollections);
@@ -278,8 +279,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     images={images}
                                     onResolveDuplicate={handlers.handleResolveDuplicate}
                                     onRestoreImages={handlers.handleRestoreImages}
-                                    onMoveToTrash={handlers.handleMoveToTrash}
-                                    onDeleteForever={handlers.handleDeleteForever}
+                                    onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
+                                    onDeleteFile={handlers.handleDeleteFile}
                                     onEmptyTrash={handlers.handleEmptyTrash}
                                     onGroupImages={handlers.handleGroupImages}
                                     onViewImage={(id) => setViewingImageId(id)}
@@ -289,7 +290,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     onUpdateModel={handlers.handleUpdateModel}
                                     onUpdateTool={handlers.handleUpdateTool}
                                     onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
-                                    onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); modals.openModal('settings'); } else { modals.openModal('recovery'); } }}
+                                    onRecoverMetadata={() => {
+                                        if (!settings.enableAI || !geminiApiKey) {
+                                            addToast("Enable AI features and configure a Gemini API key first", "error");
+                                            modals.setInitialSettingsTab('intelligence');
+                                            modals.openModal('settings');
+                                        } else {
+                                            modals.openModal('recovery');
+                                        }
+                                    }}
                                     onToggleFavorite={(id) => toggleFavorite(id)}
                                     onTogglePin={actions.handlePinImage}
                                     availableTags={availableTags}

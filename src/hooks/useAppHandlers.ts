@@ -1,7 +1,6 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
-import { updateImageMetadataFields, updateImageNotesCol, rebuildFacetCacheIncremental } from '../services/db/imageRepo';
-import { urlToPath } from '../utils/pathUtils';
+import { updateImageMetadataFields, updateImageNotesCol, rebuildFacetCache, rebuildFacetCacheIncremental } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 
 interface UseAppHandlersProps {
@@ -13,6 +12,10 @@ interface UseAppHandlersProps {
 export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
     const { addToast } = useToast();
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
+
+    const refreshFacets = () => {
+        rebuildFacetCache().then(() => incrementFacetCacheVersion());
+    };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
         const img = images.find(i => i.id === id);
@@ -95,55 +98,49 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleResolveDuplicate = async (_keepId: string, deleteIds: string[]) => {
-        const { markAsDeleted } = await import('../services/db/imageRepo');
-        await markAsDeleted(deleteIds, true);
-        setImages(p => p.map(i => deleteIds.includes(i.id) ? { ...i, isDeleted: true } : i));
-        addToast(`Moved ${deleteIds.length} duplicates to trash`, 'success');
+        const { removeImagesFromLibrary } = await import('../services/db/imageRepo');
+        await removeImagesFromLibrary(deleteIds);
+        setImages(p => p.filter(i => !deleteIds.includes(i.id)));
+        addToast(`Removed ${deleteIds.length} duplicate${deleteIds.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
+        refreshFacets();
     };
 
     const handleRestoreImages = async (ids: string[]) => {
-        const { markAsDeleted } = await import('../services/db/imageRepo');
-        await markAsDeleted(ids, false);
-        setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: false } : i));
-        addToast(`Restored ${ids.length} images`, 'success');
+        const { restoreRemovedImages, getImagesByIds } = await import('../services/db/imageRepo');
+        await restoreRemovedImages(ids);
+        const restoredImages = await getImagesByIds(ids);
+        setImages(p => {
+            const existingIds = new Set(p.map(image => image.id));
+            const uniqueRestored = restoredImages.filter(image => !existingIds.has(image.id));
+            return uniqueRestored.length > 0 ? [...uniqueRestored, ...p] : p;
+        });
+        addToast(`Restored ${ids.length} image${ids.length === 1 ? '' : 's'} to the library`, 'success');
         refreshMaintenanceCounts();
+        refreshFacets();
     };
 
-    const handleMoveToTrash = async (ids: string[]) => {
-        const { markAsDeleted } = await import('../services/db/imageRepo');
-        await markAsDeleted(ids, true);
-        setImages(p => p.map(i => ids.includes(i.id) ? { ...i, isDeleted: true } : i));
-        addToast(`Moved ${ids.length} images to trash`, 'success');
-        refreshMaintenanceCounts();
-    };
-
-    const handleDeleteForever = async (ids: string[]) => {
-        const { deleteImageFromDisk } = await import('../services/db/imageRepo');
-
-        // Fetch paths first to ensure we can trash them
-        const { getImagesByIds } = await import('../services/db/imageRepo');
-        const imagesToDelete = await getImagesByIds(ids);
-
-        for (const img of imagesToDelete) {
-            const path = img.id; // ID is the normalized path in this app
-            const thumbnailPath = img.thumbnailUrl ? urlToPath(img.thumbnailUrl) : null;
-            await deleteImageFromDisk(img.id, path, thumbnailPath);
-        }
-
+    const handleRemoveFromLibrary = async (ids: string[]) => {
+        const { removeImagesFromLibrary } = await import('../services/db/imageRepo');
+        await removeImagesFromLibrary(ids);
         setImages(p => p.filter(i => !ids.includes(i.id)));
-        addToast(`Permanently deleted ${ids.length} images`, 'success');
+        addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
+        refreshFacets();
+    };
+
+    const handleDeleteFile = async (ids: string[]) => {
+        const { deleteRemovedImageFromDisk } = await import('../services/db/imageRepo');
+        for (const id of ids) {
+            await deleteRemovedImageFromDisk(id);
+        }
+        addToast(`Moved ${ids.length} file${ids.length === 1 ? '' : 's'} to OS trash and removed ${ids.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
+        refreshMaintenanceCounts();
+        refreshFacets();
     };
 
     const handleEmptyTrash = async () => {
-        const { getDeletedImages } = await import('../services/db/maintenanceRepo');
-        const { deleteImage } = await import('../services/db/imageRepo');
-        const deleted = await getDeletedImages();
-        const ids = deleted.map(i => i.id);
-        for (const id of ids) await deleteImage(id);
-        setImages(p => p.filter(i => !i.isDeleted));
-        addToast('Trash emptied', 'success');
+        addToast('Removed items are now handled through the Removed tab actions.', 'info');
         refreshMaintenanceCounts();
     };
 
@@ -191,8 +188,8 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         handleGroupImages,
         handleResolveDuplicate,
         handleRestoreImages,
-        handleMoveToTrash,
-        handleDeleteForever,
+        handleRemoveFromLibrary,
+        handleDeleteFile,
         handleEmptyTrash
     };
 };

@@ -46,7 +46,7 @@ export const useFoldersTabLogic = ({
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const resourceInputRef = useRef<HTMLInputElement>(null);
-    const pendingScansRef = useRef<{ path: string, variant?: string }[]>([]);
+    const pendingScansRef = useRef<{ id: string, path: string, variant?: string }[]>([]);
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
@@ -185,12 +185,16 @@ export const useFoldersTabLogic = ({
         }
 
         const variant = detectGeneratorVariant(normalizedNew);
+        const queuedAt = Date.now();
         const newFolder: MonitoredFolder = {
-            id: `folder_${Date.now()}`,
+            id: `folder_${queuedAt}`,
             path: normalizedNew,
             isActive: true,
             imageCount: 0,
-            variant: variant
+            variant: variant,
+            // Mark this folder as intentionally queued so the generic folder monitor
+            // does not immediately trigger a second overlapping scan.
+            lastScanned: queuedAt
         };
 
         setSettings(prev => ({
@@ -201,18 +205,27 @@ export const useFoldersTabLogic = ({
         addToast(`Added folder: ${normalizedNew}`, 'success');
 
         // Trigger scan
-        pendingScansRef.current.push({ path: normalizedNew, variant });
+        pendingScansRef.current.push({ id: newFolder.id, path: normalizedNew, variant });
         if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
         scanDebounceRef.current = setTimeout(async () => {
             if (pendingScansRef.current.length === 0 || !onScanFolder) return;
             const foldersToScan = [...pendingScansRef.current];
             pendingScansRef.current = [];
             try {
-                await onScanFolder(foldersToScan);
-                addToast(`Scanned ${foldersToScan.length} folder(s)`, 'success');
+                await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
+                const completedAt = Date.now();
+                foldersToScan.forEach(folder => updateFolderLastScanned(folder.id, completedAt));
                 await fetchCounts();
             } catch (e) {
                 console.error('Auto-scan failed:', e);
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                        foldersToScan.some(pending => pending.id === folder.id)
+                            ? { ...folder, lastScanned: undefined }
+                            : folder
+                    )
+                }));
                 addToast('Folder scan failed', 'error');
             }
         }, 500);

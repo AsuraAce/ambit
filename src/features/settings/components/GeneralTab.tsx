@@ -21,7 +21,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const handleConfirmDeleteToggle = () => {
         const newValue = !settings.confirmDelete;
         setSettings(prev => ({ ...prev, confirmDelete: newValue }));
-        addToast(newValue ? 'Delete confirmations enabled' : 'Delete confirmations disabled', 'success');
+        addToast(newValue ? 'Removal confirmations enabled' : 'Removal confirmations disabled', 'success');
     };
 
     const handleAutoThumbnailHealingToggle = () => {
@@ -111,7 +111,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     >
                         <div>
                             <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Confirm Deletions</div>
-                            <div className="text-sm text-gray-500">Show a warning before moving files to Trash</div>
+                            <div className="text-sm text-gray-500">Show a warning before removing files from Ambit while keeping them on disk</div>
                         </div>
                         <button
                             type="button"

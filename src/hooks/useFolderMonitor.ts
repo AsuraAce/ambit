@@ -139,7 +139,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const newFolders = currentFolders.filter(f => !prevFolders.find(pf => pf.id === f.id));
 
         if (newFolders.length > 0) {
-            const activeNew = newFolders.filter(f => f.isActive);
+            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned);
 
             if (activeNew.length > 0) {
                 if (activeNew.length === 1) {

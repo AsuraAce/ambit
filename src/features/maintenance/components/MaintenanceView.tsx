@@ -21,8 +21,8 @@ interface MaintenanceViewProps {
     images: AIImage[];
     onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
     onRestoreImages: (ids: string[]) => void;
-    onMoveToTrash: (ids: string[]) => void;
-    onDeleteForever: (ids: string[]) => void;
+    onRemoveFromLibrary: (ids: string[]) => void;
+    onDeleteFile: (ids: string[]) => void;
     onEmptyTrash: () => Promise<void>;
     onGroupImages?: (ids: string[]) => void;
     onViewImage: (id: string) => void;
@@ -45,8 +45,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     images,
     onResolveDuplicate,
     onRestoreImages,
-    onMoveToTrash,
-    onDeleteForever,
+    onRemoveFromLibrary,
+    onDeleteFile,
     onRegenerateThumbnails,
     maskedKeywords,
     onUpdatePrompt,
@@ -196,9 +196,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         if (ids.length === 0) return;
 
         if (activeTab === 'untagged' || activeTab === 'missing') {
-            await onMoveToTrash(ids);
+            await onRemoveFromLibrary(ids);
         } else {
-            await onDeleteForever(ids);
+            await onDeleteFile(ids);
         }
 
         const scope = activeTab === 'untagged' ? untaggedScope :
@@ -221,7 +221,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handlePurgeMissing = async () => {
         const ids = missingImages.map(i => i.id);
-        await onMoveToTrash(ids);
+        await onRemoveFromLibrary(ids);
         await refreshData('missing', false);
         setScanMissingIds(new Set());
         setFetchedMissingImages([]);
@@ -397,7 +397,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onItemClick={handleItemClickAdapter}
                                 onSelectAll={handleSelectAll}
                                 onClearSelection={clearSelection}
-                                onMoveToTrash={handleDeleteSelected}
+                                onRemoveFromLibrary={handleDeleteSelected}
                                 onViewImage={setViewingImageId}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
@@ -536,9 +536,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     onRecoverMetadata={onRecoverMetadata}
                     availableTags={availableTags}
                     onOpenSettings={() => { }}
-                    onDelete={() => {
+                                    onDelete={() => {
                         if (viewingImageId) {
-                            onDeleteForever([viewingImageId]);
+                            onDeleteFile([viewingImageId]);
                             setViewingImageId(null);
                             refreshData(activeTab);
                         }

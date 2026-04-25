@@ -2,7 +2,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
+import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import {
     debugLiveWatchPerf,
@@ -357,6 +357,24 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     return allImages;
 };
 
+export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
+    if (ids.length === 0) return [];
+    const db = await getDb();
+
+    const CHUNK_SIZE = 900;
+    let allImages: AIImage[] = [];
+
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
+        const placeholders = chunk.map(() => '?').join(',');
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders})`;
+        const rows = await db.select<any[]>(query, chunk);
+        allImages = [...allImages, ...rows.map(mapRowToImage)];
+    }
+
+    return allImages;
+};
+
 export const getImageWithFullMetadata = async (id: string): Promise<AIImage | null> => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
@@ -427,7 +445,140 @@ export const toggleImageIntermediate = async (id: string, isIntermediate: boolea
 export const deleteImage = async (id: string) => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
+    await db.execute('DELETE FROM collection_images WHERE image_id = $1', [normalizedId]);
+    await db.execute('DELETE FROM image_loras WHERE image_id = $1', [normalizedId]);
+    await db.execute('DELETE FROM image_embeddings WHERE image_id = $1', [normalizedId]);
+    await db.execute('DELETE FROM image_hypernetworks WHERE image_id = $1', [normalizedId]);
+    await db.execute('DELETE FROM image_controlnets WHERE image_id = $1', [normalizedId]);
+    await db.execute('DELETE FROM image_ipadapters WHERE image_id = $1', [normalizedId]);
     await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
+};
+
+const removeTombstones = async (db: Awaited<ReturnType<typeof getDb>>, ids: string[]) => {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await db.execute(`DELETE FROM removed_images WHERE id IN (${placeholders})`, ids);
+};
+
+export const removeImagesFromLibrary = async (ids: string[]) => {
+    if (ids.length === 0) return;
+
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const normalizedIds = ids.map(normalizePath);
+        const placeholders = normalizedIds.map(() => '?').join(',');
+
+        const rows = await db.select<any[]>(
+            `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
+                    is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt
+             FROM images
+             WHERE id IN (${placeholders})`,
+            normalizedIds
+        );
+
+        if (rows.length === 0) return;
+
+        const membershipRows = await db.select<{ image_id: string; collection_id: string }[]>(
+            `SELECT image_id, collection_id
+             FROM collection_images
+             WHERE image_id IN (${placeholders})`,
+            normalizedIds
+        );
+
+        const memberships = membershipRows.reduce<Record<string, string[]>>((acc, row) => {
+            if (!acc[row.image_id]) acc[row.image_id] = [];
+            acc[row.image_id].push(row.collection_id);
+            return acc;
+        }, {});
+
+        const removedAt = Date.now();
+        for (const row of rows) {
+            await db.execute(
+                `INSERT OR REPLACE INTO removed_images (
+                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
+                    is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    row.id,
+                    row.path,
+                    row.width ?? null,
+                    row.height ?? null,
+                    row.file_size ?? null,
+                    row.timestamp,
+                    row.metadata_json ?? null,
+                    row.thumbnail_path ?? null,
+                    row.micro_thumbnail ?? null,
+                    row.thumbnail_source ?? null,
+                    row.is_favorite ?? 0,
+                    row.is_pinned ?? 0,
+                    row.is_missing ?? 0,
+                    row.user_masked ?? null,
+                    row.group_id ?? null,
+                    row.board_id ?? null,
+                    row.notes ?? null,
+                    row.original_metadata_json ?? null,
+                    row.original_parsed_json ?? null,
+                    row.original_state_json ?? null,
+                    row.is_corrupt ?? 0,
+                    removedAt,
+                    memberships[row.id] ? JSON.stringify(memberships[row.id]) : null
+                ]
+            );
+        }
+
+        await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM image_loras WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM image_embeddings WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM image_hypernetworks WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM image_controlnets WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM image_ipadapters WHERE image_id IN (${placeholders})`, normalizedIds);
+        await db.execute(`DELETE FROM images WHERE id IN (${placeholders})`, normalizedIds);
+    });
+};
+
+export const restoreRemovedImages = async (ids: string[]) => {
+    if (ids.length === 0) return;
+
+    await dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const normalizedIds = ids.map(normalizePath);
+        const placeholders = normalizedIds.map(() => '?').join(',');
+        const rows = await db.select<any[]>(
+            `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
+            normalizedIds
+        );
+
+        if (rows.length === 0) return;
+
+        const restoredImages = rows.map(row => ({
+            ...mapRowToImage(row),
+            isDeleted: false
+        }));
+
+        await insertImagesBatch(restoredImages);
+
+        for (const row of rows) {
+            if (!row.collection_ids_json) continue;
+
+            try {
+                const collectionIds = JSON.parse(row.collection_ids_json) as string[];
+                for (const collectionId of collectionIds) {
+                    await db.execute(
+                        `INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                         SELECT ?, ?
+                         WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?)`,
+                        [collectionId, row.id, collectionId]
+                    );
+                }
+            } catch (error) {
+                console.warn('[DB] Failed to restore collection membership for removed image', row.id, error);
+            }
+        }
+
+        await removeTombstones(db, normalizedIds);
+    });
 };
 
 /**
@@ -460,6 +611,37 @@ export const deleteImageFromDisk = async (id: string, path: string, thumbnailPat
 
     // 3. Delete from DB
     await deleteImage(id);
+};
+
+export const deleteRemovedImageFromDisk = async (id: string) => {
+    const normalizedId = normalizePath(id);
+    const db = await getDb();
+    const rows = await db.select<any[]>(
+        `SELECT id, path, thumbnail_path FROM removed_images WHERE id = ?`,
+        [normalizedId]
+    );
+
+    if (rows.length === 0) return;
+
+    const row = rows[0];
+
+    if (row.path) {
+        try {
+            await unwrap(commands.moveToTrash(row.path));
+        } catch (e) {
+            console.error('[Repo] Failed to move removed file to trash:', row.path, e);
+        }
+    }
+
+    if (row.thumbnail_path) {
+        try {
+            await unwrap(commands.deleteThumbnail(row.thumbnail_path));
+        } catch (e) {
+            console.warn('[Repo] Failed to trash removed thumbnail:', row.thumbnail_path, e);
+        }
+    }
+
+    await db.execute('DELETE FROM removed_images WHERE id = ?', [normalizedId]);
 };
 
 export const markAsDeleted = async (ids: string[], deleted: boolean) => {

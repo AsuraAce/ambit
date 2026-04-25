@@ -12,20 +12,20 @@ vi.mock('../useToast', () => ({
 }));
 
 const mockUpdateImageMetadataFields = vi.fn();
-const mockMarkAsDeleted = vi.fn();
-const mockDeleteImageFromDisk = vi.fn();
+const mockRemoveImagesFromLibrary = vi.fn();
+const mockRestoreRemovedImages = vi.fn();
+const mockDeleteRemovedImageFromDisk = vi.fn();
 const mockGetImagesByIds = vi.fn();
-const mockGetDeletedImages = vi.fn();
+const mockRebuildFacetCache = vi.fn().mockResolvedValue(0);
 
 vi.mock('../../services/db/imageRepo', () => ({
     updateImageMetadataFields: (...args: any[]) => mockUpdateImageMetadataFields(...args),
-    markAsDeleted: (...args: any[]) => mockMarkAsDeleted(...args),
-    deleteImageFromDisk: (...args: any[]) => mockDeleteImageFromDisk(...args),
+    removeImagesFromLibrary: (...args: any[]) => mockRemoveImagesFromLibrary(...args),
+    restoreRemovedImages: (...args: any[]) => mockRestoreRemovedImages(...args),
+    deleteRemovedImageFromDisk: (...args: any[]) => mockDeleteRemovedImageFromDisk(...args),
     getImagesByIds: (...args: any[]) => mockGetImagesByIds(...args),
-}));
-
-vi.mock('../../services/db/maintenanceRepo', () => ({
-    getDeletedImages: (...args: any[]) => mockGetDeletedImages(...args),
+    rebuildFacetCache: (...args: any[]) => mockRebuildFacetCache(...args),
+    rebuildFacetCacheIncremental: vi.fn().mockResolvedValue(0),
 }));
 
 describe('useAppHandlers', () => {
@@ -89,29 +89,36 @@ describe('useAppHandlers', () => {
         expect(nextState[0].groupId).toContain('stack_');
     });
 
-    it('should handle move to trash', async () => {
+    it('should handle remove from library', async () => {
         const { result } = renderHook(() => useAppHandlers(props));
 
         await act(async () => {
-            await result.current.handleMoveToTrash(['img1']);
+            await result.current.handleRemoveFromLibrary(['img1']);
         });
 
-        expect(mockMarkAsDeleted).toHaveBeenCalledWith(['img1'], true);
+        expect(mockRemoveImagesFromLibrary).toHaveBeenCalledWith(['img1']);
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
     });
 
-    it('should handle delete forever', async () => {
+    it('should handle restore from removed list', async () => {
         const { result } = renderHook(() => useAppHandlers(props));
 
         await act(async () => {
-            await result.current.handleDeleteForever(['img1']);
+            await result.current.handleRestoreImages(['img1']);
         });
 
-        expect(mockDeleteImageFromDisk).toHaveBeenCalledWith('img1', 'img1', 'thumb1');
-        expect(mockSetImages).toHaveBeenCalled();
-        const updater = mockSetImages.mock.calls[0][0];
-        const nextState = updater(mockImages);
-        expect(nextState).toHaveLength(0);
+        expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['img1']);
+        expect(mockGetImagesByIds).toHaveBeenCalledWith(['img1']);
+    });
+
+    it('should handle delete file for removed items', async () => {
+        const { result } = renderHook(() => useAppHandlers(props));
+
+        await act(async () => {
+            await result.current.handleDeleteFile(['img1']);
+        });
+
+        expect(mockDeleteRemovedImageFromDisk).toHaveBeenCalledWith('img1');
     });
 });
