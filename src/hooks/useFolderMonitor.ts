@@ -6,7 +6,6 @@ import { unwrap } from '../utils/spectaUtils';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
-import { useWatchers } from '../contexts/WatcherContext';
 import { isBrowserMockMode } from '../services/runtime';
 
 interface ImportOptions {
@@ -57,6 +56,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
             });
 
             const performStartupScan = async () => {
+                const startupStartedAt = Date.now();
+                const folderScanStartedAt = Date.now();
                 const { setIsImporting, setImportProgress } = useLibraryStore.getState();
                 const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
                 let totalFilesFound = 0;
@@ -89,9 +90,15 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         updateFolderLastScanned(folder.id, scanTime);
                     }
                 }
+                console.info('[Startup Catch-up] Folder scan phase complete.', {
+                    activeFolders: activeFolders.length,
+                    filesFound: totalFilesFound,
+                    durationMs: Date.now() - folderScanStartedAt
+                });
 
                 // Phase 2: Execution - Run single unified batch for smart updates
                 if (totalFilesFound > 0) {
+                    const importStartedAt = Date.now();
                     console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
                     setIsImporting(true);
                     setImportProgress({ current: 0, total: totalFilesFound, message: 'Starting aggregated import...' });
@@ -123,14 +130,26 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                     // Force UI Refresh
                     await refreshMetadata();
+                    console.info('[Startup Catch-up] Folder import phase complete.', {
+                        filesImported: totalFilesFound,
+                        durationMs: Date.now() - importStartedAt
+                    });
                 }
 
                 // Unconditionally catch up InvokeAI DB if configured
                 // Fires synchronously at the end as part of startup catchup sequence
                 if (invokeAiPath && startInvokeSync) {
+                    const invokeStartedAt = Date.now();
                     console.log('[FolderMonitor] Triggering startup catch-up sync for InvokeAI DB...');
                     await startInvokeSync({ mode: 'startup' }).catch(e => console.error("Startup Invoke sync failed", e));
+                    console.info('[Startup Catch-up] Invoke phase complete.', {
+                        durationMs: Date.now() - invokeStartedAt
+                    });
                 }
+
+                console.info('[Startup Catch-up] Complete.', {
+                    durationMs: Date.now() - startupStartedAt
+                });
             };
 
             performStartupScan();

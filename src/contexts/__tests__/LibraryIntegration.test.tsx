@@ -13,6 +13,15 @@ const mocks = vi.hoisted(() => ({
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStats: vi.fn().mockResolvedValue({ totalImages: 0 }),
     syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map() }),
+    getInvokeDbSnapshot: vi.fn().mockResolvedValue({
+        status: 'ok',
+        data: {
+            dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+            files: []
+        }
+    }),
+    getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
+    getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
     getAllCollectionsWithStats: vi.fn().mockResolvedValue([
         {
             id: 'smart1',
@@ -59,6 +68,7 @@ vi.mock('../../bindings', () => ({
         saveApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         deleteApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         refreshPrivacyMaskIndex: vi.fn().mockResolvedValue({ status: 'ok', data: { changed: false, updated: 0 } }),
+        getInvokeDbSnapshot: (...args: unknown[]) => mocks.getInvokeDbSnapshot(...args),
     }
 }));
 
@@ -74,14 +84,14 @@ vi.mock('../../services/db/collectionRepo', () => ({
     upsertCollection: vi.fn().mockResolvedValue({}),
     addImagesToCollection: vi.fn().mockResolvedValue({}),
     ensureCollectionSchema: vi.fn().mockResolvedValue({}),
-    getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
+    getSmartCollectionCounts: (...args: unknown[]) => mocks.getSmartCollectionCounts(...args),
     deleteCollectionFromDb: vi.fn().mockResolvedValue({}),
     removeImagesFromCollection: vi.fn().mockResolvedValue({}),
     getCollectionImageIds: vi.fn().mockResolvedValue([])
 }));
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
-    getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0 })
+    getMaintenanceCounts: (...args: unknown[]) => mocks.getMaintenanceCounts(...args)
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
@@ -134,6 +144,15 @@ describe('Library Integration (Provider Stack)', () => {
             </ToastProvider>
         );
     };
+
+    it('does not compute maintenance counts during provider startup', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        expect(mocks.getMaintenanceCounts).not.toHaveBeenCalled();
+    });
 
     it('should propagate Privacy Mode change to Search SQL', async () => {
         let hook: any;
@@ -278,5 +297,71 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+    });
+
+    it('skips startup Invoke SQLite sync when the saved DB snapshot is unchanged', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        const files = [
+            {
+                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                exists: true,
+                size: 10,
+                modifiedMs: 100
+            },
+            {
+                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db-wal',
+                exists: false,
+                size: 0,
+                modifiedMs: null
+            },
+            {
+                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db-shm',
+                exists: false,
+                size: 0,
+                modifiedMs: null
+            }
+        ];
+        mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                files
+            }
+        });
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                invokeDbSnapshot: {
+                    dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                    lastSyncedAt: 100,
+                    importIntermediates: false,
+                    importOrphans: false,
+                    syncBoardsToCollections: false,
+                    files
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
+        expect(mocks.syncImages).not.toHaveBeenCalled();
     });
 });

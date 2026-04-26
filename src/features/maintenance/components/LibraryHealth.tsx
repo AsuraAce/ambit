@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { useLibraryContext } from '../../../contexts/LibraryContext';
 
 interface LibraryHealthProps {
     mode?: 'compact' | 'detailed';
@@ -9,11 +10,16 @@ interface LibraryHealthProps {
 }
 
 const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
+    const { refreshMaintenanceCounts } = useLibraryContext();
     const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
     const [progress, setProgress] = useState(0);
+
+    useEffect(() => {
+        void refreshMaintenanceCounts();
+    }, [refreshMaintenanceCounts]);
 
     const handleVerify = async () => {
         setStatus('running');

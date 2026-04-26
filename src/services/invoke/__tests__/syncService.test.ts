@@ -109,6 +109,43 @@ describe('syncImages live mode', () => {
         expect(upsertCollection).not.toHaveBeenCalled();
     });
 
+    it('returns early for no-op startup cycles after candidate detection without counting', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'updated_at' }, { name: 'is_intermediate' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }];
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) {
+                return [];
+            }
+            throw new Error(`Unexpected query: ${query}`);
+        });
+
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        const result = await syncImages(
+            'D:/AI/art/webUI/invokeai/databases',
+            vi.fn(),
+            undefined,
+            {
+                mode: 'startup',
+                afterTimestamp: 100,
+                syncBoards: true,
+                syncFavorites: true,
+                starredAs: 'favorite'
+            }
+        );
+
+        expect(result.imported).toBe(0);
+        expect(result.updated).toBe(0);
+        expect(selectMock).not.toHaveBeenCalledWith(expect.stringContaining('SELECT count(*) as count FROM images i'));
+        expect(fetchBoardMappings).not.toHaveBeenCalled();
+        expect(getImagesByIds).not.toHaveBeenCalled();
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
     it('keeps live changed cycles incremental and skips the final full collection sync', async () => {
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {

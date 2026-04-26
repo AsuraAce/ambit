@@ -38,6 +38,7 @@ import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useSync } from './contexts/SyncContext';
+import { useWatchers } from './contexts/WatcherContext';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -130,7 +131,7 @@ export default function App() {
 
     const setAllCollections = useCollectionStore(s => s.setCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollections);
-    const refreshMaintenanceCounts = useCallback(() => { }, []); // Placeholder
+    const { refreshMaintenanceCounts } = useWatchers();
 
     const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
 

@@ -77,6 +77,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         fs_commands::move_to_trash,
         fs_commands::delete_thumbnail,
         fs_commands::register_library_path,
+        fs_commands::get_invoke_db_snapshot,
     ])
 }
 

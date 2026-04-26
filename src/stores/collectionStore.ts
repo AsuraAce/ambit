@@ -4,6 +4,18 @@ import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
 
 let initPromise: Promise<void> | null = null;
+let smartCountRunId = 0;
+
+const STARTUP_SMART_COUNT_DELAY_MS = 1500;
+const SMART_COUNT_YIELD_MS = 25;
+
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+interface RefreshSmartCountsOptions {
+    includeArchived?: boolean;
+    collectionIds?: string[];
+    delayMs?: number;
+}
 
 interface CollectionState {
     collections: Collection[];
@@ -12,7 +24,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshSmartCounts: () => Promise<void>;
+    refreshSmartCounts: (options?: RefreshSmartCountsOptions) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
@@ -31,8 +43,8 @@ export const useCollectionStore = create<CollectionState>()(
                         const cols = await getAllCollectionsWithStats();
                         set({ collections: cols });
 
-                        // Lazily fetch smart counts in the background
-                        get().refreshSmartCounts();
+                        // Lazily fetch visible smart counts in the background.
+                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500 });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
                     }
@@ -52,7 +64,8 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
-            refreshSmartCounts: async () => {
+            refreshSmartCounts: async (options = {}) => {
+                const runId = ++smartCountRunId;
                 try {
                     const { useLibraryStore } = await import('./libraryStore');
                     if (useLibraryStore.getState().isImporting) {
@@ -60,22 +73,41 @@ export const useCollectionStore = create<CollectionState>()(
                         return;
                     }
 
+                    if (options.delayMs && options.delayMs > 0) {
+                        await delay(options.delayMs);
+                        if (runId !== smartCountRunId) return;
+                    }
+
                     const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
                     const currentCols = get().collections;
-                    const smartCols = currentCols.filter(c => !!c.filters);
+                    const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
+                    const smartCols = currentCols.filter(c =>
+                        !!c.filters
+                        && (options.includeArchived || !c.isArchived)
+                        && (!allowedIds || allowedIds.has(c.id))
+                    );
 
                     if (smartCols.length === 0) return;
 
-                    const counts = await getSmartCollectionCounts(smartCols);
+                    for (const smartCol of smartCols) {
+                        if (runId !== smartCountRunId) return;
 
-                    // Update only the smart collection counts without replacing entire array reference
-                    set({
-                        collections: currentCols.map(c =>
-                            c.filters && counts[c.id] !== undefined
-                                ? { ...c, count: counts[c.id] }
-                                : c
-                        )
-                    });
+                        const counts = await getSmartCollectionCounts([smartCol]);
+                        if (runId !== smartCountRunId) return;
+                        const count = counts[smartCol.id];
+
+                        if (count !== undefined) {
+                            set((state) => ({
+                                collections: state.collections.map(c =>
+                                    c.id === smartCol.id && c.filters
+                                        ? { ...c, count }
+                                        : c
+                                )
+                            }));
+                        }
+
+                        await delay(SMART_COUNT_YIELD_MS);
+                    }
                 } catch (e) {
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }
@@ -167,8 +199,11 @@ export const useCollectionStore = create<CollectionState>()(
 
                         set({ collections: dbCols, isLoaded: true });
 
-                        // Lazily fetch smart collection counts after initial render
-                        get().refreshSmartCounts();
+                        // Defer visible smart collection counts so startup remains responsive.
+                        void get().refreshSmartCounts({
+                            includeArchived: false,
+                            delayMs: STARTUP_SMART_COUNT_DELAY_MS
+                        });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to initialize', e);
                         set({ isLoaded: true });

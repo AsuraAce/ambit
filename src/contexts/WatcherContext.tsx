@@ -106,11 +106,6 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         }
     }, [isLoaded, setMaintenanceCounts]);
 
-    // Initial maintenance count
-    useEffect(() => {
-        if (isLoaded) refreshMaintenanceCounts();
-    }, [isLoaded, refreshMaintenanceCounts]);
-
     // Unified Watcher Logic (Live Sync)
     const monitoredFoldersConfig = React.useMemo(() => JSON.stringify(
         (settings.monitoredFolders || []).map(folder => ({
@@ -365,13 +360,6 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         };
 
     }, [isLoaded, isLiveWatching, monitoredFoldersConfig, invokePathConfig, drainGenericLiveChanges, startLiveWatchSession]);
-
-    // Maintenance interval
-    useEffect(() => {
-        if (!isLoaded) return;
-        const interval = setInterval(refreshMaintenanceCounts, 60000);
-        return () => clearInterval(interval);
-    }, [isLoaded, refreshMaintenanceCounts]);
 
     return (
         <WatcherContext.Provider value={{
