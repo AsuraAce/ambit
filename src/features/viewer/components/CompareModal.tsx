@@ -54,12 +54,15 @@ const ImageContainer = ({
         </button>
 
         {/* Image Transform */}
-        <div style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDraggingCanvas ? 'none' : 'transform 0.1s ease-out' }}>
+        <div
+            className="w-full h-full flex items-center justify-center p-6 box-border"
+            style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDraggingCanvas ? 'none' : 'transform 0.1s ease-out' }}
+        >
             <SmartImage
                 src={img.url}
                 alt={img.filename}
-                className="max-w-none max-h-[80vh]"
-                imgClassName="object-contain shadow-2xl"
+                className="w-full h-full"
+                imgClassName="w-full h-full object-contain shadow-2xl"
                 draggable={false}
                 objectFit="contain"
             />

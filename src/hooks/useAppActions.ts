@@ -41,9 +41,26 @@ export const useAppActions = ({
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
 
-    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollections); // Placeholder or mapping
+    const refreshCollections = useCollectionStore(s => s.refreshCollections);
 
     const { openModal, closeModal, pendingViewerDeleteId, setPendingViewerDeleteId } = modals;
+
+    const persistPinChanges = React.useCallback(async (
+        ids: string[],
+        isPinned: boolean,
+        previousImages: typeof images,
+        errorMessage: string
+    ) => {
+        try {
+            const { toggleImagePin } = await import('../services/db/imageRepo');
+            await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
+            void refreshCollections(true);
+        } catch (error) {
+            console.error('[Pin] Failed to persist pin state', error);
+            setImages(previousImages);
+            addToast(errorMessage, 'error');
+        }
+    }, [refreshCollections, setImages, addToast, images]);
 
     const executeDelete = () => {
         const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
@@ -94,8 +111,10 @@ export const useAppActions = ({
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
     };
 
-    const handleBulkPin = async () => {
+    const handleBulkPin = () => {
         const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
+        const previousImages = images;
+
         setImages(prev => {
             const updated = prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img);
 
@@ -111,12 +130,9 @@ export const useAppActions = ({
         });
 
         const ids = Array.from(selectedIds);
-        const { toggleImagePin } = await import('../services/db/imageRepo');
-        await Promise.all(ids.map(id => toggleImagePin(id, anyUnpinned)));
-
-        await refreshCollectionThumbnails();
-        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
+        void persistPinChanges(ids, anyUnpinned, previousImages, 'Failed to update pinned images');
+        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 
     const handleBulkMask = async (targetId?: string, overrideValue?: boolean | null) => {
@@ -192,7 +208,9 @@ export const useAppActions = ({
         fileOps.recoverMetadata(targetId, style, () => closeModal('recovery'));
     };
 
-    const handlePinImage = async (id: string, newPinned: boolean) => {
+    const handlePinImage = (id: string, newPinned: boolean) => {
+        const previousImages = images;
+
         setImages(prev => {
             const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
 
@@ -205,10 +223,9 @@ export const useAppActions = ({
             return updated;
         });
 
-        await import('../services/db/imageRepo').then(db => db.toggleImagePin(id, newPinned));
-        await refreshCollectionThumbnails();
-        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
         addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+        void persistPinChanges([id], newPinned, previousImages, 'Failed to update pinned state');
+        // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 
     const handleShortcutFavorite = () => {

@@ -137,11 +137,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                     onClose();
                 }
             }}
-            onTogglePin={async () => {
+            onTogglePin={() => {
                 const id = contextMenu.imageId;
                 const img = images.find(i => i.id === id);
                 if (img) {
-                    await actions.handlePinImage(id, !img.isPinned);
+                    actions.handlePinImage(id, !img.isPinned);
                 }
                 onClose();
             }}

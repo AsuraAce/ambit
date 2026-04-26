@@ -13,7 +13,7 @@ vi.mock('../useToast', () => ({
 
 const mockSetImages = vi.fn();
 const mockToggleFavorite = vi.fn();
-const mockRefreshCollectionThumbnails = vi.fn();
+const mockRefreshCollections = vi.fn();
 
 vi.mock('../../services/db/imageRepo', () => ({
     toggleImageFavorite: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('../../stores/settingsStore', () => ({
 
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: (selector: any) => selector({
-        refreshCollections: mockRefreshCollectionThumbnails,
+        refreshCollections: mockRefreshCollections,
     }),
 }));
 
@@ -120,8 +120,20 @@ describe('useAppActions', () => {
         });
 
         expect(mockSetImages).toHaveBeenCalled();
-        expect(mockRefreshCollectionThumbnails).toHaveBeenCalled();
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+    });
+
+    it('should show the bulk pin toast without waiting for collection refresh', async () => {
+        mockRefreshCollections.mockImplementation(() => new Promise(() => { }));
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            await result.current.handleBulkPin();
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
     });
 
     it('should toggle privacy mode and show toast', () => {

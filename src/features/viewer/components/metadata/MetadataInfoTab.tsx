@@ -184,18 +184,20 @@ export const MetadataInfoTab = ({
                         <div className="flex justify-between items-center mb-2">
                             <div className="flex items-center gap-2">
                                 <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3>
-                                {/* Toggle: Original / AI Generated */}
+                                {/* Toggle: Original / current saved prompt */}
                                 {image.originalMetadata && !isLoading && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt && (
                                     <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-zinc-800/50 rounded-lg border border-gray-200 dark:border-white/10">
                                         <button
                                             onClick={() => setPromptValue(image.metadata.positivePrompt || '')}
                                             className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.metadata.positivePrompt ? 'bg-amethyst-500 text-white shadow' : 'text-gray-500 hover:text-amethyst-500'}`}
+                                            title="Show the current saved prompt"
                                         >
-                                            AI
+                                            Current
                                         </button>
                                         <button
                                             onClick={() => setPromptValue(image.originalMetadata?.positivePrompt || '')}
                                             className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.originalMetadata?.positivePrompt ? 'bg-sage-500 text-white shadow' : 'text-gray-500 hover:text-sage-500'}`}
+                                            title="Show the original imported prompt"
                                         >
                                             Original
                                         </button>

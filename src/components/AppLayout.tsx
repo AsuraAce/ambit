@@ -177,9 +177,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
             onToggleSelection={handleSelectionToggle}
             onToggleFavorite={(e, id) => toggleFavorite(id)}
-            onTogglePin={async (e, id) => {
+            onTogglePin={(e, id) => {
                 const imgFound = images.find(i => i.id === id);
-                if (imgFound) await actions.handlePinImage(id, !imgFound.isPinned);
+                if (imgFound) actions.handlePinImage(id, !imgFound.isPinned);
             }}
             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
             isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
@@ -317,9 +317,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
-                                            onTogglePin={async (e, id) => {
+                                            onTogglePin={(e, id) => {
                                                 const img = images.find(i => i.id === id);
-                                                if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                if (img) actions.handlePinImage(id, !img.isPinned);
                                             }}
                                             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                             onRangeSelection={handleRangeSelection}
@@ -338,9 +338,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
                                                     onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                    onTogglePin={async (e, id) => {
+                                                    onTogglePin={(e, id) => {
                                                         const img = images.find(i => i.id === id);
-                                                        if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                        if (img) actions.handlePinImage(id, !img.isPinned);
                                                     }}
                                                     onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                     thumbnailSize={settings.thumbnailSize}
