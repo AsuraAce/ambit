@@ -158,6 +158,12 @@ export const useAppActions = ({
 
         await Promise.all(promises);
 
+        if (privacyEnabled && settings.maskingMode === 'hide') {
+            await queryClient.invalidateQueries({ queryKey: ['images'] });
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            await queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
+        }
+
         let message = '';
         const count = idsToToggle.size;
         const s = count === 1 ? '' : 's';
@@ -246,4 +252,3 @@ export const useAppActions = ({
         runBackfill
     };
 };
-

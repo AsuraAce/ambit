@@ -107,13 +107,6 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         }
     });
 
-    const cleanupStartedAt = liveWatchNow();
-    const db = await getDb();
-    await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
-    debugLiveWatchPerf('DB user_masked cleanup complete', {
-        imageCount: images.length,
-        cleanupMs: elapsedMs(cleanupStartedAt)
-    });
     infoLiveWatchPerf('insertImagesBatch complete', {
         imageCount: images.length,
         totalMs: elapsedMs(insertStartedAt)
@@ -236,6 +229,16 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.tool);
         }
 
+        if ('positivePrompt' in updates || 'positive_prompt' in updates) {
+            query += ', positive_prompt = ?';
+            params.push((updates.positivePrompt ?? updates.positive_prompt) || null);
+        }
+
+        if ('negativePrompt' in updates || 'negative_prompt' in updates) {
+            query += ', negative_prompt = ?';
+            params.push((updates.negativePrompt ?? updates.negative_prompt) || null);
+        }
+
         // SPECIAL CASE: Model name is also denormalized for filtering
         if ('overrideModel' in updates) {
             query += ', resolved_model_name = ?';
@@ -278,7 +281,9 @@ export const revertImageMetadata = async (id: string) => {
                     tool = NULL,
                     model_hash = NULL,
                     model_name = NULL,
-                    resolved_model_name = NULL
+                    resolved_model_name = NULL,
+                    positive_prompt = NULL,
+                    negative_prompt = NULL
                 WHERE id = ?
             `, [normalizedId]);
             return;
@@ -299,7 +304,9 @@ export const revertImageMetadata = async (id: string) => {
                     model_hash = ?,
                     model_name = ?,
                     tool = ?,
-                    resolved_model_name = ?
+                    resolved_model_name = ?,
+                    positive_prompt = ?,
+                    negative_prompt = ?
                 WHERE id = ?
             `, [
                 img.original_parsed_json, // Use the exact same JSON string!
@@ -307,12 +314,14 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.model || null,
                 originalMetadata.tool || GeneratorTool.UNKNOWN,
                 originalMetadata.model || null, // resolved_model_name matches model_name on revert
+                originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
+                originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
                 normalizedId
             ]);
         } catch (e) {
             console.error('[DB] Failed to revert metadata:', e);
             // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL WHERE id = ?', [normalizedId]);
+            await db.execute('UPDATE images SET metadata_json = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
         }
     });
 };

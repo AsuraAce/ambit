@@ -4,7 +4,7 @@ export const buildSqlWhereClause = (
     filters: FilterState,
     privacyEnabled: boolean,
     maskingMode: AppSettings['maskingMode'],
-    maskedKeywords: string[],
+    _maskedKeywords: string[],
     collections?: Collection[],
     isRecursive: boolean = false,
     excludeCategories: string[] = [] // New: Categories to exclude from the WHERE clause (for Disjunctive Faceting)
@@ -25,13 +25,8 @@ export const buildSqlWhereClause = (
     }
 
     // 1. Privacy Logic
-    if (privacyEnabled && maskingMode === 'hide' && maskedKeywords.length > 0) {
-        // Construct NOT LIKE clauses for each keyword
-        const privacyConditions = maskedKeywords.map(kw => {
-            params.push(`%${kw}%`);
-            return `metadata_json NOT LIKE ?`;
-        });
-        conditions.push(`(${privacyConditions.join(' AND ')})`);
+    if (privacyEnabled && maskingMode === 'hide') {
+        conditions.push('privacy_hidden = 0');
     }
 
     // 2. Collection ID (Hybrid Logic)
@@ -188,13 +183,13 @@ export const buildSqlWhereClause = (
                 let param: any = val;
 
                 if (key === 'steps') {
-                    if (val.startsWith('>')) { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) < ?"; param = Number(val.slice(1)); }
-                    else { sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) = ?"; param = Number(val); }
+                    if (val.startsWith('>')) { sql = "steps > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "steps < ?"; param = Number(val.slice(1)); }
+                    else { sql = "steps = ?"; param = Number(val); }
                 } else if (key === 'cfg') {
-                    if (val.startsWith('>')) { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) < ?"; param = Number(val.slice(1)); }
-                    else { sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) = ?"; param = Number(val); }
+                    if (val.startsWith('>')) { sql = "cfg > ?"; param = Number(val.slice(1)); }
+                    else if (val.startsWith('<')) { sql = "cfg < ?"; param = Number(val.slice(1)); }
+                    else { sql = "cfg = ?"; param = Number(val); }
                 } else if (key === 'w' || key === 'width') {
                     if (val.startsWith('>')) { sql = "width > ?"; param = Number(val.slice(1)); }
                     else if (val.startsWith('<')) { sql = "width < ?"; param = Number(val.slice(1)); }
@@ -214,7 +209,7 @@ export const buildSqlWhereClause = (
                     sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'neg' || key === 'negative') {
-                    sql = `json_extract(metadata_json, '$.negativePrompt') LIKE ?`;
+                    sql = `negative_prompt LIKE ?`;
                     param = `%${val}%`;
                 } else if (key === 'file' || key === 'filename' || key === 'path') {
                     sql = `path LIKE ?`;
@@ -258,9 +253,9 @@ export const buildSqlWhereClause = (
                 }
             } else {
                 if (isNegative) {
-                    conditions.push(`json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?`);
+                    conditions.push(`positive_prompt NOT LIKE ?`);
                 } else {
-                    conditions.push(`json_extract(metadata_json, '$.positivePrompt') LIKE ?`);
+                    conditions.push(`positive_prompt LIKE ?`);
                 }
                 params.push(`%${term}%`);
             }

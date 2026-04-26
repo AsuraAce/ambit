@@ -354,6 +354,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         message: getLiveWatchSummaryMessage(receivedCount),
                         progress: null
                     });
+                } else {
+                    debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
+                        mode: options.mode,
+                        totalProcessed,
+                        syncMs: elapsedMs(syncStartedAt)
+                    });
                 }
             }
 
@@ -362,7 +368,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
 
-            if (onSyncComplete && options.mode !== 'live') {
+            if (hasChanges && onSyncComplete && options.mode !== 'live') {
                 await onSyncComplete('full');
             }
 

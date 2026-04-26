@@ -53,6 +53,15 @@ vi.mock('../../services/repository', () => ({
     appRepository: mocks.appRepository
 }));
 
+vi.mock('../../bindings', () => ({
+    commands: {
+        loadApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+        saveApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+        deleteApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
+        refreshPrivacyMaskIndex: vi.fn().mockResolvedValue({ status: 'ok', data: { changed: false, updated: 0 } }),
+    }
+}));
+
 vi.mock('../../services/db/searchRepo', () => ({
     searchImages: (...args: any[]) => mocks.searchImages(...args),
     countImages: (...args: any[]) => mocks.countImages(...args),
@@ -134,7 +143,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         // Initial state (Privacy Enabled by default)
         expect(hook.privacyEnabled).toBe(true);
-        expect(hook.activeSqlWhere).toContain("metadata_json NOT LIKE ?");
+        expect(hook.activeSqlWhere).toContain("privacy_hidden = 0");
 
         // Disable Privacy
         await act(async () => {
@@ -143,7 +152,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await waitFor(() => {
             expect(hook.privacyEnabled).toBe(false);
-            expect(hook.activeSqlWhere).not.toContain("metadata_json NOT LIKE ?");
+            expect(hook.activeSqlWhere).not.toContain("privacy_hidden = 0");
         }, { timeout: 3000 });
     });
 
@@ -225,6 +234,47 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(Function),
             expect.any(AbortSignal),
             expect.objectContaining({ mode: 'live' })
+        );
+        expect(mocks.searchImages).not.toHaveBeenCalled();
+        expect(mocks.getFacets).not.toHaveBeenCalled();
+    });
+
+    it('does not refresh image queries after a no-op startup Invoke catch-up', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 0,
+            updated: 0,
+            maxTimestamp: 100,
+            syncedIds: new Set(),
+            boardMapping: new Map()
+        });
+        mocks.searchImages.mockClear();
+        mocks.getFacets.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'startup' })
         );
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();

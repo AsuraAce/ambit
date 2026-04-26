@@ -49,7 +49,7 @@ impl RustFilterState {
         &self,
         privacy_enabled: bool,
         masking_mode: &str,
-        masked_keywords: &[String],
+        _masked_keywords: &[String],
         collections: &[RustCollection],
         is_recursive: bool,
         exclude_categories: &[String],
@@ -68,13 +68,8 @@ impl RustFilterState {
             }
         }
 
-        if privacy_enabled && masking_mode == "hide" && !masked_keywords.is_empty() {
-            let mut privacy_conditions = Vec::new();
-            for kw in masked_keywords {
-                params.push(Value::Text(format!("%{}%", kw)));
-                privacy_conditions.push("metadata_json NOT LIKE ?".to_string());
-            }
-            conditions.push(format!("({})", privacy_conditions.join(" AND ")));
+        if privacy_enabled && masking_mode == "hide" {
+            conditions.push("privacy_hidden = 0".to_string());
         }
 
         if let Some(ref col_id) = self.collection_id {
@@ -296,37 +291,31 @@ impl RustFilterState {
                     match key {
                         "steps" => {
                             if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?"
-                                    .to_string();
+                                sql = "steps > ?".to_string();
                                 param = stripped
                                     .parse::<i32>()
                                     .ok()
                                     .map(|v| Value::Integer(v as i64));
                             } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) < ?"
-                                    .to_string();
+                                sql = "steps < ?".to_string();
                                 param = stripped
                                     .parse::<i32>()
                                     .ok()
                                     .map(|v| Value::Integer(v as i64));
                             } else {
-                                sql = "CAST(json_extract(metadata_json, '$.steps') AS INTEGER) = ?"
-                                    .to_string();
+                                sql = "steps = ?".to_string();
                                 param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
                             }
                         }
                         "cfg" => {
                             if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) > ?"
-                                    .to_string();
+                                sql = "cfg > ?".to_string();
                                 param = stripped.parse::<f64>().ok().map(Value::Real);
                             } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) < ?"
-                                    .to_string();
+                                sql = "cfg < ?".to_string();
                                 param = stripped.parse::<f64>().ok().map(Value::Real);
                             } else {
-                                sql = "CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) = ?"
-                                    .to_string();
+                                sql = "cfg = ?".to_string();
                                 param = val.parse::<f64>().ok().map(Value::Real);
                             }
                         }
@@ -381,8 +370,7 @@ impl RustFilterState {
                             param = Some(Value::Text(format!("%{}%", val)));
                         }
                         "neg" | "negative" => {
-                            sql = "json_extract(metadata_json, '$.negativePrompt') LIKE ?"
-                                .to_string();
+                            sql = "negative_prompt LIKE ?".to_string();
                             param = Some(Value::Text(format!("%{}%", val)));
                         }
                         "file" | "filename" | "path" => {
@@ -442,14 +430,9 @@ impl RustFilterState {
                     }
                 } else {
                     if is_negative {
-                        conditions.push(
-                            "json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?"
-                                .to_string(),
-                        );
+                        conditions.push("positive_prompt NOT LIKE ?".to_string());
                     } else {
-                        conditions.push(
-                            "json_extract(metadata_json, '$.positivePrompt') LIKE ?".to_string(),
-                        );
+                        conditions.push("positive_prompt LIKE ?".to_string());
                     }
                     params.push(Value::Text(format!("%{}%", term)));
                 }
@@ -593,9 +576,9 @@ mod tests {
         filter.search_query = "cat steps:>20 -dog".to_string();
         let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
 
-        assert!(sql.contains("json_extract(metadata_json, '$.positivePrompt') LIKE ?"));
-        assert!(sql.contains("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?"));
-        assert!(sql.contains("json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?"));
+        assert!(sql.contains("positive_prompt LIKE ?"));
+        assert!(sql.contains("steps > ?"));
+        assert!(sql.contains("positive_prompt NOT LIKE ?"));
 
         assert_eq!(params.len(), 3);
         assert_eq!(params[0], Value::Text("%cat%".to_string()));
@@ -620,9 +603,8 @@ mod tests {
         let (sql, params) =
             filter.build_where_clause(true, "hide", &["secret".to_string()], &[], false, &[]);
 
-        assert!(sql.contains("metadata_json NOT LIKE ?"));
-        assert_eq!(params.len(), 1);
-        assert_eq!(params[0], Value::Text("%secret%".to_string()));
+        assert!(sql.contains("privacy_hidden = 0"));
+        assert_eq!(params.len(), 0);
     }
 
     #[test]
@@ -645,7 +627,7 @@ mod tests {
             filter.build_where_clause(false, "blur", &[], &[collection], false, &[]);
 
         assert!(sql.contains("is_deleted = 0"));
-        assert!(sql.contains("(json_extract(metadata_json, '$.positivePrompt') LIKE ?)"));
+        assert!(sql.contains("(positive_prompt LIKE ?)"));
         assert!(sql.contains("AND id NOT IN (?)"));
         assert_eq!(params.len(), 2);
         assert_eq!(params[0], Value::Text("%smart%".to_string()));

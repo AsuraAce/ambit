@@ -32,9 +32,29 @@ export interface ValidFacetNames {
     ipAdapters: string[];
 }
 
+const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+
+const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
+const hasFastSortVisibilityPrefix = (whereClause: string) =>
+    whereClause.includes('is_deleted = 0') &&
+    whereClause.includes('IFNULL(is_intermediate_gen, 0) = 0') &&
+    whereClause.includes('IFNULL(is_grid_gen, 0) = 0');
+
+const selectImageSortIndex = (whereClause: string, sortField: string): string | null => {
+    if (!hasFastSortVisibilityPrefix(whereClause)) return null;
+
+    if (sortField === 'timestamp') {
+        return hasPrivacyFilter(whereClause) ? 'idx_images_privacy_fast_sort_v1' : 'idx_images_fast_sort_v3';
+    }
+    if (sortField === 'path') return 'idx_images_name_sort_v1';
+    if (sortField === 'file_size') return 'idx_images_size_sort_v1';
+
+    return null;
+};
+
 export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     // For combined Collection + LoRA counts
     if (collectionId && loraName) {
@@ -74,7 +94,10 @@ export const countImages = async (whereClause: string, params: any[], collection
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const query = `SELECT count(*) as count FROM images ${finalWhere}`;
+    const fromClause = hasPrivacyFilter(finalWhere) && hasFastSortVisibilityPrefix(finalWhere)
+        ? 'FROM images INDEXED BY idx_images_privacy_fast_sort_v1'
+        : 'FROM images';
+    const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
     const result = await db.select<any[]>(query, params);
     return result[0]?.count || 0;
@@ -94,7 +117,7 @@ export const countGlobalImages = async (): Promise<number> => {
 
 export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     // Simple query using denormalized columns - no JOIN needed
     const query = `SELECT id FROM images ${finalWhere}`;
@@ -116,7 +139,7 @@ export const searchImages = async (
     cursor?: { val: number | string; id: string; isPinned?: number }
 ): Promise<AIImage[]> => {
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     const orderBy = prioritizePinned
         ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}` // Strict tie-breaker
@@ -220,9 +243,11 @@ export const searchImages = async (
 
     // Safer to leave prefixes if FROM images is used.
 
+    const sortIndex = selectImageSortIndex(finalWhere, sortField);
+    const fromClause = sortIndex ? `FROM images INDEXED BY ${sortIndex}` : 'FROM images';
     const query = `
         SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
-        FROM images INDEXED BY idx_images_fast_sort_v3
+        ${fromClause}
         ${finalWhere} 
         ${cursorWhere}
         ${orderBy} 
@@ -249,7 +274,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     }
 
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0";
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     try {
         const statsQuery = `
@@ -270,11 +295,14 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         const avgSteps = 0; // Temporarily disabled for performance
 
         // Use denormalized resolved_model_name column for model stats
+        const modelStatsIndex = hasPrivacyFilter(finalWhere) && hasFastSortVisibilityPrefix(finalWhere)
+            ? 'idx_images_privacy_model_stats_v1'
+            : 'idx_images_model_stats_v2';
         const modelQuery = `
         SELECT
         COALESCE(resolved_model_name, model_name, 'Unknown') as name,
             count(*) as count
-            FROM images INDEXED BY idx_images_model_stats_v2
+            FROM images INDEXED BY ${modelStatsIndex}
             ${finalWhere}
             GROUP BY name
             ORDER BY count DESC
@@ -329,7 +357,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         console.log('[DB] getKeywordStats filter:', whereClause);
 
         // Fix ambiguity for JOIN: replace and ensure columns are prefixed with 'images.'
-        const finalWhere = whereClause ? whereClause : "WHERE is_deleted = 0";
+        const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
         // Comprehensive list of columns in the 'images' table to prefix
         const columnsToPrefix = [
@@ -337,7 +365,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             'timestamp', 'thumbnail_path', 'is_favorite', 'is_pinned', 'is_missing',
             'user_masked', 'group_id', 'board_id', 'notes', 'original_metadata_json',
             // New denormalized columns
-            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'sampler', 'generation_type',
+            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'privacy_hidden', 'sampler', 'generation_type',
             'positive_prompt', 'negative_prompt'
         ];
 
