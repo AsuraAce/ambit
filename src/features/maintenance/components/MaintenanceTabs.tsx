@@ -15,7 +15,7 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
         { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
         { id: 'intermediates', label: 'Intermediates', color: 'text-blue-500' },
         { id: 'missing', label: 'Missing', color: 'text-orange-500' },
-        { id: 'trash', label: 'Trash', color: 'text-red-500' },
+        { id: 'trash', label: 'Removed', color: 'text-red-500' },
     ];
 
     // Hide Intermediates tab if there are no intermediate images
@@ -33,7 +33,7 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
                         </div>
                         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Maintenance</h2>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Organize your library, resolve conflicts, and manage deleted items.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">Organize your library, resolve conflicts, and manage removed items.</p>
                 </div>
 
                 <div className="bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl flex items-center shadow-inner self-start md:self-auto overflow-x-auto max-w-full">

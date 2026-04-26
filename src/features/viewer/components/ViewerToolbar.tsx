@@ -90,7 +90,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
                     <button
                         onClick={onDelete}
                         className="p-2.5 bg-black/50 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 rounded-full text-white/50 hover:text-red-400 transition-all backdrop-blur-md shadow-lg"
-                        title="Delete"
+                        title="Remove from Library"
                     >
                         <Trash2 className="w-5 h-5" />
                     </button>

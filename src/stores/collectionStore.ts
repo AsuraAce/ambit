@@ -4,6 +4,7 @@ import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
 
 let initPromise: Promise<void> | null = null;
+let smartCountRefreshToken = 0;
 
 interface CollectionState {
     collections: Collection[];
@@ -12,7 +13,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshSmartCounts: () => Promise<void>;
+    refreshSmartCounts: (collectionsSnapshot?: Collection[]) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
@@ -31,8 +32,9 @@ export const useCollectionStore = create<CollectionState>()(
                         const cols = await getAllCollectionsWithStats();
                         set({ collections: cols });
 
-                        // Lazily fetch smart counts in the background
-                        get().refreshSmartCounts();
+                        // Lazily fetch smart counts in the background without
+                        // allowing stale snapshots to overwrite newer collection state.
+                        void get().refreshSmartCounts(cols);
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
                     }
@@ -52,8 +54,9 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
-            refreshSmartCounts: async () => {
+            refreshSmartCounts: async (collectionsSnapshot?: Collection[]) => {
                 try {
+                    const requestToken = ++smartCountRefreshToken;
                     const { useLibraryStore } = await import('./libraryStore');
                     if (useLibraryStore.getState().isImporting) {
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
@@ -61,21 +64,26 @@ export const useCollectionStore = create<CollectionState>()(
                     }
 
                     const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
-                    const currentCols = get().collections;
+                    const currentCols = collectionsSnapshot ?? get().collections;
                     const smartCols = currentCols.filter(c => !!c.filters);
 
                     if (smartCols.length === 0) return;
 
                     const counts = await getSmartCollectionCounts(smartCols);
 
-                    // Update only the smart collection counts without replacing entire array reference
-                    set({
-                        collections: currentCols.map(c =>
+                    if (requestToken !== smartCountRefreshToken) {
+                        return;
+                    }
+
+                    // Merge counts onto the latest state instead of reusing an older
+                    // snapshot, so deletes or other collection changes are not resurrected.
+                    set((state) => ({
+                        collections: state.collections.map(c =>
                             c.filters && counts[c.id] !== undefined
                                 ? { ...c, count: counts[c.id] }
                                 : c
                         )
-                    });
+                    }));
                 } catch (e) {
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }
@@ -168,7 +176,7 @@ export const useCollectionStore = create<CollectionState>()(
                         set({ collections: dbCols, isLoaded: true });
 
                         // Lazily fetch smart collection counts after initial render
-                        get().refreshSmartCounts();
+                        void get().refreshSmartCounts(dbCols);
                     } catch (e) {
                         console.error('[CollectionStore] Failed to initialize', e);
                         set({ isLoaded: true });

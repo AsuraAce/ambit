@@ -130,7 +130,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         <ActionButton
           icon={<Trash2 className="w-4 h-4 text-gray-400" />}
           onClick={onDelete}
-          title="Delete Image"
+          title="Remove from Library"
           className="hover:!bg-red-500/20 hover:!text-red-400"
         />
       </div>

@@ -201,6 +201,7 @@ export interface MonitoredFolder {
   imageCount: number;
   lastScanned?: number; // Timestamp of last successful full/partial scan
   variant?: GeneratorTool; // Store the detected/assigned variant
+  initialScanPending?: boolean; // Suppress duplicate auto-scan until the first queued scan completes
 }
 
 export interface AppSettings {

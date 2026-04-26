@@ -13,7 +13,7 @@ vi.mock('../useToast', () => ({
 
 const mockSetImages = vi.fn();
 const mockToggleFavorite = vi.fn();
-const mockRefreshCollectionThumbnails = vi.fn();
+const mockRefreshCollections = vi.fn();
 
 vi.mock('../../services/db/imageRepo', () => ({
     toggleImageFavorite: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('../../stores/settingsStore', () => ({
 
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: (selector: any) => selector({
-        refreshCollections: mockRefreshCollectionThumbnails,
+        refreshCollections: mockRefreshCollections,
     }),
 }));
 
@@ -89,6 +89,17 @@ describe('useAppActions', () => {
         expect(mockModalManager.openModal).toHaveBeenCalledWith('deleteConfirm');
     });
 
+    it('should bind the requested delete target before opening confirmation', () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        act(() => {
+            result.current.requestDeleteForId('2');
+        });
+
+        expect(mockModalManager.setPendingViewerDeleteId).toHaveBeenCalledWith('2');
+        expect(mockModalManager.openModal).toHaveBeenCalledWith('deleteConfirm');
+    });
+
     it('should execute delete and clear selection', () => {
         const { result } = renderHook(() => useAppActions(props));
 
@@ -99,6 +110,23 @@ describe('useAppActions', () => {
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1']);
         expect(mockSetSelectedIds).toHaveBeenCalledWith(new Set());
         expect(mockModalManager.closeModal).toHaveBeenCalledWith('deleteConfirm');
+    });
+
+    it('should ignore accidental confirm click arguments when deleting multiple selected images', () => {
+        const multiSelectProps = {
+            ...props,
+            selectedIds: new Set(['1', '2']),
+        };
+        const fakeClickEvent = { type: 'click', currentTarget: {} };
+        const { result } = renderHook(() => useAppActions(multiSelectProps));
+
+        act(() => {
+            (result.current.executeDelete as unknown as (event: unknown) => void)(fakeClickEvent);
+        });
+
+        expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1', '2']);
+        expect(mockFileOps.deleteImages).not.toHaveBeenCalledWith(fakeClickEvent);
+        expect(mockSetSelectedIds).toHaveBeenCalledWith(new Set());
     });
 
     it('should handle bulk favorite', async () => {
@@ -120,8 +148,20 @@ describe('useAppActions', () => {
         });
 
         expect(mockSetImages).toHaveBeenCalled();
-        expect(mockRefreshCollectionThumbnails).toHaveBeenCalled();
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+    });
+
+    it('should show the bulk pin toast without waiting for collection refresh', async () => {
+        mockRefreshCollections.mockImplementation(() => new Promise(() => { }));
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            await result.current.handleBulkPin();
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
     });
 
     it('should toggle privacy mode and show toast', () => {

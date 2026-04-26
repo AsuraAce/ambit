@@ -14,6 +14,13 @@ export const IMAGE_FIELDS_LIGHT = `
     images.model_name, images.model_hash, images.tool, images.resolved_model_name
 `;
 
+export const REMOVED_IMAGE_FIELDS = `
+    id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source,
+    is_favorite, is_pinned, 0 as is_deleted, is_missing, user_masked, group_id, board_id, notes,
+    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
+    NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name
+`;
+
 // Helper to keep mapping consistent
 export function mapRowToImage(row: any): AIImage {
     const normalizedPath = normalizePath(row.path);

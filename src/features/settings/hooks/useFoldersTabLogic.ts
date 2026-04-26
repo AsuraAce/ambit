@@ -46,7 +46,7 @@ export const useFoldersTabLogic = ({
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const resourceInputRef = useRef<HTMLInputElement>(null);
-    const pendingScansRef = useRef<{ path: string, variant?: string }[]>([]);
+    const pendingScansRef = useRef<{ id: string, path: string, variant?: string }[]>([]);
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
@@ -145,14 +145,49 @@ export const useFoldersTabLogic = ({
                                 false
                             );
                             addToast(`Synced ${result.images.length} new files`, 'success');
+                            updateFolderLastScanned(id, Date.now());
                         } finally {
                             setIsImporting(false);
                             setImportProgress(null);
                         }
                     } else {
-                        addToast(`No changes detected`, 'info');
+                        const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
+                        const knownCount = folder?.imageCount ?? 0;
+
+                        if (allFiles.length > knownCount) {
+                            const repairPaths = allFiles.map(f => f.path);
+                            const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                            setIsImporting(true);
+                            setImportProgress({ current: 0, total: repairPaths.length, message: 'Repairing incomplete import...' });
+
+                            try {
+                                const { getThumbnailDir } = await import('../../../services/thumbnailService');
+                                const thumbDir = await getThumbnailDir();
+                                const result = await processNativePaths(
+                                    repairPaths,
+                                    thumbDir,
+                                    (current, total, message) => {
+                                        setImportProgress({ current, total, message });
+                                    },
+                                    variant as GeneratorTool | undefined,
+                                    undefined,
+                                    false
+                                );
+                                addToast(
+                                    result.images.length > 0
+                                        ? `Repair scan imported ${result.images.length} missing files`
+                                        : 'Repair scan found no additional importable files',
+                                    result.images.length > 0 ? 'success' : 'info'
+                                );
+                            } finally {
+                                setIsImporting(false);
+                                setImportProgress(null);
+                            }
+                        } else {
+                            addToast(`No changes detected`, 'info');
+                        }
+                        updateFolderLastScanned(id, Date.now());
                     }
-                    updateFolderLastScanned(id, Date.now());
                 } else {
                     await onScanFolder([{ path, variant }]);
                     updateFolderLastScanned(id, Date.now());
@@ -185,12 +220,14 @@ export const useFoldersTabLogic = ({
         }
 
         const variant = detectGeneratorVariant(normalizedNew);
+        const queuedAt = Date.now();
         const newFolder: MonitoredFolder = {
-            id: `folder_${Date.now()}`,
+            id: `folder_${queuedAt}`,
             path: normalizedNew,
             isActive: true,
             imageCount: 0,
-            variant: variant
+            variant: variant,
+            initialScanPending: true
         };
 
         setSettings(prev => ({
@@ -201,18 +238,34 @@ export const useFoldersTabLogic = ({
         addToast(`Added folder: ${normalizedNew}`, 'success');
 
         // Trigger scan
-        pendingScansRef.current.push({ path: normalizedNew, variant });
+        pendingScansRef.current.push({ id: newFolder.id, path: normalizedNew, variant });
         if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
         scanDebounceRef.current = setTimeout(async () => {
             if (pendingScansRef.current.length === 0 || !onScanFolder) return;
             const foldersToScan = [...pendingScansRef.current];
             pendingScansRef.current = [];
             try {
-                await onScanFolder(foldersToScan);
-                addToast(`Scanned ${foldersToScan.length} folder(s)`, 'success');
+                await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
+                const completedAt = Date.now();
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                        foldersToScan.some(pending => pending.id === folder.id)
+                            ? { ...folder, lastScanned: completedAt, initialScanPending: false }
+                            : folder
+                    )
+                }));
                 await fetchCounts();
             } catch (e) {
                 console.error('Auto-scan failed:', e);
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                        foldersToScan.some(pending => pending.id === folder.id)
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            : folder
+                    )
+                }));
                 addToast('Folder scan failed', 'error');
             }
         }, 500);

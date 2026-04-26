@@ -4,7 +4,9 @@ import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
 import { imageToBase64 } from '../services/imageService';
 import { recoverImageMetadata } from '../services/geminiService';
+import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { urlToPath } from '../utils/pathUtils';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
@@ -21,27 +23,60 @@ export const useMaintenanceOps = ({
 }: UseMaintenanceOpsProps) => {
     const { addToast } = useToast();
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
+    const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
 
     const deleteImages = useCallback(async (ids: string[], permanent = false) => {
+        const logPrefix = permanent ? '[MaintenanceOps] deleteFiles' : '[MaintenanceOps] removeFromLibrary';
+        let rebuildSucceeded = false;
+
         try {
-            const { markAsDeleted, deleteImage } = await import('../services/db/imageRepo');
+            const { removeImagesFromLibrary, deleteImageFromDisk, getImagesByIds, rebuildFacetCache } = await import('../services/db/imageRepo');
             if (permanent) {
-                for (const id of ids) await deleteImage(id);
+                console.info(`${logPrefix}: fetching images`, { count: ids.length });
+                const imagesToDelete = await getImagesByIds(ids);
+                for (const img of imagesToDelete) {
+                    const path = img.id;
+                    const thumbnailPath = img.thumbnailUrl ? urlToPath(img.thumbnailUrl) : null;
+                    console.info(`${logPrefix}: deleting file`, { id: img.id });
+                    await deleteImageFromDisk(img.id, path, thumbnailPath);
+                }
                 setImages(prev => prev.filter(img => !ids.includes(img.id)));
-                addToast(`Permanently deleted ${ids.length} images`, 'success');
+                addToast(`Moved ${ids.length} file${ids.length === 1 ? '' : 's'} to OS trash`, 'success');
             } else {
-                await markAsDeleted(ids, true);
-                setImages(prev => prev.map(img =>
-                    ids.includes(img.id) ? { ...img, isDeleted: true } : img
-                ));
-                addToast(`Moved ${ids.length} images to Trash`, 'success');
-                await refreshCollectionThumbnails();
+                console.info(`${logPrefix}: tombstoning images`, { count: ids.length });
+                await removeImagesFromLibrary(ids);
+                setImages(prev => prev.filter(img => !ids.includes(img.id)));
+                addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
+            }
+
+            if (!permanent) {
+                try {
+                    console.info(`${logPrefix}: refreshing collection thumbnails`);
+                    await refreshCollectionThumbnails();
+                } catch (thumbnailError) {
+                    console.error(`${logPrefix}: collection thumbnail refresh failed`, thumbnailError);
+                    addToast('Removed from library, but collection thumbnails may need a refresh.', 'warning');
+                }
+            }
+
+            try {
+                console.info(`${logPrefix}: rebuilding facet cache`);
+                await rebuildFacetCache();
+                rebuildSucceeded = true;
+            } catch (facetError) {
+                console.error(`${logPrefix}: facet rebuild failed`, facetError);
+            }
+
+            if (rebuildSucceeded) {
+                incrementFacetCacheVersion();
+            } else {
+                addToast('Library update succeeded, but filters may take a moment to refresh.', 'info');
             }
         } catch (e) {
-            console.error("Failed to delete images", e);
-            addToast("Failed to delete from database", "error");
+            console.error(`${logPrefix}: mutation failed`, e);
+            addToast("Failed to update library state", "error");
         }
-    }, [setImages, addToast, refreshCollectionThumbnails]);
+    }, [setImages, addToast, refreshCollectionThumbnails, incrementFacetCacheVersion]);
 
     const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle, onComplete: () => void) => {
         const img = images.find(i => i.id === targetId);

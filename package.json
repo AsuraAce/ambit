@@ -28,7 +28,7 @@
     "@tauri-apps/plugin-process": "2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.4",
     "@tauri-apps/plugin-sql": "^2.3.1",
-    "@tauri-apps/plugin-updater": "2.9.0",
+    "@tauri-apps/plugin-updater": "2.10.1",
     "@tauri-apps/plugin-window-state": "^2.4.1",
     "clsx": "^2.1.0",
     "framer-motion": "^12.25.0",

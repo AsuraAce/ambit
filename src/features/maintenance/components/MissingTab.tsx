@@ -81,7 +81,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                     onClick={onDeleteSelected}
                     className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                 >
-                    <Trash2 className="w-4 h-4" /> Move to Trash
+                    <Trash2 className="w-4 h-4" /> Remove from Library
                     <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                 </button>
             ) : (
@@ -89,7 +89,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                     onClick={onPurgeMissing}
                     className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-red-200 dark:border-red-900/50"
                 >
-                    <FileX className="w-4 h-4" /> Move all {images.length} to Trash
+                    <FileX className="w-4 h-4" /> Remove all {images.length} from Library
                 </button>
             )}
         </div>
