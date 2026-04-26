@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useCallback } from 'react';
-import { ArchiveRestore, Trash2 } from 'lucide-react';
+import { ArchiveRestore, Loader2, Trash2 } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { MaintenanceItem } from './MaintenanceItem';
@@ -18,6 +18,7 @@ interface TrashTabProps {
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
     onBackgroundClick: () => void;
+    busyAction?: 'restoring' | 'deleting' | null;
 }
 
 export const TrashTab: React.FC<TrashTabProps> = ({
@@ -31,7 +32,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
-    onBackgroundClick
+    onBackgroundClick,
+    busyAction = null
 }) => {
     const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
         return (
@@ -67,16 +69,18 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 <>
                     <button
                         onClick={onRestoreSelected}
+                        disabled={busyAction !== null}
                         className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                     >
-                        <ArchiveRestore className="w-4 h-4" /> Restore to Library
+                        {busyAction === 'restoring' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />} {busyAction === 'restoring' ? 'Restoring...' : 'Restore to Library'}
                         <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                     </button>
                     <button
                         onClick={onDeleteSelected}
+                        disabled={busyAction !== null}
                         className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                     >
-                        <Trash2 className="w-4 h-4" /> Delete File
+                        {busyAction === 'deleting' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {busyAction === 'deleting' ? 'Deleting from Disk...' : 'Delete File'}
                     </button>
                 </>
             ) : (

@@ -89,6 +89,17 @@ describe('useAppActions', () => {
         expect(mockModalManager.openModal).toHaveBeenCalledWith('deleteConfirm');
     });
 
+    it('should bind the requested delete target before opening confirmation', () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        act(() => {
+            result.current.requestDeleteForId('2');
+        });
+
+        expect(mockModalManager.setPendingViewerDeleteId).toHaveBeenCalledWith('2');
+        expect(mockModalManager.openModal).toHaveBeenCalledWith('deleteConfirm');
+    });
+
     it('should execute delete and clear selection', () => {
         const { result } = renderHook(() => useAppActions(props));
 
@@ -99,6 +110,23 @@ describe('useAppActions', () => {
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1']);
         expect(mockSetSelectedIds).toHaveBeenCalledWith(new Set());
         expect(mockModalManager.closeModal).toHaveBeenCalledWith('deleteConfirm');
+    });
+
+    it('should ignore accidental confirm click arguments when deleting multiple selected images', () => {
+        const multiSelectProps = {
+            ...props,
+            selectedIds: new Set(['1', '2']),
+        };
+        const fakeClickEvent = { type: 'click', currentTarget: {} };
+        const { result } = renderHook(() => useAppActions(multiSelectProps));
+
+        act(() => {
+            (result.current.executeDelete as unknown as (event: unknown) => void)(fakeClickEvent);
+        });
+
+        expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1', '2']);
+        expect(mockFileOps.deleteImages).not.toHaveBeenCalledWith(fakeClickEvent);
+        expect(mockSetSelectedIds).toHaveBeenCalledWith(new Set());
     });
 
     it('should handle bulk favorite', async () => {

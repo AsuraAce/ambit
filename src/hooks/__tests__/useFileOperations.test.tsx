@@ -95,6 +95,7 @@ describe('useFileOperations', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
     });
 
     it('should initialize correctly', () => {
@@ -126,6 +127,26 @@ describe('useFileOperations', () => {
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockSetImages).toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
+        });
+
+        it('should keep delete success even if collection thumbnail refresh fails', async () => {
+            const { removeImagesFromLibrary } = await import('../../services/db/imageRepo');
+            mockRefreshCollectionThumbnails.mockRejectedValueOnce(new Error('thumbnail refresh failed'));
+            const { result } = renderHook(() => useFileOperations({
+                images: mockImages,
+                setImages: mockSetImages,
+                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
+                settings: mockSettings,
+            }));
+
+            await act(async () => {
+                await result.current.deleteImages(['1'], false);
+            });
+
+            expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('collection thumbnails may need a refresh'), 'warning');
+            expect(mockAddToast).not.toHaveBeenCalledWith('Failed to update library state', 'error');
         });
 
         it('should perform permanent delete and remove from local state', async () => {

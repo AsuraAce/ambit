@@ -62,12 +62,11 @@ export const useAppActions = ({
         }
     }, [refreshCollections, setImages, addToast, images]);
 
-    const executeDelete = () => {
-        const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
+    const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null = null) => {
         fileOps.deleteImages(ids);
 
-        if (pendingViewerDeleteId) {
-            const idx = images.findIndex(img => img.id === pendingViewerDeleteId);
+        if (targetDeleteId) {
+            const idx = images.findIndex(img => img.id === targetDeleteId);
             if (idx !== -1) {
                 let nextIndex: number | null = idx;
                 if (images.length === 1) nextIndex = null;
@@ -79,17 +78,25 @@ export const useAppActions = ({
         }
         closeModal('deleteConfirm');
         setPendingViewerDeleteId(null);
-    };
+    }, [fileOps, images, setSelectedImageIndex, setSelectedIds, closeModal, setPendingViewerDeleteId]);
+
+    const executeDelete = React.useCallback(() => {
+        const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
+        executeDeleteByIds(ids, pendingViewerDeleteId);
+    }, [pendingViewerDeleteId, selectedIds, executeDeleteByIds]);
+
+    const requestDeleteForId = React.useCallback((id: string) => {
+        setPendingViewerDeleteId(id);
+        if (settings.confirmDelete) {
+            openModal('deleteConfirm');
+            return;
+        }
+
+        executeDeleteByIds([id], id);
+    }, [settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]);
 
     const handleDeleteViewerImage = (id: string) => {
-        if (settings.confirmDelete) {
-            setPendingViewerDeleteId(id);
-            openModal('deleteConfirm');
-        } else {
-            setPendingViewerDeleteId(id);
-            // Non-ideal to use setTimeout but matches original logic for now
-            setTimeout(() => executeDelete(), 0);
-        }
+        requestDeleteForId(id);
     };
 
     const handleExportConfirm = async (filename: string, folder: string, ids?: Set<string>) => {
@@ -259,6 +266,7 @@ export const useAppActions = ({
 
     return {
         executeDelete,
+        requestDeleteForId,
         handleDeleteViewerImage,
         handleExportConfirm,
         handleBulkFavorite,

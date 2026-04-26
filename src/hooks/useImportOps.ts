@@ -311,10 +311,9 @@ export const useImportOps = ({
                 console.log(`[Resync] Found ${filesToScan.length} total files`);
             }
 
-            updateLastScanned(id, Date.now());
-
             if (filesToScan.length === 0) {
                 setImportProgress({ current: 0, total: 0, message: 'No changes detected' });
+                updateLastScanned(id, Date.now());
                 return { newFiles: 0, totalScanned: 0 };
             }
 
@@ -339,6 +338,7 @@ export const useImportOps = ({
             if (result.images.length > 0) {
                 await commitImportResult(result, true);
             }
+            updateLastScanned(id, Date.now());
 
             return { newFiles: result.images.length, totalScanned: filesToScan.length };
         } catch (e) {

@@ -144,7 +144,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         message={`This will remove ${pendingViewerDeleteId ? '1' : selectedIds.size} image(s) from Ambit while keeping the original file(s) on disk. You can restore them later from Removed.`}
         confirmLabel="Remove from Library"
         isDangerous={true}
-        onConfirm={onDeleteConfirm}
+        onConfirm={() => onDeleteConfirm()}
         onCancel={() => close('deleteConfirm')}
       />
 
@@ -154,7 +154,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         message="This will delete the collection folder. The images themselves will remain in your library."
         confirmLabel="Delete Collection"
         isDangerous={true}
-        onConfirm={onDeleteCollectionConfirm}
+        onConfirm={() => onDeleteCollectionConfirm()}
         onCancel={() => close('deleteCollection')}
       />
 

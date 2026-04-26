@@ -85,6 +85,32 @@ describe('useFolderMonitor', () => {
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
+    it('should not auto-scan newly added folders whose first scan is already queued', () => {
+        const initialFolders = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
+        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
+            isLoaded: true,
+            monitoredFolders: folders,
+            onScan: mockOnScan,
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn()
+        }), {
+            initialProps: { folders: initialFolders }
+        });
+
+        vi.clearAllMocks();
+
+        rerender({
+            folders: [
+                ...initialFolders,
+                { id: '2', path: '/test2', isActive: true, imageCount: 0, initialScanPending: true }
+            ]
+        });
+
+        expect(mockOnScan).not.toHaveBeenCalled();
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
     it('should detect startup scan (prevFolders empty)', () => {
         const { rerender } = renderHook(({ folders, isLoaded }) => useFolderMonitor({
             isLoaded,

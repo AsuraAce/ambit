@@ -71,6 +71,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [removedAction, setRemovedAction] = useState<'restoring' | 'deleting' | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
@@ -186,37 +187,52 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleRestoreSelected = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
-        await onRestoreImages(ids);
-        await refreshData('trash', false);
-        clearSelection();
+        setRemovedAction('restoring');
+        try {
+            await onRestoreImages(ids);
+            await refreshData('trash', false);
+            clearSelection();
+        } finally {
+            setRemovedAction(null);
+        }
     };
 
     const handleDeleteSelected = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
 
-        if (activeTab === 'untagged' || activeTab === 'missing') {
-            await onRemoveFromLibrary(ids);
-        } else {
-            await onDeleteFile(ids);
+        if (activeTab === 'trash') {
+            setRemovedAction('deleting');
         }
 
-        const scope = activeTab === 'untagged' ? untaggedScope :
-            activeTab === 'thumbnails' ? thumbnailsScope :
-                activeTab === 'duplicates' ? duplicatesScope :
-                    activeTab === 'intermediates' ? intermediatesScope : 'global';
+        try {
+            if (activeTab === 'untagged' || activeTab === 'missing') {
+                await onRemoveFromLibrary(ids);
+            } else {
+                await onDeleteFile(ids);
+            }
 
-        await refreshData(activeTab, false, { scope: scope as any });
+            const scope = activeTab === 'untagged' ? untaggedScope :
+                activeTab === 'thumbnails' ? thumbnailsScope :
+                    activeTab === 'duplicates' ? duplicatesScope :
+                        activeTab === 'intermediates' ? intermediatesScope : 'global';
 
-        if (activeTab === 'missing') {
-            setScanMissingIds(prev => {
-                const next = new Set(prev);
-                ids.forEach(id => next.delete(id));
-                return next;
-            });
-            setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+            await refreshData(activeTab, false, { scope: scope as any });
+
+            if (activeTab === 'missing') {
+                setScanMissingIds(prev => {
+                    const next = new Set(prev);
+                    ids.forEach(id => next.delete(id));
+                    return next;
+                });
+                setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+            }
+            clearSelection();
+        } finally {
+            if (activeTab === 'trash') {
+                setRemovedAction(null);
+            }
         }
-        clearSelection();
     };
 
     const handlePurgeMissing = async () => {
@@ -458,6 +474,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
+                                busyAction={removedAction}
                             />
                         </motion.div>
                     )}

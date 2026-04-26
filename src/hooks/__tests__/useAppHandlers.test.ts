@@ -14,7 +14,7 @@ vi.mock('../useToast', () => ({
 const mockUpdateImageMetadataFields = vi.fn();
 const mockRemoveImagesFromLibrary = vi.fn();
 const mockRestoreRemovedImages = vi.fn();
-const mockDeleteRemovedImageFromDisk = vi.fn();
+const mockDeleteRemovedImagesFromDisk = vi.fn();
 const mockGetImagesByIds = vi.fn();
 const mockRebuildFacetCache = vi.fn().mockResolvedValue(0);
 
@@ -22,7 +22,7 @@ vi.mock('../../services/db/imageRepo', () => ({
     updateImageMetadataFields: (...args: any[]) => mockUpdateImageMetadataFields(...args),
     removeImagesFromLibrary: (...args: any[]) => mockRemoveImagesFromLibrary(...args),
     restoreRemovedImages: (...args: any[]) => mockRestoreRemovedImages(...args),
-    deleteRemovedImageFromDisk: (...args: any[]) => mockDeleteRemovedImageFromDisk(...args),
+    deleteRemovedImagesFromDisk: (...args: any[]) => mockDeleteRemovedImagesFromDisk(...args),
     getImagesByIds: (...args: any[]) => mockGetImagesByIds(...args),
     rebuildFacetCache: (...args: any[]) => mockRebuildFacetCache(...args),
     rebuildFacetCacheIncremental: vi.fn().mockResolvedValue(0),
@@ -61,6 +61,11 @@ describe('useAppHandlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetImagesByIds.mockResolvedValue([mockImages[0]]);
+        mockDeleteRemovedImagesFromDisk.mockResolvedValue({
+            deletedIds: ['img1'],
+            failedIds: [],
+            thumbnailWarningIds: []
+        });
     });
 
     it('should update positive prompt and call DB', async () => {
@@ -119,6 +124,21 @@ describe('useAppHandlers', () => {
             await result.current.handleDeleteFile(['img1']);
         });
 
-        expect(mockDeleteRemovedImageFromDisk).toHaveBeenCalledWith('img1');
+        expect(mockDeleteRemovedImagesFromDisk).toHaveBeenCalledWith(['img1']);
+    });
+
+    it('should show warning toast when removed delete partially fails', async () => {
+        mockDeleteRemovedImagesFromDisk.mockResolvedValue({
+            deletedIds: ['img1'],
+            failedIds: ['img2'],
+            thumbnailWarningIds: []
+        });
+        const { result } = renderHook(() => useAppHandlers(props));
+
+        await act(async () => {
+            await result.current.handleDeleteFile(['img1', 'img2']);
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Deleted 1 file'), 'warning');
     });
 });

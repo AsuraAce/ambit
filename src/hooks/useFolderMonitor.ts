@@ -6,7 +6,6 @@ import { unwrap } from '../utils/spectaUtils';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
-import { useWatchers } from '../contexts/WatcherContext';
 
 interface ImportOptions {
     isStartup?: boolean;
@@ -17,7 +16,7 @@ interface ImportOptions {
 interface UseFolderMonitorProps {
     isLoaded: boolean;
     monitoredFolders: MonitoredFolder[];
-    onScan: (folders: { path: string, variant?: string }[], isStartup: boolean) => void;
+    onScan: (folders: { path: string, variant?: string }[], isStartup: boolean) => Promise<void>;
     // Update signature to match new options
     handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<void>;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
@@ -78,7 +77,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     } else {
                         // Full scan usage (rare on startup if already configured)
                         console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
-                        onScan([{ path: folder.path, variant: folder.variant }], true);
+                        await onScan([{ path: folder.path, variant: folder.variant }], true);
                         updateFolderLastScanned(folder.id, scanTime);
                     }
                 }
@@ -126,7 +125,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                 }
             };
 
-            performStartupScan();
+            void performStartupScan();
 
             prevFoldersRef.current = monitoredFolders;
             return;
@@ -139,20 +138,22 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const newFolders = currentFolders.filter(f => !prevFolders.find(pf => pf.id === f.id));
 
         if (newFolders.length > 0) {
-            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned);
+            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned && !f.initialScanPending);
 
             if (activeNew.length > 0) {
-                if (activeNew.length === 1) {
-                    addToast(`Scanning new folder: ${activeNew[0].path}`, 'info');
-                } else {
-                    addToast(`Scanning ${activeNew.length} new folders`, 'info');
-                }
+                void (async () => {
+                    if (activeNew.length === 1) {
+                        addToast(`Scanning new folder: ${activeNew[0].path}`, 'info');
+                    } else {
+                        addToast(`Scanning ${activeNew.length} new folders`, 'info');
+                    }
 
-                const scanData = activeNew.map(f => ({ path: f.path, variant: f.variant }));
-                onScan(scanData, false);
+                    const scanData = activeNew.map(f => ({ path: f.path, variant: f.variant }));
+                    await onScan(scanData, false);
 
-                // Mark them as scanned now so next startup is smart
-                activeNew.forEach(f => updateFolderLastScanned(f.id, Date.now()));
+                    const completedAt = Date.now();
+                    activeNew.forEach(f => updateFolderLastScanned(f.id, completedAt));
+                })();
             }
         }
 
@@ -205,7 +206,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     }
                 } else {
                     console.log(`[FolderMonitor] ${source}: Full scan needed for ${folder.path}`);
-                    onScan([{ path: folder.path, variant: folder.variant }], false);
+                    await onScan([{ path: folder.path, variant: folder.variant }], false);
                     updateFolderLastScanned(folder.id, scanTime);
                 }
             } catch (e) {

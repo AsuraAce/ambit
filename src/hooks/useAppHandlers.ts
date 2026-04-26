@@ -130,13 +130,24 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleDeleteFile = async (ids: string[]) => {
-        const { deleteRemovedImageFromDisk } = await import('../services/db/imageRepo');
-        for (const id of ids) {
-            await deleteRemovedImageFromDisk(id);
+        const { deleteRemovedImagesFromDisk } = await import('../services/db/imageRepo');
+        const result = await deleteRemovedImagesFromDisk(ids);
+
+        if (result.deletedIds.length > 0) {
+            if (result.failedIds.length === 0 && result.thumbnailWarningIds.length === 0) {
+                addToast(`Moved ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.deletedIds.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
+            } else {
+                addToast(
+                    `Deleted ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} from Ambit, but ${result.failedIds.length} failed and ${result.thumbnailWarningIds.length} had thumbnail cleanup warnings.`,
+                    'warning'
+                );
+            }
+            refreshMaintenanceCounts();
+            refreshFacets();
+            return;
         }
-        addToast(`Moved ${ids.length} file${ids.length === 1 ? '' : 's'} to OS trash and removed ${ids.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
-        refreshMaintenanceCounts();
-        refreshFacets();
+
+        addToast('Failed to move selected files to OS trash.', 'error');
     };
 
     const handleEmptyTrash = async () => {

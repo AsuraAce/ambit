@@ -134,16 +134,16 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
             <ConfirmDialog
                 isOpen={modals.deleteConfirm}
                 onCancel={() => closeModal('deleteConfirm')}
-                onConfirm={onDeleteConfirm}
-                title="Delete Images"
-                message={`Are you sure you want to delete ${pendingViewerDeleteId ? 1 : selectedIds.size} image(s)? This action cannot be undone.`}
+                onConfirm={() => onDeleteConfirm()}
+                title="Remove from Library?"
+                message={`Remove ${pendingViewerDeleteId ? 1 : selectedIds.size} image(s) from Ambit while keeping the original file(s) on disk? You can restore them later from Maintenance > Removed.`}
                 isDangerous={true}
             />
 
             <ConfirmDialog
                 isOpen={modals.deleteCollection}
                 onCancel={() => closeModal('deleteCollection')}
-                onConfirm={onDeleteCollectionConfirm}
+                onConfirm={() => onDeleteCollectionConfirm()}
                 title="Delete Collection"
                 message="Are you sure you want to delete this collection? Images will not be deleted from your library."
                 isDangerous={true}

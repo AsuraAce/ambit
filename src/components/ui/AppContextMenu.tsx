@@ -159,7 +159,9 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onDelete={() => {
-                settings.confirmDelete ? modals.openModal('deleteConfirm') : actions.executeDelete();
+                if (contextMenu.imageId) {
+                    actions.requestDeleteForId(contextMenu.imageId);
+                }
                 onClose();
             }}
             onShowInFolder={async () => {

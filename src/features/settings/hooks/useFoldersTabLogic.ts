@@ -145,14 +145,49 @@ export const useFoldersTabLogic = ({
                                 false
                             );
                             addToast(`Synced ${result.images.length} new files`, 'success');
+                            updateFolderLastScanned(id, Date.now());
                         } finally {
                             setIsImporting(false);
                             setImportProgress(null);
                         }
                     } else {
-                        addToast(`No changes detected`, 'info');
+                        const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
+                        const knownCount = folder?.imageCount ?? 0;
+
+                        if (allFiles.length > knownCount) {
+                            const repairPaths = allFiles.map(f => f.path);
+                            const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                            setIsImporting(true);
+                            setImportProgress({ current: 0, total: repairPaths.length, message: 'Repairing incomplete import...' });
+
+                            try {
+                                const { getThumbnailDir } = await import('../../../services/thumbnailService');
+                                const thumbDir = await getThumbnailDir();
+                                const result = await processNativePaths(
+                                    repairPaths,
+                                    thumbDir,
+                                    (current, total, message) => {
+                                        setImportProgress({ current, total, message });
+                                    },
+                                    variant as GeneratorTool | undefined,
+                                    undefined,
+                                    false
+                                );
+                                addToast(
+                                    result.images.length > 0
+                                        ? `Repair scan imported ${result.images.length} missing files`
+                                        : 'Repair scan found no additional importable files',
+                                    result.images.length > 0 ? 'success' : 'info'
+                                );
+                            } finally {
+                                setIsImporting(false);
+                                setImportProgress(null);
+                            }
+                        } else {
+                            addToast(`No changes detected`, 'info');
+                        }
+                        updateFolderLastScanned(id, Date.now());
                     }
-                    updateFolderLastScanned(id, Date.now());
                 } else {
                     await onScanFolder([{ path, variant }]);
                     updateFolderLastScanned(id, Date.now());
@@ -192,9 +227,7 @@ export const useFoldersTabLogic = ({
             isActive: true,
             imageCount: 0,
             variant: variant,
-            // Mark this folder as intentionally queued so the generic folder monitor
-            // does not immediately trigger a second overlapping scan.
-            lastScanned: queuedAt
+            initialScanPending: true
         };
 
         setSettings(prev => ({
@@ -214,7 +247,14 @@ export const useFoldersTabLogic = ({
             try {
                 await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
                 const completedAt = Date.now();
-                foldersToScan.forEach(folder => updateFolderLastScanned(folder.id, completedAt));
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                        foldersToScan.some(pending => pending.id === folder.id)
+                            ? { ...folder, lastScanned: completedAt, initialScanPending: false }
+                            : folder
+                    )
+                }));
                 await fetchCounts();
             } catch (e) {
                 console.error('Auto-scan failed:', e);
@@ -222,7 +262,7 @@ export const useFoldersTabLogic = ({
                     ...prev,
                     monitoredFolders: prev.monitoredFolders.map(folder =>
                         foldersToScan.some(pending => pending.id === folder.id)
-                            ? { ...folder, lastScanned: undefined }
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
                             : folder
                     )
                 }));
