@@ -79,21 +79,10 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
     ])
 }
 
-// Force Rebuild
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
     let builder = create_builder();
-
-    // Export generated bindings on every dev run
-    #[cfg(debug_assertions)]
-    builder
-        .export(
-            specta_typescript::Typescript::default()
-                .bigint(specta_typescript::BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export TypeScript bindings");
 
     // Check for deferred purge request BEFORE initializing the database
     check_and_execute_deferred_purge();
@@ -234,22 +223,5 @@ fn check_and_execute_deferred_purge() {
                 let _ = std::fs::remove_file(&shm_path);
             }
         }
-    }
-}
-
-#[cfg(all(test, not(test)))] // Disabled during standard tests to avoid linking Tauri
-mod tests {
-    use super::*;
-
-    #[test]
-    fn export_bindings() {
-        let builder = create_builder();
-        builder
-            .export(
-                specta_typescript::Typescript::default()
-                    .bigint(specta_typescript::BigIntExportBehavior::Number),
-                "../src/bindings.ts",
-            )
-            .expect("Failed to export TypeScript bindings");
     }
 }
