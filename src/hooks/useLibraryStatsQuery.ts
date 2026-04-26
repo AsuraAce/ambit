@@ -4,6 +4,8 @@ import { FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
+import { isBrowserMockMode } from '../services/runtime';
+import { getBrowserMockFacets, getBrowserMockStats, getBrowserMockValidFacetNames } from '../services/browserMockData';
 
 
 interface UseLibraryStatsQueryProps {
@@ -41,6 +43,7 @@ export const useLibraryStatsQuery = ({
     allCollections,
     settingsLoaded = true
 }: UseLibraryStatsQueryProps) => {
+    const useBrowserMocks = isBrowserMockMode();
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
@@ -89,7 +92,13 @@ export const useLibraryStatsQuery = ({
     return useQuery({
         queryKey: ['libraryStats', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
-            const searchRepo = await import('../services/db/searchRepo');
+            if (useBrowserMocks) {
+                return {
+                    facets: getBrowserMockFacets(filters),
+                    stats: getBrowserMockStats(filters),
+                    validNames: hasActiveFilters ? getBrowserMockValidFacetNames(filters) : null
+                };
+            }
 
             // 1. Base Query: Standard intersection of ALL filters
             // This gives us the correct Counts for everything (and Valid Names for ALL-mode categories)

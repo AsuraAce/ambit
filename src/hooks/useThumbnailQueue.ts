@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { isBrowserMockMode } from '../services/runtime';
 
 // Delay before starting auto-healing on app startup (ms)
 // Ensures app initialization completes first
@@ -28,6 +29,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
     const queryClient = useQueryClient();
     const abortControllerRef = useRef<AbortController | null>(null);
     const isRunningRef = useRef(false);
+    const browserMockMode = isBrowserMockMode();
 
 
     // Store subscriptions
@@ -76,6 +78,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
      * Main processing loop that regenerates unoptimized thumbnails.
      */
     const runQueue = useCallback(async () => {
+        if (browserMockMode) return;
         if (isRunningRef.current) return;
         isRunningRef.current = true;
 
@@ -310,7 +313,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
             isRunningRef.current = false;
             abortControllerRef.current = null;
         }
-    }, [setBackgroundHealingActive, setBackgroundHealingProgress, setBackgroundHealingPaused]);
+    }, [setBackgroundHealingActive, setBackgroundHealingProgress, setBackgroundHealingPaused, browserMockMode]);
 
     const [isStartupDelayComplete, setStartupDelayComplete] = useState(false);
 
@@ -318,16 +321,20 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
      * Handle initial startup delay.
      */
     useEffect(() => {
+        if (browserMockMode) return;
+
         const timer = setTimeout(() => {
             setStartupDelayComplete(true);
         }, STARTUP_DELAY_MS);
         return () => clearTimeout(timer);
-    }, []);
+    }, [browserMockMode]);
 
     /**
      * Reactive control: Start or Stop based on Settings & Delay
      */
     useEffect(() => {
+        if (browserMockMode) return;
+
         // 1. Prerequisites check
         if (!isSettingsLoaded || !isStartupDelayComplete) return;
 
@@ -380,6 +387,8 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
      * Resume processing when blocking activities complete.
      */
     useEffect(() => {
+        if (browserMockMode) return;
+
         const store = useLibraryStore.getState();
 
         // Only resume if:
@@ -399,7 +408,7 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
 
             return () => clearTimeout(resumeTimer);
         }
-    }, [isBlocked, runQueue, scheduleIdleCallback, setBackgroundHealingPaused, enableAutoThumbnailHealing]);
+    }, [isBlocked, runQueue, scheduleIdleCallback, setBackgroundHealingPaused, enableAutoThumbnailHealing, browserMockMode]);
 
     /**
      * Cleanup on unmount.

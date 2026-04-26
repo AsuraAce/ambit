@@ -3,6 +3,7 @@ import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { APP_NAME } from "../../constants/app";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { isTauriRuntime } from "../../services/runtime";
 
 const BRAND_GLYPH_SRC = "/branding/ambit-glyph.svg";
 const BRAND_WINDOW_ICON_SRC = "/branding/ambit-window-icon.png";
@@ -15,6 +16,8 @@ export const TitleBar = () => {
     const devModeEnabled = useSettingsStore(s => s.devModeEnabled);
 
     useEffect(() => {
+        if (!isTauriRuntime()) return;
+
         const initWindow = async () => {
             try {
                 const { getCurrentWindow } = await import("@tauri-apps/api/window");

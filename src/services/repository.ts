@@ -1,6 +1,8 @@
 
 import { AIImage, Collection, SmartCollection, AppSettings } from '../types';
 import { generateMockImages, INITIAL_COLLECTIONS } from '../constants';
+import { BrowserMockRepository } from './browserMockData';
+import { isTauriRuntime } from './runtime';
 
 // Define the shape of our entire persisted application state
 export interface AppState {
@@ -94,5 +96,7 @@ export class LocalStorageRepository implements IRepository {
 import { TauriFsRepository } from './TauriFsRepository';
 
 // Singleton instance for the app
-// Switching to File System Repository for Tauri
-export const appRepository = new TauriFsRepository();
+// Use real filesystem persistence inside Tauri, and deterministic browser mocks in plain Vite.
+export const appRepository = isTauriRuntime()
+  ? new TauriFsRepository()
+  : new BrowserMockRepository();

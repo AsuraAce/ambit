@@ -7,6 +7,7 @@ import { useCollectionStore } from '../../stores/collectionStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { AIImage, ContextMenuState } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
+import { isBrowserMockMode } from '../../services/runtime';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
@@ -32,6 +33,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     filters
 }) => {
     const { addToast } = useToast();
+    const browserMockMode = isBrowserMockMode();
     const settings = useSettingsStore(s => s.settings);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const allCollections = useCollectionStore(s => s.collections);
@@ -165,6 +167,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onShowInFolder={async () => {
+                if (browserMockMode) {
+                    addToast('Unavailable in browser mock mode.', 'info');
+                    onClose();
+                    return;
+                }
                 const id = contextMenu.imageId;
                 const { invoke } = await import('@tauri-apps/api/core');
                 await invoke('show_in_folder', { path: id });
@@ -172,6 +179,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onOpenInDefaultApp={async () => {
+                if (browserMockMode) {
+                    addToast('Unavailable in browser mock mode.', 'info');
+                    onClose();
+                    return;
+                }
                 const id = contextMenu.imageId;
                 const { invoke } = await import('@tauri-apps/api/core');
                 await invoke('open_file', { path: id });
@@ -218,6 +230,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 return res;
             })()}
             onSetModelThumbnail={async (model) => {
+                if (browserMockMode) {
+                    addToast('Unavailable in browser mock mode.', 'info');
+                    onClose();
+                    return;
+                }
                 if (contextMenu.imageId && activeImage?.id) {
                     const { invoke } = await import('@tauri-apps/api/core');
 

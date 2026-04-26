@@ -16,6 +16,7 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -131,6 +132,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
 
     const startInvokeSync = useCallback(async (optionsInput?: StartInvokeSyncOptions) => {
+        if (isBrowserMockMode()) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         const options: StartInvokeSyncOptions = {
             syncFavorites: true,
             syncBoards: true,
@@ -406,6 +412,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
+        if (isBrowserMockMode()) {
+            return { handledPaths: [], failedPaths: [], importedCount: 0 };
+        }
+
         if (!paths || paths.length === 0) {
             return { handledPaths: [], failedPaths: [], importedCount: 0 };
         }
@@ -551,6 +561,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     }, [cancelSyncAction]);
 
     const cleanLibrary = useCallback(async () => {
+        if (isBrowserMockMode()) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         try {
             console.log('[Purge] Starting library purge...');
             const { purgeLibrary } = await import('../services/db/imageRepo');

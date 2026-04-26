@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ambit | Local AI Workspace</title>
   <link rel="icon" type="image/svg+xml" href="/branding/ambit-mark.svg" />
-  <link rel="preload" href="/branding/ambit-mark.svg" as="image" type="image/svg+xml" />
+  <link rel="preload" href="/branding/ambit-glyph.svg" as="image" type="image/svg+xml" />
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
     rel="stylesheet">
@@ -25,13 +25,16 @@
       position: fixed;
       inset: 0;
       background:
-        radial-gradient(circle at 50% 35%, rgba(78, 91, 60, 0.18), transparent 32%),
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+        radial-gradient(circle at 50% 38%, rgba(92, 108, 70, 0.18), transparent 30%),
         linear-gradient(180deg, #10130f 0%, #09090b 100%);
+      background-size: 48px 48px, 48px 48px, 100% 100%, 100% 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.25rem;
+      gap: 0.9rem;
       font-family: 'Inter', system-ui, sans-serif;
       z-index: 9999;
       opacity: 1;
@@ -42,7 +45,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 1rem;
+      gap: 1.05rem;
       opacity: 0;
       transform: translateY(10px) scale(0.985);
       animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms forwards;
@@ -50,8 +53,8 @@
 
     .static-loading__mark-container {
       position: relative;
-      width: 6rem;
-      height: 6rem;
+      width: 6.75rem;
+      height: 6.75rem;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -59,19 +62,46 @@
 
     .static-loading__glow {
       position: absolute;
-      inset: 0.35rem;
-      background: radial-gradient(circle, rgba(214, 193, 116, 0.18) 0%, rgba(122, 143, 90, 0.14) 42%, transparent 72%);
-      filter: blur(22px);
+      inset: 0.55rem;
+      background: radial-gradient(circle, rgba(214, 193, 116, 0.16) 0%, rgba(122, 143, 90, 0.13) 45%, transparent 72%);
+      filter: blur(24px);
       border-radius: 9999px;
       animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
 
     .static-loading__mark {
-      width: 5.5rem;
-      height: 5.5rem;
+      width: 5.25rem;
+      height: 5.25rem;
       position: relative;
       z-index: 10;
       filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.38));
+    }
+
+    .static-loading__loader-ring {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      color: #e3c978;
+      filter: drop-shadow(0 0 10px rgba(227, 201, 120, 0.22));
+      animation: loader-ring-spin 2.4s linear infinite;
+    }
+
+    .static-loading__loader-track,
+    .static-loading__loader-arc {
+      fill: none;
+      transform-origin: 50% 50%;
+    }
+
+    .static-loading__loader-track {
+      stroke: rgba(255, 255, 255, 0.07);
+      stroke-width: 1.5;
+    }
+
+    .static-loading__loader-arc {
+      stroke: currentColor;
+      stroke-width: 2.6;
+      stroke-linecap: round;
+      stroke-dasharray: 88 214;
     }
 
     .static-loading__text {
@@ -101,38 +131,14 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0;
       min-width: 11rem;
       opacity: 0;
       transform: translateY(6px);
       animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 150ms forwards;
     }
 
-    .static-loading__spinner {
-      width: 1rem;
-      height: 1rem;
-      color: #d8c780;
-      animation: spin 1s linear infinite;
-    }
-
-    .static-loading__progress {
-      width: 10rem;
-      height: 0.2rem;
-      border-radius: 9999px;
-      overflow: hidden;
-      background: rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-    }
-
-    .static-loading__progress-bar {
-      width: 45%;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, #d6c174 0%, #a1b377 100%);
-      animation: loading-bar 1.35s ease-in-out infinite alternate;
-    }
-
-    @keyframes spin {
+    @keyframes loader-ring-spin {
       to {
         transform: rotate(360deg);
       }
@@ -150,16 +156,6 @@
       }
     }
 
-    @keyframes loading-bar {
-      from {
-        transform: translateX(-65%);
-      }
-
-      to {
-        transform: translateX(145%);
-      }
-    }
-
     @keyframes brand-in {
       from {
         opacity: 0;
@@ -169,6 +165,21 @@
       to {
         opacity: 1;
         transform: translateY(0) scale(1);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .static-loading__brand,
+      .static-loading__status,
+      .static-loading__glow,
+      .static-loading__loader-ring {
+        animation: none;
+      }
+
+      .static-loading__brand,
+      .static-loading__status {
+        opacity: 1;
+        transform: none;
       }
     }
   </style>
@@ -181,22 +192,17 @@
     <div class="static-loading__brand">
       <div class="static-loading__mark-container">
         <div class="static-loading__glow"></div>
-        <img class="static-loading__mark" src="/branding/ambit-mark.svg" alt="Ambit logo" fetchpriority="high" decoding="sync" />
+        <img class="static-loading__mark" src="/branding/ambit-glyph.svg" alt="Ambit logo" fetchpriority="high" decoding="sync" />
+        <svg class="static-loading__loader-ring" viewBox="0 0 108 108" aria-hidden="true">
+          <circle class="static-loading__loader-track" cx="54" cy="54" r="49" />
+          <circle class="static-loading__loader-arc" cx="54" cy="54" r="49" />
+        </svg>
       </div>
       <div class="static-loading__text">
         <h1 class="static-loading__title">AMBIT</h1>
-        <p class="static-loading__subtitle">Local AI workspace for large image libraries.</p>
       </div>
     </div>
     <div class="static-loading__status" aria-live="polite">
-      <!-- Lucide Loader2 icon SVG -->
-      <svg class="static-loading__spinner" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-      </svg>
-      <div class="static-loading__progress" aria-hidden="true">
-        <div class="static-loading__progress-bar"></div>
-      </div>
       <p class="static-loading__subtitle">Initializing library...</p>
     </div>
   </div>

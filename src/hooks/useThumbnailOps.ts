@@ -4,6 +4,7 @@ import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface UseThumbnailOpsProps {
     images: AIImage[];
@@ -24,6 +25,11 @@ export const useThumbnailOps = ({
     } = useLibraryStore();
 
     const regenerateThumbnails = useCallback(async (arg?: string[] | ((current: number, total: number) => void)) => {
+        if (isBrowserMockMode()) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         const targetIds = Array.isArray(arg) ? arg : undefined;
         const onProgress = typeof arg === 'function' ? arg : undefined;
 

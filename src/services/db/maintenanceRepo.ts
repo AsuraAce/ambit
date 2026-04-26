@@ -3,6 +3,8 @@ import { unwrap } from '../../utils/spectaUtils';
 import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
+import { isBrowserMockMode } from '../runtime';
+import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 
 /**
  * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
@@ -10,6 +12,8 @@ import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoU
  * Returns the number of rows updated.
  */
 export const backfillParameterColumns = async (): Promise<number> => {
+    if (isBrowserMockMode()) return 0;
+
     console.log('[Backfill] Starting parameter column backfill...');
     const count = await unwrap(commands.backfillParameterColumns());
     console.log(`[Backfill] Completed. ${count} rows updated.`);
@@ -18,6 +22,8 @@ export const backfillParameterColumns = async (): Promise<number> => {
 
 
 export const normalizeAllPaths = async () => {
+    if (isBrowserMockMode()) return;
+
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const check = await db.select<any[]>('SELECT id FROM images WHERE id LIKE "%\\%" OR path LIKE "%\\%" LIMIT 1');
@@ -35,6 +41,12 @@ export const normalizeAllPaths = async () => {
 };
 
 export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
+    if (isBrowserMockMode()) {
+        const total = getBrowserMockImages().filter(image => !image.isDeleted).length;
+        onProgress?.(total, total);
+        return { scanned: total, missingIds: [], sampleMissingPaths: [] };
+    }
+
     const db = await getDb();
     const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
@@ -72,6 +84,11 @@ export const verifyLibraryIntegrity = async (onProgress?: (processed: number, to
 };
 
 export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
+    if (isBrowserMockMode()) {
+        ids.forEach(id => updateBrowserMockImage(id, { isMissing: true }));
+        return ids.length;
+    }
+
     const db = await getDb();
     if (ids.length === 0) return 0;
 
@@ -86,12 +103,20 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
 };
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages().filter(image => image.isDeleted);
+    }
+
     const db = await getDb();
     const rows = await db.select<any[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
 export const getIntermediateImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages().filter(image => !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
+    }
+
     const db = await getDb();
     let query = `
         WHERE IFNULL(is_intermediate_gen, 0) = 1
@@ -113,6 +138,10 @@ export const getIntermediateImages = async (whereClause: string = '', params: an
 };
 
 export const getUntaggedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages().filter(image => !image.isDeleted && !image.metadata.positivePrompt);
+    }
+
     const db = await getDb();
     let query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
@@ -170,6 +199,8 @@ function buildUnoptimizedCondition(includeUpgradeable: boolean): string {
 }
 
 export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) return [];
+
     const db = await getDb();
 
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
@@ -206,6 +237,8 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
  * Used by the scan button to show total without loading all rows.
  */
 export const getUnoptimizedImagesCount = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<number> => {
+    if (isBrowserMockMode()) return 0;
+
     const db = await getDb();
 
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
@@ -247,6 +280,8 @@ export const getUnoptimizedImageEntries = async (
     params: any[] = [],
     includeUpgradeable: boolean = false
 ): Promise<{ id: string; path: string }[]> => {
+    if (isBrowserMockMode()) return [];
+
     const db = await getDb();
 
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
@@ -279,6 +314,10 @@ export const getUnoptimizedImageEntries = async (
 };
 
 export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages().slice(0, 6);
+    }
+
     const db = await getDb();
     const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
 
@@ -306,6 +345,18 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
 };
 
 export const getMaintenanceCounts = async () => {
+    if (isBrowserMockMode()) {
+        const images = getBrowserMockImages();
+        return {
+            untagged: images.filter(image => !image.metadata.positivePrompt && !image.isDeleted).length,
+            orphans: 0,
+            intermediates: images.filter(image => image.isIntermediate || image.metadata.isIntermediate).length,
+            missing: images.filter(image => image.isMissing).length,
+            trash: images.filter(image => image.isDeleted).length,
+            duplicates: 6
+        };
+    }
+
     const db = await getDb();
 
     // Batch all counts into a single query to reduce IPC overhead

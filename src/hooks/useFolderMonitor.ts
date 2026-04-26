@@ -6,6 +6,7 @@ import { unwrap } from '../utils/spectaUtils';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface ImportOptions {
     isStartup?: boolean;
@@ -29,8 +30,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
+    const browserMockMode = isBrowserMockMode();
 
     useEffect(() => {
+        if (browserMockMode) {
+            prevFoldersRef.current = monitoredFolders;
+            return;
+        }
+
         if (!isLoaded) {
             prevFoldersRef.current = monitoredFolders;
             return;
@@ -158,7 +165,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         }
 
         prevFoldersRef.current = currentFolders;
-    }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths]);
+    }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths, browserMockMode]);
 
     // Live Watch Catch-up
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
@@ -166,6 +173,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
     // Unified Watcher Effect (Handles "Turn On")
     useEffect(() => {
+        if (browserMockMode) return;
+
         const activeFolders = monitoredFolders.filter(f => f.isActive);
         if (activeFolders.length === 0) return;
 
@@ -185,7 +194,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         } 
 
         hasLiveWatchStartedRef.current = isLiveWatching;
-    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata]);
+    }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
 
     // Reusable Scan Logic (Extracted from previous effect)
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
