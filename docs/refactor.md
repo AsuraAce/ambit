@@ -72,3 +72,37 @@ Status: Deferred
 ### Related Docs
 - `docs/architecture.md#sqlite-data-migrations-and-maintenance`
 - `docs/architecture.md#desktop-shell-and-command-surface`
+
+## Smart Thumbnail Optimization Startup Cost
+Status: Deferred
+
+### Why Cleanup Is Needed
+- The visible Maintenance thumbnails tab was removed; `src/features/maintenance/components/MaintenanceTabs.tsx` documents that background healing now owns thumbnail regeneration.
+- `src/hooks/useThumbnailQueue.ts` still starts Smart Thumbnail Optimization automatically after a short startup delay when `enableAutoThumbnailHealing` is enabled.
+- The queue processes thumbnails in small batches and pauses during import or sync, but it begins by running full-library unoptimized-thumbnail count queries. On large production libraries, those count scans can still compete with normal browsing and search.
+- Legacy thumbnail-maintenance UI code such as `ThumbnailsTab` and thumbnail scan paths remains in the tree even though it is no longer reachable from the visible maintenance tabs.
+
+### Current Pain Points
+- Startup can feel responsive overall while background thumbnail work still creates intermittent SQLite load shortly after launch.
+- The initial `getUnoptimizedImagesCount` query answers "how many total?" before doing useful work, which is expensive for large libraries and not always necessary.
+- Dead or latent thumbnail maintenance UI code makes it harder to know which thumbnail repair path is canonical.
+
+### Safe-Change Warning
+- Thumbnail work touches SQLite, filesystem scope, scanner commands, React Query image caches, and user-facing thumbnails. Avoid mixing this cleanup with unrelated maintenance UI work.
+- Do not remove manual Advanced settings actions for clearing or verifying thumbnails unless a replacement workflow is explicitly designed.
+
+### Suggested Future Direction
+- Make Smart Thumbnail Optimization more incremental: fetch and process small candidate batches first, and avoid full-library count scans on startup.
+- Consider deferring background thumbnail healing until the app is idle for longer, until the user enables it explicitly, or until recent startup/import/sync work has settled.
+- Add an indexed or materialized thumbnail-repair candidate path if full scans remain necessary.
+- Remove or quarantine unreachable thumbnail maintenance UI code in a dedicated cleanup after confirming no hidden route still uses it.
+
+### Not Part of the Current Task
+- Do not change thumbnail behavior while stabilizing prod startup and search migration fixes.
+
+### Related Code
+- `src/hooks/useThumbnailQueue.ts`
+- `src/services/db/maintenanceRepo.ts`
+- `src/services/thumbnailService.ts`
+- `src/features/maintenance/components/MaintenanceTabs.tsx`
+- `src/features/maintenance/components/ThumbnailsTab.tsx`
