@@ -123,17 +123,21 @@ pub fn run() {
                 }
             });
 
-            // 2. Run auto-backup check in background
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                // Wait a bit for app to settle
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                match db::backup::check_and_run_autobackup(handle).await {
-                    Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                    Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
-                    Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
-                }
-            });
+            // 2. Run auto-backup check in background for production builds only.
+            if cfg!(debug_assertions) {
+                log::info!("[Backup] Auto-backup skipped in development build");
+            } else {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Wait a bit for app to settle
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    match db::backup::check_and_run_autobackup(handle).await {
+                        Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
+                        Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
+                        Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
+                    }
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
