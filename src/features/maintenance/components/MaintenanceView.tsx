@@ -21,8 +21,8 @@ interface MaintenanceViewProps {
     images: AIImage[];
     onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
     onRestoreImages: (ids: string[]) => void;
-    onMoveToTrash: (ids: string[]) => void;
-    onDeleteForever: (ids: string[]) => void;
+    onRemoveFromLibrary: (ids: string[]) => void;
+    onDeleteFile: (ids: string[]) => void;
     onEmptyTrash: () => Promise<void>;
     onGroupImages?: (ids: string[]) => void;
     onViewImage: (id: string) => void;
@@ -45,8 +45,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     images,
     onResolveDuplicate,
     onRestoreImages,
-    onMoveToTrash,
-    onDeleteForever,
+    onRemoveFromLibrary,
+    onDeleteFile,
     onRegenerateThumbnails,
     maskedKeywords,
     onUpdatePrompt,
@@ -71,6 +71,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [removedAction, setRemovedAction] = useState<'restoring' | 'deleting' | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
@@ -186,42 +187,57 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleRestoreSelected = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
-        await onRestoreImages(ids);
-        await refreshData('trash', false);
-        clearSelection();
+        setRemovedAction('restoring');
+        try {
+            await onRestoreImages(ids);
+            await refreshData('trash', false);
+            clearSelection();
+        } finally {
+            setRemovedAction(null);
+        }
     };
 
     const handleDeleteSelected = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
 
-        if (activeTab === 'untagged' || activeTab === 'missing') {
-            await onMoveToTrash(ids);
-        } else {
-            await onDeleteForever(ids);
+        if (activeTab === 'trash') {
+            setRemovedAction('deleting');
         }
 
-        const scope = activeTab === 'untagged' ? untaggedScope :
-            activeTab === 'thumbnails' ? thumbnailsScope :
-                activeTab === 'duplicates' ? duplicatesScope :
-                    activeTab === 'intermediates' ? intermediatesScope : 'global';
+        try {
+            if (activeTab === 'untagged' || activeTab === 'missing') {
+                await onRemoveFromLibrary(ids);
+            } else {
+                await onDeleteFile(ids);
+            }
 
-        await refreshData(activeTab, false, { scope: scope as any });
+            const scope = activeTab === 'untagged' ? untaggedScope :
+                activeTab === 'thumbnails' ? thumbnailsScope :
+                    activeTab === 'duplicates' ? duplicatesScope :
+                        activeTab === 'intermediates' ? intermediatesScope : 'global';
 
-        if (activeTab === 'missing') {
-            setScanMissingIds(prev => {
-                const next = new Set(prev);
-                ids.forEach(id => next.delete(id));
-                return next;
-            });
-            setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+            await refreshData(activeTab, false, { scope: scope as any });
+
+            if (activeTab === 'missing') {
+                setScanMissingIds(prev => {
+                    const next = new Set(prev);
+                    ids.forEach(id => next.delete(id));
+                    return next;
+                });
+                setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+            }
+            clearSelection();
+        } finally {
+            if (activeTab === 'trash') {
+                setRemovedAction(null);
+            }
         }
-        clearSelection();
     };
 
     const handlePurgeMissing = async () => {
         const ids = missingImages.map(i => i.id);
-        await onMoveToTrash(ids);
+        await onRemoveFromLibrary(ids);
         await refreshData('missing', false);
         setScanMissingIds(new Set());
         setFetchedMissingImages([]);
@@ -397,7 +413,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onItemClick={handleItemClickAdapter}
                                 onSelectAll={handleSelectAll}
                                 onClearSelection={clearSelection}
-                                onMoveToTrash={handleDeleteSelected}
+                                onRemoveFromLibrary={handleDeleteSelected}
                                 onViewImage={setViewingImageId}
                                 maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as any}
@@ -458,6 +474,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 scrollContainerRef={scrollContainerRef as any}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
+                                busyAction={removedAction}
                             />
                         </motion.div>
                     )}
@@ -536,9 +553,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     onRecoverMetadata={onRecoverMetadata}
                     availableTags={availableTags}
                     onOpenSettings={() => { }}
-                    onDelete={() => {
+                                    onDelete={() => {
                         if (viewingImageId) {
-                            onDeleteForever([viewingImageId]);
+                            onDeleteFile([viewingImageId]);
                             setViewingImageId(null);
                             refreshData(activeTab);
                         }

@@ -17,6 +17,8 @@ interface RefreshSmartCountsOptions {
     delayMs?: number;
 }
 
+type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
+
 interface CollectionState {
     collections: Collection[];
     isLoaded: boolean;
@@ -24,7 +26,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshSmartCounts: (options?: RefreshSmartCountsOptions) => Promise<void>;
+    refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
@@ -64,7 +66,7 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
-            refreshSmartCounts: async (options = {}) => {
+            refreshSmartCounts: async (input = {}) => {
                 const runId = ++smartCountRunId;
                 try {
                     const { useLibraryStore } = await import('./libraryStore');
@@ -73,17 +75,20 @@ export const useCollectionStore = create<CollectionState>()(
                         return;
                     }
 
+                    const collectionsSnapshot = Array.isArray(input) ? input : undefined;
+                    const options = Array.isArray(input) ? {} : input;
+
                     if (options.delayMs && options.delayMs > 0) {
                         await delay(options.delayMs);
                         if (runId !== smartCountRunId) return;
                     }
 
                     const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
-                    const currentCols = get().collections;
+                    const currentCols = collectionsSnapshot ?? get().collections;
                     const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
                     const smartCols = currentCols.filter(c =>
                         !!c.filters
-                        && (options.includeArchived || !c.isArchived)
+                        && (!!collectionsSnapshot || options.includeArchived || !c.isArchived)
                         && (!allowedIds || allowedIds.has(c.id))
                     );
 

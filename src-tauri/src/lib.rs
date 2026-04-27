@@ -125,19 +125,23 @@ pub fn run() {
                 }
             });
 
-            // 2. Run auto-backup check in background after startup has settled.
-            // Large production libraries can spend the first minute catching up
-            // sync state and warming query caches; VACUUM INTO during that window
-            // competes for SQLite I/O and makes startup feel blocked.
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-                match db::backup::check_and_run_autobackup(handle).await {
-                    Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                    Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
-                    Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
-                }
-            });
+            // 2. Run auto-backup check in background for production builds only,
+            // after startup has settled. Large production libraries can spend
+            // the first minute catching up sync state and warming query caches;
+            // VACUUM INTO during that window competes for SQLite I/O.
+            if cfg!(debug_assertions) {
+                log::info!("[Backup] Auto-backup skipped in development build");
+            } else {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                    match db::backup::check_and_run_autobackup(handle).await {
+                        Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
+                        Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
+                        Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
+                    }
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

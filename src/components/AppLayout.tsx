@@ -101,6 +101,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     // Stores
     const settings = useSettingsStore(s => s.settings);
+    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
 
     const allCollections = useCollectionStore(s => s.collections);
     const onRefreshCollections = useCollectionStore(s => s.refreshCollections);
@@ -176,9 +177,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
             onToggleSelection={handleSelectionToggle}
             onToggleFavorite={(e, id) => toggleFavorite(id)}
-            onTogglePin={async (e, id) => {
+            onTogglePin={(e, id) => {
                 const imgFound = images.find(i => i.id === id);
-                if (imgFound) await actions.handlePinImage(id, !imgFound.isPinned);
+                if (imgFound) actions.handlePinImage(id, !imgFound.isPinned);
             }}
             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
             isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
@@ -278,8 +279,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     images={images}
                                     onResolveDuplicate={handlers.handleResolveDuplicate}
                                     onRestoreImages={handlers.handleRestoreImages}
-                                    onMoveToTrash={handlers.handleMoveToTrash}
-                                    onDeleteForever={handlers.handleDeleteForever}
+                                    onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
+                                    onDeleteFile={handlers.handleDeleteFile}
                                     onEmptyTrash={handlers.handleEmptyTrash}
                                     onGroupImages={handlers.handleGroupImages}
                                     onViewImage={(id) => setViewingImageId(id)}
@@ -289,7 +290,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     onUpdateModel={handlers.handleUpdateModel}
                                     onUpdateTool={handlers.handleUpdateTool}
                                     onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
-                                    onRecoverMetadata={() => { if (!settings.enableAI) { addToast("Enable AI features first", "error"); modals.openModal('settings'); } else { modals.openModal('recovery'); } }}
+                                    onRecoverMetadata={() => {
+                                        if (!settings.enableAI || !geminiApiKey) {
+                                            addToast("Enable AI features and configure a Gemini API key first", "error");
+                                            modals.setInitialSettingsTab('intelligence');
+                                            modals.openModal('settings');
+                                        } else {
+                                            modals.openModal('recovery');
+                                        }
+                                    }}
                                     onToggleFavorite={(id) => toggleFavorite(id)}
                                     onTogglePin={actions.handlePinImage}
                                     availableTags={availableTags}
@@ -308,9 +317,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
-                                            onTogglePin={async (e, id) => {
+                                            onTogglePin={(e, id) => {
                                                 const img = images.find(i => i.id === id);
-                                                if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                if (img) actions.handlePinImage(id, !img.isPinned);
                                             }}
                                             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                             onRangeSelection={handleRangeSelection}
@@ -329,9 +338,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
                                                     onToggleFavorite={(e, id) => toggleFavorite(id)}
-                                                    onTogglePin={async (e, id) => {
+                                                    onTogglePin={(e, id) => {
                                                         const img = images.find(i => i.id === id);
-                                                        if (img) await actions.handlePinImage(id, !img.isPinned);
+                                                        if (img) actions.handlePinImage(id, !img.isPinned);
                                                     }}
                                                     onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                     thumbnailSize={settings.thumbnailSize}

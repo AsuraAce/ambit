@@ -184,6 +184,50 @@ export default function App() {
 
     const { startInvokeSync } = useSync();
 
+    const handleSelectFilesImport = useCallback(async () => {
+        const isTauriEnv = typeof window !== 'undefined' && !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+
+        if (isTauriEnv) {
+            try {
+                const { open } = await import('@tauri-apps/plugin-dialog');
+                const selected = await open({
+                    multiple: true,
+                    directory: false,
+                    filters: [
+                        {
+                            name: 'Images',
+                            extensions: ['png', 'jpg', 'jpeg', 'webp']
+                        }
+                    ]
+                });
+
+                const paths = Array.isArray(selected)
+                    ? selected.filter((item): item is string => typeof item === 'string')
+                    : (typeof selected === 'string' ? [selected] : []);
+
+                if (paths.length > 0) {
+                    await fileOps.handleImportPaths(paths);
+                }
+                return;
+            } catch (error) {
+                console.error('[App] Native file picker import failed, falling back to file input.', error);
+            }
+        }
+
+        fileOps.fileInputRef.current?.click();
+    }, [fileOps]);
+
+    const handleOpenRecovery = useCallback(() => {
+        if (!settings.enableAI || !geminiApiKey) {
+            modals.setInitialSettingsTab('intelligence');
+            modals.openModal('settings');
+            addToast('Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.', 'info');
+            return;
+        }
+
+        modals.openModal('recovery');
+    }, [settings.enableAI, geminiApiKey, modals, addToast]);
+
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
@@ -370,7 +414,7 @@ export default function App() {
                     fileOps={fileOps}
                     onOpenImportModal={() => {
                         if (settings.hideImportModal) {
-                            fileOps.fileInputRef.current?.click();
+                            void handleSelectFilesImport();
                         } else {
                             setIsImportModalOpen(true);
                         }
@@ -417,7 +461,7 @@ export default function App() {
                     isOpen={isImportModalOpen}
                     onClose={() => setIsImportModalOpen(false)}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-                    onImportFiles={() => fileOps.fileInputRef.current?.click()}
+                    onImportFiles={() => { void handleSelectFilesImport(); }}
                     settings={settings}
                     setSettings={setSettings}
                 />
@@ -472,7 +516,7 @@ export default function App() {
                         onNavigate: changeViewMode,
                         onToggleTheme: toggleTheme,
                         onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
-                        onImport: () => fileOps.fileInputRef.current?.click(),
+                        onImport: () => { void handleSelectFilesImport(); },
                         onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
                         onToggleAI: toggleAiSearch,
                         settings: settings
@@ -543,7 +587,7 @@ export default function App() {
                                 setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
                             }}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
-                            onRecoverMetadata={() => modals.openModal('recovery')}
+                            onRecoverMetadata={handleOpenRecovery}
                             onAddToCollection={(id) => handleOpenCollectionModal('add')}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}

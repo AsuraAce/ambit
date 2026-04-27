@@ -68,7 +68,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
               <div className="mt-10 flex flex-col gap-3">
                 <button
-                  onClick={onConfirm}
+                  onClick={() => { void onConfirm(); }}
                   disabled={isLoading}
                   className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
                     ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'

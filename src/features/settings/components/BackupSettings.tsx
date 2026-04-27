@@ -105,7 +105,7 @@ export const BackupSettings: React.FC = () => {
                         <p>No backups found</p>
                     </div>
                 ) : (
-                    backups.slice(0, 5).map((backup) => (
+                    backups.slice(0, 3).map((backup) => (
                         <div key={backup.name} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition-colors group">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-white dark:bg-white/5 rounded-md text-sage-600 dark:text-sage-400">
@@ -122,9 +122,9 @@ export const BackupSettings: React.FC = () => {
                         </div>
                     ))
                 )}
-                {backups.length > 5 && (
+                {backups.length > 3 && (
                     <div className="text-center text-xs text-gray-500 pt-2">
-                        + {backups.length - 5} more archived backups
+                        + {backups.length - 3} more archived backups
                     </div>
                 )}
             </div>
@@ -132,8 +132,8 @@ export const BackupSettings: React.FC = () => {
             <div className="mt-4 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 rounded-lg text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <p>
-                    Backups are created automatically once every 24 hours. The last 5 auto-backups are kept.
-                    Manual backups are kept indefinitely. To restore, please manually replace the <code>images.db</code> file.
+                    Production builds create backups automatically once every 24 hours. The newest 3 backups are kept.
+                    Development builds only create backups when you use Backup Now. To restore, please manually replace the <code>images.db</code> file.
                 </p>
             </div>
         </section>

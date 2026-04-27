@@ -79,6 +79,13 @@ export const useLibraryStatsQuery = ({
         );
     }, [filters]);
 
+    // Free-text and date scopes can legitimately match images without producing
+    // trustworthy facet drill-down visibility. In those cases, showing the full
+    // facet catalog is less misleading than hiding everything.
+    const shouldUseFacetDrillDown = useMemo(() => {
+        return filters.searchQuery.trim() === '' && filters.dateRange === 'all';
+    }, [filters.searchQuery, filters.dateRange]);
+
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
@@ -108,7 +115,9 @@ export const useLibraryStatsQuery = ({
             const [facets, stats, baseValidNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params, collectionId, loraName),
-                hasActiveFilters ? getValidFacetNames(filters, allCollections) : Promise.resolve(null)
+                hasActiveFilters && shouldUseFacetDrillDown
+                    ? getValidFacetNames(filters, allCollections)
+                    : Promise.resolve(null)
             ]);
 
             // 2. Disjunctive Queries: For categories in ANY mode with active selections
@@ -128,7 +137,7 @@ export const useLibraryStatsQuery = ({
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
-            if (disjunctiveCategories.length > 0 && hasActiveFilters) {
+            if (disjunctiveCategories.length > 0 && hasActiveFilters && shouldUseFacetDrillDown) {
                 if (!finalValidNames) finalValidNames = {} as ValidFacetNames;
 
                 const extraQueries = disjunctiveCategories.map(async (cat) => {

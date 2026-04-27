@@ -136,7 +136,7 @@ export function SelectionBar({
                     <Share className="w-5 h-5" />
                 </button>
 
-                <button onClick={onDelete} className="p-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors" title="Delete">
+                <button onClick={onDelete} className="p-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors" title="Remove from Library">
                     <Trash2 className="w-5 h-5" />
                 </button>
 

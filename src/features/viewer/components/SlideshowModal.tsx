@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock, Maximize2, Info } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
@@ -170,23 +171,16 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
 
       {/* Progress Bar */}
       {isPlaying && (
-        <div
+        <motion.div
           key={`${currentIndex}-${duration}-${isPlaying}`}
-          className="absolute top-0 left-0 h-1 bg-sage-500 z-50 transition-all ease-linear shadow-[0_0_10px_rgba(99,102,241,0.8)]"
+          className="absolute top-0 left-0 h-1 w-full bg-sage-500 z-[70] shadow-[0_0_10px_rgba(99,102,241,0.8)]"
+          initial={{ scaleX: 0, opacity: showHud ? 1 : 0.24 }}
+          animate={{ scaleX: 1, opacity: showHud ? 1 : 0.24 }}
+          transition={{ duration: duration / 1000, ease: 'linear' }}
           style={{
-            width: '100%',
-            transitionDuration: `${duration}ms`,
-            transformOrigin: 'left',
-            animation: `progress ${duration}ms linear forwards`
+            transformOrigin: 'left center'
           }}
-        >
-          <style>{`
-                @keyframes progress {
-                    from { transform: scaleX(0); }
-                    to { transform: scaleX(1); }
-                }
-              `}</style>
-        </div>
+        />
       )}
 
       {/* Cinematic Info Bar */}

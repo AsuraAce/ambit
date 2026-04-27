@@ -2,7 +2,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
+import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 
@@ -108,7 +108,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<any[]>(`SELECT ${IMAGE_FIELDS_LIGHT} FROM images WHERE is_deleted = 1 ORDER BY timestamp DESC`);
+    const rows = await db.select<any[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
@@ -365,7 +365,7 @@ export const getMaintenanceCounts = async () => {
             COUNT(*) FILTER (WHERE (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
             COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-            COUNT(*) FILTER (WHERE is_deleted = 1) as trash
+            (SELECT COUNT(*) FROM removed_images) as trash
         FROM images
     `);
 

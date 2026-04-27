@@ -12,7 +12,7 @@ interface UntaggedTabProps {
     onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
-    onMoveToTrash: () => void;
+    onRemoveFromLibrary: () => void;
     onViewImage: (id: string) => void;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
@@ -28,7 +28,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     onItemClick,
     onSelectAll,
     onClearSelection,
-    onMoveToTrash,
+    onRemoveFromLibrary,
     onViewImage,
     maskedKeywords,
     scrollContainerRef,
@@ -97,16 +97,16 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     const actions = (
         <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-orange-200/50 dark:border-white/5 rounded-2xl shadow-sm">
             {selectedIds.size > 0 ? (
-                <button
-                    onClick={onMoveToTrash}
+                    <button
+                    onClick={onRemoveFromLibrary}
                     className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                 >
-                    <Trash2 className="w-4 h-4" /> Move to Trash
+                    <Trash2 className="w-4 h-4" /> Remove from Library
                     <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{selectedIds.size}</span>
                 </button>
             ) : (
                 <div className="px-4 py-2 text-gray-400 text-xs font-medium italic">
-                    Select images to move to trash bin
+                    Select images to remove from Ambit while keeping the source files
                 </div>
             )}
         </div>
