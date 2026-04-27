@@ -73,8 +73,9 @@ describe('sqlHelpers', () => {
 
         it('should handle privacy mode "hide"', () => {
             const { where, params } = buildSqlWhereClause(defaultFilters, true, 'hide', ['nude', 'nsfw']);
-            expect(where).toContain('metadata_json NOT LIKE ? AND metadata_json NOT LIKE ?');
-            expect(params).toEqual(['%nude%', '%nsfw%']);
+            expect(where).toContain('privacy_hidden = 0');
+            expect(where).not.toContain('metadata_json NOT LIKE ?');
+            expect(params).toEqual([]);
         });
 
         it('should handle date ranges', () => {
@@ -91,31 +92,31 @@ describe('sqlHelpers', () => {
         describe('Search Query Parsing', () => {
             it('should handle simple text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'sunset' }, false, 'blur', []);
-                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?");
+                expect(where).toContain("positive_prompt LIKE ?");
                 expect(params).toEqual(['%sunset%']);
             });
 
             it('should handle negative text search', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-bird' }, false, 'blur', []);
-                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') NOT LIKE ?");
+                expect(where).toContain("positive_prompt NOT LIKE ?");
                 expect(params).toEqual(['%bird%']);
             });
 
             it('should handle key:val filters (cfg)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'cfg:7' }, false, 'blur', []);
-                expect(where).toContain("CAST(json_extract(metadata_json, '$.cfg') AS FLOAT) = ?");
+                expect(where).toContain("cfg = ?");
                 expect(params).toEqual([7]);
             });
 
             it('should handle key:val comparison (steps)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'steps:>20' }, false, 'blur', []);
-                expect(where).toContain("CAST(json_extract(metadata_json, '$.steps') AS INTEGER) > ?");
+                expect(where).toContain("steps > ?");
                 expect(params).toEqual([20]);
             });
 
             it('should handle quoted phrases', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"golden hour"' }, false, 'blur', []);
-                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?");
+                expect(where).toContain("positive_prompt LIKE ?");
                 expect(params).toEqual(['%golden hour%']);
             });
         });
@@ -147,7 +148,7 @@ describe('sqlHelpers', () => {
 
             it('should handle smart collections (hybrid mode)', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col2' }, false, 'blur', [], mockCollections);
-                expect(where).toContain("json_extract(metadata_json, '$.positivePrompt') LIKE ?"); // From smart filters
+                expect(where).toContain("positive_prompt LIKE ?"); // From smart filters
                 expect(params).toContain('%ocean%');
             });
 

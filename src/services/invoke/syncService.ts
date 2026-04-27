@@ -124,11 +124,12 @@ export const syncImages = async (
     let hasCandidates = true;
     let boards = new Map<string, { name: string, createdAt: number }>();
 
-    if (options.mode === 'live') {
+    if (options.mode === 'live' || (options.mode === 'startup' && options.afterTimestamp && options.afterTimestamp > 0)) {
         const candidateCheckStartedAt = liveWatchNow();
         const candidateRes = await (invokeDb as any).select(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
         hasCandidates = candidateRes.length > 0;
-        logSyncDebug('Invoke live candidate detection complete', {
+        logSyncDebug('Invoke candidate detection complete', {
+            mode: options.mode,
             hasCandidates,
             candidateCheckMs: elapsedMs(candidateCheckStartedAt)
         });

@@ -4,7 +4,20 @@ import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
 
 let initPromise: Promise<void> | null = null;
-let smartCountRefreshToken = 0;
+let smartCountRunId = 0;
+
+const STARTUP_SMART_COUNT_DELAY_MS = 1500;
+const SMART_COUNT_YIELD_MS = 25;
+
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+interface RefreshSmartCountsOptions {
+    includeArchived?: boolean;
+    collectionIds?: string[];
+    delayMs?: number;
+}
+
+type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
 
 interface CollectionState {
     collections: Collection[];
@@ -13,7 +26,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshSmartCounts: (collectionsSnapshot?: Collection[]) => Promise<void>;
+    refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
@@ -32,9 +45,8 @@ export const useCollectionStore = create<CollectionState>()(
                         const cols = await getAllCollectionsWithStats();
                         set({ collections: cols });
 
-                        // Lazily fetch smart counts in the background without
-                        // allowing stale snapshots to overwrite newer collection state.
-                        void get().refreshSmartCounts(cols);
+                        // Lazily fetch visible smart counts in the background.
+                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500 });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
                     }
@@ -54,36 +66,53 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
-            refreshSmartCounts: async (collectionsSnapshot?: Collection[]) => {
+            refreshSmartCounts: async (input = {}) => {
+                const runId = ++smartCountRunId;
                 try {
-                    const requestToken = ++smartCountRefreshToken;
                     const { useLibraryStore } = await import('./libraryStore');
                     if (useLibraryStore.getState().isImporting) {
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
                         return;
                     }
 
+                    const collectionsSnapshot = Array.isArray(input) ? input : undefined;
+                    const options = Array.isArray(input) ? {} : input;
+
+                    if (options.delayMs && options.delayMs > 0) {
+                        await delay(options.delayMs);
+                        if (runId !== smartCountRunId) return;
+                    }
+
                     const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
                     const currentCols = collectionsSnapshot ?? get().collections;
-                    const smartCols = currentCols.filter(c => !!c.filters);
+                    const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
+                    const smartCols = currentCols.filter(c =>
+                        !!c.filters
+                        && (!!collectionsSnapshot || options.includeArchived || !c.isArchived)
+                        && (!allowedIds || allowedIds.has(c.id))
+                    );
 
                     if (smartCols.length === 0) return;
 
-                    const counts = await getSmartCollectionCounts(smartCols);
+                    for (const smartCol of smartCols) {
+                        if (runId !== smartCountRunId) return;
 
-                    if (requestToken !== smartCountRefreshToken) {
-                        return;
+                        const counts = await getSmartCollectionCounts([smartCol]);
+                        if (runId !== smartCountRunId) return;
+                        const count = counts[smartCol.id];
+
+                        if (count !== undefined) {
+                            set((state) => ({
+                                collections: state.collections.map(c =>
+                                    c.id === smartCol.id && c.filters
+                                        ? { ...c, count }
+                                        : c
+                                )
+                            }));
+                        }
+
+                        await delay(SMART_COUNT_YIELD_MS);
                     }
-
-                    // Merge counts onto the latest state instead of reusing an older
-                    // snapshot, so deletes or other collection changes are not resurrected.
-                    set((state) => ({
-                        collections: state.collections.map(c =>
-                            c.filters && counts[c.id] !== undefined
-                                ? { ...c, count: counts[c.id] }
-                                : c
-                        )
-                    }));
                 } catch (e) {
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }
@@ -175,8 +204,11 @@ export const useCollectionStore = create<CollectionState>()(
 
                         set({ collections: dbCols, isLoaded: true });
 
-                        // Lazily fetch smart collection counts after initial render
-                        void get().refreshSmartCounts(dbCols);
+                        // Defer visible smart collection counts so startup remains responsive.
+                        void get().refreshSmartCounts({
+                            includeArchived: false,
+                            delayMs: STARTUP_SMART_COUNT_DELAY_MS
+                        });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to initialize', e);
                         set({ isLoaded: true });

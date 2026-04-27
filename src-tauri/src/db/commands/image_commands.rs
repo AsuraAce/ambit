@@ -1,7 +1,124 @@
-use rusqlite::params;
-use tauri::AppHandle;
 use super::run_blocking;
 use crate::db::ImageRecord;
+use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::BTreeSet;
+use tauri::AppHandle;
+
+const PRIVACY_KEYWORDS_FINGERPRINT_KEY: &str = "masked_keywords_fingerprint";
+const PRIVACY_HIDDEN_CASE_SQL: &str = "CASE
+    WHEN user_masked = 1 THEN 1
+    WHEN user_masked = 0 THEN 0
+    WHEN EXISTS (
+        SELECT 1
+        FROM privacy_mask_keywords k
+        WHERE LOWER(COALESCE(positive_prompt, '')) LIKE '%' || k.keyword || '%'
+    ) THEN 1
+    ELSE 0
+END";
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyMaskRefreshResult {
+    pub changed: bool,
+    pub updated: usize,
+}
+
+fn normalize_privacy_keywords(masked_keywords: &[String]) -> Vec<String> {
+    masked_keywords
+        .iter()
+        .map(|keyword| keyword.trim().to_lowercase())
+        .filter(|keyword| !keyword.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub fn refresh_privacy_mask_index_for_conn(
+    conn: &Connection,
+    masked_keywords: &[String],
+) -> Result<PrivacyMaskRefreshResult, String> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS privacy_mask_keywords (
+            keyword TEXT PRIMARY KEY
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS privacy_mask_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        ) STRICT;
+        ",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let keywords = normalize_privacy_keywords(masked_keywords);
+    let fingerprint = keywords.join("\u{1f}");
+    let current_fingerprint: Option<String> = conn
+        .query_row(
+            "SELECT value FROM privacy_mask_state WHERE key = ?1",
+            [PRIVACY_KEYWORDS_FINGERPRINT_KEY],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    if current_fingerprint.as_deref() == Some(fingerprint.as_str()) {
+        return Ok(PrivacyMaskRefreshResult {
+            changed: false,
+            updated: 0,
+        });
+    }
+
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM privacy_mask_keywords", [])
+        .map_err(|e| e.to_string())?;
+
+    {
+        let mut insert_keyword = tx
+            .prepare_cached("INSERT INTO privacy_mask_keywords(keyword) VALUES (?1)")
+            .map_err(|e| e.to_string())?;
+        for keyword in &keywords {
+            insert_keyword
+                .execute([keyword])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    let update_sql = format!(
+        "UPDATE images
+         SET privacy_hidden = {case_sql}
+         WHERE privacy_hidden IS NOT ({case_sql})",
+        case_sql = PRIVACY_HIDDEN_CASE_SQL
+    );
+    let updated = tx.execute(&update_sql, []).map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO privacy_mask_state(key, value)
+         VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![PRIVACY_KEYWORDS_FINGERPRINT_KEY, fingerprint],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(PrivacyMaskRefreshResult {
+        changed: true,
+        updated,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn refresh_privacy_mask_index(
+    app: AppHandle,
+    masked_keywords: Vec<String>,
+) -> Result<PrivacyMaskRefreshResult, String> {
+    run_blocking(app, move |conn| {
+        refresh_privacy_mask_index_for_conn(conn, &masked_keywords)
+    })
+    .await
+}
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
@@ -22,7 +139,7 @@ pub async fn save_images_batch(
                     use crate::metadata::CURRENT_PARSER_VERSION;
                     
                     let mut stmt = tx.prepare_cached(
-                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json)
+                        "INSERT INTO images (id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
                              json_extract(?7, '$.modelHash'),
                              json_extract(?7, '$.model'),
@@ -33,7 +150,9 @@ pub async fn save_images_batch(
                              REPLACE(REPLACE(LOWER(json_extract(?7, '$.sampler')), '_', ' '), '-', ' '),
                              json_extract(?7, '$.generationType'),
                              ?22,
-                             ?7
+                             ?7,
+                             COALESCE(NULLIF(json_extract(?7, '$.positivePrompt'), ''), NULLIF(json_extract(?7, '$.positive_prompt'), '')),
+                             COALESCE(NULLIF(json_extract(?7, '$.negativePrompt'), ''), NULLIF(json_extract(?7, '$.negative_prompt'), ''))
                          )
                          ON CONFLICT(id) DO UPDATE SET 
                             path=excluded.path,
@@ -60,7 +179,9 @@ pub async fn save_images_batch(
                             sampler=excluded.sampler,
                             generation_type=excluded.generation_type,
                             parser_version=excluded.parser_version,
-                            original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json)
+                            original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json),
+                            positive_prompt=excluded.positive_prompt,
+                            negative_prompt=excluded.negative_prompt
                          WHERE images.metadata_json != excluded.metadata_json 
                             OR images.timestamp != excluded.timestamp 
                             OR images.file_size != excluded.file_size
@@ -383,5 +504,64 @@ mod tests {
         assert_eq!(updated.0, 1);
         assert_eq!(updated.1, 1);
         assert_eq!(updated.2.as_deref(), Some("board-1"));
+    }
+
+    #[test]
+    fn refresh_privacy_mask_index_respects_manual_overrides() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+
+        conn.execute_batch(
+            "
+            CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                positive_prompt TEXT,
+                user_masked INTEGER,
+                privacy_hidden INTEGER NOT NULL DEFAULT 0
+            ) STRICT;
+
+            INSERT INTO images(id, positive_prompt, user_masked) VALUES
+                ('auto-match', 'a secret landscape', NULL),
+                ('manual-hidden', 'a public landscape', 1),
+                ('manual-visible', 'a secret portrait', 0),
+                ('auto-visible', 'a public portrait', NULL);
+            ",
+        )
+        .expect("schema");
+
+        let result = super::refresh_privacy_mask_index_for_conn(
+            &conn,
+            &["Secret".to_string(), "secret".to_string()],
+        )
+        .expect("refresh privacy index");
+
+        assert!(result.changed);
+        assert_eq!(result.updated, 2);
+
+        let rows = conn
+            .prepare("SELECT id, privacy_hidden FROM images ORDER BY id")
+            .expect("prepare")
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("rows");
+
+        assert_eq!(
+            rows,
+            vec![
+                ("auto-match".to_string(), 1),
+                ("auto-visible".to_string(), 0),
+                ("manual-hidden".to_string(), 1),
+                ("manual-visible".to_string(), 0),
+            ]
+        );
+
+        let second = super::refresh_privacy_mask_index_for_conn(
+            &conn,
+            &["secret".to_string()],
+        )
+        .expect("second refresh");
+
+        assert!(!second.changed);
+        assert_eq!(second.updated, 0);
     }
 }

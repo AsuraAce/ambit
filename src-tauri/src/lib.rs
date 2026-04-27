@@ -24,6 +24,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::maintenance::get_db_diagnostics,
         db::commands::image_commands::refresh_boards_native,
         db::commands::image_commands::get_image_count_for_path_prefix,
+        db::commands::image_commands::refresh_privacy_mask_index,
         db::commands::maintenance::optimize_database,
         db::commands::maintenance::purge_database,
         db::commands::filter_commands::get_parameter_ranges,
@@ -76,6 +77,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         fs_commands::move_to_trash,
         fs_commands::delete_thumbnail,
         fs_commands::register_library_path,
+        fs_commands::get_invoke_db_snapshot,
     ])
 }
 
@@ -123,14 +125,16 @@ pub fn run() {
                 }
             });
 
-            // 2. Run auto-backup check in background for production builds only.
+            // 2. Run auto-backup check in background for production builds only,
+            // after startup has settled. Large production libraries can spend
+            // the first minute catching up sync state and warming query caches;
+            // VACUUM INTO during that window competes for SQLite I/O.
             if cfg!(debug_assertions) {
                 log::info!("[Backup] Auto-backup skipped in development build");
             } else {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    // Wait a bit for app to settle
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
                     match db::backup::check_and_run_autobackup(handle).await {
                         Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
                         Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),

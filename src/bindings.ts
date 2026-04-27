@@ -61,6 +61,14 @@ async getImageCountForPathPrefix(path: string) : Promise<Result<number, string>>
     else return { status: "error", error: e  as any };
 }
 },
+async refreshPrivacyMaskIndex(maskedKeywords: string[]) : Promise<Result<PrivacyMaskRefreshResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_privacy_mask_index", { maskedKeywords }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async optimizeDatabase() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
@@ -428,6 +436,14 @@ async registerLibraryPath(path: string) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_invoke_db_snapshot", { rootPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -458,9 +474,12 @@ thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDelete
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
+export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
+export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
+export type PrivacyMaskRefreshResult = { changed: boolean; updated: number }
 export type ReparseBatchResult = { processed: number; updated: number; errors: number }
 /**
  * Result of a reparse job.

@@ -204,51 +204,10 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
         } as Collection;
     });
 
-    // 2. Smart Collections: Return with count 0 initially for fast load
-    // Smart counts are calculated lazily via refreshSmartCollectionCounts()
-    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
-
-    const finalCollections = await Promise.all(mappedCollections.map(async (c) => {
-        if (!c.filters) return c;
-
-        // For smart collections, set count to 0 initially (will be updated lazily)
-        // Only fetch thumbnail if needed
-        let smartThumb = c.thumbnail;
-
-        if (!c.customThumbnail) {
-            try {
-                const statsFilters: FilterState = {
-                    collectionId: c.id,
-                    dateRange: 'all',
-                    favoritesOnly: false,
-                    pinnedOnly: false,
-                    models: [],
-                    tools: [],
-                    loras: [],
-                    embeddings: [],
-                    hypernetworks: [],
-                    controlNets: [],
-                    ipAdapters: [],
-                    samplers: [],
-                    generationTypes: [],
-                    searchQuery: ''
-                };
-                const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
-                const thumbUrl = await getSmartCollectionThumbnail(where, params);
-                if (thumbUrl) smartThumb = thumbUrl;
-            } catch (e) {
-                // Keep existing thumb
-            }
-        }
-
-        return {
-            ...c,
-            count: 0, // Lazy count - will be populated by refreshSmartCollectionCounts
-            thumbnail: smartThumb
-        };
-    }));
-
-    return finalCollections;
+    // Smart collection counts are calculated lazily via refreshSmartCollectionCounts().
+    // Do not block the initial collection list on smart-thumbnail queries: those can
+    // require prompt scans on large libraries and make collections appear missing.
+    return mappedCollections.map(c => c.filters ? { ...c, count: 0 } : c);
 };
 
 /**

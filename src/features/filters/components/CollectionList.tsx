@@ -8,6 +8,7 @@ import { SearchInput, SortDropdown } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';
 import { CollectionItem } from './CollectionItem';
 import { useSettings } from '../../../contexts/SettingsContext';
+import { useCollectionStore } from '../../../stores/collectionStore';
 
 interface CollectionListProps<T extends Collection> {
     collections: T[];
@@ -52,6 +53,7 @@ export function CollectionList<T extends Collection>({
     const [searchQuery, setSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const { settings, setSettings } = useSettings();
+    const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
     const sort = (settings.resourceSortOptions?.['collections'] as CollectionSort) || 'recent_desc';
 
     const setSort = (newSort: CollectionSort) => {
@@ -75,6 +77,12 @@ export function CollectionList<T extends Collection>({
     React.useEffect(() => {
         setRenderLimit(60);
     }, [searchQuery, showArchived]);
+
+    React.useEffect(() => {
+        if (showArchived) {
+            void refreshSmartCounts({ includeArchived: true });
+        }
+    }, [showArchived, refreshSmartCounts]);
 
     const toggleViewMode = (e: React.MouseEvent) => {
         e.stopPropagation();

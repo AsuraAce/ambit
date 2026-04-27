@@ -16,7 +16,7 @@ pub mod m46_optimize_fts;
 pub mod m47_facet_cleanup;
 pub mod m48_original_parsed;
 pub mod m49_removed_images;
-
+pub mod m50_privacy_index;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -24,7 +24,7 @@ pub fn init_db() -> Vec<Migration> {
 
 pub fn get_migrations() -> Vec<Migration> {
     let mut migrations = legacy::get_legacy_migrations();
-    
+
     // Core migrations (previously version 33-35, 38-41)
     migrations.push(m33_denormalize::migration33());
     migrations.push(m34_sync::migration34());
@@ -42,12 +42,61 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m47_facet_cleanup::migration47());
     migrations.push(m48_original_parsed::migration48());
     migrations.push(m49_removed_images::migration49());
-    
-    // Ensure migrations are sorted by version (tauri-plugin-sql needs this?)
-    // Actually, pushing in order is usually enough, but let's be safe if needed.
-    // migrations.sort_by_key(|m| m.version);
-    
+    migrations.push(m50_privacy_index::migration50());
+
+    migrations.sort_by_key(|m| m.version);
+
     migrations
 }
 
+#[cfg(test)]
+mod tests {
+    use super::get_migrations;
 
+    #[test]
+    fn migrations_include_mainline_49_and_privacy_50() {
+        let versions: Vec<i64> = get_migrations()
+            .iter()
+            .map(|migration| migration.version)
+            .collect();
+
+        assert!(versions.contains(&49));
+        assert!(versions.contains(&50));
+    }
+
+    #[test]
+    fn migrations_are_sorted_by_version() {
+        let versions: Vec<i64> = get_migrations()
+            .iter()
+            .map(|migration| migration.version)
+            .collect();
+        let mut sorted = versions.clone();
+        sorted.sort_unstable();
+
+        assert_eq!(versions, sorted);
+    }
+
+    #[test]
+    fn migration_49_matches_mainline_description() {
+        let migration_49 = get_migrations()
+            .into_iter()
+            .find(|migration| migration.version == 49)
+            .expect("migration 49 should be registered");
+
+        assert_eq!(migration_49.description, "add_removed_images_tombstones");
+    }
+
+    #[test]
+    fn database_at_mainline_49_has_privacy_50_pending() {
+        let migrations = get_migrations();
+        let has_49 = migrations.iter().any(|migration| migration.version == 49);
+        let pending_after_49: Vec<i64> = migrations
+            .iter()
+            .filter(|migration| migration.version > 49)
+            .map(|migration| migration.version)
+            .collect();
+
+        assert!(has_49);
+        assert_eq!(pending_after_49, vec![50]);
+    }
+}

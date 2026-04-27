@@ -204,6 +204,22 @@ export interface MonitoredFolder {
   initialScanPending?: boolean; // Suppress duplicate auto-scan until the first queued scan completes
 }
 
+export interface InvokeDbSnapshotFile {
+  path: string;
+  exists: boolean;
+  size: number;
+  modifiedMs: number | null;
+}
+
+export interface InvokeDbSnapshotState {
+  dbPath: string;
+  lastSyncedAt: number | null;
+  importIntermediates: boolean;
+  importOrphans: boolean;
+  syncBoardsToCollections: boolean;
+  files: InvokeDbSnapshotFile[];
+}
+
 export interface AppSettings {
   hasCompletedOnboarding: boolean;
   theme: 'dark' | 'light';
@@ -227,6 +243,7 @@ export interface AppSettings {
   lastSyncedAt?: number | null; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
+  invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference

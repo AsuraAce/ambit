@@ -6,8 +6,8 @@ import { useToast } from '../hooks/useToast';
 import { getLiveWatchSummaryMessage, useLibraryStore } from '../stores/libraryStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSettingsStore } from '../stores/settingsStore';
 import { MetadataRefreshScope } from '../types';
+import { isInvokeDbSnapshotCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -149,6 +149,23 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         let liveTotalProcessed = 0;
         let liveHadChanges = false;
         let liveOutcome: 'completed' | 'errored' | 'aborted' = 'completed';
+        const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
+        const effectiveImportIntermediates = options.importIntermediates !== undefined
+            ? options.importIntermediates
+            : settingsRef.current.importIntermediates;
+        const shouldImportOrphans = options.importOrphans !== undefined
+            ? options.importOrphans
+            : settingsRef.current.importOrphans;
+        const effectiveSnapshotConfig = {
+            lastSyncedAt: effectiveTimestamp,
+            importIntermediates: effectiveImportIntermediates,
+            importOrphans: shouldImportOrphans,
+            syncBoardsToCollections: settingsRef.current.syncBoardsToCollections
+        };
+        const shouldUseStartupSnapshot =
+            options.mode === 'startup'
+            && !!settingsRef.current.invokeAiPath
+            && shouldImportOrphans === false;
 
         if (syncStatus === 'syncing' && (options.mode === 'manual' || options.mode === 'startup')) return;
         if ((syncStatus === 'syncing' || isLiveSyncingRef.current) && options.mode === 'live') {
@@ -161,6 +178,31 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 mergedCycleCount: pendingInvokeLivePerfRef.current?.mergedCycleCount ?? 1
             });
             return;
+        }
+
+        if (shouldUseStartupSnapshot) {
+            const snapshotStartedAt = liveWatchNow();
+            try {
+                const currentSnapshot = await readInvokeDbSnapshotState(
+                    settingsRef.current.invokeAiPath!,
+                    effectiveSnapshotConfig
+                );
+
+                if (isInvokeDbSnapshotCurrent(settingsRef.current.invokeDbSnapshot, currentSnapshot)) {
+                    console.info('[Startup Catch-up] Invoke DB snapshot unchanged; skipped SQLite sync.', {
+                        dbPath: currentSnapshot.dbPath,
+                        checkMs: elapsedMs(snapshotStartedAt)
+                    });
+                    return;
+                }
+
+                console.info('[Startup Catch-up] Invoke DB snapshot changed; running SQLite sync.', {
+                    dbPath: currentSnapshot.dbPath,
+                    checkMs: elapsedMs(snapshotStartedAt)
+                });
+            } catch (snapshotError) {
+                console.warn('[Startup Catch-up] Invoke DB snapshot check failed; falling back to SQLite sync.', snapshotError);
+            }
         }
 
         if (options.mode === 'live') {
@@ -187,12 +229,26 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
 
         const ctrl = new AbortController();
         setSyncAbortController(ctrl);
+        const persistInvokeSnapshot = async (lastSyncedAt: number | null | undefined) => {
+            if (!settingsRef.current.invokeAiPath || options.mode === 'live' || shouldImportOrphans !== false) return;
+
+            try {
+                const snapshot = await readInvokeDbSnapshotState(
+                    settingsRef.current.invokeAiPath,
+                    {
+                        ...effectiveSnapshotConfig,
+                        lastSyncedAt
+                    }
+                );
+                setSettings(prev => ({ ...prev, invokeDbSnapshot: snapshot }));
+            } catch (snapshotError) {
+                console.warn('[Startup Catch-up] Failed to persist Invoke DB snapshot.', snapshotError);
+            }
+        };
 
         try {
             const { syncImages } = await import('../services/invoke/syncService');
             const { scanForOrphans } = await import('../services/invoke/orphanScanner');
-
-            const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
 
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
                 settingsRef.current.invokeAiPath!,
@@ -215,12 +271,13 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     syncFavorites: options.syncFavorites,
                     syncBoards: options.syncBoards,
                     afterTimestamp: effectiveTimestamp,
-                    importIntermediates: options.importIntermediates !== undefined ? options.importIntermediates : settingsRef.current.importIntermediates,
+                    importIntermediates: effectiveImportIntermediates,
                     starredAs: options.starredAs,
                     perfContext: livePerfContext,
                     mode: options.mode
                 }
             );
+            const snapshotCursor = typeof newTs === 'number' ? newTs : (effectiveTimestamp ?? null);
 
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
@@ -342,6 +399,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         setSyncStatus('complete');
                     }
 
+                    await persistInvokeSnapshot(snapshotCursor);
                     return;
                 }
             } else {
@@ -354,6 +412,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         message: getLiveWatchSummaryMessage(receivedCount),
                         progress: null
                     });
+                } else {
+                    debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
+                        mode: options.mode,
+                        totalProcessed,
+                        syncMs: elapsedMs(syncStartedAt)
+                    });
                 }
             }
 
@@ -361,8 +425,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             if (newTs) {
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
+            await persistInvokeSnapshot(snapshotCursor);
 
-            if (onSyncComplete && options.mode !== 'live') {
+            if (hasChanges && onSyncComplete && options.mode !== 'live') {
                 await onSyncComplete('full');
             }
 
