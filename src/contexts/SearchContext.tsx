@@ -5,6 +5,7 @@ import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
+import { getDb } from '../services/db/connection';
 
 import { Facets, ValidFacetNames } from '../services/db/searchRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
@@ -104,6 +105,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         void (async () => {
             try {
+                await getDb();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
 
