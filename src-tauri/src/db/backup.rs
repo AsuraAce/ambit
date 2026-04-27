@@ -4,7 +4,7 @@ use crate::db::{configure_connection, resolve_db_path};
 use chrono::{DateTime, Local};
 use std::fs;
 
-const BACKUP_RETENTION_COUNT: usize = 5;
+const BACKUP_RETENTION_COUNT: usize = 3;
 
 #[derive(serde::Serialize, specta::Type, Clone)]
 #[serde(rename_all = "camelCase")]
