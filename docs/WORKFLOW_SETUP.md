@@ -38,6 +38,11 @@ Ambit now uses Tauri's updater plugin with GitHub Releases as the public update 
 *   The desktop app checks GitHub Releases for updates and can download/apply them after the user confirms the update prompt.
 *   Version consistency is enforced by `pnpm check:versions`, which runs in CI and release packaging before builds continue.
 
+### Manual signing preflight
+*   Use **Actions > updater-signing-preflight > Run workflow** to verify that GitHub can use `TAURI_SIGNING_PRIVATE_KEY` non-interactively.
+*   The preflight signs only a temporary file and does not create tags, releases, updater manifests, release assets, or artifacts.
+*   A full updater validation still requires a real release because `latest.json`, published release assets, and installed-app update behavior are outside this preflight.
+
 ### Signing key generation and rotation
 *   A local keypair was generated with Tauri's CI key format and is backed up at `C:\Users\Artemis\Documents\.ambit\ambit-updater.key`.
 *   The public key is embedded in `src-tauri/tauri.conf.json`.
