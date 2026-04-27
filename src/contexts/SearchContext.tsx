@@ -5,12 +5,16 @@ import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
+import { getDb } from '../services/db/connection';
 
 import { Facets, ValidFacetNames } from '../services/db/searchRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useQueryClient } from '@tanstack/react-query';
+import { commands } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
+import { isBrowserMockMode } from '../services/runtime';
 
 interface LibraryStats {
     totalImages: number;
@@ -62,6 +66,7 @@ const SearchContext = createContext<SearchContextType | undefined>(undefined);
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
+    const queryClient = useQueryClient();
 
 
 
@@ -75,6 +80,55 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         toggleFavorite: storeToggleFavorite,
         togglePin: storeTogglePin
     } = useSearchStore();
+
+    const privacyMaskKeywords = React.useMemo(() => (
+        settings.maskedKeywords
+            .map(keyword => keyword.trim().toLowerCase())
+            .filter(Boolean)
+            .sort()
+    ), [settings.maskedKeywords]);
+    const privacyMaskKey = privacyMaskKeywords.join('\u001f');
+    const requiresPrivacyMaskIndex = settingsLoaded
+        && privacyEnabled
+        && settings.maskingMode === 'hide'
+        && !isBrowserMockMode();
+    const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
+
+    useEffect(() => {
+        if (!requiresPrivacyMaskIndex) {
+            setPrivacyMaskReady(false);
+            return;
+        }
+
+        let cancelled = false;
+        setPrivacyMaskReady(false);
+
+        void (async () => {
+            try {
+                await getDb();
+                const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
+                if (cancelled) return;
+
+                setPrivacyMaskReady(true);
+                if (result.changed || result.updated > 0) {
+                    void queryClient.invalidateQueries({ queryKey: ['images'] });
+                    void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+                    void queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
+                }
+            } catch (error) {
+                console.error('[Privacy] Failed to refresh privacy mask index', error);
+                if (!cancelled) setPrivacyMaskReady(true);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [privacyMaskKey, privacyMaskKeywords, queryClient, requiresPrivacyMaskIndex]);
+
+    const databaseQueriesEnabled = settingsLoaded
+        && collectionsLoaded
+        && (!requiresPrivacyMaskIndex || privacyMaskReady);
 
     // React Query
     const {
@@ -90,7 +144,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settings,
         privacyEnabled,
         allCollections: [...collections, ...smartCollections],
-        settingsLoaded: settingsLoaded && collectionsLoaded
+        settingsLoaded: databaseQueriesEnabled
     });
 
     // Flatten pages into a single image array
@@ -140,7 +194,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settings,
         privacyEnabled,
         allCollections: [...collections, ...smartCollections],
-        settingsLoaded: settingsLoaded && collectionsLoaded
+        settingsLoaded: databaseQueriesEnabled
     });
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
@@ -163,10 +217,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
-
-
-
-    const queryClient = useQueryClient();
 
     const refreshMetadata = useCallback(async (scope: MetadataRefreshScope = 'full') => {
         const refreshTasks: Promise<unknown>[] = [

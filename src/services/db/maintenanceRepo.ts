@@ -145,7 +145,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
     const db = await getDb();
     let query = `
         SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
-        WHERE (metadata_json IS NULL OR json_extract(metadata_json, '$.positivePrompt') IS NULL OR json_extract(metadata_json, '$.positivePrompt') = '') 
+        WHERE (positive_prompt IS NULL OR positive_prompt = '')
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
     `;

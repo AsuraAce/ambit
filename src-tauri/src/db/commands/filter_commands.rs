@@ -120,7 +120,9 @@ pub async fn backfill_parameter_columns(app: AppHandle) -> Result<usize, String>
                 steps = CAST(json_extract(metadata_json, '$.steps') AS INTEGER),
                 cfg = CAST(json_extract(metadata_json, '$.cfg') AS REAL),
                 sampler = REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' '),
-                generation_type = json_extract(metadata_json, '$.generationType')
+                generation_type = json_extract(metadata_json, '$.generationType'),
+                positive_prompt = COALESCE(NULLIF(json_extract(metadata_json, '$.positivePrompt'), ''), NULLIF(json_extract(metadata_json, '$.positive_prompt'), '')),
+                negative_prompt = COALESCE(NULLIF(json_extract(metadata_json, '$.negativePrompt'), ''), NULLIF(json_extract(metadata_json, '$.negative_prompt'), ''))
              WHERE steps IS NULL AND json_extract(metadata_json, '$.steps') IS NOT NULL",
             []
         ).map_err(|e| e.to_string())?;

@@ -3,6 +3,7 @@ import { FolderInput, Archive, Folder, Pin, Sparkles, Check } from 'lucide-react
 import { Collection, FilterState } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { formatCountCompact } from '../../../utils/formatUtils';
+import { createCollectionSelectionFilters } from '../../../utils/filterState';
 
 interface CollectionItemProps {
     col: Collection;
@@ -92,18 +93,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         if (isSelected) {
                             setFilters(prev => ({ ...prev, collectionId: null }));
                         } else {
-                            setFilters(prev => ({
-                                ...prev,
-                                collectionId: col.id,
-                                searchQuery: '',
-                                models: [],
-                                tools: [],
-                                loras: [],
-                                embeddings: [],
-                                hypernetworks: [],
-                                dateRange: 'all',
-                                favoritesOnly: false,
-                            }));
+                            setFilters(prev => createCollectionSelectionFilters(prev, col.id));
                         }
                     }}
                     onContextMenu={(e) => handleContextMenu(e, col.id)}
@@ -170,20 +160,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         if (isSelected) {
                             setFilters(prev => ({ ...prev, collectionId: null }));
                         } else {
-                            setFilters(prev => ({
-                                ...prev,
-                                collectionId: col.id,
-                                searchQuery: '',
-                                models: [],
-                                tools: [],
-                                loras: [],
-                                embeddings: [],
-                                hypernetworks: [],
-                                dateRange: 'all',
-                                favoritesOnly: false,
-                                showGrids: prev.showGrids,
-                                showIntermediates: prev.showIntermediates
-                            }));
+                            setFilters(prev => createCollectionSelectionFilters(prev, col.id));
                         }
                     }}
                     className={`relative flex items-center w-full p-2 rounded-xl text-sm transition-colors cursor-pointer overflow-hidden ${isSelected

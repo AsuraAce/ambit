@@ -287,8 +287,8 @@ pub async fn get_valid_facet_names(
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
         let (where_clause, sql_params) = filters.build_where_clause(
-            true,
-            "hide",
+            false,
+            "blur",
             &[],
             &collections,
             false,
@@ -309,7 +309,7 @@ pub async fn get_valid_facet_names(
             let columns = [
                 "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
                 "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
-                "metadata_json", "path", "id", "width", "height", "file_size",
+                "metadata_json", "privacy_hidden", "path", "id", "width", "height", "file_size",
                 "steps", "cfg", "sampler", "generation_type", "control_nets", "ip_adapters"
             ];
             
