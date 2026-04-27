@@ -81,9 +81,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         data: queryData,
         fetchNextPage,
         hasNextPage,
-        isFetching,
         isFetchingNextPage,
-        isLoading: isQueryLoading
+        isLoading: isQueryLoading,
+        isPlaceholderData
     } = useImagesQuery({
         filters,
         sortOption,
@@ -315,7 +315,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 queryClient.invalidateQueries({ queryKey: ['images'] });
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             },
-            isFiltering: isQueryLoading,
+            isFiltering: isQueryLoading || isPlaceholderData,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,
