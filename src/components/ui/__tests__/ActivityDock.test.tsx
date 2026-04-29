@@ -25,6 +25,14 @@ const resetLibraryStore = () => {
         modelResolutionProgress: null,
         isScanningDiscovery: false,
         discoveryScanProgress: null,
+        isScanningDuplicates: false,
+        duplicateScanProgress: null,
+        duplicateScanScope: 'global',
+        lastDuplicateScanResult: null,
+        isScanningMissingFiles: false,
+        missingScanProgress: null,
+        missingScanAbortController: null,
+        lastMissingScanResult: null,
         isBackgroundHealingActive: false,
         backgroundHealingProgress: null,
         backgroundHealingPaused: false,
@@ -52,6 +60,42 @@ describe('ActivityDock', () => {
         expect(screen.getByText('Syncing')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
         expect(screen.queryByText('Live Watch')).toBeNull();
+    });
+
+    it('renders duplicate scan progress with cancel controls', () => {
+        useLibraryStore.setState({
+            isScanningDuplicates: true,
+            duplicateScanProgress: {
+                current: 4,
+                total: 10,
+                message: 'Hashing images for exact duplicate detection...'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Duplicate Scan')).toBeTruthy();
+        expect(screen.getByText('4 / 10')).toBeTruthy();
+        expect(screen.getByText('Hashing images for exact duplicate detection...')).toBeTruthy();
+        expect(screen.getByText('Cancel')).toBeTruthy();
+    });
+
+    it('renders missing file audit progress with cancel controls', () => {
+        useLibraryStore.setState({
+            isScanningMissingFiles: true,
+            missingScanProgress: {
+                current: 3,
+                total: 12,
+                message: 'Checking file paths for missing images...'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Missing File Audit')).toBeTruthy();
+        expect(screen.getByText('3 / 12')).toBeTruthy();
+        expect(screen.getByText('Checking file paths for missing images...')).toBeTruthy();
+        expect(screen.getByText('Cancel')).toBeTruthy();
     });
 
     it('renders a unified Live Watch card without cancel controls during active live work', () => {

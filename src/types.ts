@@ -89,6 +89,14 @@ export interface ParseResult {
   errorReason?: string;
 }
 
+export interface MissingFileAuditResult {
+  scanned: number;
+  total: number;
+  missingIds: string[];
+  sampleMissingPaths: string[];
+  wasCancelled: boolean;
+}
+
 // Snapshot of image-level state at import time (for sync conflict resolution)
 export interface OriginalState {
   isFavorite?: boolean;
@@ -106,6 +114,7 @@ export interface AIImage {
   thumbnailSource?: string;
   filename: string;
   fileSize?: number; // Size in bytes, used for duplicate detection
+  fileHash?: string; // SHA-256 content hash for exact duplicate detection
   timestamp: number; // Unix timestamp
   width: number;
   height: number;

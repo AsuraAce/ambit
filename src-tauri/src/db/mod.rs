@@ -39,10 +39,13 @@ pub fn configure_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
 /// Opens a connection to set PERSISTENT settings like WAL mode.
 pub fn init_db_connection(app: &tauri::AppHandle) -> Result<(), String> {
     let db_path = resolve_db_path(app)?;
-    log::info!("[DB] Initializing database connection preferences at {:?}", db_path);
+    log::info!(
+        "[DB] Initializing database connection preferences at {:?}",
+        db_path
+    );
 
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    
+
     // 1. Set WAL mode (This is persistent in the DB file itself)
     let journal_mode: String = conn
         .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
@@ -56,7 +59,8 @@ pub fn init_db_connection(app: &tauri::AppHandle) -> Result<(), String> {
         PRAGMA mmap_size = 268435456;
         PRAGMA busy_timeout = 60000;
         ",
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -68,7 +72,7 @@ pub fn optimize_on_shutdown(app: &tauri::AppHandle) -> Result<(), String> {
     log::info!("[DB] Running shutdown optimization (PRAGMA optimize)...");
 
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    
+
     // 0x10002 is the recommended flag for shutdown (limit work to reasonable time)
     // and analyze tables that need it.
     match conn.execute("PRAGMA optimize(0x10002)", []) {
@@ -87,6 +91,8 @@ pub struct ImageRecord {
     pub height: u32,
     #[serde(rename = "fileSize")]
     pub file_size: u64,
+    #[serde(rename = "fileHash")]
+    pub file_hash: Option<String>,
     pub timestamp: u64,
     #[serde(rename = "metadataJson")]
     pub metadata_json: String,

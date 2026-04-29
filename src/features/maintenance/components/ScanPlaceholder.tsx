@@ -23,7 +23,7 @@ export const ScanPlaceholder: React.FC<ScanPlaceholderProps> = ({
         },
         duplicates: {
             title: "Duplicate Finder",
-            description: "Scan your library for visually identical or exact duplicate images using strict metadata matching.",
+            description: "Scan your library for exact content matches and separate likely duplicates for review.",
             icon: <Copy className="w-12 h-12" />,
             hasScope: true
         },

@@ -14,6 +14,9 @@ Last reviewed: 2026-04-16
 - `src/bindings.ts` is generated from Rust command signatures during debug Tauri runs and should not be hand-edited.
 - Desktop persistence is intentionally split: SQLite stores image records and heavy metadata, `library.json` stores lightweight app settings and recent searches, and the OS keyring stores sensitive API keys.
 - `src/services/repository.ts` is not the shipping desktop persistence path; treat it as legacy or fallback code unless a dedicated cleanup task explicitly changes that contract.
+- Duplicate detection now treats same SHA-256 file content as an exact duplicate regardless of filename or path, and keeps metadata/dimensions/filesize matches as lower-confidence likely duplicates.
+- Duplicate maintenance scans backfill missing content hashes in the native backend as a cancellable Activity Dock task; imports are not blocked on content hashing and cancel an active duplicate hash pass.
+- Duplicate cleanup remains conservative: resolving duplicates removes redundant records from the Ambit library/Removed list flow rather than deleting files by default.
 
 ## Next Work
 - No product milestone is locked in-repo immediately after `0.3.0`.

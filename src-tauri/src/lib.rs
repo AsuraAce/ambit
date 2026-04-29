@@ -6,8 +6,13 @@ mod security;
 mod thumb;
 mod watcher;
 
+#[cfg(not(test))]
+use db::commands::maintenance::FileHashBackfillState;
+#[cfg(not(test))]
 use db::reparse::ReparseState;
+#[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
+#[cfg(not(test))]
 use watcher::WatcherState;
 
 /// Create the Specta builder with all commands registered.
@@ -22,6 +27,8 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // db commands
         db::commands::image_commands::save_images_batch,
         db::commands::maintenance::get_db_diagnostics,
+        db::commands::maintenance::backfill_image_file_hashes,
+        db::commands::maintenance::cancel_image_file_hash_backfill,
         db::commands::image_commands::refresh_boards_native,
         db::commands::image_commands::get_image_count_for_path_prefix,
         db::commands::image_commands::refresh_privacy_mask_index,
@@ -41,7 +48,6 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::reparse_commands::get_reparse_count,
         db::commands::reparse_commands::reparse_metadata_batch,
         db::commands::reparse_commands::reset_parser_versions,
-
         db::commands::filter_commands::get_metadata_stats,
         // db backup commands
         db::backup::get_backups,
@@ -95,7 +101,11 @@ pub fn run() {
         .unwrap_or(log::LevelFilter::Info);
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().level(log_level).build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log_level)
+                .build(),
+        )
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:images.db", db::migrations::init_db())
@@ -110,6 +120,7 @@ pub fn run() {
         .manage(ModelResolutionState::default())
         .manage(ModelDiscoveryState::default())
         .manage(ReparseState::default())
+        .manage(FileHashBackfillState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             app.handle()
@@ -137,7 +148,9 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(120)).await;
                     match db::backup::check_and_run_autobackup(handle).await {
                         Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                        Ok(None) => log::info!("[Backup] Auto-backup skipped (recent backup exists)"),
+                        Ok(None) => {
+                            log::info!("[Backup] Auto-backup skipped (recent backup exists)")
+                        }
                         Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
                     }
                 });

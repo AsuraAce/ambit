@@ -1,14 +1,23 @@
 import { useState, useCallback, useEffect } from 'react';
 import { AIImage } from '../types';
 import { useLibraryContext } from './useLibraryContext';
+import { useLibraryStore } from '../stores/libraryStore';
 
 export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails' | 'intermediates';
+
+interface MaintenanceRefreshOptions {
+    scope?: 'global' | 'filtered';
+    includeUpgradeable?: boolean;
+    runHashBackfill?: boolean;
+}
 
 export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: 'global' | 'filtered') => {
     const {
         activeSqlWhere,
         activeSqlParams
     } = useLibraryContext();
+    const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
+    const lastDuplicateScanResult = useLibraryStore(s => s.lastDuplicateScanResult);
 
     const [isLoading, setIsLoading] = useState(false);
     const [initializedTabs, setInitializedTabs] = useState<Set<string>>(new Set());
@@ -17,11 +26,13 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
     const [localDuplicateCandidates, setLocalDuplicateCandidates] = useState<AIImage[]>([]);
+    const [localMissingImages, setLocalMissingImages] = useState<AIImage[]>([]);
     const [localIntermediateImages, setLocalIntermediateImages] = useState<AIImage[]>([]);
     const [unoptimizedTotalCount, setUnoptimizedTotalCount] = useState<number>(0);
 
-    const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: { scope?: 'global' | 'filtered', includeUpgradeable?: boolean } = {}) => {
-        if (showLoader) setIsLoading(true);
+    const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: MaintenanceRefreshOptions = {}) => {
+        const useGlobalLoader = showLoader && tab !== 'duplicates';
+        if (useGlobalLoader) setIsLoading(true);
         try {
             const db = await import('../services/db/maintenanceRepo');
 
@@ -29,6 +40,9 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
             if (tab === 'trash') {
                 const data = await db.getDeletedImages();
                 setLocalDeletedImages(data);
+            } else if (tab === 'missing') {
+                const data = await db.getMissingImages();
+                setLocalMissingImages(data);
             } else if (tab === 'untagged') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
@@ -45,10 +59,49 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 setUnoptimizedTotalCount(count);
                 setLocalUnoptimizedImages(data);
             } else if (tab === 'duplicates') {
-                const where = options.scope === 'filtered' ? activeSqlWhere : '';
-                const params = options.scope === 'filtered' ? activeSqlParams : [];
+                const scope = options.scope ?? 'global';
+                const where = scope === 'filtered' ? activeSqlWhere : '';
+                const params = scope === 'filtered' ? activeSqlParams : [];
+                const shouldRunHashBackfill = options.runHashBackfill ?? true;
+                let startedHashBackfill = false;
+
+                if (shouldRunHashBackfill) {
+                    const store = useLibraryStore.getState();
+                    if (!store.isScanningDuplicates) {
+                        store.setDuplicateScanScope(scope);
+                        store.setLastDuplicateScanResult(null);
+                        store.setIsScanningDuplicates(true);
+                        store.setDuplicateScanProgress({
+                            current: 0,
+                            total: 0,
+                            message: 'Preparing duplicate scan...'
+                        });
+                        startedHashBackfill = true;
+                    }
+                }
+
                 const data = await db.getDuplicateCandidates(where, params);
                 setLocalDuplicateCandidates(data);
+                setInitializedTabs(prev => new Set(prev).add(tab));
+
+                if (startedHashBackfill && useLibraryStore.getState().isScanningDuplicates) {
+                    const store = useLibraryStore.getState();
+                    void db.backfillImageFileHashes()
+                        .then(async (result) => {
+                            store.setLastDuplicateScanResult(result);
+                            const refreshed = await db.getDuplicateCandidates(where, params);
+                            setLocalDuplicateCandidates(refreshed);
+                        })
+                        .catch((e) => {
+                            console.error("Failed to run duplicate hash scan", e);
+                        })
+                        .finally(() => {
+                            store.setIsScanningDuplicates(false);
+                            store.setDuplicateScanProgress(null);
+                        });
+                }
+
+                return;
             } else if (tab === 'intermediates') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
@@ -60,16 +113,27 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         } catch (e) {
             console.error("Failed to refresh maintenance data", e);
         } finally {
-            if (showLoader) setIsLoading(false);
+            if (useGlobalLoader) setIsLoading(false);
         }
     }, [activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
-        // ONLY auto-trigger for trash. Everything else requires manual 'Start Scan'.
-        if (activeTab === 'trash' && !initializedTabs.has('trash')) {
-            refreshData('trash', true);
+        // Cheap record fetches can load on tab entry; long-running scans remain manual.
+        if ((activeTab === 'trash' || activeTab === 'missing') && !initializedTabs.has(activeTab)) {
+            refreshData(activeTab, true);
         }
     }, [activeTab, refreshData, initializedTabs]);
+
+    useEffect(() => {
+        if (activeTab !== 'duplicates' || initializedTabs.has('duplicates')) {
+            return;
+        }
+
+        if (isScanningDuplicates || lastDuplicateScanResult) {
+            const scope = useLibraryStore.getState().duplicateScanScope;
+            refreshData('duplicates', false, { scope, runHashBackfill: false });
+        }
+    }, [activeTab, initializedTabs, isScanningDuplicates, lastDuplicateScanResult, refreshData]);
 
     return {
         isLoading,
@@ -78,6 +142,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         localUntaggedImages,
         localUnoptimizedImages,
         localDuplicateCandidates,
+        localMissingImages,
         localIntermediateImages,
         unoptimizedTotalCount,
         refreshData,
@@ -85,6 +150,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         setLocalUntaggedImages,
         setLocalUnoptimizedImages,
         setLocalDuplicateCandidates,
+        setLocalMissingImages,
         setLocalIntermediateImages
     };
 };

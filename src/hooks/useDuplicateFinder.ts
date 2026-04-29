@@ -4,6 +4,7 @@ import { AIImage } from '../types';
 
 export interface DuplicateGroup {
     id: string;
+    kind: 'exact' | 'likely';
     images: AIImage[];
     newestId: string;
 }
@@ -57,18 +58,44 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
     const [resolvedSignatures, setResolvedSignatures] = useState<Set<string>>(new Set());
 
     const groups = useMemo(() => {
-        // 1. First Pass: Group by FileSize (Very fast O(N) pruning)
+        const results: DuplicateGroup[] = [];
+        const exactImageIds = new Set<string>();
+        const newestIdFor = (matches: AIImage[]) => [...matches].sort((a, b) => b.timestamp - a.timestamp)[0]?.id || '';
+
+        // 1. First Pass: Group by SHA-256 content hash for exact duplicates.
+        const hashBuckets: Record<string, AIImage[]> = {};
+        images.forEach(img => {
+            if (img.groupId || img.isDeleted) return;
+            const hash = img.fileHash?.trim();
+            if (!hash) return;
+            if (!hashBuckets[hash]) hashBuckets[hash] = [];
+            hashBuckets[hash].push(img);
+        });
+
+        Object.entries(hashBuckets).forEach(([hash, matches]) => {
+            if (matches.length <= 1) return;
+
+            matches.forEach(img => exactImageIds.add(img.id));
+            results.push({
+                id: `exact_${hash}`,
+                kind: 'exact',
+                images: matches,
+                newestId: newestIdFor(matches)
+            });
+        });
+
+        // 2. Group remaining candidates by FileSize (fast O(N) pruning)
+        // and metadata fingerprint. These are likely duplicates, not exact ones.
         const sizeBuckets: Record<number, AIImage[]> = {};
         images.forEach(img => {
             if (img.groupId || img.isDeleted) return;
+            if (exactImageIds.has(img.id)) return;
             const size = img.fileSize || 0;
             if (!sizeBuckets[size]) sizeBuckets[size] = [];
             sizeBuckets[size].push(img);
         });
 
-        const results: DuplicateGroup[] = [];
-
-        // 2. Second Pass: Strict Metadata Comparison within Size Buckets
+        // 3. Strict metadata comparison within size buckets.
         Object.values(sizeBuckets).forEach(bucket => {
             if (bucket.length < 2) return;
 
@@ -81,12 +108,11 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
 
             Object.entries(metaBuckets).forEach(([fp, matches]) => {
                 if (matches.length > 1) {
-                    // Pre-find newestId to save render time
-                    const newest = [...matches].sort((a, b) => b.timestamp - a.timestamp)[0];
                     results.push({
-                        id: `dupe_${matches[0].id}`,
+                        id: `likely_${matches[0].id}`,
+                        kind: 'likely',
                         images: matches,
-                        newestId: newest?.id || ''
+                        newestId: newestIdFor(matches)
                     });
                 }
             });
@@ -101,6 +127,12 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
         return { activeGroups: filtered, totalRedundantCount: redundant };
     }, [groups, resolvedSignatures]);
 
+    const exactRedundantCount = useMemo(() => {
+        return activeGroups
+            .filter(group => group.kind === 'exact')
+            .reduce((acc, group) => acc + (group.images.length - 1), 0);
+    }, [activeGroups]);
+
     const handleResolve = useCallback((groupId: string, keepId: string, allIds: string[]) => {
         const deleteIds = allIds.filter(id => id !== keepId);
         onResolve(keepId, deleteIds);
@@ -113,6 +145,7 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
 
         groups.forEach(group => {
             if (resolvedSignatures.has(group.id)) return;
+            if (group.kind !== 'exact') return;
 
             // Sort images in group by timestamp
             const sorted = [...group.images].sort((a, b) => a.timestamp - b.timestamp);
@@ -140,8 +173,8 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
     return {
         groups: activeGroups,
         totalRedundantCount,
+        exactRedundantCount,
         handleResolve,
         handleBulkResolve
     };
 };
-

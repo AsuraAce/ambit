@@ -5,7 +5,8 @@ import { rebuildFacetCache } from '../../services/db/imageRepo';
 
 vi.mock('../../bindings', () => ({
     commands: {
-        cancelModelDiscovery: vi.fn().mockResolvedValue(undefined)
+        cancelModelDiscovery: vi.fn().mockResolvedValue(undefined),
+        cancelImageFileHashBackfill: vi.fn().mockResolvedValue(undefined)
     }
 }));
 
@@ -93,5 +94,42 @@ describe('libraryStore live watch session', () => {
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
         expect(rebuildFacetCache).not.toHaveBeenCalled();
+    });
+
+    it('cancels duplicate hashing when an import starts', () => {
+        act(() => {
+            useLibraryStore.getState().setIsScanningDuplicates(true);
+            useLibraryStore.getState().setDuplicateScanProgress({
+                current: 1,
+                total: 10,
+                message: 'Hashing images...'
+            });
+            useLibraryStore.getState().setIsImporting(true);
+        });
+
+        expect(useLibraryStore.getState().isImporting).toBe(true);
+        expect(useLibraryStore.getState().isScanningDuplicates).toBe(false);
+        expect(useLibraryStore.getState().duplicateScanProgress).toBeNull();
+    });
+
+    it('cancels missing file audit when an import starts', () => {
+        const abortController = new AbortController();
+        const abortSpy = vi.spyOn(abortController, 'abort');
+
+        act(() => {
+            useLibraryStore.getState().setMissingScanAbortController(abortController);
+            useLibraryStore.getState().setIsScanningMissingFiles(true);
+            useLibraryStore.getState().setMissingScanProgress({
+                current: 1,
+                total: 10,
+                message: 'Checking file paths...'
+            });
+            useLibraryStore.getState().setIsImporting(true);
+        });
+
+        expect(abortSpy).toHaveBeenCalled();
+        expect(useLibraryStore.getState().isImporting).toBe(true);
+        expect(useLibraryStore.getState().isScanningMissingFiles).toBe(false);
+        expect(useLibraryStore.getState().missingScanProgress).toBeNull();
     });
 });
