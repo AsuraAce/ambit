@@ -86,14 +86,16 @@ Status: Deferred
 - `docs/architecture.md#sqlite-data-migrations-and-maintenance`
 - `docs/architecture.md#desktop-shell-and-command-surface`
 
-## Smart Thumbnail Optimization Startup Cost
+## Smart Thumbnail Optimization and Removed Maintenance Tab
 Status: Deferred
 
 ### Why Cleanup Is Needed
+- Product rule: there is no current Maintenance thumbnail regeneration tab. Thumbnail regeneration is handled by import/native generation, lazy gallery healing, background Smart Thumbnail Optimization, and explicit settings/model/collection thumbnail tools.
 - The visible Maintenance thumbnails tab was removed; `src/features/maintenance/components/MaintenanceTabs.tsx` documents that background healing now owns thumbnail regeneration.
 - `src/hooks/useThumbnailQueue.ts` still starts Smart Thumbnail Optimization automatically after a short startup delay when `enableAutoThumbnailHealing` is enabled.
 - The queue processes thumbnails in small batches and pauses during import or sync, but it begins by running full-library unoptimized-thumbnail count queries. On large production libraries, those count scans can still compete with normal browsing and search.
 - Legacy thumbnail-maintenance UI code such as `ThumbnailsTab` and thumbnail scan paths remains in the tree even though it is no longer reachable from the visible maintenance tabs.
+- This mismatch keeps confusing maintainers and agents because the code shape still suggests a removed feature exists.
 
 ### Current Pain Points
 - Startup can feel responsive overall while background thumbnail work still creates intermittent SQLite load shortly after launch.
@@ -103,6 +105,7 @@ Status: Deferred
 ### Safe-Change Warning
 - Thumbnail work touches SQLite, filesystem scope, scanner commands, React Query image caches, and user-facing thumbnails. Avoid mixing this cleanup with unrelated maintenance UI work.
 - Do not remove manual Advanced settings actions for clearing or verifying thumbnails unless a replacement workflow is explicitly designed.
+- Do not reintroduce a Maintenance thumbnail regeneration tab unless the product decision is explicitly reopened.
 
 ### Suggested Future Direction
 - Make Smart Thumbnail Optimization more incremental: fetch and process small candidate batches first, and avoid full-library count scans on startup.
