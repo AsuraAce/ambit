@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { commands } from '../bindings';
+import { commands, type FileHashBackfillResult } from '../bindings';
 
 let liveWatchTimeout: ReturnType<typeof setTimeout> | null = null;
 const LIVE_WATCH_IDLE_TIMEOUT_MS = 60000;
@@ -96,6 +96,8 @@ export interface MaintenanceCounts {
     duplicates: number;
 }
 
+export type DuplicateScanScope = 'global' | 'filtered';
+
 interface LibraryState {
     // Sync State
     syncStatus: SyncStatus;
@@ -124,6 +126,12 @@ interface LibraryState {
     // Discovery Scan State
     isScanningDiscovery: boolean;
     discoveryScanProgress: SyncProgress | null;
+
+    // Duplicate Scan State
+    isScanningDuplicates: boolean;
+    duplicateScanProgress: SyncProgress | null;
+    duplicateScanScope: DuplicateScanScope;
+    lastDuplicateScanResult: FileHashBackfillResult | null;
 
     // Background Auto-Healing State
     isBackgroundHealingActive: boolean;
@@ -167,6 +175,11 @@ interface LibraryState {
     setIsScanningDiscovery: (val: boolean) => void;
     setDiscoveryScanProgress: (progress: SyncProgress | null) => void;
     cancelDiscoveryScan: () => void;
+    setIsScanningDuplicates: (val: boolean) => void;
+    setDuplicateScanProgress: (progress: SyncProgress | null) => void;
+    setDuplicateScanScope: (scope: DuplicateScanScope) => void;
+    setLastDuplicateScanResult: (result: FileHashBackfillResult | null) => void;
+    cancelDuplicateScan: () => void;
     incrementFacetCacheVersion: () => void;
 
     // Background Healing Actions
@@ -217,6 +230,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     lastModelResolutionResult: null,
     isScanningDiscovery: false,
     discoveryScanProgress: null,
+    isScanningDuplicates: false,
+    duplicateScanProgress: null,
+    duplicateScanScope: 'global',
+    lastDuplicateScanResult: null,
     facetCacheVersion: 0,
 
     // Background Healing State
@@ -247,7 +264,15 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsLiveWatching: (isWatching) => set({ isLiveWatching: isWatching }),
     setMaintenanceCounts: (counts) => set({ maintenanceCounts: counts }),
 
-    setIsImporting: (val) => set({ isImporting: val, isActivityDockDismissed: val ? false : undefined }),
+    setIsImporting: (val) => {
+        if (val) {
+            const { isScanningDuplicates, cancelDuplicateScan } = useLibraryStore.getState();
+            if (isScanningDuplicates) {
+                cancelDuplicateScan();
+            }
+        }
+        set({ isImporting: val, isActivityDockDismissed: val ? false : undefined });
+    },
     setImportProgress: (progress) => set({ importProgress: progress }),
     setImportAbortController: (ctrl) => set({ importAbortController: ctrl }),
     cancelImport: () => set((state) => {
@@ -279,6 +304,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     cancelDiscoveryScan: () => {
         commands.cancelModelDiscovery().catch(console.error);
         set({ isScanningDiscovery: false, discoveryScanProgress: null });
+    },
+    setIsScanningDuplicates: (val) => set({ isScanningDuplicates: val, isActivityDockDismissed: val ? false : undefined }),
+    setDuplicateScanProgress: (progress) => set({ duplicateScanProgress: progress }),
+    setDuplicateScanScope: (scope) => set({ duplicateScanScope: scope }),
+    setLastDuplicateScanResult: (result) => set({ lastDuplicateScanResult: result }),
+    cancelDuplicateScan: () => {
+        commands.cancelImageFileHashBackfill().catch(console.error);
+        set({ isScanningDuplicates: false, duplicateScanProgress: null });
     },
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 

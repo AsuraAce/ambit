@@ -5,17 +5,18 @@ import { useDuplicateFinder } from '../useDuplicateFinder';
 import { AIImage } from '../../types';
 
 describe('useDuplicateFinder', () => {
-    const createMockImage = (id: string, seed: number, timestamp: number, fileSize = 1000): AIImage => ({
+    const createMockImage = (id: string, seed: number, timestamp: number, fileSize = 1000, fileHash?: string, includeMetadata = true): AIImage => ({
         id,
         timestamp,
         fileSize,
+        fileHash,
         url: `url-${id}`,
         thumbnailUrl: `thumb-${id}`,
         filename: `file-${id}.png`,
         width: 512,
         height: 512,
         isFavorite: false,
-        metadata: {
+        metadata: includeMetadata ? {
             seed,
             positivePrompt: 'A cat holding a taco',
             negativePrompt: 'low quality',
@@ -23,7 +24,7 @@ describe('useDuplicateFinder', () => {
             cfg: 7,
             sampler: 'Euler a',
             model: 'v1.5'
-        } as any
+        } as any : undefined as any
     });
 
     const mockOnResolve = vi.fn();
@@ -41,8 +42,48 @@ describe('useDuplicateFinder', () => {
         const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
 
         expect(result.current.groups).toHaveLength(1);
+        expect(result.current.groups[0].kind).toBe('likely');
         expect(result.current.groups[0].images).toHaveLength(2);
         expect(result.current.totalRedundantCount).toBe(1);
+    });
+
+    it('should identify exact duplicates by file hash even without metadata', () => {
+        const images = [
+            createMockImage('C:/one/original.png', 0, 1000, 1000, 'abc123', false),
+            createMockImage('C:/two/renamed.png', 0, 2000, 1000, 'abc123', false),
+        ];
+
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+
+        expect(result.current.groups).toHaveLength(1);
+        expect(result.current.groups[0].kind).toBe('exact');
+        expect(result.current.groups[0].images.map(img => img.id)).toEqual([
+            'C:/one/original.png',
+            'C:/two/renamed.png'
+        ]);
+    });
+
+    it('should not mark same dimensions and size as exact when hashes differ', () => {
+        const images = [
+            createMockImage('1', 12345, 1000, 1000, 'hash-a'),
+            createMockImage('2', 12345, 2000, 1000, 'hash-b'),
+        ];
+
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+
+        expect(result.current.groups).toHaveLength(1);
+        expect(result.current.groups[0].kind).toBe('likely');
+    });
+
+    it('should not group sparse same-size images without a matching hash', () => {
+        const images = [
+            createMockImage('1', 0, 1000, 1000, 'hash-a', false),
+            createMockImage('2', 0, 2000, 1000, 'hash-b', false),
+        ];
+
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+
+        expect(result.current.groups).toHaveLength(0);
     });
 
     it('should NOT group images with different seeds', () => {
@@ -59,9 +100,9 @@ describe('useDuplicateFinder', () => {
 
     it('should handle bulk resolve (newest strategy)', () => {
         const images = [
-            createMockImage('old', 123, 1000), // Oldest
-            createMockImage('mid', 123, 2000),
-            createMockImage('new', 123, 3000), // Newest
+            createMockImage('old', 123, 1000, 1000, 'bulk-hash'), // Oldest
+            createMockImage('mid', 123, 2000, 1000, 'bulk-hash'),
+            createMockImage('new', 123, 3000, 1000, 'bulk-hash'), // Newest
         ];
 
         const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
@@ -77,8 +118,8 @@ describe('useDuplicateFinder', () => {
 
     it('should handle bulk resolve (oldest strategy)', () => {
         const images = [
-            createMockImage('old', 123, 1000), // Oldest
-            createMockImage('new', 123, 3000), // Newest
+            createMockImage('old', 123, 1000, 1000, 'bulk-hash'), // Oldest
+            createMockImage('new', 123, 3000, 1000, 'bulk-hash'), // Newest
         ];
 
         const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
@@ -89,6 +130,22 @@ describe('useDuplicateFinder', () => {
 
         expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.arrayContaining(['new']));
         expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.not.arrayContaining(['old']));
+    });
+
+    it('should exclude likely duplicates from bulk resolve', () => {
+        const images = [
+            createMockImage('old', 123, 1000),
+            createMockImage('new', 123, 3000),
+        ];
+
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+
+        act(() => {
+            result.current.handleBulkResolve('oldest');
+        });
+
+        expect(result.current.groups[0].kind).toBe('likely');
+        expect(mockOnResolve).not.toHaveBeenCalled();
     });
 
     it('should filter out already resolved groups', () => {

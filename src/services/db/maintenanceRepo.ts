@@ -1,4 +1,4 @@
-import { commands } from '../../bindings';
+import { commands, type FileHashBackfillResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage } from '../../types';
 import { getDb, dbMutex } from './connection';
@@ -313,6 +313,23 @@ export const getUnoptimizedImageEntries = async (
     return rows;
 };
 
+export const backfillImageFileHashes = async (): Promise<FileHashBackfillResult> => {
+    if (isBrowserMockMode()) {
+        return { scanned: 0, updated: 0, missing: 0, errors: 0, remaining: 0, wasCancelled: false };
+    }
+
+    const result = await unwrap(commands.backfillImageFileHashes(null));
+    if (result.scanned > 0) {
+        console.log('[Maintenance] File hash backfill complete', result);
+    }
+    return result;
+};
+
+export const cancelImageFileHashBackfill = async (): Promise<void> => {
+    if (isBrowserMockMode()) return;
+    await commands.cancelImageFileHashBackfill();
+};
+
 export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockImages().slice(0, 6);
@@ -322,17 +339,42 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
     const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
 
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT.replace('images.metadata_json', 'i.metadata_json')}
-        FROM images i
-        JOIN (
-            SELECT file_size, width, height 
-            FROM images 
+        WITH scoped AS (
+            SELECT id, file_hash, file_size, width, height
+            FROM images
             ${baseWhere}
-            GROUP BY file_size, width, height 
-            HAVING COUNT(*) > 1
-        ) dup ON i.file_size = dup.file_size AND i.width = dup.width AND i.height = dup.height
-        ${baseWhere}
-        ORDER BY i.file_size DESC, i.timestamp DESC
+        ),
+        exact_duplicate_ids AS (
+            SELECT id
+            FROM scoped
+            WHERE file_hash IN (
+                SELECT file_hash
+                FROM scoped
+                WHERE file_hash IS NOT NULL AND file_hash != ''
+                GROUP BY file_hash
+                HAVING COUNT(*) > 1
+            )
+        ),
+        likely_duplicate_ids AS (
+            SELECT scoped.id
+            FROM scoped
+            JOIN (
+                SELECT file_size, width, height
+                FROM scoped
+                GROUP BY file_size, width, height
+                HAVING COUNT(*) > 1
+            ) dup ON scoped.file_size = dup.file_size
+                AND scoped.width = dup.width
+                AND scoped.height = dup.height
+        )
+        SELECT ${IMAGE_FIELDS_LIGHT}
+        FROM images
+        WHERE id IN (
+            SELECT id FROM exact_duplicate_ids
+            UNION
+            SELECT id FROM likely_duplicate_ids
+        )
+        ORDER BY file_hash DESC, file_size DESC, timestamp DESC
     `;
 
     try {

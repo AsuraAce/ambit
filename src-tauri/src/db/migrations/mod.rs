@@ -17,6 +17,7 @@ pub mod m47_facet_cleanup;
 pub mod m48_original_parsed;
 pub mod m49_removed_images;
 pub mod m50_privacy_index;
+pub mod m51_file_hash;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -43,6 +44,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m48_original_parsed::migration48());
     migrations.push(m49_removed_images::migration49());
     migrations.push(m50_privacy_index::migration50());
+    migrations.push(m51_file_hash::migration51());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -54,7 +56,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_49_and_privacy_50() {
+    fn migrations_include_mainline_49_privacy_50_and_file_hash_51() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -62,6 +64,7 @@ mod tests {
 
         assert!(versions.contains(&49));
         assert!(versions.contains(&50));
+        assert!(versions.contains(&51));
     }
 
     #[test]
@@ -87,7 +90,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_privacy_50_pending() {
+    fn database_at_mainline_49_has_privacy_50_and_file_hash_51_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -97,6 +100,6 @@ mod tests {
             .collect();
 
         assert!(has_49);
-        assert_eq!(pending_after_49, vec![50]);
+        assert_eq!(pending_after_49, vec![50, 51]);
     }
 }

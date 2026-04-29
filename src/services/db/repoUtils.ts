@@ -11,7 +11,7 @@ export const IMAGE_FIELDS_LIGHT = `
     images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source,
     images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
     images.original_parsed_json,
-    images.model_name, images.model_hash, images.tool, images.resolved_model_name
+    images.model_name, images.model_hash, images.tool, images.resolved_model_name, images.file_hash
 `;
 
 export const REMOVED_IMAGE_FIELDS = `
@@ -54,6 +54,7 @@ export function mapRowToImage(row: any): AIImage {
         thumbnailSource: row.thumbnail_source || undefined,
         filename: getFilename(normalizedPath),
         fileSize: row.file_size,
+        fileHash: row.file_hash || undefined,
         timestamp: row.timestamp,
         width: row.width,
         height: row.height,

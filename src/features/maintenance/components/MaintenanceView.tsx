@@ -1,10 +1,11 @@
 import * as React from 'react';
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AIImage, GeneratorTool } from '../../../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { Loader2 } from 'lucide-react';
 import { ImageViewer } from '../../../features/viewer/components/ImageViewer';
+import { CompareModal } from '../../../features/viewer/components/CompareModal';
 import { useMaintenanceData, MaintenanceTab } from '../../../hooks/useMaintenanceData';
 import { TrashTab } from './TrashTab';
 import { UntaggedTab } from './UntaggedTab';
@@ -61,6 +62,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
     const intermediatesCount = useLibraryStore(s => s.maintenanceCounts.intermediates);
+    const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
+    const duplicateScanProgress = useLibraryStore(s => s.duplicateScanProgress);
+    const storedDuplicateScanScope = useLibraryStore(s => s.duplicateScanScope);
+    const lastDuplicateScanResult = useLibraryStore(s => s.lastDuplicateScanResult);
+    const cancelDuplicateScan = useLibraryStore(s => s.cancelDuplicateScan);
     const { activeSqlWhere, activeSqlParams } = useLibraryContext();
 
     // Scopes
@@ -71,6 +77,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [compareImages, setCompareImages] = useState<[AIImage, AIImage] | null>(null);
     const [removedAction, setRemovedAction] = useState<'restoring' | 'deleting' | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -146,6 +153,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setActiveTabOriginal(tab);
         clearSelection();
     }, [clearSelection]);
+
+    useEffect(() => {
+        if (activeTab === 'duplicates' && (isScanningDuplicates || lastDuplicateScanResult)) {
+            setDuplicatesScope(storedDuplicateScanScope);
+        }
+    }, [activeTab, isScanningDuplicates, lastDuplicateScanResult, storedDuplicateScanScope]);
 
     const handleScanComplete = async (ids: string[]) => {
         setScanMissingIds(new Set(ids));
@@ -282,7 +295,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     const handleResolveDuplicate = useCallback(async (keepId: string, deleteIds: string[]) => {
         await onResolveDuplicate(keepId, deleteIds);
-        await refreshData('duplicates', false, { scope: duplicatesScope });
+        await refreshData('duplicates', false, { scope: duplicatesScope, runHashBackfill: false });
     }, [onResolveDuplicate, refreshData, duplicatesScope]);
 
     const handleUnmarkIntermediates = async () => {
@@ -390,8 +403,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 maskedKeywords={maskedKeywords}
                                 onRefresh={(scope) => {
                                     setDuplicatesScope(scope);
-                                    refreshData('duplicates', true, { scope });
+                                    refreshData('duplicates', true, { scope, runHashBackfill: true });
                                 }}
+                                scope={duplicatesScope}
+                                isScanning={isScanningDuplicates}
+                                scanProgress={duplicateScanProgress}
+                                onCancelScan={cancelDuplicateScan}
+                                onViewImage={setViewingImageId}
+                                onCompareImages={(imageA, imageB) => setCompareImages([imageA, imageB])}
                                 scrollContainerRef={scrollContainerRef}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
@@ -516,10 +535,16 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         >
                             <ScanPlaceholder
                                 tab={activeTab}
-                                onStartScan={(tab, scope) => refreshData(tab, true, {
-                                    scope,
-                                    includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined
-                                })}
+                                onStartScan={(tab, scope) => {
+                                    if (tab === 'duplicates') {
+                                        setDuplicatesScope(scope);
+                                    }
+                                    refreshData(tab, true, {
+                                        scope,
+                                        includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined,
+                                        runHashBackfill: tab === 'duplicates'
+                                    });
+                                }}
                             />
                         </motion.div>
                     )}
@@ -560,6 +585,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             refreshData(activeTab);
                         }
                     }}
+                />
+            )}
+
+            {compareImages && (
+                <CompareModal
+                    imageA={compareImages[0]}
+                    imageB={compareImages[1]}
+                    onClose={() => setCompareImages(null)}
+                    onToggleFavorite={(id) => onToggleFavorite?.(id)}
                 />
             )}
         </div>

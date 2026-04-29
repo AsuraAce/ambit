@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, X, Info, Sparkles, Minus } from 'lucide-react';
+import { Loader2, X, Info, Sparkles, Minus, Fingerprint } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 
 export const ActivityDock: React.FC = () => {
@@ -17,6 +17,9 @@ export const ActivityDock: React.FC = () => {
         isScanningDiscovery,
         discoveryScanProgress,
         cancelDiscoveryScan,
+        isScanningDuplicates,
+        duplicateScanProgress,
+        cancelDuplicateScan,
         setIsResolvingModels,
         isBackgroundHealingActive, backgroundHealingProgress, backgroundHealingPaused,
         isRefreshingMetadata, refreshProgress,
@@ -28,8 +31,8 @@ export const ActivityDock: React.FC = () => {
 
     const isManualSyncing = syncStatus === 'syncing';
 
-    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Populating > Background Healing > Reparsing > Live Watch
-    const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isPopulatingThumbnails || isScanningDiscovery;
+    // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Populating > Background Healing > Reparsing > Live Watch
+    const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isScanningDuplicates || isPopulatingThumbnails;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
     // Show refresh if active AND no high priority
@@ -69,6 +72,11 @@ export const ActivityDock: React.FC = () => {
         progress = discoveryScanProgress;
         label = "Discovery Scan";
         supportsCancel = true;
+    } else if (isScanningDuplicates) {
+        progress = duplicateScanProgress;
+        label = "Duplicate Scan";
+        supportsCancel = true;
+        footerMessage = "You can keep using Ambit while this scans.";
     } else if (isPopulatingThumbnails) {
         progress = { current: 0, total: 0, message: "Matching images to models..." };
         label = "Smart Fill";
@@ -155,7 +163,7 @@ export const ActivityDock: React.FC = () => {
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
-                                        {isLiveWatchTone || isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                                        {isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isLiveWatchTone || isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                     </motion.div>
                                     <motion.div layout="position">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
@@ -233,6 +241,7 @@ export const ActivityDock: React.FC = () => {
                                                 setIsResolvingModels(false);
                                             }
                                             if (isScanningDiscovery) cancelDiscoveryScan();
+                                            if (isScanningDuplicates) cancelDuplicateScan();
                                             if (isRefreshActive) cancelRefresh();
                                         }}
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"

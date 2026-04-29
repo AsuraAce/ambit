@@ -1,16 +1,14 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { useLibraryStore, SyncProgress } from '../stores/libraryStore';
+import { useLibraryStore, type SyncProgress } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 
 export function useProgressListeners() {
     const {
         setModelResolutionProgress,
         setDiscoveryScanProgress,
-        setThumbnailProgress,
-        setIsResolvingModels,
-        setIsScanningDiscovery,
-        setIsRegeneratingThumbnails
+        setDuplicateScanProgress,
+        setIsScanningDuplicates
     } = useLibraryStore();
 
     useEffect(() => {
@@ -18,7 +16,7 @@ export function useProgressListeners() {
 
         let unlistenModel: () => void;
         let unlistenDiscovery: () => void;
-        let unlistenThumbnails: () => void;
+        let unlistenDuplicateScan: () => void;
 
         const setupListeners = async () => {
             unlistenModel = await listen<SyncProgress>('model_resolution_progress', (event) => {
@@ -35,7 +33,11 @@ export function useProgressListeners() {
                 setDiscoveryScanProgress(progress);
             });
 
-            // If there are other progress events, add them here
+            unlistenDuplicateScan = await listen<SyncProgress>('file_hash_backfill_progress', (event) => {
+                const progress = event.payload;
+                setIsScanningDuplicates(true);
+                setDuplicateScanProgress(progress);
+            });
         };
 
         setupListeners();
@@ -43,6 +45,7 @@ export function useProgressListeners() {
         return () => {
             if (unlistenModel) unlistenModel();
             if (unlistenDiscovery) unlistenDiscovery();
+            if (unlistenDuplicateScan) unlistenDuplicateScan();
         };
     }, []);
 }

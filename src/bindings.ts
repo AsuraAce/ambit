@@ -45,6 +45,17 @@ async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async backfillImageFileHashes(limit: number | null) : Promise<Result<FileHashBackfillResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("backfill_image_file_hashes", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelImageFileHashBackfill() : Promise<void> {
+    await TAURI_INVOKE("cancel_image_file_hash_backfill");
+},
 async refreshBoardsNative(boardMapping: Partial<{ [key in string]: string }>) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("refresh_boards_native", { boardMapping }) };
@@ -460,9 +471,10 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FileEntry = { path: string; modified: number; size: number }
+export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean; hasWorkflowHint?: boolean }
-export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; metadataJson: string; thumbnailPath: string; 
+export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; fileHash: string | null; timestamp: number; metadataJson: string; thumbnailPath: string; 
 /**
  * Base64 encoded 32px WebP micro-thumbnail for instant previews
  */

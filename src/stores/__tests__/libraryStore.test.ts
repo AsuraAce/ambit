@@ -5,7 +5,8 @@ import { rebuildFacetCache } from '../../services/db/imageRepo';
 
 vi.mock('../../bindings', () => ({
     commands: {
-        cancelModelDiscovery: vi.fn().mockResolvedValue(undefined)
+        cancelModelDiscovery: vi.fn().mockResolvedValue(undefined),
+        cancelImageFileHashBackfill: vi.fn().mockResolvedValue(undefined)
     }
 }));
 
@@ -93,5 +94,21 @@ describe('libraryStore live watch session', () => {
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
         expect(rebuildFacetCache).not.toHaveBeenCalled();
+    });
+
+    it('cancels duplicate hashing when an import starts', () => {
+        act(() => {
+            useLibraryStore.getState().setIsScanningDuplicates(true);
+            useLibraryStore.getState().setDuplicateScanProgress({
+                current: 1,
+                total: 10,
+                message: 'Hashing images...'
+            });
+            useLibraryStore.getState().setIsImporting(true);
+        });
+
+        expect(useLibraryStore.getState().isImporting).toBe(true);
+        expect(useLibraryStore.getState().isScanningDuplicates).toBe(false);
+        expect(useLibraryStore.getState().duplicateScanProgress).toBeNull();
     });
 });

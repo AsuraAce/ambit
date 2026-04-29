@@ -106,6 +106,7 @@ export interface AIImage {
   thumbnailSource?: string;
   filename: string;
   fileSize?: number; // Size in bytes, used for duplicate detection
+  fileHash?: string; // SHA-256 content hash for exact duplicate detection
   timestamp: number; // Unix timestamp
   width: number;
   height: number;

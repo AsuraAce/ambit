@@ -19,6 +19,7 @@ type PersistableImageRecord = {
     width: number;
     height: number;
     fileSize: number;
+    fileHash: string | null;
     timestamp: number;
     metadataJson: string;
     thumbnailPath: string | null;
@@ -59,6 +60,7 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     width: image.width,
     height: image.height,
     fileSize: image.fileSize || 0,
+    fileHash: image.fileHash || null,
     timestamp: image.timestamp,
     metadataJson: JSON.stringify(image.metadata),
     thumbnailPath: urlToPath(image.thumbnailUrl),

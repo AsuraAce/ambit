@@ -2,15 +2,25 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useMaintenanceData } from '../useMaintenanceData';
+import { useLibraryStore } from '../../stores/libraryStore';
 
 // --- Mocks ---
 const mockGetDeletedImages = vi.fn().mockResolvedValue([]);
 const mockGetUntaggedImages = vi.fn().mockResolvedValue([]);
 const mockGetDuplicateCandidates = vi.fn().mockResolvedValue([]);
+const mockBackfillImageFileHashes = vi.fn().mockResolvedValue({
+    scanned: 0,
+    updated: 0,
+    missing: 0,
+    errors: 0,
+    remaining: 0,
+    wasCancelled: false
+});
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
     getDeletedImages: () => mockGetDeletedImages(),
     getUntaggedImages: (...args: any[]) => mockGetUntaggedImages(...args),
+    backfillImageFileHashes: () => mockBackfillImageFileHashes(),
     getDuplicateCandidates: (...args: any[]) => mockGetDuplicateCandidates(...args),
     getUnoptimizedImages: vi.fn().mockResolvedValue([]),
     getIntermediateImages: vi.fn().mockResolvedValue([]),
@@ -26,6 +36,7 @@ vi.mock('../useLibraryContext', () => ({
 describe('useMaintenanceData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useLibraryStore.setState(useLibraryStore.getInitialState(), true);
     });
 
     it('should auto-refresh trash on initialization', async () => {
@@ -64,5 +75,6 @@ describe('useMaintenanceData', () => {
         });
 
         expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('', []);
+        expect(mockBackfillImageFileHashes).toHaveBeenCalled();
     });
 });
