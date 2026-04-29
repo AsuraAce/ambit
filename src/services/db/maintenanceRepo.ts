@@ -2,7 +2,7 @@ import { commands, type FileHashBackfillResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import type { AIImage, MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 
@@ -105,7 +105,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
 
     const db = await getDb();
     const rows = await db.select<any[]>(`
-        SELECT ${IMAGE_FIELDS_LIGHT}
+        SELECT ${getImageFieldsLight()}
         FROM images
         WHERE is_missing = 1
           AND is_deleted = 0
@@ -150,6 +150,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: an
 
     const db = await getDb();
     let query = `
+        SELECT ${getImageFieldsLight()} FROM images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
         AND is_deleted = 0
     `;
@@ -175,7 +176,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
 
     const db = await getDb();
     let query = `
-        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
+        SELECT ${getImageFieldsLight()} FROM images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -237,7 +238,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT ${IMAGE_FIELDS_LIGHT} FROM images 
+        SELECT ${getImageFieldsLight()} FROM images
         WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
@@ -398,7 +399,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
                 AND scoped.width = dup.width
                 AND scoped.height = dup.height
         )
-        SELECT ${IMAGE_FIELDS_LIGHT}
+        SELECT ${getImageFieldsLight()}
         FROM images
         WHERE id IN (
             SELECT id FROM exact_duplicate_ids

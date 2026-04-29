@@ -11,8 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 3. These simplified behavioral contracts
  * 
  * The hook:
- * - Defers startup by 5 seconds to avoid blocking app initialization
- * - Checks `getUnoptimizedImagesCount` before starting
+ * - Defers startup by 30 seconds to avoid blocking app initialization
+ * - Fetches candidate entries before showing progress
  * - Pauses when `isImporting`, `isRegeneratingThumbnails`, or `syncStatus === 'syncing'`
  * - Resumes automatically when blocking activities complete
  * - Respects `enableAutoThumbnailHealing` settings flag
@@ -27,14 +27,26 @@ describe('useThumbnailQueue behavioral contract', () => {
     });
 
     it('should have correct startup delay constant', async () => {
-        // The hook source should use a 5 second delay for deferred startup
+        // The hook source should use a 30 second delay for deferred startup
         const fs = await import('fs/promises');
         const path = await import('path');
         const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
         const content = await fs.readFile(hookPath, 'utf-8');
 
         expect(content).toContain('STARTUP_DELAY_MS');
-        expect(content).toContain('5000');
+        expect(content).toContain('30000');
+        expect(content).not.toContain('STARTUP_DELAY_MS = 5000');
+    });
+
+    it('should fetch candidate entries before showing progress', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        expect(content).toContain('getUnoptimizedImageEntries');
+        expect(content).not.toContain('getUnoptimizedImagesCount');
+        expect(content).toContain('total: 0');
     });
 
     it('should check settings for enableAutoThumbnailHealing', async () => {
@@ -67,5 +79,6 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('isImporting');
         expect(content).toContain('isRegeneratingThumbnails');
         expect(content).toContain('syncStatus');
+        expect(content).toContain("queryKey: ['images']");
     });
 });

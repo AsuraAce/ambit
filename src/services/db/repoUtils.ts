@@ -1,89 +1,138 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage } from '../../types';
-import { cleanModelName } from '../invoke/metadataMapper';
+import { AIImage, GeneratorTool, ImageMetadata, OriginalState } from '../../types';
 
-// Lightweight column set for grid/listing views
-// Lightweight column set for grid/listing views
-// NOTE: We EXCLUDE full metadata_json to save RAM (10KB-100KB per image).
-// We rely on denormalized columns for the grid info (Model, Tool, etc.)
-export const IMAGE_FIELDS_LIGHT = `
-    images.id, images.path, images.width, images.height, images.file_size, images.timestamp, images.thumbnail_path, images.micro_thumbnail, images.thumbnail_source,
-    images.is_favorite, images.is_pinned, images.is_deleted, images.is_missing, images.user_masked, images.group_id, images.board_id, images.notes,
-    images.original_parsed_json,
-    images.model_name, images.model_hash, images.tool, images.resolved_model_name, images.file_hash
-`;
+// Lightweight column set for grid/listing views. Keep this scalar-only: large
+// JSON blobs are loaded by detail/viewer flows on demand.
+export const getImageFieldsLight = (alias = 'images'): string => {
+    const prefix = alias ? `${alias}.` : '';
+    return `
+        ${prefix}id, ${prefix}path, ${prefix}width, ${prefix}height, ${prefix}file_size, ${prefix}timestamp,
+        ${prefix}thumbnail_path, ${prefix}micro_thumbnail, ${prefix}thumbnail_source,
+        ${prefix}is_favorite, ${prefix}is_pinned, ${prefix}is_deleted, ${prefix}is_missing, ${prefix}is_corrupt,
+        ${prefix}user_masked, ${prefix}group_id, ${prefix}board_id, ${prefix}notes,
+        ${prefix}is_intermediate_gen, ${prefix}is_grid_gen,
+        ${prefix}model_name, ${prefix}model_hash, ${prefix}tool, ${prefix}resolved_model_name, ${prefix}file_hash,
+        ${prefix}steps, ${prefix}cfg, ${prefix}sampler, ${prefix}generation_type,
+        ${prefix}positive_prompt, ${prefix}negative_prompt
+    `;
+};
+
+export const getImageFieldsFull = (alias = 'images'): string => {
+    const prefix = alias ? `${alias}.` : '';
+    return `
+        ${getImageFieldsLight(alias)},
+        ${prefix}metadata_json, ${prefix}original_metadata_json, ${prefix}original_parsed_json, ${prefix}original_state_json
+    `;
+};
 
 export const REMOVED_IMAGE_FIELDS = `
     id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source,
     is_favorite, is_pinned, 0 as is_deleted, is_missing, user_masked, group_id, board_id, notes,
+    0 as is_intermediate_gen, 0 as is_grid_gen,
     original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
-    NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name
+    NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
+    NULL as steps, NULL as cfg, NULL as sampler, NULL as generation_type,
+    NULL as positive_prompt, NULL as negative_prompt
 `;
 
+type ImageRow = Record<string, unknown>;
+
+const asString = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.length > 0 ? value : undefined;
+
+const asNumber = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : (typeof value === 'string' && value !== '' && Number.isFinite(Number(value)) ? Number(value) : undefined);
+
+const asBoolean = (value: unknown): boolean =>
+    value === true || value === 1 || value === '1';
+
+const parseJson = <T>(value: unknown): T | undefined => {
+    if (typeof value !== 'string' || value.length === 0) return undefined;
+    return JSON.parse(value) as T;
+};
+
+const buildLightMetadata = (row: ImageRow): ImageMetadata => ({
+    tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
+    model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
+    seed: 0,
+    steps: asNumber(row.steps) ?? 0,
+    cfg: asNumber(row.cfg) ?? 0,
+    sampler: asString(row.sampler) || 'Unknown',
+    positivePrompt: asString(row.positive_prompt) || '',
+    negativePrompt: asString(row.negative_prompt) || '',
+    modelHash: asString(row.model_hash),
+    generationType: (asString(row.generation_type) || 'unknown') as ImageMetadata['generationType'],
+    isGrid: asBoolean(row.is_grid_gen),
+    isIntermediate: asBoolean(row.is_intermediate_gen)
+});
+
 // Helper to keep mapping consistent
-export function mapRowToImage(row: any): AIImage {
-    const normalizedPath = normalizePath(row.path);
-    const thumbPath = row.thumbnail_path ? normalizePath(row.thumbnail_path) : null;
+export function mapRowToImage(row: ImageRow): AIImage {
+    const normalizedPath = normalizePath(asString(row.path) || asString(row.id) || '');
+    const thumbValue = asString(row.thumbnail_path);
+    const thumbPath = thumbValue ? normalizePath(thumbValue) : null;
 
-    let metadata: any = {};
+    let metadata = parseJson<ImageMetadata>(row.metadata_json) || buildLightMetadata(row);
 
-    if (row.metadata_json) {
-        // Full Load (Details View): Parse everything
-        // We no longer strip workflowJson here, assuming if we requested the JSON, we want the data.
-        metadata = JSON.parse(row.metadata_json);
-    } else {
-        // Light Load (Grid View): Construct sparse metadata from columns
-        metadata = {
-            model: row.resolved_model_name || row.model_name || 'Unknown',
-            modelHash: row.model_hash,
-            tool: row.tool || 'Unknown'
-        };
-    }
-
-    // Ensure model is set if we have the resolved column (priority)
-    if (row.resolved_model_name) {
-        metadata.model = row.resolved_model_name;
-    }
+    // Ensure model/tool and prompt basics exist even for older/full rows with sparse JSON.
+    metadata = {
+        ...buildLightMetadata(row),
+        ...metadata,
+        model: asString(row.resolved_model_name) || metadata.model || asString(row.model_name) || 'Unknown',
+        modelHash: metadata.modelHash || asString(row.model_hash),
+        tool: (metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
+        positivePrompt: metadata.positivePrompt || asString(row.positive_prompt) || '',
+        negativePrompt: metadata.negativePrompt || asString(row.negative_prompt) || ''
+    };
 
     const result: AIImage = {
-        id: row.id,
+        id: asString(row.id) || normalizedPath,
         url: convertFileSrc(normalizedPath),
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
-        microThumbnail: row.micro_thumbnail || undefined,
-        thumbnailSource: row.thumbnail_source || undefined,
+        microThumbnail: asString(row.micro_thumbnail),
+        thumbnailSource: asString(row.thumbnail_source),
         filename: getFilename(normalizedPath),
-        fileSize: row.file_size,
-        fileHash: row.file_hash || undefined,
-        timestamp: row.timestamp,
-        width: row.width,
-        height: row.height,
-        isFavorite: !!row.is_favorite,
-        isPinned: !!row.is_pinned,
-        isDeleted: !!row.is_deleted,
-        isMissing: !!row.is_missing,
+        fileSize: asNumber(row.file_size),
+        fileHash: asString(row.file_hash),
+        timestamp: asNumber(row.timestamp) ?? 0,
+        width: asNumber(row.width) ?? 0,
+        height: asNumber(row.height) ?? 0,
+        isFavorite: asBoolean(row.is_favorite),
+        isPinned: asBoolean(row.is_pinned),
+        isDeleted: asBoolean(row.is_deleted),
+        isMissing: asBoolean(row.is_missing),
+        isCorrupt: asBoolean(row.is_corrupt),
         userMasked: row.user_masked === 1 ? true : (row.user_masked === 0 ? false : undefined),
-        groupId: row.group_id,
-        boardId: row.board_id,
-        notes: row.notes,
-        isIntermediate: row.is_intermediate_gen === 1 || row.is_intermediate_gen === true || row.is_intermediate_gen === '1',
-        metadata: metadata,
-        // Populate raw chunks for re-parsing (CRITICAL for Force Refresh logic)
-        originalChunks: row.original_metadata_json ? JSON.parse(row.original_metadata_json) : undefined,
-        // Read the parsed baseline directly from DB - no re-parsing needed
-        // This eliminates parser drift between Rust and TypeScript
-        originalMetadata: row.original_parsed_json ? JSON.parse(row.original_parsed_json) : undefined,
-        originalState: row.original_state_json ? JSON.parse(row.original_state_json) : undefined
+        groupId: asString(row.group_id),
+        boardId: asString(row.board_id),
+        notes: asString(row.notes),
+        isIntermediate: asBoolean(row.is_intermediate_gen),
+        metadata,
+        originalChunks: parseJson<Record<string, string>>(row.original_metadata_json),
+        originalMetadata: parseJson<ImageMetadata>(row.original_parsed_json),
+        originalState: parseJson<OriginalState>(row.original_state_json)
     };
 
     // FALLBACK: If metadata is very sparse (missing props from json_extract usually)
     // and we have originalMetadata, use it as a base.
     // We check if it only contains the 'light' load fields (model, tool, hash).
-    const isSparse = !result.metadata.positivePrompt && !result.metadata.sampler && (!result.metadata.steps || result.metadata.steps === 0);
+    const isSparse = !result.metadata.positivePrompt
+        && (!result.metadata.sampler || result.metadata.sampler === 'Unknown')
+        && (!result.metadata.steps || result.metadata.steps === 0);
     if (isSparse && result.originalMetadata) {
+        const current = result.metadata;
         result.metadata = {
             ...result.originalMetadata,
-            ...result.metadata // Overlays current sparse metadata (which might have tool/model)
+            ...current, // Overlays current sparse metadata (which might have tool/model)
+            positivePrompt: current.positivePrompt || result.originalMetadata.positivePrompt,
+            negativePrompt: current.negativePrompt || result.originalMetadata.negativePrompt,
+            sampler: current.sampler && current.sampler !== 'Unknown' ? current.sampler : result.originalMetadata.sampler,
+            steps: current.steps || result.originalMetadata.steps,
+            cfg: current.cfg || result.originalMetadata.cfg,
+            seed: current.seed || result.originalMetadata.seed
         };
     }
 

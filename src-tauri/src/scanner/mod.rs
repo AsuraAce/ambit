@@ -12,8 +12,17 @@ use std::path::Path;
 // Custom Rayon pool with larger stack size (8MB) to prevent overflows in deep recursions
 // or deep JSON/PNG structures.
 static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
+    let available_threads = std::thread::available_parallelism()
+        .map(|threads| threads.get())
+        .unwrap_or(2);
+    let scan_threads = if available_threads <= 2 {
+        1
+    } else {
+        std::cmp::min(4, available_threads.saturating_sub(1))
+    };
+
     rayon::ThreadPoolBuilder::new()
-        //.num_threads(12) // REMOVED: limit to allow full CPU utilization
+        .num_threads(scan_threads)
         .stack_size(8 * 1024 * 1024)
         .build()
         .unwrap()
@@ -55,8 +64,7 @@ pub async fn scan_images_bulk(
             let total = paths.len();
             let parsed_count = std::sync::atomic::AtomicUsize::new(0);
 
-            // Use par_iter for parallel processing
-            // The SCAN_POOL is configured with 12 threads to handle I/O bound work
+            // Use par_iter for bounded parallel processing.
             let results: Vec<ScanResult> = paths
                 .par_iter()
                 .map(|path| {

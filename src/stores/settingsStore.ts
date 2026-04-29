@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     resourceViewModes: {},
     hideImportModal: false,
     enableAutoThumbnailHealing: true,
-    enforceHighQualityThumbnails: true,
+    enforceHighQualityThumbnails: false,
     logLevel: 'info'
 };
 
