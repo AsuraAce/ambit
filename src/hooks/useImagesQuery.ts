@@ -119,6 +119,7 @@ export const useImagesQuery = ({
             const hasImages = (previousData?.pages[0]?.images.length ?? 0) > 0;
             return hasImages ? previousData : undefined;
         },
+        gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
 };

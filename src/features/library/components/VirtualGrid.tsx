@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { useEffect, useState, useRef, useLayoutEffect, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { LayoutMode } from '../../../types';
 import { calculateLayout, LayoutResult } from '../../../services/layoutEngine';
 
@@ -47,6 +47,7 @@ const VirtualGridInternal = <T extends { id: string }>(
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
+  const [gridOffset, setGridOffset] = useState(0);
 
   // --- Visual State for Selection Box ---
   const [dragBox, setDragBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
@@ -58,6 +59,29 @@ const VirtualGridInternal = <T extends { id: string }>(
   const onEndReachedRef = useRef(onEndReached);
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const gridOffsetRef = useRef(0);
+  const gridOffsetRafRef = useRef<number | null>(null);
+
+  const measureGridOffset = useCallback(() => {
+    if (!containerRef.current) return;
+
+    const off = containerRef.current.offsetTop;
+    if (off !== gridOffsetRef.current) {
+      gridOffsetRef.current = off;
+      setGridOffset(off);
+    }
+  }, []);
+
+  const scheduleGridOffsetMeasure = useCallback(() => {
+    if (gridOffsetRafRef.current !== null) {
+      cancelAnimationFrame(gridOffsetRafRef.current);
+    }
+
+    gridOffsetRafRef.current = requestAnimationFrame(() => {
+      gridOffsetRafRef.current = null;
+      measureGridOffset();
+    });
+  }, [measureGridOffset]);
 
   useEffect(() => {
     onRangeSelectionRef.current = onRangeSelection;
@@ -93,6 +117,7 @@ const VirtualGridInternal = <T extends { id: string }>(
             if (Math.abs(prev - newWidth) < 1) return prev;
             return newWidth;
           });
+          scheduleGridOffsetMeasure();
         });
       }
     });
@@ -102,7 +127,7 @@ const VirtualGridInternal = <T extends { id: string }>(
       observer.disconnect();
       cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [scheduleGridOffsetMeasure]);
 
   // Track scroll position with requestAnimationFrame
   useEffect(() => {
@@ -115,24 +140,8 @@ const VirtualGridInternal = <T extends { id: string }>(
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        // We track both scrollTop AND the grid's offset within the container
-        // This is crucial if there are elements above the grid (like PinnedShelf)
         setScrollTop(scrollContainer.scrollTop);
-
-        if (containerRef.current) {
-          const offset = containerRef.current.offsetTop;
-          // Store it in a ref to avoid re-renders if it hasn't changed? 
-          // Actually, we need it for render. 
-          // Let's use a state for simplicity or update the value used in render.
-          // Given React 18 batching, separate state is fine, but maybe inconsistent?
-          // Let's just assume simple state for now. We can optimize if needed.
-          // ACTUALLY, we can't easily set state in RAF loop without causing thrashing if it changes often during animation.
-          // BUT scroll updates happen often too.
-          // We'll trust React.
-          // For now, let's just make sure we capture it.
-          // Optimization: checking offsetTop might cause reflow. 
-          // But valid correctness is priority #1.
-        }
+        scheduleGridOffsetMeasure();
 
         // Infinite Scroll Trigger
         const { scrollHeight, clientHeight, scrollTop } = scrollContainer;
@@ -158,58 +167,7 @@ const VirtualGridInternal = <T extends { id: string }>(
       scrollContainer.removeEventListener('scroll', handleScroll);
       cancelAnimationFrame(rafId);
     };
-  }, [scrollContainerRef]);
-
-  // We need to know specific offsetTop for rendering.
-  const [gridOffset, setGridOffset] = useState(0);
-  const gridOffsetRef = useRef(0);
-
-  // Measure initial offset and handle shifts
-  useLayoutEffect(() => {
-    if (!containerRef.current) return;
-
-    const measure = () => {
-      if (containerRef.current) {
-        const off = containerRef.current.offsetTop;
-        if (off !== gridOffsetRef.current) {
-          gridOffsetRef.current = off;
-          setGridOffset(off);
-        }
-      }
-    };
-
-    measure();
-
-    // Also poll for changes caused by layout shifts above us (like PinnedShelf collapsing)
-    let rafId: number;
-    const loop = () => {
-      measure();
-      rafId = requestAnimationFrame(loop);
-    };
-    rafId = requestAnimationFrame(loop);
-
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-  // Wait, dependency gridOffset causes loop re-creation every update. Better to use ref for logic check.
-
-  // Revised Loop:
-  /*
-  useEffect(() => {
-    let rafId: number;
-    const checkOffset = () => {
-        if(containerRef.current) {
-            const off = containerRef.current.offsetTop;
-            setGridOffset(prev => {
-                if (prev !== off) return off;
-                return prev;
-            });
-        }
-        rafId = requestAnimationFrame(checkOffset);
-    }
-    checkOffset();
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-  */
+  }, [scrollContainerRef, scheduleGridOffsetMeasure]);
 
   // --- Layout Engine Integration ---
   const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
@@ -224,6 +182,31 @@ const VirtualGridInternal = <T extends { id: string }>(
     });
     return result;
   }, [items, layout, containerWidth, minItemWidth, gap, padding, getItemRatio]);
+
+  useLayoutEffect(() => {
+    scheduleGridOffsetMeasure();
+
+    let frame = 0;
+    let rafId: number;
+    const settle = () => {
+      measureGridOffset();
+      frame += 1;
+      if (frame < 12) {
+        rafId = requestAnimationFrame(settle);
+      }
+    };
+
+    rafId = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(rafId);
+  }, [items.length, layout, totalHeight, scheduleGridOffsetMeasure, measureGridOffset]);
+
+  useEffect(() => {
+    return () => {
+      if (gridOffsetRafRef.current !== null) {
+        cancelAnimationFrame(gridOffsetRafRef.current);
+      }
+    };
+  }, []);
 
   // Sync positions for event handlers and imperative handle
   useEffect(() => {
@@ -498,8 +481,7 @@ const VirtualGridInternal = <T extends { id: string }>(
           width: pos.width,
           height: pos.height,
 
-          transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`,
-          willChange: 'transform' // Hint to browser to promote layer
+          transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`
         }, i, { x: pos.left, y: pos.top, width: pos.width, height: pos.height })
       );
     }

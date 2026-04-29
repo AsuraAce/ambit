@@ -60,6 +60,15 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().geminiApiKey).toBe('secure-key');
     });
 
+    it('should default high quality thumbnail upgrades to off', async () => {
+        (appRepository.load as any).mockResolvedValue({ settings: {} });
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.enableAutoThumbnailHealing).toBe(true);
+        expect(useSettingsStore.getState().settings.enforceHighQualityThumbnails).toBe(false);
+    });
+
     it('should migrate legacy API key from library.json to keyring', async () => {
         const legacySettings = {
             googleGeminiApiKey: 'legacy-key',

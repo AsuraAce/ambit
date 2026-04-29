@@ -29,6 +29,94 @@ describe('imageRepo batch removal', () => {
         vi.clearAllMocks();
     });
 
+    it('loads full metadata columns for ID lookups used by sync flows', async () => {
+        const id = 'C:/images/synced.png';
+        const metadata = {
+            tool: 'InvokeAI',
+            model: 'Invoke Model',
+            seed: 123,
+            steps: 24,
+            cfg: 6.5,
+            sampler: 'dpmpp',
+            positivePrompt: 'edited prompt',
+            negativePrompt: '',
+            workflowJson: '{"nodes":[]}',
+            loras: ['detail.safetensors'],
+        };
+        const originalMetadata = {
+            ...metadata,
+            positivePrompt: 'original prompt',
+            workflowJson: undefined,
+            loras: undefined,
+        };
+        const originalChunks = {
+            invokeai_metadata: JSON.stringify({ positive_prompt: 'raw prompt' }),
+        };
+        const originalState = {
+            isFavorite: true,
+            isPinned: false,
+            boardId: 'board-a',
+        };
+
+        const db = {
+            select: vi.fn(async () => [{
+                id,
+                path: id,
+                width: 512,
+                height: 768,
+                file_size: 2048,
+                file_hash: 'hash-a',
+                timestamp: 1700000000000,
+                thumbnail_path: 'C:/thumbs/synced.webp',
+                micro_thumbnail: null,
+                thumbnail_source: 'ambit',
+                is_favorite: 1,
+                is_pinned: 0,
+                is_deleted: 0,
+                is_missing: 0,
+                is_corrupt: 0,
+                user_masked: null,
+                group_id: null,
+                board_id: 'board-a',
+                notes: null,
+                is_intermediate_gen: 0,
+                is_grid_gen: 0,
+                model_name: 'Invoke Model',
+                model_hash: 'hash-model',
+                tool: 'InvokeAI',
+                resolved_model_name: 'Invoke Model',
+                steps: 24,
+                cfg: 6.5,
+                sampler: 'dpmpp',
+                generation_type: 'txt2img',
+                positive_prompt: 'edited prompt',
+                negative_prompt: '',
+                metadata_json: JSON.stringify(metadata),
+                original_metadata_json: JSON.stringify(originalChunks),
+                original_parsed_json: JSON.stringify(originalMetadata),
+                original_state_json: JSON.stringify(originalState),
+            }]),
+            execute: vi.fn(),
+        };
+
+        getDbMock.mockResolvedValue(db);
+
+        const { getImagesByIds } = await import('../imageRepo');
+        const images = await getImagesByIds([id]);
+
+        const sql = db.select.mock.calls[0][0] as string;
+        expect(sql).toContain('images.metadata_json');
+        expect(sql).toContain('images.original_metadata_json');
+        expect(sql).toContain('images.original_parsed_json');
+        expect(sql).toContain('images.original_state_json');
+        expect(images[0].metadata.positivePrompt).toBe('edited prompt');
+        expect(images[0].metadata.workflowJson).toBe('{"nodes":[]}');
+        expect(images[0].metadata.loras).toEqual(['detail.safetensors']);
+        expect(images[0].originalMetadata?.positivePrompt).toBe('original prompt');
+        expect(images[0].originalChunks?.invokeai_metadata).toBe(JSON.stringify({ positive_prompt: 'raw prompt' }));
+        expect(images[0].originalState).toEqual(originalState);
+    });
+
     it('chunks multi-image library removal so large selections do not exceed sqlite parameter limits', async () => {
         const ids = Array.from({ length: 1001 }, (_, index) => `C:/images/${index}.png`);
         const imageRowsById = new Map(ids.map((id, index) => [id, {

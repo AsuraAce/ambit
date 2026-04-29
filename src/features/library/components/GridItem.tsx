@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { memo, useRef } from 'react';
-import { motion } from 'framer-motion';
 import { AIImage } from '../../../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
@@ -31,7 +30,6 @@ interface GridItemProps {
 export const GridItem: React.FC<GridItemProps> = memo(({
     image,
     style,
-    layoutPos,
     index,
     isSelected,
     selectedIds, // Passed for multi-select logic if needed
@@ -117,32 +115,10 @@ export const GridItem: React.FC<GridItemProps> = memo(({
 
     const isStack = image.stack && image.stack.length > 1;
 
-    // Separate transform from style to let motion handle it
-    const { transform, ...restStyle } = style;
-
     return (
-        <motion.div
-            style={{ ...restStyle }}
-            layoutId={`card-${image.id}`}
-            // initial={{ opacity: 0, scale: 0.9 }} // Disabled to prevent flicker during scroll
-            initial={false}
-            animate={{
-                x: layoutPos?.x || 0,
-                y: layoutPos?.y || 0,
-                zIndex: isSelected ? 10 : 1,
-                opacity: 1,
-                scale: 1
-            }}
-            transition={{
-                layout: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                x: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                y: { type: "spring", stiffness: 350, damping: 25, mass: 1 },
-                opacity: { duration: 0.4, ease: "easeOut" },
-                scale: { duration: 0.4, ease: "easeOut" }
-            }}
-
-            whileHover={{ transition: { duration: 0.2, ease: "easeOut" } }}
-            className="group/griditem absolute top-0 left-0" // Force absolute here as we stripped it or rely on style
+        <div
+            style={{ ...style, zIndex: isSelected ? 10 : 1 }}
+            className="group/griditem absolute top-0 left-0"
         >
             {/* ... stack layers omitted for clarity in chunk ... */}
             {isStack && (
@@ -198,7 +174,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                     </div>
                 )}
             </div>
-        </motion.div>
+        </div>
     );
 }, (prev, next) => {
     return (

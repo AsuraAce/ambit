@@ -1,6 +1,6 @@
 import { AIImage, Collection, FacetType, FilterState } from '../../types';
 import { getDb } from './connection';
-import { mapRowToImage, IMAGE_FIELDS_LIGHT } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 
 export interface LibraryStats {
@@ -191,7 +191,7 @@ export const searchImages = async (
     // For combined Collection + LoRA searches
     if (collectionId && loraName) {
         const query = `
-            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            SELECT ${getImageFieldsLight()}
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN images ON images.id = ci.image_id
@@ -207,7 +207,7 @@ export const searchImages = async (
     // For collection-filtered searches
     if (collectionId) {
         const query = `
-            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            SELECT ${getImageFieldsLight()}
             FROM collection_images ci
             CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
@@ -223,7 +223,7 @@ export const searchImages = async (
     // Same logic: force scanning the junction table first.
     if (loraName) {
         const query = `
-            SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+            SELECT ${getImageFieldsLight()}
             FROM image_loras il
             CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
@@ -246,7 +246,7 @@ export const searchImages = async (
     const sortIndex = selectImageSortIndex(finalWhere, sortField);
     const fromClause = sortIndex ? `FROM images INDEXED BY ${sortIndex}` : 'FROM images';
     const query = `
-        SELECT ${IMAGE_FIELDS_LIGHT}, resolved_model_name
+        SELECT ${getImageFieldsLight()}
         ${fromClause}
         ${finalWhere} 
         ${cursorWhere}

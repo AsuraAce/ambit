@@ -7,7 +7,6 @@ import { LibraryProvider } from './contexts/LibraryContext';
 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,6 +18,12 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const ReactQueryDevtools = React.lazy(() =>
+  import('@tanstack/react-query-devtools').then(({ ReactQueryDevtools }) => ({
+    default: ReactQueryDevtools
+  }))
+);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -35,7 +40,11 @@ root.render(
             <App />
           </ErrorBoundary>
         </LibraryProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
+        {import.meta.env.DEV && (
+          <React.Suspense fallback={null}>
+            <ReactQueryDevtools initialIsOpen={false} />
+          </React.Suspense>
+        )}
       </QueryClientProvider>
     </ToastProvider>
   </React.StrictMode>

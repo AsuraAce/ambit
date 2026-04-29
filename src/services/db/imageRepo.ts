@@ -2,7 +2,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import {
     debugLiveWatchPerf,
@@ -418,8 +418,8 @@ export const getAllImages = async (
     }
 
     const query = limit
-        ? `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash ${filterClauses} ${orderBy}`;
+        ? `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<any[]>(query);
     return rows.map(mapRowToImage);
@@ -440,7 +440,7 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${IMAGE_FIELDS_LIGHT}, m.name as resolved_model_name FROM images LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash WHERE images.id IN (${placeholders})`;
+        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})`;
         const rows = await db.select<any[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
