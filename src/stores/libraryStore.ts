@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { commands, type FileHashBackfillResult } from '../bindings';
+import type { MissingFileAuditResult } from '../types';
 
 let liveWatchTimeout: ReturnType<typeof setTimeout> | null = null;
 const LIVE_WATCH_IDLE_TIMEOUT_MS = 60000;
@@ -133,6 +134,12 @@ interface LibraryState {
     duplicateScanScope: DuplicateScanScope;
     lastDuplicateScanResult: FileHashBackfillResult | null;
 
+    // Missing File Audit State
+    isScanningMissingFiles: boolean;
+    missingScanProgress: SyncProgress | null;
+    missingScanAbortController: AbortController | null;
+    lastMissingScanResult: MissingFileAuditResult | null;
+
     // Background Auto-Healing State
     isBackgroundHealingActive: boolean;
     backgroundHealingProgress: SyncProgress | null;
@@ -180,6 +187,11 @@ interface LibraryState {
     setDuplicateScanScope: (scope: DuplicateScanScope) => void;
     setLastDuplicateScanResult: (result: FileHashBackfillResult | null) => void;
     cancelDuplicateScan: () => void;
+    setIsScanningMissingFiles: (val: boolean) => void;
+    setMissingScanProgress: (progress: SyncProgress | null) => void;
+    setMissingScanAbortController: (ctrl: AbortController | null) => void;
+    setLastMissingScanResult: (result: MissingFileAuditResult | null) => void;
+    cancelMissingScan: () => void;
     incrementFacetCacheVersion: () => void;
 
     // Background Healing Actions
@@ -234,6 +246,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     duplicateScanProgress: null,
     duplicateScanScope: 'global',
     lastDuplicateScanResult: null,
+    isScanningMissingFiles: false,
+    missingScanProgress: null,
+    missingScanAbortController: null,
+    lastMissingScanResult: null,
     facetCacheVersion: 0,
 
     // Background Healing State
@@ -266,9 +282,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     setIsImporting: (val) => {
         if (val) {
-            const { isScanningDuplicates, cancelDuplicateScan } = useLibraryStore.getState();
+            const { isScanningDuplicates, cancelDuplicateScan, isScanningMissingFiles, cancelMissingScan } = useLibraryStore.getState();
             if (isScanningDuplicates) {
                 cancelDuplicateScan();
+            }
+            if (isScanningMissingFiles) {
+                cancelMissingScan();
             }
         }
         set({ isImporting: val, isActivityDockDismissed: val ? false : undefined });
@@ -313,6 +332,16 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         commands.cancelImageFileHashBackfill().catch(console.error);
         set({ isScanningDuplicates: false, duplicateScanProgress: null });
     },
+    setIsScanningMissingFiles: (val) => set({ isScanningMissingFiles: val, isActivityDockDismissed: val ? false : undefined }),
+    setMissingScanProgress: (progress) => set({ missingScanProgress: progress }),
+    setMissingScanAbortController: (ctrl) => set({ missingScanAbortController: ctrl }),
+    setLastMissingScanResult: (result) => set({ lastMissingScanResult: result }),
+    cancelMissingScan: () => set((state) => {
+        if (state.missingScanAbortController) {
+            state.missingScanAbortController.abort();
+        }
+        return { isScanningMissingFiles: false, missingScanProgress: null };
+    }),
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 
     // Background Healing Actions

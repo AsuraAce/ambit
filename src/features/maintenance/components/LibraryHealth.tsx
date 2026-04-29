@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
+import { useLibraryStore } from '../../../stores/libraryStore';
 
 interface LibraryHealthProps {
     mode?: 'compact' | 'detailed';
@@ -11,33 +12,59 @@ interface LibraryHealthProps {
 
 const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', onNavigateToMaintenance, onScanComplete }) => {
     const { refreshMaintenanceCounts } = useLibraryContext();
-    const [status, setStatus] = useState<'idle' | 'running' | 'done'>('idle');
     const [pruningStatus, setPruningStatus] = useState<'idle' | 'running' | 'done'>('idle');
-    const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'done'>('idle');
-    const [result, setResult] = useState<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] } | null>(null);
-    const [progress, setProgress] = useState(0);
+    const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
+    const missingScanProgress = useLibraryStore(s => s.missingScanProgress);
+    const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
+    const setIsScanningMissingFiles = useLibraryStore(s => s.setIsScanningMissingFiles);
+    const setMissingScanProgress = useLibraryStore(s => s.setMissingScanProgress);
+    const setMissingScanAbortController = useLibraryStore(s => s.setMissingScanAbortController);
+    const setLastMissingScanResult = useLibraryStore(s => s.setLastMissingScanResult);
+    const result = lastMissingScanResult;
+    const status: 'idle' | 'running' | 'done' = isScanningMissingFiles ? 'running' : result ? 'done' : 'idle';
+    const progress = missingScanProgress?.total ? Math.round((missingScanProgress.current / missingScanProgress.total) * 100) : 0;
 
     useEffect(() => {
         void refreshMaintenanceCounts();
     }, [refreshMaintenanceCounts]);
 
     const handleVerify = async () => {
-        setStatus('running');
+        if (isScanningMissingFiles) return;
+
+        const abortController = new AbortController();
+        const isCurrentAudit = () => useLibraryStore.getState().missingScanAbortController === abortController;
         setPruningStatus('idle');
-        setResult(null);
-        setProgress(0);
+        setLastMissingScanResult(null);
+        setMissingScanAbortController(abortController);
+        setIsScanningMissingFiles(true);
+        setMissingScanProgress({
+            current: 0,
+            total: 0,
+            message: 'Preparing missing file audit...'
+        });
         if (onScanComplete) onScanComplete([]);
         try {
             const { verifyLibraryIntegrity } = await import('../../../services/db/maintenanceRepo');
             const res = await verifyLibraryIntegrity((curr, total) => {
-                setProgress(Math.round((curr / total) * 100));
-            });
-            setResult(res);
-            setStatus('done');
-            if (onScanComplete) onScanComplete(res.missingIds);
+                if (!isCurrentAudit() || abortController.signal.aborted) return;
+                setMissingScanProgress({
+                    current: curr,
+                    total,
+                    message: 'Checking file paths for missing images...'
+                });
+            }, abortController.signal);
+            if (isCurrentAudit()) {
+                setLastMissingScanResult(res);
+                await refreshMaintenanceCounts();
+            }
         } catch (e) {
             console.error(e);
-            setStatus('idle');
+        } finally {
+            if (isCurrentAudit()) {
+                setIsScanningMissingFiles(false);
+                setMissingScanProgress(null);
+                setMissingScanAbortController(null);
+            }
         }
     };
 
@@ -151,7 +178,9 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                 <h4 className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-4">Audit Summary</h4>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-white dark:bg-white/5 p-4 rounded-xl border border-gray-100 dark:border-white/5">
-                                        <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums">{result.scanned.toLocaleString()}</div>
+                                        <div className="text-2xl font-black text-gray-900 dark:text-white tabular-nums">
+                                            {result.scanned.toLocaleString()}{result.wasCancelled && result.total > result.scanned ? ` / ${result.total.toLocaleString()}` : ''}
+                                        </div>
                                         <div className="text-[10px] font-bold text-gray-400 uppercase">Images Scanned</div>
                                     </div>
                                     <div className={`p-4 rounded-xl border transition-colors ${result.missingIds.length > 0 ? 'bg-red-500/5 border-red-500/20' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
@@ -162,6 +191,12 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                     </div>
                                 </div>
                             </div>
+
+                            {result.wasCancelled && (
+                                <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                                    Audit cancelled. Showing partial results from the paths already checked.
+                                </p>
+                            )}
 
                             {result.missingIds.length > 0 && (
                                 <div className="space-y-3">

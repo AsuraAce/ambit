@@ -67,6 +67,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const storedDuplicateScanScope = useLibraryStore(s => s.duplicateScanScope);
     const lastDuplicateScanResult = useLibraryStore(s => s.lastDuplicateScanResult);
     const cancelDuplicateScan = useLibraryStore(s => s.cancelDuplicateScan);
+    const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
     const { activeSqlWhere, activeSqlParams } = useLibraryContext();
 
     // Scopes
@@ -93,21 +94,20 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         localUntaggedImages,
         localUnoptimizedImages,
         localDuplicateCandidates,
+        localMissingImages,
         localIntermediateImages,
         unoptimizedTotalCount,
         refreshData,
+        setLocalMissingImages
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
     // --- Computed Data ---
     const activeImages = useMemo(() => images.filter(img => !img.isDeleted), [images]);
 
     const missingImages = useMemo(() => {
-        const uniquePool = Array.from(new Map([...images, ...fetchedMissingImages].map(item => [item.id, item])).values());
-        if (scanMissingIds.size > 0) {
-            return uniquePool.filter(img => scanMissingIds.has(img.id) && !img.isDeleted);
-        }
-        return uniquePool.filter(img => img.isMissing && !img.isDeleted);
-    }, [images, fetchedMissingImages, scanMissingIds]);
+        const uniquePool = Array.from(new Map([...localMissingImages, ...fetchedMissingImages].map(item => [item.id, item])).values());
+        return uniquePool.filter(img => !img.isDeleted);
+    }, [localMissingImages, fetchedMissingImages]);
 
     // Define the current list for selection logic
     const currentList = useMemo(() => {
@@ -160,7 +160,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         }
     }, [activeTab, isScanningDuplicates, lastDuplicateScanResult, storedDuplicateScanScope]);
 
-    const handleScanComplete = async (ids: string[]) => {
+    const handleScanComplete = useCallback(async (ids: string[]) => {
         setScanMissingIds(new Set(ids));
         if (ids.length > 0) {
             try {
@@ -173,7 +173,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         } else {
             setFetchedMissingImages([]);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (!lastMissingScanResult) return;
+        void handleScanComplete(lastMissingScanResult.missingIds);
+    }, [lastMissingScanResult, handleScanComplete]);
 
     // Wrapper for selection to match expected signature in sub-components if needed
     // Most subcomponents expect `onItemClick: (id, index, e) => void`
@@ -225,12 +230,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 await onDeleteFile(ids);
             }
 
-            const scope = activeTab === 'untagged' ? untaggedScope :
+            const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
                 activeTab === 'thumbnails' ? thumbnailsScope :
                     activeTab === 'duplicates' ? duplicatesScope :
                         activeTab === 'intermediates' ? intermediatesScope : 'global';
 
-            await refreshData(activeTab, false, { scope: scope as any });
+            await refreshData(activeTab, false, { scope });
 
             if (activeTab === 'missing') {
                 setScanMissingIds(prev => {
@@ -239,6 +244,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     return next;
                 });
                 setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+                setLocalMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
             }
             clearSelection();
         } finally {
@@ -255,6 +261,46 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setScanMissingIds(new Set());
         setFetchedMissingImages([]);
     };
+
+    const handleViewerCleanup = useCallback(async () => {
+        if (!viewingImageId || activeTab === 'trash') return;
+
+        const id = viewingImageId;
+        await onRemoveFromLibrary([id]);
+        setViewingImageId(null);
+
+        if (activeTab === 'missing') {
+            setScanMissingIds(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+            setFetchedMissingImages(prev => prev.filter(img => img.id !== id));
+            setLocalMissingImages(prev => prev.filter(img => img.id !== id));
+        }
+
+        const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
+            activeTab === 'thumbnails' ? thumbnailsScope :
+                activeTab === 'duplicates' ? duplicatesScope :
+                    activeTab === 'intermediates' ? intermediatesScope : 'global';
+
+        await refreshData(activeTab, false, {
+            scope,
+            includeUpgradeable: activeTab === 'thumbnails' ? includeUpgradeable : undefined,
+            runHashBackfill: false
+        });
+    }, [
+        activeTab,
+        duplicatesScope,
+        includeUpgradeable,
+        intermediatesScope,
+        onRemoveFromLibrary,
+        refreshData,
+        setLocalMissingImages,
+        thumbnailsScope,
+        untaggedScope,
+        viewingImageId
+    ]);
 
     const handleRegenerate = async (ids?: string[]) => {
         if (!onRegenerateThumbnails) return;
@@ -578,13 +624,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     onRecoverMetadata={onRecoverMetadata}
                     availableTags={availableTags}
                     onOpenSettings={() => { }}
-                                    onDelete={() => {
-                        if (viewingImageId) {
-                            onDeleteFile([viewingImageId]);
-                            setViewingImageId(null);
-                            refreshData(activeTab);
-                        }
-                    }}
+                    onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
                 />
             )}
 

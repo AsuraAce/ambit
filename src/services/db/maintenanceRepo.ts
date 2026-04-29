@@ -1,6 +1,6 @@
 import { commands, type FileHashBackfillResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage } from '../../types';
+import type { AIImage, MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, IMAGE_FIELDS_LIGHT, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
@@ -40,31 +40,41 @@ export const normalizeAllPaths = async () => {
     });
 };
 
-export const verifyLibraryIntegrity = async (onProgress?: (processed: number, total: number) => void): Promise<{ scanned: number, missingIds: string[], sampleMissingPaths: string[] }> => {
+export const verifyLibraryIntegrity = async (
+    onProgress?: (processed: number, total: number) => void,
+    signal?: AbortSignal
+): Promise<MissingFileAuditResult> => {
     if (isBrowserMockMode()) {
         const total = getBrowserMockImages().filter(image => !image.isDeleted).length;
         onProgress?.(total, total);
-        return { scanned: total, missingIds: [], sampleMissingPaths: [] };
+        return { scanned: total, total, missingIds: [], sampleMissingPaths: [], wasCancelled: !!signal?.aborted };
     }
 
     const db = await getDb();
     const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
 
-    if (total === 0) return { scanned: 0, missingIds: [], sampleMissingPaths: [] };
+    if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
 
     const CHUNK_SIZE = 1000;
     let missingIds: string[] = [];
     let sampleMissingPaths: string[] = [];
     let processed = 0;
+    let wasCancelled = false;
 
     for (let i = 0; i < total; i += CHUNK_SIZE) {
+        if (signal?.aborted) {
+            wasCancelled = true;
+            break;
+        }
+
         const chunk = allImages.slice(i, i + CHUNK_SIZE);
         const paths = chunk.map(img => img.path);
 
         try {
             const missingPaths = await unwrap(commands.verifyImagePaths(paths));
-            const missingChunk = chunk.filter(img => missingPaths.includes(img.path));
+            const missingPathSet = new Set(missingPaths);
+            const missingChunk = chunk.filter(img => missingPathSet.has(img.path));
             const missingChunkIds = missingChunk.map(img => img.id);
 
             missingIds = [...missingIds, ...missingChunkIds];
@@ -78,9 +88,30 @@ export const verifyLibraryIntegrity = async (onProgress?: (processed: number, to
 
         processed += chunk.length;
         if (onProgress) onProgress(processed, total);
+
+        if (signal?.aborted) {
+            wasCancelled = true;
+            break;
+        }
     }
 
-    return { scanned: total, missingIds, sampleMissingPaths };
+    return { scanned: processed, total, missingIds, sampleMissingPaths, wasCancelled };
+};
+
+export const getMissingImages = async (): Promise<AIImage[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages().filter(image => !!image.isMissing && !image.isDeleted);
+    }
+
+    const db = await getDb();
+    const rows = await db.select<any[]>(`
+        SELECT ${IMAGE_FIELDS_LIGHT}
+        FROM images
+        WHERE is_missing = 1
+          AND is_deleted = 0
+        ORDER BY timestamp DESC
+    `);
+    return rows.map(mapRowToImage);
 };
 
 export const pruneMissingLinks = async (ids: string[]): Promise<number> => {

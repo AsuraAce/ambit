@@ -26,6 +26,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     const [localUntaggedImages, setLocalUntaggedImages] = useState<AIImage[]>([]);
     const [localUnoptimizedImages, setLocalUnoptimizedImages] = useState<AIImage[]>([]);
     const [localDuplicateCandidates, setLocalDuplicateCandidates] = useState<AIImage[]>([]);
+    const [localMissingImages, setLocalMissingImages] = useState<AIImage[]>([]);
     const [localIntermediateImages, setLocalIntermediateImages] = useState<AIImage[]>([]);
     const [unoptimizedTotalCount, setUnoptimizedTotalCount] = useState<number>(0);
 
@@ -39,6 +40,9 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
             if (tab === 'trash') {
                 const data = await db.getDeletedImages();
                 setLocalDeletedImages(data);
+            } else if (tab === 'missing') {
+                const data = await db.getMissingImages();
+                setLocalMissingImages(data);
             } else if (tab === 'untagged') {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
@@ -59,10 +63,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 const where = scope === 'filtered' ? activeSqlWhere : '';
                 const params = scope === 'filtered' ? activeSqlParams : [];
                 const shouldRunHashBackfill = options.runHashBackfill ?? true;
-
-                const data = await db.getDuplicateCandidates(where, params);
-                setLocalDuplicateCandidates(data);
-                setInitializedTabs(prev => new Set(prev).add(tab));
+                let startedHashBackfill = false;
 
                 if (shouldRunHashBackfill) {
                     const store = useLibraryStore.getState();
@@ -75,21 +76,29 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                             total: 0,
                             message: 'Preparing duplicate scan...'
                         });
-
-                        void db.backfillImageFileHashes()
-                            .then(async (result) => {
-                                store.setLastDuplicateScanResult(result);
-                                const refreshed = await db.getDuplicateCandidates(where, params);
-                                setLocalDuplicateCandidates(refreshed);
-                            })
-                            .catch((e) => {
-                                console.error("Failed to run duplicate hash scan", e);
-                            })
-                            .finally(() => {
-                                store.setIsScanningDuplicates(false);
-                                store.setDuplicateScanProgress(null);
-                            });
+                        startedHashBackfill = true;
                     }
+                }
+
+                const data = await db.getDuplicateCandidates(where, params);
+                setLocalDuplicateCandidates(data);
+                setInitializedTabs(prev => new Set(prev).add(tab));
+
+                if (startedHashBackfill && useLibraryStore.getState().isScanningDuplicates) {
+                    const store = useLibraryStore.getState();
+                    void db.backfillImageFileHashes()
+                        .then(async (result) => {
+                            store.setLastDuplicateScanResult(result);
+                            const refreshed = await db.getDuplicateCandidates(where, params);
+                            setLocalDuplicateCandidates(refreshed);
+                        })
+                        .catch((e) => {
+                            console.error("Failed to run duplicate hash scan", e);
+                        })
+                        .finally(() => {
+                            store.setIsScanningDuplicates(false);
+                            store.setDuplicateScanProgress(null);
+                        });
                 }
 
                 return;
@@ -109,9 +118,9 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
     }, [activeSqlWhere, activeSqlParams]);
 
     useEffect(() => {
-        // ONLY auto-trigger for trash. Everything else requires manual 'Start Scan'.
-        if (activeTab === 'trash' && !initializedTabs.has('trash')) {
-            refreshData('trash', true);
+        // Cheap record fetches can load on tab entry; long-running scans remain manual.
+        if ((activeTab === 'trash' || activeTab === 'missing') && !initializedTabs.has(activeTab)) {
+            refreshData(activeTab, true);
         }
     }, [activeTab, refreshData, initializedTabs]);
 
@@ -133,6 +142,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         localUntaggedImages,
         localUnoptimizedImages,
         localDuplicateCandidates,
+        localMissingImages,
         localIntermediateImages,
         unoptimizedTotalCount,
         refreshData,
@@ -140,6 +150,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         setLocalUntaggedImages,
         setLocalUnoptimizedImages,
         setLocalDuplicateCandidates,
+        setLocalMissingImages,
         setLocalIntermediateImages
     };
 };

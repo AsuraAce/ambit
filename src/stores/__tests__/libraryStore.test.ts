@@ -111,4 +111,25 @@ describe('libraryStore live watch session', () => {
         expect(useLibraryStore.getState().isScanningDuplicates).toBe(false);
         expect(useLibraryStore.getState().duplicateScanProgress).toBeNull();
     });
+
+    it('cancels missing file audit when an import starts', () => {
+        const abortController = new AbortController();
+        const abortSpy = vi.spyOn(abortController, 'abort');
+
+        act(() => {
+            useLibraryStore.getState().setMissingScanAbortController(abortController);
+            useLibraryStore.getState().setIsScanningMissingFiles(true);
+            useLibraryStore.getState().setMissingScanProgress({
+                current: 1,
+                total: 10,
+                message: 'Checking file paths...'
+            });
+            useLibraryStore.getState().setIsImporting(true);
+        });
+
+        expect(abortSpy).toHaveBeenCalled();
+        expect(useLibraryStore.getState().isImporting).toBe(true);
+        expect(useLibraryStore.getState().isScanningMissingFiles).toBe(false);
+        expect(useLibraryStore.getState().missingScanProgress).toBeNull();
+    });
 });

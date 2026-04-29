@@ -29,6 +29,10 @@ const resetLibraryStore = () => {
         duplicateScanProgress: null,
         duplicateScanScope: 'global',
         lastDuplicateScanResult: null,
+        isScanningMissingFiles: false,
+        missingScanProgress: null,
+        missingScanAbortController: null,
+        lastMissingScanResult: null,
         isBackgroundHealingActive: false,
         backgroundHealingProgress: null,
         backgroundHealingPaused: false,
@@ -73,6 +77,24 @@ describe('ActivityDock', () => {
         expect(screen.getByText('Duplicate Scan')).toBeTruthy();
         expect(screen.getByText('4 / 10')).toBeTruthy();
         expect(screen.getByText('Hashing images for exact duplicate detection...')).toBeTruthy();
+        expect(screen.getByText('Cancel')).toBeTruthy();
+    });
+
+    it('renders missing file audit progress with cancel controls', () => {
+        useLibraryStore.setState({
+            isScanningMissingFiles: true,
+            missingScanProgress: {
+                current: 3,
+                total: 12,
+                message: 'Checking file paths for missing images...'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Missing File Audit')).toBeTruthy();
+        expect(screen.getByText('3 / 12')).toBeTruthy();
+        expect(screen.getByText('Checking file paths for missing images...')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
     });
 

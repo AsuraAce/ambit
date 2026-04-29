@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { AIImage } from '../../../types';
-import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, Search, GitCompare, X } from 'lucide-react';
+import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, Search, GitCompare, X, RefreshCw } from 'lucide-react';
 import { useDuplicateFinder, DuplicateGroup } from '../../../hooks/useDuplicateFinder';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -291,7 +291,8 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     <div className="flex flex-col items-center gap-4">
                         <button
                             onClick={() => onRefresh(scope)}
-                            className="px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
+                            disabled={isScanning}
+                            className="px-6 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
                         >
                             <Zap className="w-4 h-4" /> Run {scope === 'global' ? 'Global' : 'Filtered'} Scan
                         </button>
@@ -299,13 +300,15 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                         <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
                             <button
                                 onClick={() => onRefresh('global')}
-                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                disabled={isScanning}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
                                 Entire Library
                             </button>
                             <button
                                 onClick={() => onRefresh('filtered')}
-                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                disabled={isScanning}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
                                 Current Filter
                             </button>
@@ -349,13 +352,15 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-xl mr-2">
                         <button
                             onClick={() => onRefresh?.('global')}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
+                            disabled={isScanning}
+                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
                         >
                             Global
                         </button>
                         <button
                             onClick={() => onRefresh?.('filtered')}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
+                            disabled={isScanning}
+                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
                         >
                             Filtered
                         </button>
@@ -364,10 +369,12 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     {onRefresh && (
                         <button
                             onClick={() => onRefresh(scope)}
-                            className="p-2.5 text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 rounded-xl transition-all border border-transparent hover:border-sage-200/50"
-                            title="Refresh results"
+                            disabled={isScanning}
+                            className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all border border-transparent hover:border-sage-200/50 flex items-center gap-2"
+                            title={`Rescan ${scope === 'global' ? 'entire library' : 'current filter'}`}
                         >
-                            <Zap className="w-4 h-4" />
+                            <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
+                            Rescan
                         </button>
                     )}
 

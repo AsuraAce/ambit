@@ -6,6 +6,7 @@ import { useLibraryStore } from '../../stores/libraryStore';
 
 // --- Mocks ---
 const mockGetDeletedImages = vi.fn().mockResolvedValue([]);
+const mockGetMissingImages = vi.fn().mockResolvedValue([]);
 const mockGetUntaggedImages = vi.fn().mockResolvedValue([]);
 const mockGetDuplicateCandidates = vi.fn().mockResolvedValue([]);
 const mockBackfillImageFileHashes = vi.fn().mockResolvedValue({
@@ -19,6 +20,7 @@ const mockBackfillImageFileHashes = vi.fn().mockResolvedValue({
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
     getDeletedImages: () => mockGetDeletedImages(),
+    getMissingImages: () => mockGetMissingImages(),
     getUntaggedImages: (...args: any[]) => mockGetUntaggedImages(...args),
     backfillImageFileHashes: () => mockBackfillImageFileHashes(),
     getDuplicateCandidates: (...args: any[]) => mockGetDuplicateCandidates(...args),
@@ -55,6 +57,15 @@ describe('useMaintenanceData', () => {
         expect(mockGetDuplicateCandidates).not.toHaveBeenCalled();
     });
 
+    it('should auto-refresh persisted missing records without running an audit scan', async () => {
+        renderHook(() => useMaintenanceData('missing', 'global'));
+
+        await waitFor(() => {
+            expect(mockGetMissingImages).toHaveBeenCalled();
+        });
+        expect(mockGetDuplicateCandidates).not.toHaveBeenCalled();
+    });
+
     it('should fetch untagged images with filtered scope', async () => {
         const { result } = renderHook(() => useMaintenanceData('untagged', 'filtered'));
 
@@ -75,6 +86,22 @@ describe('useMaintenanceData', () => {
         });
 
         expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('', []);
+        expect(mockBackfillImageFileHashes).toHaveBeenCalled();
+    });
+
+    it('should expose duplicate scan progress before candidate loading completes', async () => {
+        mockGetDuplicateCandidates.mockImplementationOnce(async () => {
+            expect(useLibraryStore.getState().isScanningDuplicates).toBe(true);
+            expect(useLibraryStore.getState().duplicateScanProgress?.message).toBe('Preparing duplicate scan...');
+            return [];
+        });
+
+        const { result } = renderHook(() => useMaintenanceData('duplicates', 'global'));
+
+        await act(async () => {
+            await result.current.refreshData('duplicates', true, { scope: 'global' });
+        });
+
         expect(mockBackfillImageFileHashes).toHaveBeenCalled();
     });
 });
