@@ -143,11 +143,13 @@ export const useCollectionStore = create<CollectionState>()(
                 if (initPromise) return initPromise;
 
                 initPromise = (async () => {
+                    const startedAt = performance.now();
                     try {
                         const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection, ensureCollectionSchema } = await import('../services/db/collectionRepo');
 
                         // 0. Ensure schema is up to date (add updated_at if missing)
                         await ensureCollectionSchema();
+                        console.info(`[Startup] Collection schema check completed in ${Math.round(performance.now() - startedAt)}ms`);
 
                         // 1. Try to load from SQLite
                         let dbCols = await getAllCollectionsWithStats();
@@ -215,6 +217,7 @@ export const useCollectionStore = create<CollectionState>()(
                         }
 
                         set({ collections: dbCols, isLoaded: true });
+                        console.info(`[Startup] Collection initialization completed in ${Math.round(performance.now() - startedAt)}ms`);
 
                         // Defer visible smart collection counts so startup remains responsive.
                         void get().refreshSmartCounts({

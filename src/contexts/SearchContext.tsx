@@ -104,16 +104,20 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setPrivacyMaskReady(false);
 
         void (async () => {
+            const startedAt = performance.now();
             try {
                 await getDb();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
 
                 setPrivacyMaskReady(true);
+                console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - startedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
+                    const rebuildStartedAt = performance.now();
                     const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
                     const { useLibraryStore } = await import('../stores/libraryStore');
                     await rebuildThumbnailFacetCache();
+                    console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                     void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });

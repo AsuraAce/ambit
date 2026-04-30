@@ -22,6 +22,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
 import { setupGlobalLogging } from '../utils/logger';
+import { isCollectionThumbnailImage } from '../utils/thumbnailUtils';
 
 setupGlobalLogging();
 
@@ -162,15 +163,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const pinnedImages = React.useMemo(() => showPinnedInShelf ? images.filter(i => i.isPinned) : [], [showPinnedInShelf, images]);
     const gridItems = React.useMemo(() => showPinnedInShelf ? images.filter(i => !i.isPinned) : images, [showPinnedInShelf, images]);
     const pinnedCount = pinnedImages.length;
-    const activeThumbnailId = activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail;
-    const activeThumbnailUrl = activeCollection?.thumbnail || activeSmartCollection?.thumbnail;
-    const isActiveThumbnail = React.useCallback((img: AIImage) => (
-        activeThumbnailId === img.id ||
-        activeThumbnailId === img.url ||
-        activeThumbnailId === img.thumbnailUrl ||
-        activeThumbnailUrl === img.thumbnailUrl ||
-        activeThumbnailUrl === img.url
-    ), [activeThumbnailId, activeThumbnailUrl]);
+    const activeThumbnailCollection = activeCollection || activeSmartCollection;
+    const isActiveThumbnail = React.useCallback(
+        (img: AIImage) => isCollectionThumbnailImage(img, activeThumbnailCollection),
+        [activeThumbnailCollection]
+    );
 
     const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout: any) => (
         <GridItem
@@ -353,8 +350,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     }}
                                                     onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                     thumbnailSize={settings.thumbnailSize}
-                                                    activeThumbnailId={activeThumbnailId}
-                                                    activeThumbnailUrl={activeThumbnailUrl}
+                                                    isActiveThumbnail={isActiveThumbnail}
                                                     onRangeSelection={handleRangeSelection}
                                                     onBackgroundClick={clearSelection}
                                                 />

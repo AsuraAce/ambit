@@ -190,14 +190,26 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onSetThumbnail={filters.collectionId && activeImage ? async () => {
-                await colOps.setCollectionThumbnail(filters.collectionId, activeImage.id);
-                onClose();
-            } : undefined}
-            onUnsetThumbnail={filters.collectionId && activeCollection?.customThumbnail ? () => {
-                if (filters.collectionId) {
-                    colOps.resetCollectionThumbnail(filters.collectionId);
+                try {
+                    await colOps.setCollectionThumbnail(filters.collectionId, activeImage);
+                } catch (error) {
+                    console.error('[ContextMenu] Failed to set collection thumbnail', error);
+                    addToast('Failed to update thumbnail', 'error');
+                } finally {
+                    onClose();
                 }
-                onClose();
+            } : undefined}
+            onUnsetThumbnail={filters.collectionId && activeCollection?.customThumbnail ? async () => {
+                try {
+                    if (filters.collectionId) {
+                        await colOps.resetCollectionThumbnail(filters.collectionId);
+                    }
+                } catch (error) {
+                    console.error('[ContextMenu] Failed to reset collection thumbnail', error);
+                    addToast('Failed to reset thumbnail', 'error');
+                } finally {
+                    onClose();
+                }
             } : undefined}
             modelsForThumbnail={(() => {
                 if (!activeImage?.metadata) return [];
