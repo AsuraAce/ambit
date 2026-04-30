@@ -1,7 +1,6 @@
-use super::commands::filter_types::{RustCollection, RustFilterState};
 use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
-use rusqlite::params;
+use rusqlite::{params, types::Value};
 use tauri::Emitter;
 
 #[tauri::command(rename_all = "camelCase")]
@@ -277,128 +276,245 @@ pub struct ValidFacetNames {
 #[specta::specta]
 pub async fn get_valid_facet_names(
     app: tauri::AppHandle,
-    filters: RustFilterState,
-    collections: Vec<RustCollection>,
-    exclude_categories: Vec<String>,
+    where_clause: String,
+    params_json: String,
+    collection_id: Option<String>,
+    lora_name: Option<String>,
 ) -> Result<ValidFacetNames, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let db_path = resolve_db_path(&app)?;
         let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
-        let (where_clause, sql_params) = filters.build_where_clause(
-            false,
-            "blur",
-            &[],
-            &collections,
-            false,
-            &exclude_categories,
-        );
+        let sql_params = parse_facet_params_json(&params_json)?;
+        get_valid_facet_names_for_query(
+            &conn,
+            &where_clause,
+            sql_params,
+            collection_id.as_deref(),
+            lora_name.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
-        let base_where = if where_clause.is_empty() {
-            "WHERE is_deleted = 0".to_string()
-        } else {
-            where_clause
-        };
+fn parse_facet_params_json(params_json: &str) -> Result<Vec<Value>, String> {
+    let params: Vec<serde_json::Value> = serde_json::from_str(params_json)
+        .map_err(|e| format!("Invalid valid-facet params JSON: {}", e))?;
 
-        let prefix_columns = |clause: &str| -> String {
-            if clause.is_empty() {
-                return String::new();
-            }
-
-            let columns = [
-                "is_deleted", "is_intermediate_gen", "is_grid_gen", "resolved_model_name", 
-                "model_hash", "tool", "timestamp", "is_favorite", "is_pinned", 
-                "metadata_json", "privacy_hidden", "path", "id", "width", "height", "file_size",
-                "steps", "cfg", "sampler", "generation_type", "control_nets", "ip_adapters"
-            ];
-            
-            let mut result = clause.to_string();
-            let pattern_str = format!(r"(?i)(i\.)?\b({})\b", columns.join("|"));
-            let re = Regex::new(&pattern_str).unwrap();
-            
-            result = re.replace_all(&result, |caps: &regex::Captures| {
-                if caps.get(1).is_some() {
-                    caps[0].to_string()
+    Ok(params
+        .into_iter()
+        .map(|p| match p {
+            serde_json::Value::String(s) => Value::Text(s),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Integer(i)
+                } else if let Some(f) = n.as_f64() {
+                    Value::Real(f)
                 } else {
-                    format!("i.{}", &caps[2])
+                    Value::Null
                 }
-            }).to_string();
-
-            result
-        };
-
-        let prefixed = prefix_columns(&base_where);
-
-        let combined_query = format!(
-            "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
-             UNION ALL
-             SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {where}
-             UNION ALL
-             SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {where}
-             UNION ALL
-             SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {where}
-             UNION ALL
-             SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {where}
-             UNION ALL
-             SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {where}
-             UNION ALL
-             SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {where}",
-            where = prefixed
-        );
-
-        let mut all_params: Vec<rusqlite::types::Value> = Vec::new();
-        for _ in 0..7 {
-            all_params.extend(sql_params.clone());
-        }
-
-        // Execute single query and categorize results
-        let mut checkpoints: Vec<String> = Vec::new();
-        let mut loras: Vec<String> = Vec::new();
-        let mut embeddings: Vec<String> = Vec::new();
-        let mut hypernetworks: Vec<String> = Vec::new();
-        let mut tools: Vec<String> = Vec::new();
-        let mut control_nets: Vec<String> = Vec::new();
-        let mut ip_adapters: Vec<String> = Vec::new();
-
-        use std::collections::HashSet;
-        let mut cp_set: HashSet<String> = HashSet::new();
-        let mut lora_set: HashSet<String> = HashSet::new();
-        let mut emb_set: HashSet<String> = HashSet::new();
-        let mut hyper_set: HashSet<String> = HashSet::new();
-        let mut tool_set: HashSet<String> = HashSet::new();
-        let mut cn_set: HashSet<String> = HashSet::new();
-        let mut ip_set: HashSet<String> = HashSet::new();
-
-        let mut stmt = conn.prepare(&combined_query).map_err(|e| format!("Combined facet query failed: {}", e))?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(&all_params), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        }).map_err(|e| format!("Combined facet query execution failed: {}", e))?;
-
-        for row in rows.flatten() {
-            let (facet_type, name) = row;
-            match facet_type.as_str() {
-                "checkpoints" => { if cp_set.insert(name.clone()) { checkpoints.push(name); } }
-                "loras" => { if lora_set.insert(name.clone()) { loras.push(name); } }
-                "embeddings" => { if emb_set.insert(name.clone()) { embeddings.push(name); } }
-                "hypernetworks" => { if hyper_set.insert(name.clone()) { hypernetworks.push(name); } }
-                "tools" => { if tool_set.insert(name.clone()) { tools.push(name); } }
-                "control_nets" => { if cn_set.insert(name.clone()) { control_nets.push(name); } }
-                "ip_adapters" => { if ip_set.insert(name.clone()) { ip_adapters.push(name); } }
-                _ => {}
             }
+            serde_json::Value::Bool(b) => Value::Integer(if b { 1 } else { 0 }),
+            serde_json::Value::Null => Value::Null,
+            other => Value::Text(other.to_string()),
+        })
+        .collect())
+}
+
+fn prefix_valid_facet_where_columns(clause: &str) -> String {
+    if clause.is_empty() {
+        return String::new();
+    }
+
+    let columns = [
+        "is_deleted",
+        "is_intermediate_gen",
+        "is_grid_gen",
+        "resolved_model_name",
+        "model_hash",
+        "model_name",
+        "tool",
+        "timestamp",
+        "is_favorite",
+        "is_pinned",
+        "metadata_json",
+        "privacy_hidden",
+        "path",
+        "id",
+        "width",
+        "height",
+        "file_size",
+        "steps",
+        "cfg",
+        "sampler",
+        "generation_type",
+        "positive_prompt",
+        "negative_prompt",
+        "control_nets",
+        "ip_adapters",
+    ];
+
+    let pattern_str = format!(r"(?i)(i\.)?\b({})\b", columns.join("|"));
+    let re = Regex::new(&pattern_str).unwrap();
+
+    re.replace_all(clause, |caps: &regex::Captures| {
+        if caps.get(1).is_some() {
+            caps[0].to_string()
+        } else {
+            format!("i.{}", &caps[2])
+        }
+    })
+    .to_string()
+}
+
+fn push_valid_facet_branch_params(
+    all_params: &mut Vec<Value>,
+    collection_id: Option<&str>,
+    lora_name: Option<&str>,
+    sql_params: &[Value],
+) {
+    if let Some(cid) = collection_id {
+        all_params.push(Value::Text(cid.to_string()));
+    }
+    if let Some(lora) = lora_name {
+        all_params.push(Value::Text(lora.to_string()));
+    }
+    all_params.extend(sql_params.iter().cloned());
+}
+
+fn get_valid_facet_names_for_query(
+    conn: &rusqlite::Connection,
+    where_clause: &str,
+    sql_params: Vec<Value>,
+    collection_id: Option<&str>,
+    lora_name: Option<&str>,
+) -> Result<ValidFacetNames, String> {
+    let base_where = if where_clause.trim().is_empty() {
+        "WHERE is_deleted = 0".to_string()
+    } else {
+        where_clause.to_string()
+    };
+
+    let collection_join = collection_id
+        .map(|_| "JOIN collection_images ci_filter ON ci_filter.image_id = i.id AND ci_filter.collection_id = ?")
+        .unwrap_or("");
+    let lora_join = lora_name
+        .map(|_| {
+            "JOIN image_loras il_filter ON il_filter.image_id = i.id AND il_filter.lora_name = ?"
+        })
+        .unwrap_or("");
+    let prefixed = prefix_valid_facet_where_columns(&base_where);
+
+    let combined_query = format!(
+        "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
+         UNION ALL
+         SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
+         UNION ALL
+         SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
+         UNION ALL
+         SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
+         UNION ALL
+         SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
+         UNION ALL
+         SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
+         UNION ALL
+         SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
+        coll = collection_join,
+        lora = lora_join,
+        where = prefixed
+    );
+
+    let mut all_params: Vec<Value> = Vec::new();
+    for _ in 0..7 {
+        push_valid_facet_branch_params(&mut all_params, collection_id, lora_name, &sql_params);
+    }
+
+    let mut checkpoints: Vec<String> = Vec::new();
+    let mut loras: Vec<String> = Vec::new();
+    let mut embeddings: Vec<String> = Vec::new();
+    let mut hypernetworks: Vec<String> = Vec::new();
+    let mut tools: Vec<String> = Vec::new();
+    let mut control_nets: Vec<String> = Vec::new();
+    let mut ip_adapters: Vec<String> = Vec::new();
+
+    use std::collections::HashSet;
+    let mut cp_set: HashSet<String> = HashSet::new();
+    let mut lora_set: HashSet<String> = HashSet::new();
+    let mut emb_set: HashSet<String> = HashSet::new();
+    let mut hyper_set: HashSet<String> = HashSet::new();
+    let mut tool_set: HashSet<String> = HashSet::new();
+    let mut cn_set: HashSet<String> = HashSet::new();
+    let mut ip_set: HashSet<String> = HashSet::new();
+
+    let mut stmt = conn
+        .prepare(&combined_query)
+        .map_err(|e| format!("Combined facet query failed: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(&all_params), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| format!("Combined facet query execution failed: {}", e))?;
+
+    for row in rows {
+        let (facet_type, name) = row.map_err(|e| format!("Combined facet row failed: {}", e))?;
+        let Some(name) = name else {
+            continue;
+        };
+        if name.trim().is_empty() {
+            continue;
         }
 
-        Ok(ValidFacetNames {
-            checkpoints,
-            loras,
-            embeddings,
-            hypernetworks,
-            tools,
-            control_nets,
-            ip_adapters,
-        })
-    }).await.map_err(|e| e.to_string())?
+        match facet_type.as_str() {
+            "checkpoints" => {
+                if cp_set.insert(name.clone()) {
+                    checkpoints.push(name);
+                }
+            }
+            "loras" => {
+                if lora_set.insert(name.clone()) {
+                    loras.push(name);
+                }
+            }
+            "embeddings" => {
+                if emb_set.insert(name.clone()) {
+                    embeddings.push(name);
+                }
+            }
+            "hypernetworks" => {
+                if hyper_set.insert(name.clone()) {
+                    hypernetworks.push(name);
+                }
+            }
+            "tools" => {
+                if tool_set.insert(name.clone()) {
+                    tools.push(name);
+                }
+            }
+            "control_nets" => {
+                if cn_set.insert(name.clone()) {
+                    control_nets.push(name);
+                }
+            }
+            "ip_adapters" => {
+                if ip_set.insert(name.clone()) {
+                    ip_adapters.push(name);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(ValidFacetNames {
+        checkpoints,
+        loras,
+        embeddings,
+        hypernetworks,
+        tools,
+        control_nets,
+        ip_adapters,
+    })
 }
 
 fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -481,9 +597,9 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
                 '{}'
                 FROM {}
                 WHERE {} IS NOT NULL AND {} != ''",
-                prefix, col, 
-                col, 
-                source, 
+                prefix, col,
+                col,
+                source,
                 json_key,
                 table,
                 col, col
@@ -758,9 +874,120 @@ mod tests {
     use super::*;
     use crate::db::migrations::init_db;
 
+    fn create_valid_facet_conn() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at) VALUES ('col-a', 'Collection A', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, positive_prompt, tool)
+             VALUES
+             ('img-a', 'a.png', 100, 'CollectionModel', 'portrait cat', 'Automatic1111'),
+             ('img-b', 'b.png', 200, 'OutsideModel', 'landscape dog', 'InvokeAI')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id) VALUES ('col-a', 'img-a')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('img-a', 'CollectionLora'), ('img-b', 'OutsideLora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_embeddings (image_id, embedding_name)
+             VALUES ('img-a', 'CollectionEmbedding'), ('img-b', 'OutsideEmbedding')",
+            [],
+        )
+        .unwrap();
+
+        conn
+    }
+
+    #[test]
+    fn test_valid_facet_names_respect_manual_collection_join() {
+        let conn = create_valid_facet_conn();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0",
+            vec![],
+            Some("col-a"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.checkpoints, vec!["CollectionModel"]);
+        assert_eq!(result.loras, vec!["CollectionLora"]);
+        assert_eq!(result.embeddings, vec!["CollectionEmbedding"]);
+        assert!(!result.loras.contains(&"OutsideLora".to_string()));
+    }
+
+    #[test]
+    fn test_valid_facet_names_respect_plain_search_terms() {
+        let conn = create_valid_facet_conn();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND positive_prompt LIKE ?",
+            vec![Value::Text("%portrait%".to_string())],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.checkpoints, vec!["CollectionModel"]);
+        assert_eq!(result.loras, vec!["CollectionLora"]);
+        assert!(!result.loras.contains(&"OutsideLora".to_string()));
+    }
+
+    #[test]
+    fn test_valid_facet_names_respect_single_lora_optimized_join() {
+        let conn = create_valid_facet_conn();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0",
+            vec![],
+            None,
+            Some("CollectionLora"),
+        )
+        .unwrap();
+
+        assert_eq!(result.checkpoints, vec!["CollectionModel"]);
+        assert_eq!(result.embeddings, vec!["CollectionEmbedding"]);
+        assert!(!result.embeddings.contains(&"OutsideEmbedding".to_string()));
+    }
+
+    #[test]
+    fn test_valid_facet_names_surface_query_errors() {
+        let conn = create_valid_facet_conn();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE missing_column = ?",
+            vec![Value::Integer(1)],
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
     #[test]
     fn test_rebuild_facet_cache() {
-        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
         println!("DEBUG: DB Opened");
 
         let migrations = init_db();
@@ -945,7 +1172,7 @@ mod tests {
 
     #[test]
     fn test_facet_extension_mismatch() {
-        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
         let migrations = init_db();
         for m in migrations {
             conn.execute_batch(&m.sql).unwrap();

@@ -3,7 +3,6 @@ use rusqlite::Connection;
 use tauri::AppHandle;
 
 pub mod filter_commands;
-pub mod filter_types;
 pub mod image_commands;
 pub mod maintenance;
 pub mod reparse_commands;

@@ -79,13 +79,6 @@ export const useLibraryStatsQuery = ({
         );
     }, [filters]);
 
-    // Free-text and date scopes can legitimately match images without producing
-    // trustworthy facet drill-down visibility. In those cases, showing the full
-    // facet catalog is less misleading than hiding everything.
-    const shouldUseFacetDrillDown = useMemo(() => {
-        return filters.searchQuery.trim() === '' && filters.dateRange === 'all';
-    }, [filters.searchQuery, filters.dateRange]);
-
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
@@ -115,8 +108,8 @@ export const useLibraryStatsQuery = ({
             const [facets, stats, baseValidNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params, collectionId, loraName),
-                hasActiveFilters && shouldUseFacetDrillDown
-                    ? getValidFacetNames(filters, allCollections)
+                hasActiveFilters
+                    ? getValidFacetNames(where, params, collectionId, loraName)
                     : Promise.resolve(null)
             ]);
 
@@ -137,9 +130,7 @@ export const useLibraryStatsQuery = ({
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
-            if (disjunctiveCategories.length > 0 && hasActiveFilters && shouldUseFacetDrillDown) {
-                if (!finalValidNames) finalValidNames = {} as ValidFacetNames;
-
+            if (finalValidNames && disjunctiveCategories.length > 0 && hasActiveFilters) {
                 const extraQueries = disjunctiveCategories.map(async (cat) => {
                     let excludeKey = '';
                     if (cat === 'loras') excludeKey = 'loras';
@@ -161,17 +152,26 @@ export const useLibraryStatsQuery = ({
                         [excludeKey]
                     );
 
-                    const result = await getValidFacetNames(filters, allCollections, [excludeKey]);
-                    return { cat, validNames: result[cat] };
+                    const result = await getValidFacetNames(
+                        partial.where,
+                        partial.params,
+                        partial.collectionId,
+                        partial.loraName
+                    );
+                    return { cat, validNames: result?.[cat] ?? null };
                 });
 
                 const extraResults = await Promise.all(extraQueries);
 
-                extraResults.forEach(({ cat, validNames }) => {
-                    if (validNames && finalValidNames) {
-                        finalValidNames[cat] = validNames;
-                    }
-                });
+                if (extraResults.some(({ validNames }) => validNames === null)) {
+                    finalValidNames = null;
+                } else {
+                    extraResults.forEach(({ cat, validNames }) => {
+                        if (validNames && finalValidNames) {
+                            finalValidNames[cat] = validNames;
+                        }
+                    });
+                }
             }
 
             return { facets, stats, validNames: finalValidNames };
