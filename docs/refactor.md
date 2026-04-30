@@ -186,3 +186,49 @@ Status: Deferred
 - `src/services/db/searchRepo.ts`
 - `src-tauri/src/db/facets.rs`
 - `src-tauri/src/db/migrations/`
+
+## Privacy-Aware Thumbnail Follow-Ups
+Status: Deferred
+
+### Why Cleanup Is Needed
+- The privacy-aware thumbnail work showed that startup can regress severely from one broad SQLite query even when the feature itself is small.
+- Collection thumbnail hydration originally joined `collections` to `images` through multiple `OR` predicates across image id, source path, and thumbnail path. On a production-sized library this produced repeated image scans and delayed both app startup and thumbnail-update toasts.
+- Thumbnail state has several related but distinct concepts: selected image identity, resolved display URL, safe fallback URL, and sensitivity metadata. When those are updated independently, UI badges and thumbnails can briefly disagree.
+- Privacy mask refresh is intentionally fingerprinted, but a real masked-keyword change can still update many image rows and rebuild resource facet thumbnail metadata.
+
+### Current Pain Points
+- Startup readiness is hard to reason about because `pnpm run app:dev` includes Vite startup, Rust compile time, Tauri launch, database initialization, privacy refresh, image query readiness, and collection sidebar hydration.
+- Existing console timing logs are useful for diagnosis, but there is no single internal startup timing summary that separates those phases.
+- Legacy raw collection thumbnail paths or URLs are preserved for compatibility, but they cannot reliably produce image-level privacy metadata unless they resolve to a known library image.
+- Thumbnail badge logic now has a shared matcher for collection grid and pinned shelf, but future thumbnail features can still regress if they compare stale resolved URLs against custom image ids.
+
+### Safe-Change Warning
+- Do not add multi-column `OR` joins against `images` in startup or thumbnail hydration paths. Prefer indexed lookups, batched follow-up queries, or explicit legacy fallbacks.
+- Keep collection and resource thumbnail privacy semantics separate: image-backed thumbnails can inherit image privacy metadata, while imported sidecar or raw-path thumbnails need explicit resource or collection-level policy.
+- Do not make privacy mask refresh asynchronous in a way that exposes known-hidden thumbnails after the app has declared privacy state ready.
+
+### Suggested Future Direction
+- Add a lightweight startup timing report for: command start, Vite ready, Tauri window open, privacy refresh, first image query, and collection sidebar ready.
+- Keep thumbnail enrichment staged: load collections/counts first, then enrich image-backed custom thumbnails with targeted id/path lookups.
+- Consider a collection-level thumbnail privacy override for legacy raw custom thumbnails, mirroring the resource thumbnail `mask/show/reset` behavior.
+- Make privacy mask refresh and facet thumbnail invalidation visibly backgrounded when they need full-library work, while preserving the current fingerprint early return for unchanged keyword sets.
+- Add a small helper or test fixture for thumbnail badge identity matching so future grid, shelf, modal, and sidebar thumbnail surfaces use the same rules.
+
+### Reference Flow
+```text
+collections/counts -> dynamic thumbnail candidate -> targeted custom id/path lookup -> display URL + safe URL + sensitivity
+```
+
+### Not Part of the Current Task
+- Do not add visual NSFW classification; current privacy depends on prompt/manual masking and resource-name heuristics.
+- Do not remove raw custom thumbnail fallback without a compatibility migration.
+- Do not turn startup diagnostics into user-facing UI until the internal timings are stable.
+
+### Related Code
+- `src/services/db/collectionRepo.ts`
+- `src/hooks/useCollectionOperations.ts`
+- `src/utils/thumbnailUtils.ts`
+- `src/components/ui/PrivacyAwareThumbnail.tsx`
+- `src/contexts/SearchContext.tsx`
+- `src/stores/collectionStore.ts`
+- `src-tauri/src/db/facets.rs`
