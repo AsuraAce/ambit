@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive, Sparkles } from 'lucide-react';
 import { Collection } from '../../../types';
 import { SearchInput } from '../../filters/components/FilterPrimitives';
-import { SmartImage } from '../../../features/library/components/SmartImage';
+import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -174,13 +174,16 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                     className="w-full group text-left px-4 py-3 rounded-xl hover:bg-sage-50 dark:hover:bg-sage-900/10 flex items-center justify-between transition-all border border-transparent hover:border-sage-200/50 dark:hover:border-sage-500/20"
                                 >
                                     <div className="flex items-center gap-3">
-                                        {(col.customThumbnail || col.thumbnail) ? (
+                                        {col.thumbnail ? (
                                             <div className="w-10 h-10 flex-shrink-0 relative">
-                                                <SmartImage
-                                                    src={col.customThumbnail || col.thumbnail || ''}
+                                                <PrivacyAwareThumbnail
+                                                    src={col.thumbnail}
+                                                    safeSrc={col.safeThumbnail}
                                                     alt=""
-                                                    wrapperClassName="w-full h-full"
-                                                    imgClassName="w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5"
+                                                    isSensitive={col.thumbnailIsSensitive}
+                                                    wrapperClassName="w-full h-full rounded-lg"
+                                                    imgClassName="w-full h-full object-cover shadow-sm border border-gray-200 dark:border-white/5"
+                                                    fallback={col.filters ? <Sparkles className="w-5 h-5 text-sage-500 opacity-20" /> : <Folder className="w-5 h-5 opacity-20" />}
                                                 />
                                                 {col.color && (
                                                     <div

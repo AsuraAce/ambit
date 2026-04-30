@@ -162,6 +162,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const pinnedImages = React.useMemo(() => showPinnedInShelf ? images.filter(i => i.isPinned) : [], [showPinnedInShelf, images]);
     const gridItems = React.useMemo(() => showPinnedInShelf ? images.filter(i => !i.isPinned) : images, [showPinnedInShelf, images]);
     const pinnedCount = pinnedImages.length;
+    const activeThumbnailId = activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail;
+    const activeThumbnailUrl = activeCollection?.thumbnail || activeSmartCollection?.thumbnail;
+    const isActiveThumbnail = React.useCallback((img: AIImage) => (
+        activeThumbnailId === img.id ||
+        activeThumbnailId === img.url ||
+        activeThumbnailId === img.thumbnailUrl ||
+        activeThumbnailUrl === img.thumbnailUrl ||
+        activeThumbnailUrl === img.url
+    ), [activeThumbnailId, activeThumbnailUrl]);
 
     const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout: any) => (
         <GridItem
@@ -182,9 +191,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 if (imgFound) actions.handlePinImage(id, !imgFound.isPinned);
             }}
             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
-            isThumbnail={((activeCollection?.customThumbnail || activeSmartCollection?.customThumbnail) === img.id || (activeCollection?.thumbnail || activeSmartCollection?.thumbnail) === img.id)}
+            isThumbnail={isActiveThumbnail(img)}
         />
-    ), [pinnedCount, selectedIds, settings.maskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, activeCollection, activeSmartCollection]);
+    ), [pinnedCount, selectedIds, settings.maskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, isActiveThumbnail]);
 
     return (
         <div className="flex flex-1 overflow-hidden p-3 gap-3">
@@ -344,7 +353,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     }}
                                                     onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                                     thumbnailSize={settings.thumbnailSize}
-                                                    activeThumbnailUrl={activeCollection?.thumbnail || activeSmartCollection?.thumbnail}
+                                                    activeThumbnailId={activeThumbnailId}
+                                                    activeThumbnailUrl={activeThumbnailUrl}
                                                     onRangeSelection={handleRangeSelection}
                                                     onBackgroundClick={clearSelection}
                                                 />

@@ -88,14 +88,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             .sort()
     ), [settings.maskedKeywords]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
-    const requiresPrivacyMaskIndex = settingsLoaded
+    const shouldRefreshPrivacyMaskIndex = settingsLoaded
         && privacyEnabled
-        && settings.maskingMode === 'hide'
         && !isBrowserMockMode();
+    const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
     const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
 
     useEffect(() => {
-        if (!requiresPrivacyMaskIndex) {
+        if (!shouldRefreshPrivacyMaskIndex) {
             setPrivacyMaskReady(false);
             return;
         }
@@ -111,9 +111,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
                 setPrivacyMaskReady(true);
                 if (result.changed || result.updated > 0) {
+                    const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
+                    const { useLibraryStore } = await import('../stores/libraryStore');
+                    await rebuildThumbnailFacetCache();
+                    useLibraryStore.getState().incrementFacetCacheVersion();
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                     void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
                     void queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
+                    void refreshCollections(true);
                 }
             } catch (error) {
                 console.error('[Privacy] Failed to refresh privacy mask index', error);
@@ -124,7 +129,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => {
             cancelled = true;
         };
-    }, [privacyMaskKey, privacyMaskKeywords, queryClient, requiresPrivacyMaskIndex]);
+    }, [privacyMaskKey, privacyMaskKeywords, queryClient, refreshCollections, shouldRefreshPrivacyMaskIndex]);
 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded

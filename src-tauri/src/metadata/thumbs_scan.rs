@@ -69,14 +69,16 @@ pub async fn scan_model_thumbnails(
 
     {
         let mut upsert_stmt = conn.prepare_cached(
-            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type) 
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename, resource_type = excluded.resource_type WHERE filename IS NULL OR filename = ''"
         ).map_err(|e| e.to_string())?;
 
-        let mut cache_select_stmt = conn.prepare_cached(
-            "SELECT hash FROM scanned_files WHERE path = ?1 AND size = ?2 AND modified = ?3"
-        ).map_err(|e| e.to_string())?;
+        let mut cache_select_stmt = conn
+            .prepare_cached(
+                "SELECT hash FROM scanned_files WHERE path = ?1 AND size = ?2 AND modified = ?3",
+            )
+            .map_err(|e| e.to_string())?;
 
         let mut cache_insert_stmt = conn.prepare_cached(
             "INSERT OR REPLACE INTO scanned_files (path, size, modified, hash) VALUES (?1, ?2, ?3, ?4)"
@@ -132,7 +134,9 @@ pub async fn scan_model_thumbnails(
             };
 
             let cached_hash: Option<String> = cache_select_stmt
-                .query_row(params![model_path, file_size, file_modified], |row| row.get(0))
+                .query_row(params![model_path, file_size, file_modified], |row| {
+                    row.get(0)
+                })
                 .ok();
 
             let hash = if let Some(h) = cached_hash {
@@ -141,7 +145,7 @@ pub async fn scan_model_thumbnails(
                 if state.is_cancelled.load(Ordering::SeqCst) {
                     return Err("Discovery scan cancelled by user".to_string());
                 }
-                
+
                 let _ = app.emit(
                     "discovery_scan_progress",
                     ProgressPayload {
@@ -150,28 +154,22 @@ pub async fn scan_model_thumbnails(
                         message: format!("Hashing: {}", filename),
                     },
                 );
-                last_emit = std::time::Instant::now(); 
+                last_emit = std::time::Instant::now();
 
                 if state.is_cancelled.load(Ordering::SeqCst) {
-                     return Err("Discovery scan cancelled by user".to_string());
+                    return Err("Discovery scan cancelled by user".to_string());
                 }
                 let h = format!("file:{}", model_path);
 
-                let _ = cache_insert_stmt.execute(params![model_path, file_size, file_modified, &h]);
+                let _ =
+                    cache_insert_stmt.execute(params![model_path, file_size, file_modified, &h]);
                 h
             };
 
-            let _ = upsert_stmt.execute(params![
-                hash,
-                stem,
-                filename,
-                "disk_scan",
-                now,
-                r_type
-            ]);
+            let _ = upsert_stmt.execute(params![hash, stem, filename, "disk_scan", now, r_type]);
 
             if last_emit.elapsed().as_millis() > 200 || i == models_found.len() - 1 {
-                 if state.is_cancelled.load(Ordering::SeqCst) {
+                if state.is_cancelled.load(Ordering::SeqCst) {
                     return Err("Discovery scan cancelled by user".to_string());
                 }
                 let _ = app.emit(
@@ -267,7 +265,7 @@ pub async fn scan_model_thumbnails(
     }
 
     let _ = crate::metadata::models::classify_unlabeled_models(&conn);
-    
+
     let _ = refresh_facet_cache_from_models(&conn);
 
     Ok(ThumbnailScanResult {
@@ -304,33 +302,33 @@ fn scan_dir_for_resources(
 
 pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), String> {
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            'lora_' || clean_name, 
-            clean_name, 
-            'harvest_lora', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            'lora_' || clean_name,
+            clean_name,
+            'harvest_lora',
             ?1,
             'loras'
          FROM (
-             SELECT 
-                CASE 
+             SELECT
+                CASE
                     WHEN instr(j.value, ' (') > 0 THEN substr(j.value, 1, instr(j.value, ' (') - 1)
                     WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
-                    ELSE j.value 
+                    ELSE j.value
                 END as clean_name
              FROM images, json_each(metadata_json, '$.loras') j
-         ) 
+         )
          WHERE clean_name IS NOT NULL AND clean_name != ''",
         params![now],
     )
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            'emb_' || j.value, 
-            j.value, 
-            'harvest_embedding', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            'emb_' || j.value,
+            j.value,
+            'harvest_embedding',
             ?1,
             'embeddings'
          FROM images, json_each(metadata_json, '$.embeddings') j
@@ -340,11 +338,11 @@ pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), Str
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            'hyper_' || j.value, 
-            j.value, 
-            'harvest_hypernet', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            'hyper_' || j.value,
+            j.value,
+            'harvest_hypernet',
             ?1,
             'hypernetworks'
          FROM images, json_each(metadata_json, '$.hypernetworks') j
@@ -354,11 +352,11 @@ pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), Str
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            COALESCE(json_extract(metadata_json, '$.modelHash'), 'name:' || json_extract(metadata_json, '$.model')), 
-            json_extract(metadata_json, '$.model'), 
-            'harvest_checkpoint', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            COALESCE(json_extract(metadata_json, '$.modelHash'), 'name:' || json_extract(metadata_json, '$.model')),
+            json_extract(metadata_json, '$.model'),
+            'harvest_checkpoint',
             ?1,
             'checkpoint'
          FROM images
@@ -367,13 +365,13 @@ pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), Str
         params![now],
     )
     .map_err(|e| e.to_string())?;
-    
+
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            'cnet_' || j.value, 
-            j.value, 
-            'harvest_controlnet', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            'cnet_' || j.value,
+            j.value,
+            'harvest_controlnet',
             ?1,
             'control_nets'
          FROM images, json_each(metadata_json, '$.controlNets') j
@@ -383,11 +381,11 @@ pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), Str
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-         SELECT DISTINCT 
-            'ipad_' || j.value, 
-            j.value, 
-            'harvest_ipadapter', 
+        "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+         SELECT DISTINCT
+            'ipad_' || j.value,
+            j.value,
+            'harvest_ipadapter',
             ?1,
             'ip_adapters'
          FROM images, json_each(metadata_json, '$.ipAdapters') j
@@ -403,30 +401,52 @@ pub fn harvest_resource_names(conn: &mut Connection, now: u64) -> Result<(), Str
 
 pub fn refresh_facet_cache_from_models(conn: &Connection) -> Result<(), String> {
     conn.execute(
-        "UPDATE facet_cache 
+        "UPDATE facet_cache
          SET thumbnail_path = (SELECT sidecar_thumbnail_path FROM models WHERE models.hash = facet_cache.resource_hash),
              has_sidecar = 1,
-             is_manual = 1
+             is_manual = 1,
+             thumbnail_image_id = NULL,
+             thumbnail_sensitivity_override = (SELECT thumbnail_sensitivity_override FROM models WHERE models.hash = facet_cache.resource_hash),
+             thumbnail_is_sensitive = CASE
+                WHEN (SELECT thumbnail_sensitivity_override FROM models WHERE models.hash = facet_cache.resource_hash) = 0 THEN 0
+                ELSE 1
+             END
          WHERE resource_hash IN (SELECT hash FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '')
          AND (is_user_override IS NULL OR is_user_override = 0)",
         params![],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
-        "UPDATE facet_cache 
-         SET thumbnail_path = (SELECT m.sidecar_thumbnail_path 
-                               FROM models m 
-                               WHERE m.name = facet_cache.resource_name 
-                               AND m.sidecar_thumbnail_path IS NOT NULL 
+        "UPDATE facet_cache
+         SET thumbnail_path = (SELECT m.sidecar_thumbnail_path
+                               FROM models m
+                               WHERE m.name = facet_cache.resource_name
+                               AND m.sidecar_thumbnail_path IS NOT NULL
                                AND m.sidecar_thumbnail_path != ''
                                LIMIT 1),
              has_sidecar = 1,
-             is_manual = 1
+             is_manual = 1,
+             thumbnail_image_id = NULL,
+             thumbnail_sensitivity_override = (SELECT m.thumbnail_sensitivity_override
+                               FROM models m
+                               WHERE m.name = facet_cache.resource_name
+                               AND m.sidecar_thumbnail_path IS NOT NULL
+                               AND m.sidecar_thumbnail_path != ''
+                               LIMIT 1),
+             thumbnail_is_sensitive = CASE
+                WHEN (SELECT m.thumbnail_sensitivity_override
+                      FROM models m
+                      WHERE m.name = facet_cache.resource_name
+                      AND m.sidecar_thumbnail_path IS NOT NULL
+                      AND m.sidecar_thumbnail_path != ''
+                      LIMIT 1) = 0 THEN 0
+                ELSE 1
+             END
          WHERE resource_name IN (SELECT name FROM models WHERE sidecar_thumbnail_path IS NOT NULL AND sidecar_thumbnail_path != '')
          AND (thumbnail_path IS NULL OR thumbnail_path = '')
          AND (is_user_override IS NULL OR is_user_override = 0)",
         params![],
     ).map_err(|e| e.to_string())?;
-    
+
     Ok(())
 }

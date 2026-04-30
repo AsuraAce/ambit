@@ -408,17 +408,25 @@ async setModelThumbnail(modelHash: string, modelName: string | null, imagePath: 
     else return { status: "error", error: e  as any };
 }
 },
-async unsetModelThumbnail(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+async unsetModelThumbnail(modelHash: string, modelName: string | null, resourceType: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("unset_model_thumbnail", { modelHash, modelName }) };
+    return { status: "ok", data: await TAURI_INVOKE("unset_model_thumbnail", { modelHash, modelName, resourceType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async clearAllThumbnails(modelHash: string, modelName: string | null) : Promise<Result<null, string>> {
+async clearAllThumbnails(modelHash: string, modelName: string | null, resourceType: string | null) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName }) };
+    return { status: "ok", data: await TAURI_INVOKE("clear_all_thumbnails", { modelHash, modelName, resourceType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setResourceThumbnailSensitivity(modelHash: string, modelName: string | null, sensitivity: boolean | null, resourceType: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_resource_thumbnail_sensitivity", { modelHash, modelName, sensitivity, resourceType }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

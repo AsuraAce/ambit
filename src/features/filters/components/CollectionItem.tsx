@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { FolderInput, Archive, Folder, Pin, Sparkles, Check } from 'lucide-react';
+import { FolderInput, Archive, Folder, Sparkles, Check } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
-import { SmartImage } from '../../library/components/SmartImage';
+import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 import { formatCountCompact } from '../../../utils/formatUtils';
 import { createCollectionSelectionFilters } from '../../../utils/filterState';
 
@@ -62,7 +62,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     viewMode = 'list'
 }) => {
     const isSelected = filters.collectionId === col.id;
-    const thumbUrl = col.customThumbnail || col.thumbnail || '';
+    const thumbUrl = col.thumbnail || '';
     return (
         <div
             key={col.id}
@@ -111,11 +111,14 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                     {/* Thumbnail Area */}
                     <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
                         {thumbUrl ? (
-                            <SmartImage
+                            <PrivacyAwareThumbnail
                                 src={thumbUrl}
+                                safeSrc={col.safeThumbnail}
                                 alt={col.name}
+                                isSensitive={col.thumbnailIsSensitive}
                                 wrapperClassName="w-full h-full"
                                 imgClassName={`w-full h-full object-cover ${col.isArchived ? 'grayscale opacity-70' : ''}`}
+                                fallback={col.filters ? <Sparkles className="w-8 h-8 text-sage-500 opacity-20" /> : <Folder className="w-8 h-8 opacity-20" />}
                             />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center opacity-20">
@@ -177,11 +180,14 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                             <FolderInput className="w-8 h-8 text-sage-500 animate-pulse flex-shrink-0" />
                         ) : thumbUrl ? (
                             <div className="relative w-8 h-8 flex-shrink-0">
-                                <SmartImage
+                                <PrivacyAwareThumbnail
                                     src={thumbUrl}
+                                    safeSrc={col.safeThumbnail}
                                     alt=""
+                                    isSensitive={col.thumbnailIsSensitive}
                                     wrapperClassName="w-full h-full"
                                     imgClassName={`w-full h-full rounded-lg object-cover shadow-sm border border-gray-200 dark:border-white/5 ${col.isArchived ? 'grayscale opacity-70' : ''}`}
+                                    fallback={col.filters ? <Sparkles className="w-4 h-4 text-sage-500 opacity-20" /> : <Folder className="w-4 h-4 opacity-20" />}
                                 />
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
                             </div>

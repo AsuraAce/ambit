@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCollectionStore } from '../collectionStore';
 import { FilterState } from '../../types';
 
-const mockGetSmartCollectionCounts = vi.fn();
+const mockGetSmartCollectionSummaries = vi.fn();
 
 vi.mock('../libraryStore', () => ({
     useLibraryStore: {
@@ -14,7 +14,7 @@ vi.mock('../libraryStore', () => ({
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
-    getSmartCollectionCounts: mockGetSmartCollectionCounts
+    getSmartCollectionSummaries: mockGetSmartCollectionSummaries
 }));
 
 const resetCollectionStore = () => {
@@ -43,7 +43,7 @@ describe('collectionStore smart count refresh', () => {
             favoritesOnly: false,
             collectionId: null
         };
-        mockGetSmartCollectionCounts.mockResolvedValue({ 'smart-1': 42 });
+        mockGetSmartCollectionSummaries.mockResolvedValue({ 'smart-1': { count: 42 } });
 
         act(() => {
             useCollectionStore.setState({
@@ -89,5 +89,66 @@ describe('collectionStore smart count refresh', () => {
                 id: 'static-1'
             })
         ]);
+    });
+
+    it('updates smart collection count without replacing a custom thumbnail', async () => {
+        const smartFilters: FilterState = {
+            searchQuery: 'portrait',
+            models: [],
+            tools: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            samplers: [],
+            generationTypes: [],
+            controlNets: [],
+            ipAdapters: [],
+            dateRange: 'all',
+            favoritesOnly: false,
+            collectionId: null
+        };
+        mockGetSmartCollectionSummaries.mockResolvedValue({
+            'smart-1': {
+                count: 7,
+                thumbnail: 'dynamic-thumb.webp',
+                safeThumbnail: 'dynamic-safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'smart-1',
+                    name: 'Smart One',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    count: 0,
+                    imageIds: [],
+                    filters: smartFilters,
+                    customThumbnail: 'custom-image-id',
+                    thumbnail: 'custom-thumb.webp',
+                    safeThumbnail: 'custom-safe.webp',
+                    thumbnailIsSensitive: false,
+                    thumbnailSourceKind: 'customImage'
+                }],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshSmartCounts([
+            ...useCollectionStore.getState().collections
+        ]);
+
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            count: 7,
+            customThumbnail: 'custom-image-id',
+            thumbnail: 'custom-thumb.webp',
+            safeThumbnail: 'custom-safe.webp',
+            thumbnailIsSensitive: false,
+            thumbnailSourceKind: 'customImage'
+        }));
     });
 });

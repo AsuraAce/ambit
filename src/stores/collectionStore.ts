@@ -83,7 +83,7 @@ export const useCollectionStore = create<CollectionState>()(
                         if (runId !== smartCountRunId) return;
                     }
 
-                    const { getSmartCollectionCounts } = await import('../services/db/collectionRepo');
+                    const { getSmartCollectionSummaries } = await import('../services/db/collectionRepo');
                     const currentCols = collectionsSnapshot ?? get().collections;
                     const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
                     const smartCols = currentCols.filter(c =>
@@ -97,15 +97,27 @@ export const useCollectionStore = create<CollectionState>()(
                     for (const smartCol of smartCols) {
                         if (runId !== smartCountRunId) return;
 
-                        const counts = await getSmartCollectionCounts([smartCol]);
+                        const summaries = await getSmartCollectionSummaries([smartCol]);
                         if (runId !== smartCountRunId) return;
-                        const count = counts[smartCol.id];
+                        const summary = summaries[smartCol.id];
 
-                        if (count !== undefined) {
+                        if (summary) {
                             set((state) => ({
                                 collections: state.collections.map(c =>
                                     c.id === smartCol.id && c.filters
-                                        ? { ...c, count }
+                                        ? c.customThumbnail
+                                            ? {
+                                                ...c,
+                                                count: summary.count
+                                            }
+                                            : {
+                                                ...c,
+                                                count: summary.count,
+                                                thumbnail: summary.thumbnail,
+                                                safeThumbnail: summary.safeThumbnail,
+                                                thumbnailIsSensitive: summary.thumbnailIsSensitive,
+                                                thumbnailSourceKind: summary.thumbnailSourceKind
+                                            }
                                         : c
                                 )
                             }));
