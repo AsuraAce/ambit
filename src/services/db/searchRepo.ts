@@ -12,13 +12,30 @@ export interface LibraryStats {
     keywordStats: { text: string; value: number }[];
 }
 
+export interface FacetItem {
+    name: string;
+    count: number;
+    lastUsedAt?: number;
+    createdAt?: number;
+    thumbnailPath?: string;
+    previewUrl?: string;
+    hash?: string;
+    isManual?: number;
+    hasSidecar?: number;
+    isUserOverride?: number;
+    safeThumbnailPath?: string;
+    thumbnailImageId?: string;
+    thumbnailIsSensitive?: number;
+    thumbnailSensitivityOverride?: number | null;
+}
+
 export interface Facets {
-    checkpoints: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
-    loras: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
-    embeddings: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
-    hypernetworks: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
-    controlNets: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
-    ipAdapters: { name: string; count: number; lastUsedAt?: number; createdAt?: number; thumbnailPath?: string; previewUrl?: string; hash?: string; isManual?: number; hasSidecar?: number; isUserOverride?: number }[];
+    checkpoints: FacetItem[];
+    loras: FacetItem[];
+    embeddings: FacetItem[];
+    hypernetworks: FacetItem[];
+    controlNets: FacetItem[];
+    ipAdapters: FacetItem[];
     tools: string[];
 }
 
@@ -475,7 +492,10 @@ export const getFacets = async (
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
-            SELECT facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url, last_used_at, created_at, is_manual, has_sidecar, is_user_override
+            SELECT
+                facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url,
+                last_used_at, created_at, is_manual, has_sidecar, is_user_override,
+                safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive, thumbnail_sensitivity_override
             FROM facet_cache
             WHERE facet_type IN(${placeholders})
             ORDER BY count DESC, resource_name ASC
@@ -483,7 +503,7 @@ export const getFacets = async (
 
         // Map cache rows to facet result
         for (const row of cacheRows) {
-            const item = {
+            const item: FacetItem = {
                 name: row.resource_name || 'Unknown',
                 hash: row.resource_hash,
                 count: row.count || 0,
@@ -493,7 +513,11 @@ export const getFacets = async (
                 previewUrl: row.preview_url,
                 isManual: row.is_manual,
                 hasSidecar: row.has_sidecar,
-                isUserOverride: row.is_user_override
+                isUserOverride: row.is_user_override,
+                safeThumbnailPath: row.safe_thumbnail_path,
+                thumbnailImageId: row.thumbnail_image_id,
+                thumbnailIsSensitive: row.thumbnail_is_sensitive,
+                thumbnailSensitivityOverride: row.thumbnail_sensitivity_override
             };
 
             switch (row.facet_type) {

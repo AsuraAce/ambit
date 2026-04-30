@@ -180,6 +180,9 @@ export const rebuildFacetCacheIncremental = async (type: string): Promise<number
     if (isBrowserMockMode()) return 0;
 
     try {
+        const { clearLibraryStatsCache } = await import('./searchRepo');
+        clearLibraryStatsCache();
+
         const count = await unwrap(commands.rebuildFacetCacheIncremental(type));
         console.log(`[DB] Rebuilt incremental facet cache for ${type}: ${count} entries`);
         return count;
@@ -187,6 +190,11 @@ export const rebuildFacetCacheIncremental = async (type: string): Promise<number
         console.error(`[DB] Failed to rebuild incremental facet cache for ${type}`, e);
         return 0;
     }
+};
+
+export const rebuildThumbnailFacetCache = async (): Promise<void> => {
+    const types = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'control_nets', 'ip_adapters'];
+    await Promise.all(types.map(type => rebuildFacetCacheIncremental(type)));
 };
 
 
@@ -1038,8 +1046,8 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
     await db.execute(
-        'UPDATE images SET thumbnail_path = ? WHERE id = ?',
-        [normalizedThumb, normalizedId]
+        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ? WHERE id = ?',
+        [normalizedThumb, 'ambit', normalizedId]
     );
 };
 

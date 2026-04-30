@@ -1,9 +1,17 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Collection, SmartCollection, FilterState } from '../types';
+import { AIImage, Collection, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
-import { upsertCollection, deleteCollectionFromDb, addImagesToCollection as addImgsToCol, removeImagesFromCollection as removeImgsFromCol } from '../services/db/collectionRepo';
+import { useSettingsStore } from '../stores/settingsStore';
+import { isImageMasked } from '../utils/maskingUtils';
+import {
+  upsertCollection,
+  deleteCollectionFromDb,
+  addImagesToCollection as addImgsToCol,
+  removeImagesFromCollection as removeImgsFromCol,
+  setCollectionCustomThumbnail
+} from '../services/db/collectionRepo';
 
 interface UseCollectionOperationsProps {
   collections: Collection[];
@@ -26,6 +34,7 @@ export const useCollectionOperations = ({
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
+  const maskedKeywords = useSettingsStore(s => s.settings.maskedKeywords);
 
   const createCollection = useCallback(async (name: string, filters?: FilterState) => {
     const id = `c_${Date.now()}`;
@@ -291,27 +300,71 @@ export const useCollectionOperations = ({
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
-  const setCollectionThumbnail = useCallback(async (collectionId: string, imageId: string) => {
+  const setCollectionThumbnail = useCallback(async (collectionId: string, image: AIImage) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
-    if (!col) return;
-    await upsertCollection({ ...col, customThumbnail: imageId });
-    await Promise.all([
-      refreshCollections(),
-      queryClient.invalidateQueries({ queryKey: ['images'] })
-    ]);
-    addToast("Thumbnail updated", "success");
-  }, [collections, smartCollections, refreshCollections, addToast]);
+    if (!col) {
+      addToast("Collection not found", "error");
+      return;
+    }
+
+    const nextCollection: Collection = {
+      ...col,
+      customThumbnail: image.id,
+      thumbnail: image.thumbnailUrl || image.url,
+      safeThumbnail: undefined,
+      thumbnailIsSensitive: isImageMasked(image, true, maskedKeywords),
+      thumbnailSourceKind: 'customImage'
+    };
+
+    setAllCollections(prev => prev.map(c => c.id === collectionId ? { ...c, ...nextCollection } : c));
+
+    try {
+      await setCollectionCustomThumbnail(collectionId, image.id);
+      addToast("Thumbnail updated", "success");
+      void refreshCollections(true).catch((error) => {
+        console.error('[Collections] Failed to reconcile collection thumbnail state', error);
+      });
+      void queryClient.invalidateQueries({ queryKey: ['images'] }).catch((error) => {
+        console.error('[Collections] Failed to invalidate image queries after thumbnail update', error);
+      });
+    } catch (e) {
+      setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
+      console.error('[Collections] Failed to set collection thumbnail', e);
+      addToast("Failed to update thumbnail", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, queryClient, addToast, maskedKeywords]);
 
   const resetCollectionThumbnail = useCallback(async (id: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
-    if (!col) return;
-    await upsertCollection({ ...col, customThumbnail: undefined });
-    await Promise.all([
-      refreshCollections(),
-      queryClient.invalidateQueries({ queryKey: ['images'] })
-    ]);
-    addToast("Thumbnail reset", "info");
-  }, [collections, smartCollections, refreshCollections, addToast]);
+    if (!col) {
+      addToast("Collection not found", "error");
+      return;
+    }
+
+    setAllCollections(prev => prev.map(c => c.id === id ? {
+      ...c,
+      customThumbnail: undefined,
+      thumbnail: undefined,
+      safeThumbnail: undefined,
+      thumbnailIsSensitive: undefined,
+      thumbnailSourceKind: 'dynamic'
+    } : c));
+
+    try {
+      await setCollectionCustomThumbnail(id, null);
+      addToast("Thumbnail reset", "info");
+      void refreshCollections(true).catch((error) => {
+        console.error('[Collections] Failed to reconcile collection thumbnail reset', error);
+      });
+      void queryClient.invalidateQueries({ queryKey: ['images'] }).catch((error) => {
+        console.error('[Collections] Failed to invalidate image queries after thumbnail reset', error);
+      });
+    } catch (e) {
+      setAllCollections(prev => prev.map(c => c.id === id ? col : c));
+      console.error('[Collections] Failed to reset collection thumbnail', e);
+      addToast("Failed to reset thumbnail", "error");
+    }
+  }, [collections, smartCollections, setAllCollections, refreshCollections, queryClient, addToast]);
 
   return {
     createCollection,

@@ -1,13 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, User, Pin, Circle, CircleDot } from 'lucide-react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
-import { SectionHeader, SearchInput, SortDropdown, SortOptionItem } from './FilterPrimitives';
+import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
 import { formatCountCompact, formatModelName } from '../../../utils/formatUtils';
 import { useQueryClient } from '@tanstack/react-query';
+import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
+import { commands } from '../../../bindings';
 
 interface ResourceItem {
     name: string;
@@ -20,6 +21,10 @@ interface ResourceItem {
     isManual?: number;
     hasSidecar?: number;
     isUserOverride?: number;
+    safeThumbnailPath?: string;
+    thumbnailImageId?: string;
+    thumbnailIsSensitive?: number;
+    thumbnailSensitivityOverride?: number | null;
 }
 
 interface ResourceSectionProps {
@@ -153,6 +158,30 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const menuRef = useRef<HTMLDivElement>(null);
     const queryClient = useQueryClient();
 
+    const getBackendResourceType = useCallback(() => (
+        type === 'checkpoints' ? 'checkpoint' : type
+    ), [type]);
+
+    const getFallbackHash = useCallback((item: ResourceItem) => {
+        if (item.hash) return item.hash;
+        switch (type as string) {
+            case 'checkpoints':
+                return `name:${item.name}`;
+            case 'loras':
+                return `lora_${item.name}`;
+            case 'embeddings':
+                return `emb_${item.name}`;
+            case 'hypernetworks':
+                return `hyper_${item.name}`;
+            case 'control_nets':
+                return `cnet_${item.name}`;
+            case 'ip_adapters':
+                return `ipad_${item.name}`;
+            default:
+                return item.name;
+        }
+    }, [type]);
+
     // Close menu on click outside
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -174,11 +203,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         if (!item.hash && !item.name) return;
 
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('unset_model_thumbnail', {
-                modelHash: item.hash || 'unknown',
-                modelName: item.name
-            });
+            const result = await commands.unsetModelThumbnail(getFallbackHash(item), item.name, getBackendResourceType());
+            if (result.status === 'error') throw new Error(result.error);
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
@@ -191,11 +217,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         if (!item.hash && !item.name) return;
 
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('clear_all_thumbnails', {
-                modelHash: item.hash || 'unknown',
-                modelName: item.name
-            });
+            const result = await commands.clearAllThumbnails(getFallbackHash(item), item.name, getBackendResourceType());
+            if (result.status === 'error') throw new Error(result.error);
             await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             setContextMenu(null);
         } catch (error) {
@@ -203,9 +226,22 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         }
     };
 
+    const handleThumbnailSensitivity = async (item: ResourceItem, sensitivity: boolean | null) => {
+        if (!item.hash && !item.name) return;
+
+        try {
+            const result = await commands.setResourceThumbnailSensitivity(getFallbackHash(item), item.name, sensitivity, getBackendResourceType());
+            if (result.status === 'error') throw new Error(result.error);
+            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+            setContextMenu(null);
+        } catch (error) {
+            console.error("Failed to update thumbnail privacy", error);
+        }
+    };
+
     const renderGridItem = (item: ResourceItem) => {
         const isSelected = (filters[filterKey] || []).includes(item.name);
-        const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
+        const thumbUrl = item.thumbnailPath || item.previewUrl;
 
         return (
             <div
@@ -221,11 +257,15 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 {/* Thumbnail */}
                 <div className={`absolute inset-0 bg-gray-100 dark:bg-zinc-800 transition-colors ${isSelected ? 'bg-sage-50 dark:bg-sage-900/10' : ''}`}>
                     {thumbUrl ? (
-                        <img
+                        <PrivacyAwareThumbnail
                             src={thumbUrl}
+                            safeSrc={item.safeThumbnailPath}
                             alt={item.name}
-                            className="w-full h-full object-cover"
+                            isSensitive={item.thumbnailIsSensitive === 1}
+                            wrapperClassName="w-full h-full"
+                            imgClassName="w-full h-full object-cover"
                             loading="lazy"
+                            fallback={<Puzzle className="w-8 h-8 opacity-20" />}
                         />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center opacity-10">
@@ -264,7 +304,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     const renderListItem = (item: ResourceItem) => {
         const isSelected = (filters[filterKey] || []).includes(item.name);
-        const thumbUrl = item.thumbnailPath ? convertFileSrc(item.thumbnailPath) : item.previewUrl;
+        const thumbUrl = item.thumbnailPath || item.previewUrl;
 
         return (
             <div
@@ -285,11 +325,15 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     {/* Tiny Avatar Thumbnail */}
                     <div className={`w-6 h-6 rounded bg-gray-100 dark:bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden border relative ${isSelected ? 'border-sage-200 dark:border-sage-500/30' : 'border-transparent'}`}>
                         {thumbUrl ? (
-                            <img
+                            <PrivacyAwareThumbnail
                                 src={thumbUrl}
+                                safeSrc={item.safeThumbnailPath}
                                 alt={item.name}
-                                className="w-full h-full object-cover"
+                                isSensitive={item.thumbnailIsSensitive === 1}
+                                wrapperClassName="w-full h-full"
+                                imgClassName="w-full h-full object-cover"
                                 loading="lazy"
+                                fallback={<Puzzle className="w-3 h-3 opacity-30" />}
                             />
                         ) : (
                             <Puzzle className="w-3 h-3 opacity-30" />
@@ -465,6 +509,43 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         >
                             <Pin className="w-3.5 h-3.5" />
                             Use Dynamic
+                        </button>
+                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                        <button
+                            onClick={() => handleThumbnailSensitivity(contextMenu.item, true)}
+                            disabled={contextMenu.item.thumbnailSensitivityOverride === 1}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === 1
+                                ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                            title="Always mask this resource thumbnail"
+                        >
+                            <EyeOff className="w-3.5 h-3.5" />
+                            Mask Thumbnail
+                        </button>
+                        <button
+                            onClick={() => handleThumbnailSensitivity(contextMenu.item, false)}
+                            disabled={contextMenu.item.thumbnailSensitivityOverride === 0}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === 0
+                                ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                            title="Always show this resource thumbnail"
+                        >
+                            <Eye className="w-3.5 h-3.5" />
+                            Always Show Thumbnail
+                        </button>
+                        <button
+                            onClick={() => handleThumbnailSensitivity(contextMenu.item, null)}
+                            disabled={contextMenu.item.thumbnailSensitivityOverride === null || contextMenu.item.thumbnailSensitivityOverride === undefined}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.thumbnailSensitivityOverride === null || contextMenu.item.thumbnailSensitivityOverride === undefined
+                                ? 'text-gray-400 cursor-not-allowed opacity-50'
+                                : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/10'
+                                }`}
+                            title="Return thumbnail privacy to automatic detection"
+                        >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Reset Thumbnail Privacy
                         </button>
                     </div>
                 </div>,

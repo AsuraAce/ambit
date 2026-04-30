@@ -72,7 +72,7 @@ export const regenerateThumbnailsForImages = async (
     let processed = 0;
     const total = candidates.length;
     const updates: AIImage[] = [];
-    const dbUpdates: { id: string; thumbnailPath: string }[] = [];
+    const dbUpdates: { id: string; thumbnailPath: string; thumbnailSource: string }[] = [];
     const BATCH_SIZE = 100;
 
     // Process in batches
@@ -94,7 +94,7 @@ export const regenerateThumbnailsForImages = async (
             results.forEach((res, idx) => {
                 if (res.thumbnail) {
                     updates.push({ ...batch[idx], thumbnailUrl: res.thumbnail });
-                    dbUpdates.push({ id: batch[idx].id, thumbnailPath: res.thumbnail });
+                    dbUpdates.push({ id: batch[idx].id, thumbnailPath: res.thumbnail, thumbnailSource: 'ambit' });
                 }
             });
 
@@ -164,13 +164,13 @@ export const regenerateAllUnoptimized = async (
             const batchEntries = entries.slice(i, i + BATCH_SIZE);
             const batchIds = batchEntries.map(e => e.id);
             const batchPaths = batchEntries.map(e => e.path);
-            const dbUpdates: { id: string; thumbnailPath: string }[] = [];
+            const dbUpdates: { id: string; thumbnailPath: string; thumbnailSource: string }[] = [];
 
             try {
                 const results = await scanImagesBulk(batchPaths, thumbDir, false, false);
                 results.forEach((res, idx) => {
                     if (res.thumbnail) {
-                        dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail });
+                        dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail, thumbnailSource: 'ambit' });
                         generated++;
                     }
                 });
@@ -293,7 +293,7 @@ export const syncExistingThumbnailsToDB = async (
     // and just returns the path. The regenerateThumbnailsForImages now persists to DB.
     const BATCH_SIZE = 100;
     let synced = 0;
-    const updates: { id: string; thumbnailPath: string }[] = [];
+    const updates: { id: string; thumbnailPath: string; thumbnailSource: string }[] = [];
 
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
         const batch = candidates.slice(i, i + BATCH_SIZE);
@@ -305,7 +305,7 @@ export const syncExistingThumbnailsToDB = async (
 
             results.forEach((res, idx) => {
                 if (res.thumbnail) {
-                    updates.push({ id: batch[idx].id, thumbnailPath: res.thumbnail });
+                    updates.push({ id: batch[idx].id, thumbnailPath: res.thumbnail, thumbnailSource: 'ambit' });
                     synced++;
                 }
             });

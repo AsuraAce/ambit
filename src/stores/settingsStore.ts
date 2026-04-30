@@ -121,6 +121,15 @@ export const useSettingsStore = create<SettingsState>()(
                         }
                     });
 
+                    const oldResourceFolders = new Set(previousSettings.resourceFolders || []);
+                    nextSettings.resourceFolders?.forEach((folder) => {
+                        if (!isBrowserMockMode() && !oldResourceFolders.has(folder)) {
+                            void ensureAssetPathAccessible(folder, { assumeDirectory: true }).catch((error) =>
+                                console.error('[SettingsStore] Failed to register resource folder scope:', error)
+                            );
+                        }
+                    });
+
                     const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
                     const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
                     if (!isBrowserMockMode() && nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {

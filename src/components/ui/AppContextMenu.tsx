@@ -189,43 +189,64 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 await invoke('open_file', { path: id });
                 onClose();
             }}
-            onUnsetThumbnail={() => {
-                if (filters.collectionId) {
-                    colOps.resetCollectionThumbnail(filters.collectionId);
+            onSetThumbnail={filters.collectionId && activeImage ? async () => {
+                try {
+                    await colOps.setCollectionThumbnail(filters.collectionId, activeImage);
+                } catch (error) {
+                    console.error('[ContextMenu] Failed to set collection thumbnail', error);
+                    addToast('Failed to update thumbnail', 'error');
+                } finally {
+                    onClose();
                 }
-                onClose();
-            }}
+            } : undefined}
+            onUnsetThumbnail={filters.collectionId && activeCollection?.customThumbnail ? async () => {
+                try {
+                    if (filters.collectionId) {
+                        await colOps.resetCollectionThumbnail(filters.collectionId);
+                    }
+                } catch (error) {
+                    console.error('[ContextMenu] Failed to reset collection thumbnail', error);
+                    addToast('Failed to reset thumbnail', 'error');
+                } finally {
+                    onClose();
+                }
+            } : undefined}
             modelsForThumbnail={(() => {
                 if (!activeImage?.metadata) return [];
-                const res = [];
+                const res: { name: string; hash: string; type: string }[] = [];
                 const m = activeImage.metadata;
+                const cleanResourceName = (value: string) =>
+                    value
+                        .split('(')[0]
+                        .trim()
+                        .replace(/^lora:/i, '')
+                        .split(':')[0]
+                        .trim();
+                const pushResources = (values: string[] | undefined, hashPrefix: string, resourceType: string) => {
+                    values?.forEach(value => {
+                        const clean = cleanResourceName(value);
+                        if (clean) res.push({ name: clean, hash: `${hashPrefix}${clean}`, type: resourceType });
+                    });
+                };
 
                 // Checkpoint
-                // Modified to allow name-based fallback if hash is missing
-                const modelName = typeof m.model === 'string' ? m.model : (m.model as any)?.name;
+                const modelValue = m.model as unknown;
+                const modelName = typeof modelValue === 'string'
+                    ? modelValue
+                    : modelValue && typeof modelValue === 'object' && 'name' in modelValue
+                        ? String((modelValue as { name?: unknown }).name || '')
+                        : '';
                 if (m.modelHash || modelName) {
                     const name = modelName || 'Checkpoint';
-                    const hash = m.modelHash || `checkpoint_${name}`; // Fallback hash for name-based lookup
+                    const hash = m.modelHash || `name:${name}`;
                     res.push({ name, hash, type: 'checkpoint' });
                 }
 
-                // LoRAs
-                if (m.loras && Array.isArray(m.loras)) {
-                    m.loras.forEach(l => {
-                        // l is "lora_name (hash)" or "lora:name:1" depending on parser
-                        // Simple extraction
-                        const clean = l.split('(')[0].trim().replace('lora:', '').split(':')[0];
-                        // We use a pseudo-hash for LoRAs if real hash isn't available, but usually harvest uses consistent naming
-                        // For manual set, we rely on the name matching logic in backend or just hash if available
-                        // Actually, backend `set_model_thumbnail` takes a hash.
-                        // Implication: We need the HASH. 
-                        // Most parsers don't give lora HASH unless it's in the string.
-                        // Let's rely on backend logic: `set_model_thumbnail` takes `model_hash`.
-                        // If we don't have a hash, we can't reliably set it unless we use the name as hash (like harvest does).
-                        // Harvest uses: 'lora_' || clean_name
-                        res.push({ name: clean, hash: `lora_${clean}`, type: 'lora' });
-                    });
-                }
+                pushResources(m.loras, 'lora_', 'loras');
+                pushResources(m.embeddings, 'emb_', 'embeddings');
+                pushResources(m.hypernetworks, 'hyper_', 'hypernetworks');
+                pushResources(m.controlNets, 'cnet_', 'control_nets');
+                pushResources(m.ipAdapters, 'ipad_', 'ip_adapters');
 
                 return res;
             })()}
@@ -238,18 +259,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 if (contextMenu.imageId && activeImage?.id) {
                     const { invoke } = await import('@tauri-apps/api/core');
 
-                    // Map frontend type (singular) to backend type (plural for some)
-                    let resourceType = 'checkpoint';
-                    if (model.type === 'lora') resourceType = 'loras';
-                    if (model.type === 'embedding') resourceType = 'embeddings';
-                    if (model.type === 'hypernetwork') resourceType = 'hypernetworks';
-                    if (model.type === 'checkpoint') resourceType = 'checkpoint';
-
                     await invoke('set_model_thumbnail', {
                         modelHash: model.hash,
                         modelName: model.name,
                         imagePath: activeImage.id,
-                        resourceType: resourceType
+                        resourceType: model.type
                     });
 
                     // Invalidate stats query to refresh thumbnails in FilterPanel

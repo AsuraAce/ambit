@@ -88,14 +88,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             .sort()
     ), [settings.maskedKeywords]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
-    const requiresPrivacyMaskIndex = settingsLoaded
+    const shouldRefreshPrivacyMaskIndex = settingsLoaded
         && privacyEnabled
-        && settings.maskingMode === 'hide'
         && !isBrowserMockMode();
+    const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
     const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
 
     useEffect(() => {
-        if (!requiresPrivacyMaskIndex) {
+        if (!shouldRefreshPrivacyMaskIndex) {
             setPrivacyMaskReady(false);
             return;
         }
@@ -104,16 +104,25 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setPrivacyMaskReady(false);
 
         void (async () => {
+            const startedAt = performance.now();
             try {
                 await getDb();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
 
                 setPrivacyMaskReady(true);
+                console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - startedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
+                    const rebuildStartedAt = performance.now();
+                    const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
+                    const { useLibraryStore } = await import('../stores/libraryStore');
+                    await rebuildThumbnailFacetCache();
+                    console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
+                    useLibraryStore.getState().incrementFacetCacheVersion();
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                     void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
                     void queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
+                    void refreshCollections(true);
                 }
             } catch (error) {
                 console.error('[Privacy] Failed to refresh privacy mask index', error);
@@ -124,7 +133,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return () => {
             cancelled = true;
         };
-    }, [privacyMaskKey, privacyMaskKeywords, queryClient, requiresPrivacyMaskIndex]);
+    }, [privacyMaskKey, privacyMaskKeywords, queryClient, refreshCollections, shouldRefreshPrivacyMaskIndex]);
 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded

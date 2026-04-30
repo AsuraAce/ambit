@@ -169,6 +169,9 @@ export interface Collection {
   count?: number;
   thumbnail?: string;
   customThumbnail?: string;
+  safeThumbnail?: string;
+  thumbnailIsSensitive?: boolean;
+  thumbnailSourceKind?: 'dynamic' | 'customImage' | 'customPath';
   color?: string;
   createdAt: number;
   updatedAt?: number; // Added for 'Recently Updated' sort

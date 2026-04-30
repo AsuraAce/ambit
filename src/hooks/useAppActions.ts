@@ -165,7 +165,8 @@ export const useAppActions = ({
             return img;
         }));
 
-        const { toggleImageMask } = await import('../services/db/imageRepo');
+        const { toggleImageMask, rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
+        const { useLibraryStore } = await import('../stores/libraryStore');
         const promises: Promise<void>[] = [];
 
         idsToToggle.forEach(id => {
@@ -180,10 +181,13 @@ export const useAppActions = ({
         });
 
         await Promise.all(promises);
+        await rebuildThumbnailFacetCache();
+        useLibraryStore.getState().incrementFacetCacheVersion();
+        void refreshCollections(true);
+        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
 
         if (privacyEnabled && settings.maskingMode === 'hide') {
             await queryClient.invalidateQueries({ queryKey: ['images'] });
-            await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             await queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
         }
 

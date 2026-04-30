@@ -79,6 +79,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         metadata::models::set_model_thumbnail,
         metadata::models::unset_model_thumbnail,
         metadata::models::clear_all_thumbnails,
+        metadata::models::set_resource_thumbnail_sensitivity,
         // fs commands
         fs_commands::move_to_trash,
         fs_commands::delete_thumbnail,

@@ -92,11 +92,15 @@ export const ensureAssetPathAccessible = async (
 };
 
 export const ensureConfiguredAssetPathsAccessible = async (
-    settings: Pick<AppSettings, 'monitoredFolders' | 'invokeAiPath'>
+    settings: Pick<AppSettings, 'monitoredFolders' | 'invokeAiPath' | 'resourceFolders'>
 ): Promise<void> => {
     const tasks: Promise<void>[] = settings.monitoredFolders.map((folder) =>
         ensureAssetPathAccessible(folder.path, { assumeDirectory: true })
     );
+
+    settings.resourceFolders?.forEach((folder) => {
+        tasks.push(ensureAssetPathAccessible(folder, { assumeDirectory: true }));
+    });
 
     const invokeRoot = normalizeInvokeRoot(settings.invokeAiPath);
     if (invokeRoot) {
