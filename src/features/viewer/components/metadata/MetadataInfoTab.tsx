@@ -8,6 +8,8 @@ import { formatModelName } from '../../../../utils/formatUtils';
 import { ParamItem } from './ParamItem';
 import { ResourceSection } from './ResourceSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
+import { HighlightedPromptText } from './HighlightedPromptText';
+import type { PromptHighlightSpec } from '../../utils/searchHighlights';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -27,6 +29,7 @@ interface MetadataInfoTabProps {
     isAnalyzing: boolean;
     onOpenAIResult?: () => void;
     isLoading?: boolean;
+    searchHighlights?: PromptHighlightSpec;
 }
 
 export const MetadataInfoTab = ({
@@ -46,7 +49,8 @@ export const MetadataInfoTab = ({
     onGenerateVariations,
     isAnalyzing,
     onOpenAIResult,
-    isLoading
+    isLoading,
+    searchHighlights
 }: MetadataInfoTabProps) => {
     // Local UI State
     const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
@@ -222,7 +226,11 @@ export const MetadataInfoTab = ({
                             </div>
                         </div>
                         <div className={`p-4 bg-white dark:bg-zinc-950/50 rounded-xl border text-sm font-sans leading-relaxed max-h-48 overflow-y-auto shadow-inner transition-colors ${!isLoading && promptValue !== (image.originalMetadata?.positivePrompt ?? image.metadata.positivePrompt) ? 'border-amber-300 dark:border-amber-500/30 text-gray-800 dark:text-gray-200' : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300'}`}>
-                            {promptValue || <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI or refresh from folder.</span>}
+                            {promptValue ? (
+                                <HighlightedPromptText text={promptValue} terms={searchHighlights?.positivePrompt} />
+                            ) : (
+                                <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI or refresh from folder.</span>
+                            )}
                         </div>
                     </div>
 
@@ -231,7 +239,7 @@ export const MetadataInfoTab = ({
                         <div>
                             <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider mb-2">Negative Prompt</h3>
                             <div className={`p-4 bg-white dark:bg-zinc-950/30 rounded-xl border text-xs leading-relaxed max-h-32 overflow-y-auto transition-colors ${isModified('negativePrompt') ? 'border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-200/80 shadow-inner bg-amber-50/10' : 'border-gray-200 dark:border-white/5 text-red-600/80 dark:text-red-200/60 font-sans'}`}>
-                                {image.metadata.negativePrompt}
+                                <HighlightedPromptText text={image.metadata.negativePrompt} terms={searchHighlights?.negativePrompt} />
                             </div>
                         </div>
                     )}

@@ -15,6 +15,7 @@ import { ensureAssetPathAccessible } from '../../../services/assetScope';
 import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
+import type { PromptHighlightSpec } from '../utils/searchHighlights';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -38,6 +39,7 @@ interface ImageViewerProps {
     isOpen: boolean;
     isSidebarOpen?: boolean;
     onToggleSidebar?: () => void;
+    searchHighlights?: PromptHighlightSpec;
 }
 
 import { AIResultModal } from './AIResultModal';
@@ -65,7 +67,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onDelete,
     isOpen,
     isSidebarOpen = true,
-    onToggleSidebar
+    onToggleSidebar,
+    searchHighlights
 }) => {
     const settings = useSettingsStore(s => s.settings);
     const collections = useCollectionStore(s => s.collections);
@@ -323,6 +326,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     palette={palette}
                     isPaletteLoading={isPaletteLoading}
                     isLoading={isReallyLoading}
+                    searchHighlights={searchHighlights}
                 />
             </div>
 
