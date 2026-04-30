@@ -1,4 +1,4 @@
-import { AIImage, Collection, FacetType, FilterState } from '../../types';
+import { AIImage, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
@@ -559,27 +559,29 @@ export const getFacets = async (
  * Used to hide facet options that have no matching images in the current filter context.
  */
 export const getValidFacetNames = async (
-    filters: FilterState,
-    collections: Collection[],
-    excludeCategories: string[] = []
-): Promise<ValidFacetNames> => {
+    whereClause: string,
+    params: unknown[],
+    collectionId?: string,
+    loraName?: string
+): Promise<ValidFacetNames | null> => {
     try {
         // Import the command dynamically to avoid circular dependencies
         const { commands } = await import('../../bindings');
         const result = await commands.getValidFacetNames(
-            filters as any,
-            collections as any,
-            excludeCategories
+            whereClause,
+            JSON.stringify(params),
+            collectionId ?? null,
+            loraName ?? null
         );
 
         if (result.status === 'ok') {
             return result.data;
         } else {
             console.error('[DB] Failed to get valid facet names:', result.error);
-            return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
+            return null;
         }
     } catch (e) {
         console.error('[DB] Failed to get valid facet names', e);
-        return { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
+        return null;
     }
 };

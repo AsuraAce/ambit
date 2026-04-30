@@ -1,20 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FilterState } from '../../../types';
+
+const dbMocks = vi.hoisted(() => ({
+    select: vi.fn(),
+    execute: vi.fn(),
+    getDb: vi.fn(),
+    dispatch: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+}));
 
 vi.mock('@tauri-apps/api/core', () => ({
-    convertFileSrc: (path: string) => `asset://${path}`
+    convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
 vi.mock('../../runtime', () => ({
-    isBrowserMockMode: () => false
+    isBrowserMockMode: () => false,
 }));
-
-const getDbMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../connection', () => ({
     dbMutex: {
-        dispatch: (fn: () => Promise<unknown>) => fn()
+        dispatch: dbMocks.dispatch,
     },
-    getDb: () => getDbMock()
+    getDb: dbMocks.getDb,
 }));
 
 const makeCollectionRow = (overrides: Record<string, unknown> = {}) => ({
@@ -32,42 +38,90 @@ const makeCollectionRow = (overrides: Record<string, unknown> = {}) => ({
     ...overrides
 });
 
+describe('collectionRepo filter normalization', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.resetModules();
+        dbMocks.execute.mockResolvedValue(undefined);
+        dbMocks.getDb.mockResolvedValue({ select: dbMocks.select, execute: dbMocks.execute });
+    });
+
+    it('normalizes legacy persisted collection filters with current defaults', async () => {
+        const { parsePersistedCollectionFilters } = await import('../collectionRepo');
+        const filters = parsePersistedCollectionFilters(JSON.stringify({
+            searchQuery: 'portrait',
+            loras: ['detail'],
+        }));
+
+        expect(filters).toMatchObject({
+            searchQuery: 'portrait',
+            loras: ['detail'],
+            controlNets: [],
+            ipAdapters: [],
+            pinnedOnly: false,
+            showIntermediates: false,
+            showGrids: false,
+            collectionId: null,
+        });
+    });
+
+    it('serializes smart collection filters with current defaults', async () => {
+        const { parsePersistedCollectionFilters, upsertCollection } = await import('../collectionRepo');
+
+        await upsertCollection({
+            id: 'smart-a',
+            name: 'Smart A',
+            filters: { searchQuery: 'portrait' } as unknown as FilterState,
+        });
+
+        const calls = dbMocks.execute.mock.calls as Array<[string, unknown[]]>;
+        const params = calls[0][1];
+        const serializedFilters = params[6];
+
+        expect(typeof serializedFilters).toBe('string');
+        const filters = parsePersistedCollectionFilters(serializedFilters as string);
+        expect(filters?.searchQuery).toBe('portrait');
+        expect(filters?.controlNets).toEqual([]);
+        expect(filters?.ipAdapters).toEqual([]);
+        expect(filters?.pinnedOnly).toBe(false);
+    });
+});
+
 describe('collectionRepo thumbnail hydration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        dbMocks.execute.mockResolvedValue(undefined);
+        dbMocks.getDb.mockResolvedValue({ select: dbMocks.select, execute: dbMocks.execute });
     });
 
     it('resolves custom image ids to optimized thumbnail paths without a broad image join', async () => {
         const queries: string[] = [];
-        const db = {
-            select: vi.fn(async (query: string) => {
-                queries.push(query);
-                if (query.includes('SELECT * FROM collections')) {
-                    return [makeCollectionRow({ name: 'Custom', custom_thumbnail: 'img1' })];
-                }
-                if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-        if (query.includes('c.id as collection_id')) {
-                    return [{
-                        collection_id: 'c1',
-                        dynamic_thumb: 'C:/images/full.png',
-                        dynamic_privacy: 1,
-                        safe_thumb: 'C:/thumbs/safe.webp'
-                    }];
-                }
-                if (query.includes('WHERE id IN')) {
-                    return [{
-                        id: 'img1',
-                        path: 'C:/images/full.png',
-                        thumb: 'C:/thumbs/img1.webp',
-                        privacy_hidden: 0
-                    }];
-                }
-                if (query.includes('WHERE path IN')) return [];
-                return [];
-            })
-        };
-        getDbMock.mockResolvedValue(db);
+        dbMocks.select.mockImplementation(async (query: string) => {
+            queries.push(query);
+            if (query.includes('SELECT * FROM collections')) {
+                return [makeCollectionRow({ name: 'Custom', custom_thumbnail: 'img1' })];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('c.id as collection_id')) {
+                return [{
+                    collection_id: 'c1',
+                    dynamic_thumb: 'C:/images/full.png',
+                    dynamic_privacy: 1,
+                    safe_thumb: 'C:/thumbs/safe.webp'
+                }];
+            }
+            if (query.includes('WHERE id IN')) {
+                return [{
+                    id: 'img1',
+                    path: 'C:/images/full.png',
+                    thumb: 'C:/thumbs/img1.webp',
+                    privacy_hidden: 0
+                }];
+            }
+            if (query.includes('WHERE path IN')) return [];
+            return [];
+        });
 
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();
@@ -82,28 +136,25 @@ describe('collectionRepo thumbnail hydration', () => {
     });
 
     it('resolves custom image paths through the targeted path lookup', async () => {
-        const db = {
-            select: vi.fn(async (query: string) => {
-                if (query.includes('SELECT * FROM collections')) {
-                    return [makeCollectionRow({ custom_thumbnail: 'C:/images/source.png' })];
-                }
-                if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-        if (query.includes('c.id as collection_id')) {
-                    return [{ collection_id: 'c1', dynamic_thumb: null, dynamic_privacy: null, safe_thumb: null }];
-                }
-                if (query.includes('WHERE id IN')) return [];
-                if (query.includes('WHERE path IN')) {
-                    return [{
-                        id: 'img-path',
-                        path: 'C:/images/source.png',
-                        thumb: 'C:/thumbs/source.webp',
-                        privacy_hidden: 1
-                    }];
-                }
-                return [];
-            })
-        };
-        getDbMock.mockResolvedValue(db);
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) {
+                return [makeCollectionRow({ custom_thumbnail: 'C:/images/source.png' })];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('c.id as collection_id')) {
+                return [{ collection_id: 'c1', dynamic_thumb: null, dynamic_privacy: null, safe_thumb: null }];
+            }
+            if (query.includes('WHERE id IN')) return [];
+            if (query.includes('WHERE path IN')) {
+                return [{
+                    id: 'img-path',
+                    path: 'C:/images/source.png',
+                    thumb: 'C:/thumbs/source.webp',
+                    privacy_hidden: 1
+                }];
+            }
+            return [];
+        });
 
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();
@@ -114,20 +165,17 @@ describe('collectionRepo thumbnail hydration', () => {
     });
 
     it('keeps legacy raw custom thumbnail urls when no image row matches', async () => {
-        const db = {
-            select: vi.fn(async (query: string) => {
-                if (query.includes('SELECT * FROM collections')) {
-                    return [makeCollectionRow({ custom_thumbnail: 'https://example.com/thumb.webp' })];
-                }
-                if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-        if (query.includes('c.id as collection_id')) {
-                    return [{ collection_id: 'c1', dynamic_thumb: 'C:/thumbs/dynamic.webp', dynamic_privacy: 1, safe_thumb: null }];
-                }
-                if (query.includes('WHERE id IN') || query.includes('WHERE path IN')) return [];
-                return [];
-            })
-        };
-        getDbMock.mockResolvedValue(db);
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) {
+                return [makeCollectionRow({ custom_thumbnail: 'https://example.com/thumb.webp' })];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('c.id as collection_id')) {
+                return [{ collection_id: 'c1', dynamic_thumb: 'C:/thumbs/dynamic.webp', dynamic_privacy: 1, safe_thumb: null }];
+            }
+            if (query.includes('WHERE id IN') || query.includes('WHERE path IN')) return [];
+            return [];
+        });
 
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();
@@ -140,23 +188,20 @@ describe('collectionRepo thumbnail hydration', () => {
 
     it('marks dynamic thumbnails sensitive, exposes a safe alternative, and orders pinned first', async () => {
         let dynamicQuery = '';
-        const db = {
-            select: vi.fn(async (query: string) => {
-                if (query.includes('SELECT * FROM collections')) return [makeCollectionRow()];
-                if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 2 }];
-        if (query.includes('c.id as collection_id')) {
-                    dynamicQuery = query;
-                    return [{
-                        collection_id: 'c1',
-                        dynamic_thumb: 'C:/thumbs/unsafe.webp',
-                        dynamic_privacy: 1,
-                        safe_thumb: 'C:/thumbs/safe.webp'
-                    }];
-                }
-                return [];
-            })
-        };
-        getDbMock.mockResolvedValue(db);
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) return [makeCollectionRow()];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 2 }];
+            if (query.includes('c.id as collection_id')) {
+                dynamicQuery = query;
+                return [{
+                    collection_id: 'c1',
+                    dynamic_thumb: 'C:/thumbs/unsafe.webp',
+                    dynamic_privacy: 1,
+                    safe_thumb: 'C:/thumbs/safe.webp'
+                }];
+            }
+            return [];
+        });
 
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
         const collections = await getAllCollectionsWithStats();

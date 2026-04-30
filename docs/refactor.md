@@ -30,7 +30,7 @@ Status: Deferred
 
 ### Related Code
 - `src/utils/sqlHelpers.ts`
-- `src-tauri/src/db/commands/filter_types.rs`
+- `src/services/db/searchRepo.ts`
 - `src-tauri/src/db/migrations/m46_optimize_fts.rs`
 
 ## Frontend State and Shell Coordination
@@ -150,3 +150,39 @@ Status: Deferred
 - `src/services/thumbnailService.ts`
 - `src/features/maintenance/components/MaintenanceTabs.tsx`
 - `src/features/maintenance/components/ThumbnailsTab.tsx`
+
+## Context-Aware Facet Drill-Down Performance
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Manual collection drill-down is fast because `collection_images` gives SQLite a small indexed membership set.
+- Search terms, asset drill-down, date filters, and smart collections currently evaluate dynamic SQL filters directly against `images` and junction tables.
+- Valid facet discovery repeats the filtered image context across multiple facet branches, so prompt scans and multi-asset filters can become noticeably slower on large libraries.
+
+### Current Pain Points
+- Smart collections do not have a materialized membership table, so they behave more like a saved query than a manual collection.
+- Prompt search still depends on broad `LIKE` predicates in common paths.
+- Asset drill-down can re-run expensive cross-category joins while the user is browsing or refining filters.
+
+### Safe-Change Warning
+- Keep facet visibility and image result queries semantically identical. A faster facet query that disagrees with the image grid would reintroduce confusing asset-panel regressions.
+- Do not replace the global `facet_cache` catalog/count model opportunistically; filtered counts are a separate product and performance decision.
+
+### Suggested Future Direction
+- Materialize the current filtered image IDs once per filter context, then reuse that set for all valid-facet branches.
+- Prefer FTS-backed prompt matching where search syntax allows it, with the current SQL predicates as a compatibility fallback.
+- Cache valid facet results by normalized filter/query hash and debounce free-text driven facet refreshes separately from image browsing.
+- Consider optional smart collection membership materialization, refreshed lazily or incrementally, for collections that are opened frequently.
+- Review junction-table indexes for lookup patterns used by LoRA, embedding, hypernetwork, ControlNet, and IP-Adapter drill-down.
+
+### Not Part of the Current Task
+- Do not bundle this with correctness fixes for context-aware facet visibility.
+- Do not introduce filtered facet counts unless the UI explicitly changes to display them.
+
+### Related Code
+- `src/hooks/useLibraryStatsQuery.ts`
+- `src/hooks/useImagesQuery.ts`
+- `src/utils/sqlHelpers.ts`
+- `src/services/db/searchRepo.ts`
+- `src-tauri/src/db/facets.rs`
+- `src-tauri/src/db/migrations/`

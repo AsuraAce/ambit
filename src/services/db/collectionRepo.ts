@@ -2,6 +2,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
+import { createDefaultFilters } from '../../utils/filterState';
 import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import {
@@ -112,6 +113,22 @@ const loadImageThumbnailLookup = async (
     return matches;
 };
 
+export const parsePersistedCollectionFilters = (filterState?: string | null): FilterState | undefined => {
+    if (!filterState) return undefined;
+
+    try {
+        const parsed = JSON.parse(filterState) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return undefined;
+        }
+
+        return createDefaultFilters(parsed as Partial<FilterState>);
+    } catch (error) {
+        console.warn('[DB] Failed to parse collection filter state', error);
+        return undefined;
+    }
+};
+
 export const ensureCollectionSchema = async () => {
     if (isBrowserMockMode()) return;
 
@@ -153,6 +170,9 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
+        const filterState = collection.filters
+            ? JSON.stringify(createDefaultFilters(collection.filters))
+            : null;
 
         try {
             await db.execute(
@@ -176,7 +196,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     collection.isArchived ? 1 : 0,
                     collection.isPinned ? 1 : 0,
                     collection.createdAt || now,
-                    collection.filters ? JSON.stringify(collection.filters) : null,
+                    filterState,
                     collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
                     collection.customThumbnail || null,
                     collection.source || 'ambit',
@@ -360,7 +380,7 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
             safeThumbnail: c.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
             thumbnailIsSensitive,
             thumbnailSourceKind,
-            filters: c.filter_state ? JSON.parse(c.filter_state) : undefined,
+            filters: parsePersistedCollectionFilters(c.filter_state),
             manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
             source: c.source
         } as Collection;
