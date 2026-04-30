@@ -10,7 +10,7 @@ interface HighlightedPromptTextProps {
     terms?: string[];
 }
 
-const MARK_CLASS_NAME = 'rounded bg-amber-200 px-0.5 text-gray-950 dark:bg-amber-400/30 dark:text-amber-100';
+const MARK_CLASS_NAME = 'bg-amber-300/20 text-amber-100 font-semibold underline decoration-amber-300/60 underline-offset-2';
 
 const normalizeTerms = (terms: string[]): string[] => {
     const seen = new Set<string>();
