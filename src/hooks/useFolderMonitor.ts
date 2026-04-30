@@ -7,19 +7,22 @@ import { unwrap } from '../utils/spectaUtils';
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
+import type { ImportResult } from '../services/importService';
 
 interface ImportOptions {
     isStartup?: boolean;
     skipStateManagement?: boolean;
     onProgress?: (current: number, total: number, message?: string) => void;
+    forceRescan?: boolean;
+    waitForStableFiles?: boolean;
 }
 
 interface UseFolderMonitorProps {
     isLoaded: boolean;
     monitoredFolders: MonitoredFolder[];
-    onScan: (folders: { path: string, variant?: string }[], isStartup: boolean) => Promise<void>;
+    onScan: (folders: { path: string, variant?: string }[], isStartup: boolean) => Promise<ImportResult | void>;
     // Update signature to match new options
-    handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<void>;
+    handleImportPaths: (paths: string[], defaultTool?: GeneratorTool, options?: ImportOptions) => Promise<ImportResult | void>;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
     refreshMetadata: () => Promise<void>;
     invokeAiPath?: string;
@@ -31,6 +34,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
     const browserMockMode = isBrowserMockMode();
+
+    const isCompleteImport = (result: ImportResult | void): result is ImportResult =>
+        !!result && result.failedPaths.length === 0;
+
+    const warnCursorHeld = (source: string, folderId: string, result: ImportResult | void) => {
+        const failedCount = result ? result.failedPaths.length : null;
+        console.warn(`[FolderMonitor] ${source}: Keeping folder cursor unchanged for ${folderId}; ${failedCount ?? 'unknown'} path(s) were not fully handled.`);
+    };
 
     useEffect(() => {
         if (browserMockMode) {
@@ -68,12 +79,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     if (folder.lastScanned) {
                         try {
                             console.log(`[FolderMonitor] Smart Scan for ${folder.path}`);
-                            // Cast because bindings aren't regenerated yet
-                            const newFiles = await unwrap((commands as any).scanDirectorySince(folder.path, folder.lastScanned)) as { path: string }[];
+                            const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
 
                             if (newFiles && newFiles.length > 0) {
                                 console.log(`[FolderMonitor] Found ${newFiles.length} new files in ${folder.path}`);
-                                const paths = newFiles.map((f: any) => f.path);
+                                const paths = newFiles.map(f => f.path);
                                 tasks.push({ paths, variant: folder.variant, folderId: folder.id });
                                 totalFilesFound += paths.length;
                             } else {
@@ -86,8 +96,12 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     } else {
                         // Full scan usage (rare on startup if already configured)
                         console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
-                        await onScan([{ path: folder.path, variant: folder.variant }], true);
-                        updateFolderLastScanned(folder.id, scanTime);
+                        const result = await onScan([{ path: folder.path, variant: folder.variant }], true);
+                        if (isCompleteImport(result)) {
+                            updateFolderLastScanned(folder.id, scanTime);
+                        } else {
+                            warnCursorHeld('Startup full scan', folder.id, result);
+                        }
                     }
                 }
                 console.info('[Startup Catch-up] Folder scan phase complete.', {
@@ -107,9 +121,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                     for (const task of tasks) {
                         // We use skipStateManagement: true to prevent handleImportPaths from resetting our global progress
-                        await handleImportPaths(task.paths, task.variant, {
+                        const result = await handleImportPaths(task.paths, task.variant, {
                             isStartup: true,
                             skipStateManagement: true,
+                            forceRescan: true,
+                            waitForStableFiles: true,
                             onProgress: (current, total, message) => {
                                 // Add accumulated count from previous batches
                                 const actualCurrent = globalCurrent + current;
@@ -122,7 +138,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         });
                         globalCurrent += task.paths.length;
                         // ONLY update once successfully imported
-                        updateFolderLastScanned(task.folderId, scanTime);
+                        if (isCompleteImport(result)) {
+                            updateFolderLastScanned(task.folderId, scanTime);
+                        } else {
+                            warnCursorHeld('Startup incremental scan', task.folderId, result);
+                        }
                     }
 
                     setIsImporting(false);
@@ -176,10 +196,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     }
 
                     const scanData = activeNew.map(f => ({ path: f.path, variant: f.variant }));
-                    await onScan(scanData, false);
+                    const result = await onScan(scanData, false);
 
-                    const completedAt = Date.now();
-                    activeNew.forEach(f => updateFolderLastScanned(f.id, completedAt));
+                    if (isCompleteImport(result)) {
+                        const completedAt = Date.now();
+                        activeNew.forEach(f => updateFolderLastScanned(f.id, completedAt));
+                    } else {
+                        activeNew.forEach(f => warnCursorHeld('New folder scan', f.id, result));
+                    }
                 })();
             }
         }
@@ -220,23 +244,27 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
         const { setIsImporting, setImportProgress } = useLibraryStore.getState();
         let totalFilesFound = 0;
-        const tasks: any[] = [];
+        const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
         const scanTime = Date.now();
 
         for (const folder of folders) {
             try {
                 if (folder.lastScanned) {
-                    const newFiles = await unwrap((commands as any).scanDirectorySince(folder.path, folder.lastScanned)) as { path: string }[];
+                    const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
                     if (newFiles.length > 0) {
-                        tasks.push({ paths: newFiles.map((f: any) => f.path), variant: folder.variant, folderId: folder.id });
+                        tasks.push({ paths: newFiles.map(f => f.path), variant: folder.variant, folderId: folder.id });
                         totalFilesFound += newFiles.length;
                     } else {
                         updateFolderLastScanned(folder.id, scanTime);
                     }
                 } else {
                     console.log(`[FolderMonitor] ${source}: Full scan needed for ${folder.path}`);
-                    await onScan([{ path: folder.path, variant: folder.variant }], false);
-                    updateFolderLastScanned(folder.id, scanTime);
+                    const result = await onScan([{ path: folder.path, variant: folder.variant }], false);
+                    if (isCompleteImport(result)) {
+                        updateFolderLastScanned(folder.id, scanTime);
+                    } else {
+                        warnCursorHeld(`${source} full scan`, folder.id, result);
+                    }
                 }
             } catch (e) {
                 console.error(`[FolderMonitor] ${source} failed for ${folder.path}`, e);
@@ -248,8 +276,10 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
             setImportProgress({ current: 0, total: totalFilesFound, message: `${source}: Importing images...` });
             let currentCount = 0;
             for (const task of tasks) {
-                await handleImportPaths(task.paths, task.variant, {
+                const result = await handleImportPaths(task.paths, task.variant, {
                     skipStateManagement: true,
+                    forceRescan: true,
+                    waitForStableFiles: true,
                     onProgress: (c, t, m) => setImportProgress({ 
                         current: currentCount + c, 
                         total: totalFilesFound, 
@@ -257,7 +287,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     })
                 });
                 currentCount += task.paths.length;
-                updateFolderLastScanned(task.folderId, scanTime);
+                if (isCompleteImport(result)) {
+                    updateFolderLastScanned(task.folderId, scanTime);
+                } else {
+                    warnCursorHeld(`${source} incremental scan`, task.folderId, result);
+                }
             }
             setIsImporting(false);
             setImportProgress(null);

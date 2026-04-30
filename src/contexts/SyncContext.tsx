@@ -530,6 +530,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     const { processTargetedFiles } = await import('../services/importService');
                     const result = await processTargetedFiles(nextBatch, {
                         forceRescan: true,
+                        waitForStableFiles: true,
                         onProgress: (current, total, message) => {
                             updateLiveWatchSession({
                                 source: 'generic',
@@ -564,22 +565,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         });
                     }
 
-                    if (result.handledPaths.length > 0) {
-                        // Keep the catch-up cursor aligned only for files we actually handled.
-                        const { updateFolderLastScanned } = useSettingsStore.getState();
-                        const monitoredFolders = settingsRef.current.monitoredFolders || [];
-                        const now = Date.now();
-                        const updatedFolderIds = new Set<string>();
-
-                        result.handledPaths.forEach(path => {
-                            const lowerPath = path.toLowerCase();
-                            const folder = monitoredFolders.find(f => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
-                            if (folder && !updatedFolderIds.has(folder.id)) {
-                                updatedFolderIds.add(folder.id);
-                                updateFolderLastScanned(folder.id, now);
-                            }
-                        });
-                    }
+                    // Targeted watcher events do not prove the whole folder has been swept.
+                    // The startup/catch-up scanner owns the monitored-folder cursor.
 
                     infoLiveWatchPerf('Targeted live cycle complete', {
                         cycleId: cyclePerfContext?.cycleId,

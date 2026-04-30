@@ -218,7 +218,7 @@ export default function App() {
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
-        onScan: (folders) => fileOps.handleImportFolders(folders),
+        onScan: (folders, isStartup) => fileOps.handleImportFolders(folders, isStartup),
         handleImportPaths: fileOps.handleImportPaths,
         addToast,
         refreshMetadata,

@@ -7,6 +7,7 @@ import { GeneralTab, PrivacyTab, IntelligenceTab, DevTab, AdvancedTab, Connectio
 import { APP_NAME } from '../../../constants/app';
 import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
 import { useAppVersion } from '../../../hooks/useAppVersion';
+import type { ImportResult } from '../../../services/importService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,7 +16,7 @@ interface SettingsModalProps {
   onSave: (settings: AppSettings) => void;
   canCheckForUpdates: boolean;
   initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
-  onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+  onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
   onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
   hasPendingUpdate: boolean;
   pendingUpdateVersion: string | null;

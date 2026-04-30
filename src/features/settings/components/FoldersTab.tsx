@@ -10,11 +10,12 @@ import { useMetadataRefresh } from '../../../hooks/useMetadataRefresh';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import type { ImportResult } from '../../../services/importService';
 
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>;
 }
 

@@ -12,6 +12,8 @@ interface ImportOptions {
     isStartup?: boolean;
     skipStateManagement?: boolean;
     onProgress?: (current: number, total: number, message?: string) => void;
+    forceRescan?: boolean;
+    waitForStableFiles?: boolean;
 }
 
 interface UseImportOpsProps {
@@ -140,7 +142,13 @@ export const useImportOps = ({
     }, [setIsImporting, setImportProgress, setImportAbortController, extractNativePaths, commitImportResult, addToast]);
 
     const handleImportPaths = useCallback(async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
-        const { isStartup = false, skipStateManagement = false, onProgress: externalOnProgress } = options;
+        const {
+            isStartup = false,
+            skipStateManagement = false,
+            onProgress: externalOnProgress,
+            forceRescan = false,
+            waitForStableFiles = isStartup
+        } = options;
 
         if (paths.length === 0 && isStartup) return;
 
@@ -159,8 +167,18 @@ export const useImportOps = ({
                 }
             };
 
-            const result = await processNativePaths(paths, thumbDir, onProgress, defaultTool, abortCtrl.signal, isStartup);
+            const result = await processNativePaths(
+                paths,
+                thumbDir,
+                onProgress,
+                defaultTool,
+                abortCtrl.signal,
+                isStartup,
+                forceRescan,
+                waitForStableFiles
+            );
             await commitImportResult(result, isStartup);
+            return result;
         } catch (error) {
             console.error("Import error", error);
             if (!isStartup) addToast("Import failed or cancelled", "error");
@@ -208,6 +226,7 @@ export const useImportOps = ({
                     addToast('No images found in selected folders', 'info');
                 }
             }
+            return result;
         } catch (error) {
             console.error('[ImportFolders] Error:', error);
             if (!isStartup) addToast('Import failed', 'error');
@@ -332,7 +351,7 @@ export const useImportOps = ({
                 variant as GeneratorTool | undefined,
                 abortCtrl.signal,
                 false,
-                false
+                isIncremental
             );
 
             if (result.images.length > 0) {
