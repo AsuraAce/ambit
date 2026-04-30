@@ -44,6 +44,275 @@ pub struct RustCollection {
     pub manual_exclusions: Option<Vec<String>>,
 }
 
+#[derive(Clone, Debug)]
+struct SearchToken {
+    term: String,
+    is_negative: bool,
+    is_or_operator: bool,
+}
+
+#[derive(Clone, Debug)]
+struct SearchCondition {
+    sql: String,
+    params: Vec<Value>,
+    is_positive_prompt: bool,
+}
+
+fn tokenize_search_query(query: &str) -> Vec<SearchToken> {
+    TERM_REGEX
+        .captures_iter(query)
+        .map(|caps| {
+            let is_negative = caps.get(1).is_some();
+            let raw_term = caps.get(2).unwrap().as_str();
+            let is_quoted = raw_term.starts_with('"') && raw_term.ends_with('"');
+            let term = if is_quoted {
+                raw_term[1..raw_term.len() - 1].replace("\\\"", "\"")
+            } else {
+                raw_term.to_string()
+            };
+
+            SearchToken {
+                is_or_operator: !is_negative && !is_quoted && term.eq_ignore_ascii_case("or"),
+                term,
+                is_negative,
+            }
+        })
+        .collect()
+}
+
+fn parse_search_token(token: &SearchToken) -> Option<SearchCondition> {
+    let lower_term = token.term.to_lowercase();
+
+    if lower_term.contains(':') && !lower_term.starts_with(':') {
+        let parts: Vec<&str> = lower_term.splitn(2, ':').collect();
+        let key = parts[0];
+        let val = parts[1];
+
+        let mut sql = String::new();
+        let mut param: Option<Value> = None;
+
+        match key {
+            "steps" => {
+                if let Some(stripped) = val.strip_prefix('>') {
+                    sql = "steps > ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else if let Some(stripped) = val.strip_prefix('<') {
+                    sql = "steps < ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else {
+                    sql = "steps = ?".to_string();
+                    param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
+                }
+            }
+            "cfg" => {
+                if let Some(stripped) = val.strip_prefix('>') {
+                    sql = "cfg > ?".to_string();
+                    param = stripped.parse::<f64>().ok().map(Value::Real);
+                } else if let Some(stripped) = val.strip_prefix('<') {
+                    sql = "cfg < ?".to_string();
+                    param = stripped.parse::<f64>().ok().map(Value::Real);
+                } else {
+                    sql = "cfg = ?".to_string();
+                    param = val.parse::<f64>().ok().map(Value::Real);
+                }
+            }
+            "w" | "width" => {
+                if let Some(stripped) = val.strip_prefix('>') {
+                    sql = "width > ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else if let Some(stripped) = val.strip_prefix('<') {
+                    sql = "width < ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else {
+                    sql = "width = ?".to_string();
+                    param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
+                }
+            }
+            "h" | "height" => {
+                if let Some(stripped) = val.strip_prefix('>') {
+                    sql = "height > ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else if let Some(stripped) = val.strip_prefix('<') {
+                    sql = "height < ?".to_string();
+                    param = stripped
+                        .parse::<i32>()
+                        .ok()
+                        .map(|v| Value::Integer(v as i64));
+                } else {
+                    sql = "height = ?".to_string();
+                    param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
+                }
+            }
+            "model" => {
+                let p = format!("%{}%", val);
+                return Some(SearchCondition {
+                    sql: "(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)"
+                        .to_string(),
+                    params: vec![Value::Text(p.clone()), Value::Text(p)],
+                    is_positive_prompt: false,
+                });
+            }
+            "seed" => {
+                sql = "json_extract(metadata_json, '$.seed') LIKE ?".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "neg" | "negative" => {
+                sql = "negative_prompt LIKE ?".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "file" | "filename" | "path" => {
+                sql = "path LIKE ?".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "all" => {
+                let p = format!("%{}%", val);
+                let sql = if token.is_negative {
+                    "(path NOT LIKE ? AND metadata_json NOT LIKE ?)".to_string()
+                } else {
+                    "(path LIKE ? OR metadata_json LIKE ?)".to_string()
+                };
+                return Some(SearchCondition {
+                    sql,
+                    params: vec![Value::Text(p.clone()), Value::Text(p)],
+                    is_positive_prompt: false,
+                });
+            }
+            "sampler" => {
+                sql = "sampler LIKE ?".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "tool" => {
+                sql = "tool LIKE ?".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "lora" => {
+                sql = "EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "cn" | "controlnet" => {
+                sql = "EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name LIKE ?)".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "ip" | "ipadapter" => {
+                sql = "EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name LIKE ?)".to_string();
+                param = Some(Value::Text(format!("%{}%", val)));
+            }
+            "upscaled" => {
+                sql = "json_extract(metadata_json, '$.upscaled') = ?".to_string();
+                param = Some(Value::Integer(if val == "true" { 1 } else { 0 }));
+            }
+            _ => {}
+        }
+
+        if sql.is_empty() {
+            return None;
+        }
+
+        return param.map(|p| SearchCondition {
+            sql: if token.is_negative {
+                format!("NOT ({})", sql)
+            } else {
+                sql
+            },
+            params: vec![p],
+            is_positive_prompt: false,
+        });
+    }
+
+    Some(SearchCondition {
+        sql: if token.is_negative {
+            "positive_prompt NOT LIKE ?".to_string()
+        } else {
+            "positive_prompt LIKE ?".to_string()
+        },
+        params: vec![Value::Text(format!("%{}%", token.term))],
+        is_positive_prompt: !token.is_negative,
+    })
+}
+
+fn push_search_condition(
+    conditions: &mut Vec<String>,
+    params: &mut Vec<Value>,
+    condition: SearchCondition,
+) {
+    conditions.push(condition.sql);
+    params.extend(condition.params);
+}
+
+fn append_search_query_conditions(
+    query: &str,
+    conditions: &mut Vec<String>,
+    params: &mut Vec<Value>,
+) {
+    let tokens = tokenize_search_query(query);
+    let mut index = 0;
+
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.is_or_operator {
+            index += 1;
+            continue;
+        }
+
+        let Some(condition) = parse_search_token(token) else {
+            index += 1;
+            continue;
+        };
+
+        if !condition.is_positive_prompt {
+            push_search_condition(conditions, params, condition);
+            index += 1;
+            continue;
+        }
+
+        let mut prompt_group = vec![condition];
+        let mut next_index = index + 1;
+
+        while next_index + 1 < tokens.len() && tokens[next_index].is_or_operator {
+            let Some(next_condition) = parse_search_token(&tokens[next_index + 1]) else {
+                break;
+            };
+            if !next_condition.is_positive_prompt {
+                break;
+            }
+
+            prompt_group.push(next_condition);
+            next_index += 2;
+        }
+
+        if prompt_group.len() > 1 {
+            let group_sql = prompt_group
+                .iter()
+                .map(|condition| condition.sql.as_str())
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            conditions.push(format!("({})", group_sql));
+            for condition in prompt_group {
+                params.extend(condition.params);
+            }
+        } else if let Some(condition) = prompt_group.into_iter().next() {
+            push_search_condition(conditions, params, condition);
+        }
+
+        index = next_index;
+    }
+}
+
 impl RustFilterState {
     pub fn build_where_clause(
         &self,
@@ -271,172 +540,7 @@ impl RustFilterState {
         }
 
         if !self.search_query.is_empty() {
-            for caps in TERM_REGEX.captures_iter(&self.search_query) {
-                let is_negative = caps.get(1).is_some();
-                let mut term = caps.get(2).unwrap().as_str().to_string();
-
-                if term.starts_with('"') && term.ends_with('"') {
-                    term = term[1..term.len() - 1].replace(r#"\"#, "\"");
-                }
-
-                let lower_term = term.to_lowercase();
-                if lower_term.contains(':') && !lower_term.starts_with(':') {
-                    let parts: Vec<&str> = lower_term.splitn(2, ':').collect();
-                    let key = parts[0];
-                    let val = parts[1];
-
-                    let mut sql = String::new();
-                    let mut param: Option<Value> = None;
-
-                    match key {
-                        "steps" => {
-                            if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "steps > ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "steps < ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else {
-                                sql = "steps = ?".to_string();
-                                param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
-                            }
-                        }
-                        "cfg" => {
-                            if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "cfg > ?".to_string();
-                                param = stripped.parse::<f64>().ok().map(Value::Real);
-                            } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "cfg < ?".to_string();
-                                param = stripped.parse::<f64>().ok().map(Value::Real);
-                            } else {
-                                sql = "cfg = ?".to_string();
-                                param = val.parse::<f64>().ok().map(Value::Real);
-                            }
-                        }
-                        "w" | "width" => {
-                            if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "width > ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "width < ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else {
-                                sql = "width = ?".to_string();
-                                param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
-                            }
-                        }
-                        "h" | "height" => {
-                            if let Some(stripped) = val.strip_prefix('>') {
-                                sql = "height > ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else if let Some(stripped) = val.strip_prefix('<') {
-                                sql = "height < ?".to_string();
-                                param = stripped
-                                    .parse::<i32>()
-                                    .ok()
-                                    .map(|v| Value::Integer(v as i64));
-                            } else {
-                                sql = "height = ?".to_string();
-                                param = val.parse::<i32>().ok().map(|v| Value::Integer(v as i64));
-                            }
-                        }
-                        "model" => {
-                            let p = format!("%{}%", val);
-                            conditions.push(
-                                "(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)"
-                                    .to_string(),
-                            );
-                            params.push(Value::Text(p.clone()));
-                            params.push(Value::Text(p));
-                            continue;
-                        }
-                        "seed" => {
-                            sql = "json_extract(metadata_json, '$.seed') LIKE ?".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "neg" | "negative" => {
-                            sql = "negative_prompt LIKE ?".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "file" | "filename" | "path" => {
-                            sql = "path LIKE ?".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "all" => {
-                            let p = format!("%{}%", val);
-                            if is_negative {
-                                conditions.push(
-                                    "(path NOT LIKE ? AND metadata_json NOT LIKE ?)".to_string(),
-                                );
-                            } else {
-                                conditions
-                                    .push("(path LIKE ? OR metadata_json LIKE ?)".to_string());
-                            }
-                            params.push(Value::Text(p.clone()));
-                            params.push(Value::Text(p));
-                            continue;
-                        }
-                        "sampler" => {
-                            sql = "sampler LIKE ?".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "tool" => {
-                            sql = "tool LIKE ?".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "lora" => {
-                            sql = "EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "cn" | "controlnet" => {
-                            sql = "EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name LIKE ?)".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "ip" | "ipadapter" => {
-                            sql = "EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name LIKE ?)".to_string();
-                            param = Some(Value::Text(format!("%{}%", val)));
-                        }
-                        "upscaled" => {
-                            sql = "json_extract(metadata_json, '$.upscaled') = ?".to_string();
-                            param = Some(Value::Integer(if val == "true" { 1 } else { 0 }));
-                        }
-                        _ => {}
-                    }
-
-                    if !sql.is_empty() {
-                        if let Some(p) = param {
-                            if is_negative {
-                                conditions.push(format!("NOT ({})", sql));
-                            } else {
-                                conditions.push(sql);
-                            }
-                            params.push(p);
-                        }
-                    }
-                } else {
-                    if is_negative {
-                        conditions.push("positive_prompt NOT LIKE ?".to_string());
-                    } else {
-                        conditions.push("positive_prompt LIKE ?".to_string());
-                    }
-                    params.push(Value::Text(format!("%{}%", term)));
-                }
-            }
+            append_search_query_conditions(&self.search_query, &mut conditions, &mut params);
         }
 
         if let Some(min_steps) = self.min_steps {
@@ -584,6 +688,70 @@ mod tests {
         assert_eq!(params[0], Value::Text("%cat%".to_string()));
         assert_eq!(params[1], Value::Integer(20));
         assert_eq!(params[2], Value::Text("%dog%".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_or_search_query() {
+        let mut filter = create_default_filter();
+        filter.search_query = "orc OR elf".to_string();
+        let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
+
+        assert!(sql.contains("(positive_prompt LIKE ? OR positive_prompt LIKE ?)"));
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], Value::Text("%orc%".to_string()));
+        assert_eq!(params[1], Value::Text("%elf%".to_string()));
+    }
+
+    #[test]
+    fn test_space_separated_prompt_terms_remain_and() {
+        let mut filter = create_default_filter();
+        filter.search_query = "orc elf".to_string();
+        let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
+
+        assert!(sql.contains("positive_prompt LIKE ? AND positive_prompt LIKE ?"));
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], Value::Text("%orc%".to_string()));
+        assert_eq!(params[1], Value::Text("%elf%".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_or_search_query_with_quoted_phrase() {
+        let mut filter = create_default_filter();
+        filter.search_query = "\"dark elf\" OR orc".to_string();
+        let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
+
+        assert!(sql.contains("(positive_prompt LIKE ? OR positive_prompt LIKE ?)"));
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], Value::Text("%dark elf%".to_string()));
+        assert_eq!(params[1], Value::Text("%orc%".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_or_search_query_with_advanced_filter() {
+        let mut filter = create_default_filter();
+        filter.search_query = "orc OR elf model:pony".to_string();
+        let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
+
+        assert!(sql.contains("(positive_prompt LIKE ? OR positive_prompt LIKE ?)"));
+        assert!(sql.contains(
+            "(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)"
+        ));
+        assert_eq!(params.len(), 4);
+        assert_eq!(params[0], Value::Text("%orc%".to_string()));
+        assert_eq!(params[1], Value::Text("%elf%".to_string()));
+        assert_eq!(params[2], Value::Text("%pony%".to_string()));
+        assert_eq!(params[3], Value::Text("%pony%".to_string()));
+    }
+
+    #[test]
+    fn test_dangling_prompt_or_is_safe() {
+        let mut filter = create_default_filter();
+        filter.search_query = "orc OR".to_string();
+        let (sql, params) = filter.build_where_clause(false, "blur", &[], &[], false, &[]);
+
+        assert_eq!(sql.matches("positive_prompt LIKE ?").count(), 1);
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0], Value::Text("%orc%".to_string()));
     }
 
     #[test]
