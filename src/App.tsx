@@ -36,6 +36,7 @@ import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
+import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 
 export default function App() {
     const { addToast } = useToast();
@@ -291,6 +292,10 @@ export default function App() {
     const displayedViewerImage = viewingImageId
         ? images.find(i => i.id === viewingImageId)
         : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
+    const searchHighlights = React.useMemo(
+        () => derivePromptHighlightSpec(filters.searchQuery),
+        [filters.searchQuery]
+    );
 
     // --- Effects ---
     useEffect(() => {
@@ -578,6 +583,7 @@ export default function App() {
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
+                            searchHighlights={searchHighlights}
                         />
                     )}
                 </AnimatePresence>
