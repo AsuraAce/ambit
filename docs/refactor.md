@@ -1,9 +1,37 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-04-27
+Last reviewed: 2026-04-30
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
+
+## Evaluate FTS-Backed Search
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Prompt search still primarily uses `LIKE '%term%'` against denormalized prompt columns, which is simple but can scan heavily on large libraries.
+- SQLite FTS tables already exist for prompt text, but the app has not committed to using FTS for normal search semantics.
+
+### Current Pain Points
+- Boolean search, phrase search, relevance ranking, and highlighting are hard to grow cleanly on top of ad hoc `LIKE` clauses.
+- AI prompts contain punctuation-heavy syntax, weights, underscores, LoRA tags, and comma-separated fragments that may tokenize differently under FTS than under substring search.
+
+### Safe-Change Warning
+- Do not replace prompt `LIKE` search with FTS as an incidental optimization. FTS changes matching semantics and can affect saved searches, smart collections, privacy masking expectations, and user trust in result counts.
+- Any FTS rollout needs compatibility tests and a fallback path for substring-style edge cases.
+
+### Suggested Future Direction
+- Evaluate routing prompt-only searches through `images_fts MATCH` for speed, boolean syntax, phrase support, and optional relevance ranking.
+- Define the intended tokenizer behavior for common AI prompt patterns before switching defaults.
+- Keep exact substring or `LIKE` fallback behavior available for terms that FTS cannot represent safely.
+
+### Not Part of the Current Task
+- The explicit `OR` prompt-search feature should stay on the existing SQL path and should not introduce a migration or FTS behavior change.
+
+### Related Code
+- `src/utils/sqlHelpers.ts`
+- `src-tauri/src/db/commands/filter_types.rs`
+- `src-tauri/src/db/migrations/m46_optimize_fts.rs`
 
 ## Frontend State and Shell Coordination
 Status: Deferred

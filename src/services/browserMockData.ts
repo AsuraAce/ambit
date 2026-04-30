@@ -275,6 +275,136 @@ const matchesEverySelected = (values: string[] | undefined, selected: string[] |
     return selected.some((value) => lowerValues.has(value.toLowerCase()));
 };
 
+interface BrowserSearchToken {
+    term: string;
+    isNegative: boolean;
+    isOrOperator: boolean;
+}
+
+const tokenizeBrowserSearchQuery = (query: string): BrowserSearchToken[] => {
+    const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
+    const tokens: BrowserSearchToken[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = termRegex.exec(query)) !== null) {
+        const isNegative = !!match[1];
+        const rawTerm = match[2];
+        const isQuoted = rawTerm.startsWith('"') && rawTerm.endsWith('"');
+        const term = isQuoted
+            ? rawTerm.slice(1, -1).replace(/\\"/g, '"')
+            : rawTerm;
+
+        tokens.push({
+            term,
+            isNegative,
+            isOrOperator: !isNegative && !isQuoted && term.toLowerCase() === 'or',
+        });
+    }
+
+    return tokens;
+};
+
+const isPositivePromptSearchToken = (token: BrowserSearchToken): boolean => {
+    const lowerTerm = token.term.toLowerCase();
+    return !token.isNegative
+        && !token.isOrOperator
+        && !(lowerTerm.includes(':') && !lowerTerm.startsWith(':'));
+};
+
+const includesText = (value: string | number | undefined, term: string): boolean => (
+    value !== undefined && String(value).toLowerCase().includes(term)
+);
+
+const matchesNumberExpression = (value: number | undefined, expression: string): boolean => {
+    if (value === undefined) return false;
+    if (expression.startsWith('>')) return value > Number(expression.slice(1));
+    if (expression.startsWith('<')) return value < Number(expression.slice(1));
+    return value === Number(expression);
+};
+
+const matchesScopedSearchToken = (image: AIImage, token: BrowserSearchToken): boolean | null => {
+    const lowerTerm = token.term.toLowerCase();
+    if (!lowerTerm.includes(':') || lowerTerm.startsWith(':')) return null;
+
+    const separatorIndex = lowerTerm.indexOf(':');
+    const key = lowerTerm.slice(0, separatorIndex);
+    const val = lowerTerm.slice(separatorIndex + 1);
+
+    const haystack = [
+        image.filename,
+        image.notes,
+        image.metadata.model,
+        image.metadata.tool,
+        image.metadata.positivePrompt,
+        image.metadata.negativePrompt,
+        ...(image.metadata.loras ?? []),
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    let matched: boolean | null = null;
+    if (key === 'steps') matched = matchesNumberExpression(image.metadata.steps, val);
+    else if (key === 'cfg') matched = matchesNumberExpression(image.metadata.cfg, val);
+    else if (key === 'w' || key === 'width') matched = matchesNumberExpression(image.width, val);
+    else if (key === 'h' || key === 'height') matched = matchesNumberExpression(image.height, val);
+    else if (key === 'model') matched = includesText(image.metadata.model, val);
+    else if (key === 'seed') matched = includesText(image.metadata.seed, val);
+    else if (key === 'neg' || key === 'negative') matched = includesText(image.metadata.negativePrompt, val);
+    else if (key === 'file' || key === 'filename' || key === 'path') matched = includesText(image.filename, val);
+    else if (key === 'all') matched = haystack.includes(val);
+    else if (key === 'sampler') matched = includesText(image.metadata.sampler, val);
+    else if (key === 'tool') matched = includesText(image.metadata.tool, val);
+    else if (key === 'lora') matched = (image.metadata.loras ?? []).some((name) => includesText(name, val));
+    else if (key === 'cn' || key === 'controlnet') matched = (image.metadata.controlNets ?? []).some((name) => includesText(name, val));
+    else if (key === 'ip' || key === 'ipadapter') matched = (image.metadata.ipAdapters ?? []).some((name) => includesText(name, val));
+    else if (key === 'upscaled') matched = Boolean(image.metadata.upscaled) === (val === 'true');
+
+    if (matched === null) return null;
+    return token.isNegative ? !matched : matched;
+};
+
+const matchesSearchToken = (image: AIImage, token: BrowserSearchToken): boolean | null => {
+    const scopedMatch = matchesScopedSearchToken(image, token);
+    if (scopedMatch !== null) return scopedMatch;
+
+    const prompt = image.metadata.positivePrompt.toLowerCase();
+    const term = token.term.toLowerCase();
+    const matched = prompt.includes(term);
+    return token.isNegative ? !matched : matched;
+};
+
+const matchesSearchQuery = (image: AIImage, query: string): boolean => {
+    const tokens = tokenizeBrowserSearchQuery(query);
+    let index = 0;
+
+    while (index < tokens.length) {
+        const token = tokens[index];
+        if (token.isOrOperator) {
+            index += 1;
+            continue;
+        }
+
+        if (isPositivePromptSearchToken(token)) {
+            const prompt = image.metadata.positivePrompt.toLowerCase();
+            const groupTerms = [token.term.toLowerCase()];
+            let nextIndex = index + 1;
+
+            while (nextIndex + 1 < tokens.length && tokens[nextIndex].isOrOperator && isPositivePromptSearchToken(tokens[nextIndex + 1])) {
+                groupTerms.push(tokens[nextIndex + 1].term.toLowerCase());
+                nextIndex += 2;
+            }
+
+            if (!groupTerms.some((term) => prompt.includes(term))) return false;
+            index = nextIndex;
+            continue;
+        }
+
+        const matched = matchesSearchToken(image, token);
+        if (matched === false) return false;
+        index += 1;
+    }
+
+    return true;
+};
+
 const filterImages = (images: AIImage[], filters: FilterState, collections: Collection[]): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateFloor = getDateFloor(filters.dateRange);
@@ -314,19 +444,7 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         if (filters.minCfg !== undefined && image.metadata.cfg < filters.minCfg) return false;
         if (filters.maxCfg !== undefined && image.metadata.cfg > filters.maxCfg) return false;
 
-        if (text) {
-            const haystack = [
-                image.filename,
-                image.notes,
-                image.metadata.model,
-                image.metadata.tool,
-                image.metadata.positivePrompt,
-                image.metadata.negativePrompt,
-                ...(image.metadata.loras ?? []),
-            ].filter(Boolean).join(' ').toLowerCase();
-
-            if (!haystack.includes(text)) return false;
-        }
+        if (text && !matchesSearchQuery(image, text)) return false;
 
         return true;
     });

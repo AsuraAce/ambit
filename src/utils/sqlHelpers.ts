@@ -1,5 +1,187 @@
 import { FilterState, AppSettings, Collection } from '../types';
 
+type SqlParam = string | number;
+
+interface SearchToken {
+    term: string;
+    isNegative: boolean;
+    isOrOperator: boolean;
+}
+
+interface SearchCondition {
+    sql: string;
+    params: SqlParam[];
+    isPositivePrompt: boolean;
+}
+
+const tokenizeSearchQuery = (query: string): SearchToken[] => {
+    const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
+    const tokens: SearchToken[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = termRegex.exec(query)) !== null) {
+        const prefix = match[1];
+        const isNegative = !!prefix;
+        const rawTerm = match[2];
+        const isQuoted = rawTerm.startsWith('"') && rawTerm.endsWith('"');
+        const term = isQuoted
+            ? rawTerm.slice(1, -1).replace(/\\"/g, '"')
+            : rawTerm;
+
+        tokens.push({
+            term,
+            isNegative,
+            isOrOperator: !isNegative && !isQuoted && term.toLowerCase() === 'or'
+        });
+    }
+
+    return tokens;
+};
+
+const parseSearchToken = (token: SearchToken): SearchCondition | null => {
+    const lowerTerm = token.term.toLowerCase();
+
+    if (lowerTerm.includes(':') && !lowerTerm.startsWith(':')) {
+        const [key, val] = lowerTerm.split(':');
+
+        let sql = '';
+        let param: SqlParam = val;
+
+        if (key === 'steps') {
+            if (val.startsWith('>')) { sql = "steps > ?"; param = Number(val.slice(1)); }
+            else if (val.startsWith('<')) { sql = "steps < ?"; param = Number(val.slice(1)); }
+            else { sql = "steps = ?"; param = Number(val); }
+        } else if (key === 'cfg') {
+            if (val.startsWith('>')) { sql = "cfg > ?"; param = Number(val.slice(1)); }
+            else if (val.startsWith('<')) { sql = "cfg < ?"; param = Number(val.slice(1)); }
+            else { sql = "cfg = ?"; param = Number(val); }
+        } else if (key === 'w' || key === 'width') {
+            if (val.startsWith('>')) { sql = "width > ?"; param = Number(val.slice(1)); }
+            else if (val.startsWith('<')) { sql = "width < ?"; param = Number(val.slice(1)); }
+            else { sql = "width = ?"; param = Number(val); }
+        } else if (key === 'h' || key === 'height') {
+            if (val.startsWith('>')) { sql = "height > ?"; param = Number(val.slice(1)); }
+            else if (val.startsWith('<')) { sql = "height < ?"; param = Number(val.slice(1)); }
+            else { sql = "height = ?"; param = Number(val); }
+        } else if (key === 'model') {
+            const modelParam = `%${val}%`;
+            return {
+                sql: `(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)`,
+                params: [modelParam, modelParam],
+                isPositivePrompt: false
+            };
+        } else if (key === 'seed') {
+            sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
+            param = `%${val}%`;
+        } else if (key === 'neg' || key === 'negative') {
+            sql = `negative_prompt LIKE ?`;
+            param = `%${val}%`;
+        } else if (key === 'file' || key === 'filename' || key === 'path') {
+            sql = `path LIKE ?`;
+            param = `%${val}%`;
+        } else if (key === 'all') {
+            const allParam = `%${val}%`;
+            return {
+                sql: token.isNegative
+                    ? `(path NOT LIKE ? AND metadata_json NOT LIKE ?)`
+                    : `(path LIKE ? OR metadata_json LIKE ?)`,
+                params: [allParam, allParam],
+                isPositivePrompt: false
+            };
+        } else if (key === 'sampler') {
+            sql = `sampler LIKE ?`;
+            param = `%${val}%`;
+        } else if (key === 'tool') {
+            sql = `tool LIKE ?`;
+            param = `%${val}%`;
+        } else if (key === 'lora') {
+            sql = `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)`;
+            param = `%${val}%`;
+        } else if (key === 'cn' || key === 'controlnet') {
+            sql = `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name LIKE ?)`;
+            param = `%${val}%`;
+        } else if (key === 'ip' || key === 'ipadapter') {
+            sql = `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name LIKE ?)`;
+            param = `%${val}%`;
+        } else if (key === 'upscaled') {
+            sql = `json_extract(metadata_json, '$.upscaled') = ?`;
+            param = val === 'true' ? 1 : 0;
+        }
+
+        if (!sql) return null;
+
+        return {
+            sql: token.isNegative ? `NOT (${sql})` : sql,
+            params: [param],
+            isPositivePrompt: false
+        };
+    }
+
+    return {
+        sql: token.isNegative ? `positive_prompt NOT LIKE ?` : `positive_prompt LIKE ?`,
+        params: [`%${token.term}%`],
+        isPositivePrompt: !token.isNegative
+    };
+};
+
+const appendSearchCondition = (
+    conditions: string[],
+    params: SqlParam[],
+    condition: SearchCondition
+) => {
+    conditions.push(condition.sql);
+    params.push(...condition.params);
+};
+
+const appendSearchQueryConditions = (
+    query: string,
+    conditions: string[],
+    params: SqlParam[]
+) => {
+    const tokens = tokenizeSearchQuery(query);
+    let index = 0;
+
+    while (index < tokens.length) {
+        const token = tokens[index];
+        if (token.isOrOperator) {
+            index += 1;
+            continue;
+        }
+
+        const condition = parseSearchToken(token);
+        if (!condition) {
+            index += 1;
+            continue;
+        }
+
+        if (!condition.isPositivePrompt) {
+            appendSearchCondition(conditions, params, condition);
+            index += 1;
+            continue;
+        }
+
+        const promptGroup: SearchCondition[] = [condition];
+        let nextIndex = index + 1;
+
+        while (nextIndex + 1 < tokens.length && tokens[nextIndex].isOrOperator) {
+            const nextCondition = parseSearchToken(tokens[nextIndex + 1]);
+            if (!nextCondition?.isPositivePrompt) break;
+
+            promptGroup.push(nextCondition);
+            nextIndex += 2;
+        }
+
+        if (promptGroup.length > 1) {
+            conditions.push(`(${promptGroup.map(item => item.sql).join(' OR ')})`);
+            promptGroup.forEach(item => params.push(...item.params));
+        } else {
+            appendSearchCondition(conditions, params, condition);
+        }
+
+        index = nextIndex;
+    }
+};
+
 export const buildSqlWhereClause = (
     filters: FilterState,
     privacyEnabled: boolean,
@@ -8,9 +190,9 @@ export const buildSqlWhereClause = (
     collections?: Collection[],
     isRecursive: boolean = false,
     excludeCategories: string[] = [] // New: Categories to exclude from the WHERE clause (for Disjunctive Faceting)
-): { where: string; params: any[]; collectionId?: string; loraName?: string } => {
+): { where: string; params: SqlParam[]; collectionId?: string; loraName?: string } => {
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
@@ -162,104 +344,7 @@ export const buildSqlWhereClause = (
 
     // 7. Search Query (Advanced)
     if (filters.searchQuery) {
-        const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
-        let match;
-
-        while ((match = termRegex.exec(filters.searchQuery)) !== null) {
-            const prefix = match[1];
-            const isNegative = !!prefix;
-            let term = match[2];
-
-            if (term.startsWith('"') && term.endsWith('"')) {
-                term = term.slice(1, -1).replace(/\\"/g, '"');
-            }
-
-            const lowerTerm = term.toLowerCase();
-            if (lowerTerm.includes(':') && !lowerTerm.startsWith(':')) {
-                const [key, val] = lowerTerm.split(':');
-                const isNumeric = ['steps', 'cfg', 'w', 'width', 'h', 'height'].includes(key);
-
-                let sql = '';
-                let param: any = val;
-
-                if (key === 'steps') {
-                    if (val.startsWith('>')) { sql = "steps > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "steps < ?"; param = Number(val.slice(1)); }
-                    else { sql = "steps = ?"; param = Number(val); }
-                } else if (key === 'cfg') {
-                    if (val.startsWith('>')) { sql = "cfg > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "cfg < ?"; param = Number(val.slice(1)); }
-                    else { sql = "cfg = ?"; param = Number(val); }
-                } else if (key === 'w' || key === 'width') {
-                    if (val.startsWith('>')) { sql = "width > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "width < ?"; param = Number(val.slice(1)); }
-                    else { sql = "width = ?"; param = Number(val); }
-                } else if (key === 'h' || key === 'height') {
-                    if (val.startsWith('>')) { sql = "height > ?"; param = Number(val.slice(1)); }
-                    else if (val.startsWith('<')) { sql = "height < ?"; param = Number(val.slice(1)); }
-                    else { sql = "height = ?"; param = Number(val); }
-                } else if (key === 'model') {
-                    sql = `(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)`;
-                    param = `%${val}%`;
-                    conditions.push(sql);
-                    params.push(param);
-                    params.push(param);
-                    continue;
-                } else if (key === 'seed') {
-                    sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
-                    param = `%${val}%`;
-                } else if (key === 'neg' || key === 'negative') {
-                    sql = `negative_prompt LIKE ?`;
-                    param = `%${val}%`;
-                } else if (key === 'file' || key === 'filename' || key === 'path') {
-                    sql = `path LIKE ?`;
-                    param = `%${val}%`;
-                } else if (key === 'all') {
-                    if (isNegative) {
-                        conditions.push(`(path NOT LIKE ? AND metadata_json NOT LIKE ?)`);
-                    } else {
-                        conditions.push(`(path LIKE ? OR metadata_json LIKE ?)`);
-                    }
-                    params.push(`%${val}%`);
-                    params.push(`%${val}%`);
-                    continue;
-                } else if (key === 'sampler') {
-                    sql = `sampler LIKE ?`;
-                    param = `%${val}%`;
-                } else if (key === 'tool') {
-                    sql = `tool LIKE ?`;
-                    param = `%${val}%`;
-                } else if (key === 'lora') {
-                    sql = `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name LIKE ?)`;
-                    param = `%${val}%`;
-                } else if (key === 'cn' || key === 'controlnet') {
-                    sql = `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name LIKE ?)`;
-                    param = `%${val}%`;
-                } else if (key === 'ip' || key === 'ipadapter') {
-                    sql = `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name LIKE ?)`;
-                    param = `%${val}%`;
-                } else if (key === 'upscaled') {
-                    sql = `json_extract(metadata_json, '$.upscaled') = ?`;
-                    param = val === 'true' ? 1 : 0;
-                }
-
-                if (sql) {
-                    if (isNegative) {
-                        conditions.push(`NOT (${sql})`);
-                    } else {
-                        conditions.push(sql);
-                    }
-                    params.push(param);
-                }
-            } else {
-                if (isNegative) {
-                    conditions.push(`positive_prompt NOT LIKE ?`);
-                } else {
-                    conditions.push(`positive_prompt LIKE ?`);
-                }
-                params.push(`%${term}%`);
-            }
-        }
+        appendSearchQueryConditions(filters.searchQuery, conditions, params);
     }
 
     // 8. Range Sliders
