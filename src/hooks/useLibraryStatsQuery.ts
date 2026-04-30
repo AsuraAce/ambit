@@ -36,6 +36,37 @@ const INITIAL_FACETS: Facets = {
     tools: []
 };
 
+const hasRangeFilter = (value: number | null | undefined): boolean =>
+    value !== undefined && value !== null;
+
+export const shouldFetchValidFacets = (
+    filters: FilterState,
+    privacyEnabled: boolean,
+    maskingMode: AppSettings['maskingMode']
+): boolean => {
+    return (
+        filters.models.length > 0 ||
+        filters.loras.length > 0 ||
+        filters.embeddings.length > 0 ||
+        filters.hypernetworks.length > 0 ||
+        filters.tools.length > 0 ||
+        filters.samplers.length > 0 ||
+        filters.generationTypes.length > 0 ||
+        filters.controlNets.length > 0 ||
+        filters.ipAdapters.length > 0 ||
+        !!filters.collectionId ||
+        filters.searchQuery.trim().length > 0 ||
+        filters.dateRange !== 'all' ||
+        filters.favoritesOnly ||
+        !!filters.pinnedOnly ||
+        hasRangeFilter(filters.minSteps) ||
+        hasRangeFilter(filters.maxSteps) ||
+        hasRangeFilter(filters.minCfg) ||
+        hasRangeFilter(filters.maxCfg) ||
+        (privacyEnabled && maskingMode === 'hide')
+    );
+};
+
 export const useLibraryStatsQuery = ({
     filters,
     settings,
@@ -61,23 +92,10 @@ export const useLibraryStatsQuery = ({
     // Always fetch all facet types - they're cheap from facet_cache
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
-    // Determine if we have any active filters that would benefit from drill-down
-    const hasActiveFilters = useMemo(() => {
-        return (
-            filters.models.length > 0 ||
-            filters.loras.length > 0 ||
-            filters.embeddings.length > 0 ||
-            filters.hypernetworks.length > 0 ||
-            filters.tools.length > 0 ||
-            !!filters.collectionId ||
-            filters.dateRange !== 'all' ||
-            filters.favoritesOnly ||
-            filters.pinnedOnly ||
-            filters.controlNets.length > 0 ||
-            filters.ipAdapters.length > 0 ||
-            !!filters.searchQuery
-        );
-    }, [filters]);
+    const fetchValidFacets = useMemo(
+        () => shouldFetchValidFacets(filters, privacyEnabled, settings.maskingMode),
+        [filters, privacyEnabled, settings.maskingMode]
+    );
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
@@ -89,7 +107,7 @@ export const useLibraryStatsQuery = ({
                 return {
                     facets: getBrowserMockFacets(filters),
                     stats: getBrowserMockStats(filters),
-                    validNames: hasActiveFilters ? getBrowserMockValidFacetNames(filters) : null
+                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(filters) : null
                 };
             }
 
@@ -108,7 +126,7 @@ export const useLibraryStatsQuery = ({
             const [facets, stats, baseValidNames] = await Promise.all([
                 getFacets(where, params, ALL_FACET_TYPES),
                 getLibraryStats(where, params, collectionId, loraName),
-                hasActiveFilters
+                fetchValidFacets
                     ? getValidFacetNames(where, params, collectionId, loraName)
                     : Promise.resolve(null)
             ]);
@@ -130,7 +148,7 @@ export const useLibraryStatsQuery = ({
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
-            if (finalValidNames && disjunctiveCategories.length > 0 && hasActiveFilters) {
+            if (finalValidNames && disjunctiveCategories.length > 0 && fetchValidFacets) {
                 const extraQueries = disjunctiveCategories.map(async (cat) => {
                     let excludeKey = '';
                     if (cat === 'loras') excludeKey = 'loras';

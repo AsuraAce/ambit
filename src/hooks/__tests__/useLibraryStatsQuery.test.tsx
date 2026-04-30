@@ -104,6 +104,53 @@ describe('useLibraryStatsQuery valid facets', () => {
         expect(params).toContain('%portrait%');
     });
 
+    it('fetches valid facets for sampler-only filters', async () => {
+        renderStatsHook(createDefaultFilters({ samplers: ['euler a'] }));
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalled());
+
+        const [[where, params]] = searchRepoMocks.getValidFacetNames.mock.calls as [
+            [string, unknown[], string | undefined, string | undefined],
+        ];
+
+        expect(where).toContain('sampler = ?');
+        expect(params).toContain('euler a');
+    });
+
+    it('fetches valid facets for generation-type-only filters', async () => {
+        renderStatsHook(createDefaultFilters({ generationTypes: ['txt2img'] }));
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalled());
+
+        const [[where, params]] = searchRepoMocks.getValidFacetNames.mock.calls as [
+            [string, unknown[], string | undefined, string | undefined],
+        ];
+
+        expect(where).toContain('generation_type = ?');
+        expect(params).toContain('txt2img');
+    });
+
+    it('fetches valid facets for range-only filters', async () => {
+        renderStatsHook(createDefaultFilters({ minSteps: 20 }));
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalled());
+
+        const [[where, params]] = searchRepoMocks.getValidFacetNames.mock.calls as [
+            [string, unknown[], string | undefined, string | undefined],
+        ];
+
+        expect(where).toContain('steps >= ?');
+        expect(params).toContain(20);
+    });
+
+    it('does not fetch valid facets for default filters', async () => {
+        renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalled());
+
+        expect(searchRepoMocks.getValidFacetNames).not.toHaveBeenCalled();
+    });
+
     it('uses a self-excluded query plan for ANY-mode disjunctive facets', async () => {
         renderStatsHook(createDefaultFilters({ loras: ['CollectionLora'] }));
 

@@ -384,6 +384,38 @@ fn push_valid_facet_branch_params(
     all_params.extend(sql_params.iter().cloned());
 }
 
+fn resource_clean_ref_sql(column: &str) -> String {
+    format!(
+        "CASE
+            WHEN instr({0}, ' (') > 0 THEN substr({0}, 1, instr({0}, ' (') - 1)
+            WHEN instr({0}, ':') > 0 THEN substr({0}, 1, instr({0}, ':') - 1)
+            ELSE {0}
+        END",
+        column
+    )
+}
+
+fn resource_lookup_sql(column: &str) -> String {
+    let clean_ref = resource_clean_ref_sql(column);
+    format!(
+        "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({clean_ref}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', ''))"
+    )
+}
+
+fn resource_facet_cache_join_sql(facet_type: &str, column: &str) -> String {
+    let clean_ref = resource_clean_ref_sql(column);
+    let lookup = resource_lookup_sql(column);
+    format!(
+        "JOIN facet_cache fc ON fc.facet_type = '{facet_type}'
+            AND fc.resource_name IS NOT NULL
+            AND fc.resource_name != ''
+            AND (
+                LOWER(fc.resource_name) = {lookup}
+                OR LOWER(fc.resource_name) = LOWER({clean_ref})
+            )"
+    )
+}
+
 fn get_valid_facet_names_for_query(
     conn: &rusqlite::Connection,
     where_clause: &str,
@@ -406,23 +438,43 @@ fn get_valid_facet_names_for_query(
         })
         .unwrap_or("");
     let prefixed = prefix_valid_facet_where_columns(&base_where);
+    let checkpoint_cache_join =
+        "JOIN facet_cache fc ON fc.facet_type = 'checkpoints'
+            AND fc.resource_name IS NOT NULL
+            AND fc.resource_name != ''
+            AND (
+                (i.model_hash IS NOT NULL AND fc.resource_hash = i.model_hash)
+                OR LOWER(fc.resource_name) = LOWER(COALESCE(NULLIF(i.resolved_model_name, ''), 'Unknown'))
+            )";
+    let lora_cache_join = resource_facet_cache_join_sql("loras", "il.lora_name");
+    let embedding_cache_join = resource_facet_cache_join_sql("embeddings", "ie.embedding_name");
+    let hypernetwork_cache_join =
+        resource_facet_cache_join_sql("hypernetworks", "ih.hypernetwork_name");
+    let controlnet_cache_join = resource_facet_cache_join_sql("control_nets", "cn.controlnet_name");
+    let ipadapter_cache_join = resource_facet_cache_join_sql("ip_adapters", "ip.ipadapter_name");
 
     let combined_query = format!(
-        "SELECT 'checkpoints' as facet_type, i.resolved_model_name as name FROM images i {coll} {lora} {where} AND i.resolved_model_name IS NOT NULL AND i.resolved_model_name != ''
+        "SELECT 'checkpoints' as facet_type, fc.resource_name as name FROM images i {coll} {lora} {checkpoint_cache} {where}
          UNION ALL
-         SELECT 'loras', il.lora_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {where}
+         SELECT 'loras', fc.resource_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {lora_cache} {where}
          UNION ALL
-         SELECT 'embeddings', ie.embedding_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {where}
+         SELECT 'embeddings', fc.resource_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {embedding_cache} {where}
          UNION ALL
-         SELECT 'hypernetworks', ih.hypernetwork_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {where}
+         SELECT 'hypernetworks', fc.resource_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {hypernetwork_cache} {where}
          UNION ALL
-         SELECT 'tools', COALESCE(NULLIF(i.tool, ''), 'Unknown') FROM images i {coll} {lora} {where}
+         SELECT 'tools', fc.resource_name FROM images i {coll} {lora} JOIN facet_cache fc ON fc.facet_type = 'tools' AND fc.resource_name = COALESCE(i.tool, 'Unknown') {where}
          UNION ALL
-         SELECT 'control_nets', cn.controlnet_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {where}
+         SELECT 'control_nets', fc.resource_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {controlnet_cache} {where}
          UNION ALL
-         SELECT 'ip_adapters', ip.ipadapter_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {where}",
+         SELECT 'ip_adapters', fc.resource_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {ipadapter_cache} {where}",
         coll = collection_join,
         lora = lora_join,
+        checkpoint_cache = checkpoint_cache_join,
+        lora_cache = lora_cache_join,
+        embedding_cache = embedding_cache_join,
+        hypernetwork_cache = hypernetwork_cache_join,
+        controlnet_cache = controlnet_cache_join,
+        ipadapter_cache = ipadapter_cache_join,
         where = prefixed
     );
 
@@ -911,6 +963,20 @@ mod tests {
             [],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+             VALUES
+             ('checkpoints', 'CollectionModel', NULL, 1),
+             ('checkpoints', 'OutsideModel', NULL, 1),
+             ('loras', 'CollectionLora', NULL, 1),
+             ('loras', 'OutsideLora', NULL, 1),
+             ('embeddings', 'CollectionEmbedding', NULL, 1),
+             ('embeddings', 'OutsideEmbedding', NULL, 1),
+             ('tools', 'Automatic1111', NULL, 1),
+             ('tools', 'InvokeAI', NULL, 1)",
+            [],
+        )
+        .unwrap();
 
         conn
     }
@@ -983,6 +1049,105 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_valid_facet_names_return_cache_normalized_lora_names() {
+        let conn = create_valid_facet_conn();
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, positive_prompt)
+             VALUES ('img-raw-lora', 'raw-lora.png', 300, 'CollectionModel', 'raw lora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('img-raw-lora', 'MyLora.safetensors')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+             VALUES ('loras', 'MyLora', 'lora_MyLora', 1)",
+            [],
+        )
+        .unwrap();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND positive_prompt LIKE ?",
+            vec![Value::Text("%raw lora%".to_string())],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.loras, vec!["MyLora"]);
+    }
+
+    #[test]
+    fn test_valid_facet_names_return_cache_casing_for_resources() {
+        let conn = create_valid_facet_conn();
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, positive_prompt)
+             VALUES ('img-case-lora', 'case-lora.png', 300, 'CollectionModel', 'case lora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('img-case-lora', 'caselora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+             VALUES ('loras', 'CaseLora', 'lora_CaseLora', 1)",
+            [],
+        )
+        .unwrap();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND positive_prompt LIKE ?",
+            vec![Value::Text("%case lora%".to_string())],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.loras, vec!["CaseLora"]);
+    }
+
+    #[test]
+    fn test_valid_facet_names_return_unknown_checkpoint_for_missing_names() {
+        let conn = create_valid_facet_conn();
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, positive_prompt)
+             VALUES ('img-unknown-model', 'unknown-model.png', 300, NULL, 'unknown model')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+             VALUES ('checkpoints', 'Unknown', 'orphan_Unknown', 1)",
+            [],
+        )
+        .unwrap();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND positive_prompt LIKE ?",
+            vec![Value::Text("%unknown model%".to_string())],
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.checkpoints, vec!["Unknown"]);
     }
 
     #[test]
