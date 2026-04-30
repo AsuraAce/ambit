@@ -97,6 +97,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     const searchOperators = [
         // Content Search
         { op: 'sunset', desc: 'Search positive prompt (default)', icon: <Search className="w-3 h-3" /> },
+        { op: 'orc OR elf', desc: 'Match either prompt term', icon: <Search className="w-3 h-3" /> },
         { op: 'neg:blur', desc: 'Search negative prompt', icon: <Hash className="w-3 h-3" /> },
         { op: 'file:portrait', desc: 'Search filename/path', icon: <Hash className="w-3 h-3" /> },
         { op: 'all:anime', desc: 'Search all metadata (legacy)', icon: <Hash className="w-3 h-3" /> },
@@ -199,7 +200,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div>
                                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
-                                    By default, search matches the <strong>positive prompt only</strong>. Use operators below to search other fields.
+                                    By default, search matches the <strong>positive prompt only</strong>. Spaces narrow results, while explicit OR matches alternatives. Use operators below to search other fields.
                                 </p>
 
                                 <div className="bg-gray-50 dark:bg-black/20 rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden">
@@ -232,6 +233,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                             <span className="text-xs font-bold text-sage-600 dark:text-sage-400 font-mono">"phrase"</span>
                                             <span className="text-xs text-gray-600 dark:text-gray-300">Exact match with quotes</span>
                                         </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-xs font-bold text-sage-600 dark:text-sage-400 font-mono">OR</span>
+                                            <span className="text-xs text-gray-600 dark:text-gray-300">Match either adjacent prompt term</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -239,10 +244,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                             <div className="p-4 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                                 <h4 className="text-xs font-bold text-gray-800 dark:text-gray-300 mb-1">Example Query</h4>
                                 <div className="font-mono text-xs bg-white dark:bg-black/40 p-2 rounded border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 mb-2">
-                                    cyberpunk steps:{'>'}30 model:flux lora:"detail"
+                                    orc OR "dark elf" model:pony
                                 </div>
                                 <p className="text-[10px] text-gray-600 dark:text-gray-400 uppercase tracking-tight">
-                                    Finds cyberpunk Flux images with {'>'}30 steps and "detail" LoRA.
+                                    Finds Pony images whose positive prompt mentions orc or dark elf.
                                 </p>
                             </div>
                         </div>

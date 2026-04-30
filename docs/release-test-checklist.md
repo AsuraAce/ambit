@@ -1,7 +1,7 @@
 # Release Test Checklist
 
 Status: Working draft
-Last updated: 2026-04-24
+Last updated: 2026-04-30
 
 Use this checklist for staged release testing of Ambit. It is scoped to the current app shape:
 
@@ -163,6 +163,7 @@ Owner: Mostly user. These checks depend heavily on visible correctness and inter
 ### Search And Filters
 
 - [ ] Free-text search returns expected matches.
+- [ ] Explicit OR search (`orc OR elf`) returns alternatives while `orc elf` still narrows to both terms.
 - [ ] Clearing search fully resets result state.
 - [ ] Filter combinations work together without obviously wrong counts/results.
 - [ ] Date range filters behave correctly at boundaries.

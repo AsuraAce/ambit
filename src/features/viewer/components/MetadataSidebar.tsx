@@ -6,6 +6,7 @@ import { getFilename } from '../../../utils/pathUtils';
 import { formatModelName } from '../../../utils/formatUtils';
 import { MetadataInfoTab } from './metadata/MetadataInfoTab';
 import { MetadataEditTab } from './metadata/MetadataEditTab';
+import type { PromptHighlightSpec } from '../utils/searchHighlights';
 
 interface MetadataSidebarProps {
     image: AIImage;
@@ -44,6 +45,7 @@ interface MetadataSidebarProps {
     palette: string[];
     isPaletteLoading: boolean;
     isLoading?: boolean;
+    searchHighlights?: PromptHighlightSpec;
 }
 
 export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
@@ -74,7 +76,8 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     onOpenAIResult,
     palette,
     isPaletteLoading,
-    isLoading
+    isLoading,
+    searchHighlights
 }) => {
     return (
         <div className="w-[420px] flex flex-col h-full bg-white dark:bg-zinc-900/95 backdrop-blur-xl border-l border-gray-200 dark:border-white/10 shadow-2xl">
@@ -147,6 +150,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         isAnalyzing={isAnalyzing}
                         onOpenAIResult={onOpenAIResult}
                         isLoading={isLoading}
+                        searchHighlights={searchHighlights}
                     />
                 )}
 

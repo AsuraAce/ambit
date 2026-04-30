@@ -60,8 +60,11 @@ export const SearchBar = React.memo(({
         // Suggestions logic (isolated)
         const lastToken = val.split(' ').pop()?.toLowerCase() || '';
         if (lastToken.length >= 1) {
-            const operators = ['neg:', 'file:', 'all:', 'model:', 'tool:', 'lora:', 'sampler:', 'seed:', 'steps:', 'cfg:', 'w:', 'h:', 'upscaled:'];
-            const opMatches = operators.filter(op => op.startsWith(lastToken) && op !== lastToken);
+            const operators = ['OR', 'neg:', 'file:', 'all:', 'model:', 'tool:', 'lora:', 'sampler:', 'seed:', 'steps:', 'cfg:', 'w:', 'h:', 'upscaled:'];
+            const opMatches = operators.filter(op => {
+                const normalized = op.toLowerCase();
+                return normalized.startsWith(lastToken) && normalized !== lastToken;
+            });
             setSuggestions(opMatches);
         } else {
             setSuggestions([]);

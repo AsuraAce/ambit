@@ -119,6 +119,38 @@ describe('sqlHelpers', () => {
                 expect(where).toContain("positive_prompt LIKE ?");
                 expect(params).toEqual(['%golden hour%']);
             });
+
+            it('should group explicit OR prompt terms', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR elf' }, false, 'blur', []);
+                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                expect(params).toEqual(['%orc%', '%elf%']);
+            });
+
+            it('should keep space-separated prompt terms as AND filters', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc elf' }, false, 'blur', []);
+                expect(where).toContain("positive_prompt LIKE ? AND positive_prompt LIKE ?");
+                expect(params).toEqual(['%orc%', '%elf%']);
+            });
+
+            it('should group explicit OR with quoted phrases', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"dark elf" OR orc' }, false, 'blur', []);
+                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                expect(params).toEqual(['%dark elf%', '%orc%']);
+            });
+
+            it('should AND OR prompt groups with advanced filters', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR elf model:pony' }, false, 'blur', []);
+                expect(where).toContain("(positive_prompt LIKE ? OR positive_prompt LIKE ?)");
+                expect(where).toContain("(resolved_model_name LIKE ? OR json_extract(metadata_json, '$.model') LIKE ?)");
+                expect(params).toEqual(['%orc%', '%elf%', '%pony%', '%pony%']);
+            });
+
+            it('should handle dangling OR safely', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR' }, false, 'blur', []);
+                const promptMatches = where.match(/positive_prompt LIKE \?/g) ?? [];
+                expect(promptMatches).toHaveLength(1);
+                expect(params).toEqual(['%orc%']);
+            });
         });
 
         describe('Collection Logic', () => {
