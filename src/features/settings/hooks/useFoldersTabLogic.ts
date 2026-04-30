@@ -7,7 +7,7 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
-import { scanResourceThumbnails, processNativePaths } from '../../../services/importService';
+import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
 
 // Helper to detect generator from path
 const detectGeneratorVariant = (path: string): GeneratorTool => {
@@ -29,7 +29,7 @@ const getInvokeRootPath = (path: string): string => {
 interface UseFoldersTabLogicProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>;
 }
 
@@ -54,6 +54,9 @@ export const useFoldersTabLogic = ({
         isScanningDiscovery, setIsScanningDiscovery,
         discoveryScanProgress, isPopulatingThumbnails
     } = useLibraryStore();
+
+    const isCompleteImport = (result: ImportResult | void): result is ImportResult =>
+        !!result && result.failedPaths.length === 0;
 
     const fetchCounts = useCallback(async () => {
         if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
@@ -142,10 +145,16 @@ export const useFoldersTabLogic = ({
                                 },
                                 variant as GeneratorTool | undefined,
                                 undefined,
-                                false
+                                false,
+                                true,
+                                true
                             );
                             addToast(`Synced ${result.images.length} new files`, 'success');
-                            updateFolderLastScanned(id, Date.now());
+                            if (result.failedPaths.length === 0) {
+                                updateFolderLastScanned(id, Date.now());
+                            } else {
+                                console.warn(`[Resync] Keeping cursor unchanged for ${path}; ${result.failedPaths.length} file(s) failed.`);
+                            }
                         } finally {
                             setIsImporting(false);
                             setImportProgress(null);
@@ -157,6 +166,7 @@ export const useFoldersTabLogic = ({
                         if (allFiles.length > knownCount) {
                             const repairPaths = allFiles.map(f => f.path);
                             const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                            let repairFailedCount = 0;
                             setIsImporting(true);
                             setImportProgress({ current: 0, total: repairPaths.length, message: 'Repairing incomplete import...' });
 
@@ -173,6 +183,7 @@ export const useFoldersTabLogic = ({
                                     undefined,
                                     false
                                 );
+                                repairFailedCount = result.failedPaths.length;
                                 addToast(
                                     result.images.length > 0
                                         ? `Repair scan imported ${result.images.length} missing files`
@@ -183,15 +194,25 @@ export const useFoldersTabLogic = ({
                                 setIsImporting(false);
                                 setImportProgress(null);
                             }
+                            if (repairFailedCount === 0) {
+                                updateFolderLastScanned(id, Date.now());
+                            } else {
+                                console.warn(`[Resync] Keeping cursor unchanged for ${path}; ${repairFailedCount} repair file(s) failed.`);
+                            }
                         } else {
                             addToast(`No changes detected`, 'info');
+                            updateFolderLastScanned(id, Date.now());
                         }
-                        updateFolderLastScanned(id, Date.now());
                     }
                 } else {
-                    await onScanFolder([{ path, variant }]);
-                    updateFolderLastScanned(id, Date.now());
-                    addToast(`Rescan complete`, 'success');
+                    const result = await onScanFolder([{ path, variant }]);
+                    if (isCompleteImport(result)) {
+                        updateFolderLastScanned(id, Date.now());
+                        addToast(`Rescan complete`, 'success');
+                    } else {
+                        console.warn(`[Resync] Keeping cursor unchanged for ${path}; full scan did not fully complete.`);
+                        addToast(`Rescan completed with import errors`, 'warning');
+                    }
                 }
             }
             await fetchCounts();
@@ -245,16 +266,28 @@ export const useFoldersTabLogic = ({
             const foldersToScan = [...pendingScansRef.current];
             pendingScansRef.current = [];
             try {
-                await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
-                const completedAt = Date.now();
-                setSettings(prev => ({
-                    ...prev,
-                    monitoredFolders: prev.monitoredFolders.map(folder =>
-                        foldersToScan.some(pending => pending.id === folder.id)
-                            ? { ...folder, lastScanned: completedAt, initialScanPending: false }
-                            : folder
-                    )
-                }));
+                const result = await onScanFolder(foldersToScan.map(({ path, variant }) => ({ path, variant })));
+                if (isCompleteImport(result)) {
+                    const completedAt = Date.now();
+                    setSettings(prev => ({
+                        ...prev,
+                        monitoredFolders: prev.monitoredFolders.map(folder =>
+                            foldersToScan.some(pending => pending.id === folder.id)
+                                ? { ...folder, lastScanned: completedAt, initialScanPending: false }
+                                : folder
+                        )
+                    }));
+                } else {
+                    setSettings(prev => ({
+                        ...prev,
+                        monitoredFolders: prev.monitoredFolders.map(folder =>
+                            foldersToScan.some(pending => pending.id === folder.id)
+                                ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                                : folder
+                        )
+                    }));
+                    addToast('Folder scan completed with import errors', 'warning');
+                }
                 await fetchCounts();
             } catch (e) {
                 console.error('Auto-scan failed:', e);

@@ -12,6 +12,7 @@ import { DonationModal } from './ui/DonationModal';
 import { CollectionEditorModal } from '../features/collections/components/CollectionEditorModal';
 import { AIImage, AppSettings } from '../types';
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
+import type { ImportResult } from '../services/importService';
 
 interface GlobalModalsProps {
     modals: Record<string, boolean>;
@@ -52,7 +53,7 @@ interface GlobalModalsProps {
     filters?: any;
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: any) => void;
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
     pendingUpdateVersion: string | null;

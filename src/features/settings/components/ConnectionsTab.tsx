@@ -3,12 +3,13 @@ import { useState, useEffect } from 'react';
 import { Folder, DatabaseZap, Palette, FlaskConical } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { FoldersTab, InvokeAITab, A1111Tab, ComfyUITab } from './';
+import type { ImportResult } from '../../../services/importService';
 
 interface ConnectionsTabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     initialSubTab?: 'folders' | 'invokeai' | 'a1111' | 'comfyui';
-    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<void>;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     onClose?: () => void;
 }

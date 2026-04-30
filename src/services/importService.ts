@@ -66,6 +66,7 @@ export interface ImportOptions {
     isStartup?: boolean;
     forceRescan?: boolean;
     skipThumbnail?: boolean;
+    waitForStableFiles?: boolean;
     perfContext?: TargetedLiveSyncPerfContext;
 }
 
@@ -73,6 +74,54 @@ interface FileEntry {
     path: string;
     modified: number;
     size: number;
+}
+
+const FILE_STABILITY_POLL_MS = 500;
+const FILE_STABILITY_MAX_POLLS = 12;
+const FILE_STABILITY_REQUIRED_POLLS = 2;
+
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+async function waitForStableFileSizes(
+    paths: string[],
+    onProgress?: (current: number, total: number, message?: string) => void
+) {
+    if (paths.length === 0) return;
+
+    const states = new Map<string, { size: number; stablePolls: number }>();
+    let pendingPaths = [...paths];
+
+    for (let poll = 0; poll < FILE_STABILITY_MAX_POLLS && pendingPaths.length > 0; poll++) {
+        onProgress?.(0, paths.length, `Waiting for ${pendingPaths.length} file(s) to finish writing...`);
+
+        let sizes: number[] = [];
+        try {
+            sizes = await unwrap(commands.getFileSizesBulk(pendingPaths));
+        } catch (error) {
+            console.warn('[Import] File stability probe failed; retrying before import.', error);
+            await delay(FILE_STABILITY_POLL_MS);
+            continue;
+        }
+
+        pendingPaths = pendingPaths.filter((path, index) => {
+            const size = sizes[index] ?? 0;
+            const previous = states.get(path);
+            const stablePolls = size > 0 && previous?.size === size
+                ? previous.stablePolls + 1
+                : 0;
+
+            states.set(path, { size, stablePolls });
+            return stablePolls < FILE_STABILITY_REQUIRED_POLLS;
+        });
+
+        if (pendingPaths.length > 0) {
+            await delay(FILE_STABILITY_POLL_MS);
+        }
+    }
+
+    if (pendingPaths.length > 0) {
+        console.warn(`[Import] ${pendingPaths.length} file(s) did not stabilize before import; continuing.`);
+    }
 }
 
 const mapMetadata = (meta: any) => ({
@@ -95,7 +144,7 @@ async function processFileEntries(
     options: ImportOptions = {},
     defaultTool?: GeneratorTool
 ): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[] }> {
-    const { onProgress, abortSignal, forceRescan, skipThumbnail = true, perfContext } = options;
+    const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
     const failedPaths: string[] = [];
@@ -139,6 +188,10 @@ async function processFileEntries(
             totalMs: elapsedMs(importStartedAt)
         });
         return { images: [], handledPaths, failedPaths };
+    }
+
+    if (waitForStableFiles) {
+        await waitForStableFileSizes(pathsToProcess, onProgress);
     }
 
     const BATCH_SIZE = 300;
@@ -523,7 +576,8 @@ export const processNativePaths = async (
     defaultTool?: GeneratorTool,
     abortSignal?: AbortSignal,
     isStartup: boolean = false,
-    forceRescan: boolean = false
+    forceRescan: boolean = false,
+    waitForStableFiles: boolean = isStartup
 ): Promise<ImportResult> => {
 
     // Convert string[] list to typed inputs for unified processor
@@ -537,6 +591,7 @@ export const processNativePaths = async (
         abortSignal,
         isStartup,
         forceRescan,
+        waitForStableFiles,
         skipThumbnail: false
     });
 };
@@ -592,4 +647,3 @@ export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: 
         return { found: 0, updated: 0 };
     }
 };
-
