@@ -357,6 +357,105 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.getFacets).not.toHaveBeenCalled();
     });
 
+    it('uses startup resource-incremental facet refresh for a small known Invoke catch-up', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importOrphans: false
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook?.settings.importOrphans).toBe(false);
+        });
+
+        const touchedFacetResources = {
+            checkpoints: ['Flux Base'],
+            loras: ['CinematicDetail'],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: ['InvokeAI']
+        };
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 2,
+            updated: 0,
+            maxTimestamp: 102,
+            syncedIds: new Set(['new-image-a.png', 'new-image-b.png']),
+            boardMapping: new Map(),
+            touchedFacetTypes: ['checkpoints', 'loras', 'tools'],
+            touchedFacetResources
+        });
+        mocks.rebuildFacetCache.mockClear();
+        mocks.rebuildFacetCacheStrict.mockClear();
+        mocks.refreshFacetCacheForResourcesStrict.mockClear();
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedFacetResources);
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+        expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+    });
+
+    it('keeps startup Invoke catch-up on the full rebuild path for large deltas', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importOrphans: false
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook?.settings.importOrphans).toBe(false);
+        });
+
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 501,
+            updated: 0,
+            maxTimestamp: 102,
+            syncedIds: new Set(['large-delta.png']),
+            boardMapping: new Map(),
+            touchedFacetTypes: ['checkpoints'],
+            touchedFacetResources: {
+                checkpoints: ['Flux Base'],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: []
+            }
+        });
+        mocks.rebuildFacetCache.mockClear();
+        mocks.rebuildFacetCacheStrict.mockClear();
+        mocks.refreshFacetCacheForResourcesStrict.mockClear();
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.refreshFacetCacheForResourcesStrict).not.toHaveBeenCalled();
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+        expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+    });
+
     it('refreshes grid and facets after a live Invoke cycle without falling back to the full rebuild', async () => {
         let hook: any;
         renderStack(h => hook = h);

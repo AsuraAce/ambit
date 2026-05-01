@@ -1,8 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { MonitoredFolder, GeneratorTool } from '../types';
+import { MonitoredFolder, GeneratorTool, FacetType } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
+import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
+import {
+    createEmptyTouchedFacetResources,
+    mergeTouchedFacetResources,
+    orderFacetTypes
+} from '../utils/touchedFacetTypes';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
@@ -15,6 +21,7 @@ interface ImportOptions {
     onProgress?: (current: number, total: number, message?: string) => void;
     forceRescan?: boolean;
     waitForStableFiles?: boolean;
+    deferFacetCacheRefresh?: boolean;
 }
 
 interface UseFolderMonitorProps {
@@ -118,35 +125,65 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     setImportProgress({ current: 0, total: totalFilesFound, message: 'Starting aggregated import...' });
 
                     let globalCurrent = 0;
+                    let totalImported = 0;
+                    let touchedFacetTypes: FacetType[] = [];
+                    let touchedFacetResources = createEmptyTouchedFacetResources();
 
-                    for (const task of tasks) {
-                        // We use skipStateManagement: true to prevent handleImportPaths from resetting our global progress
-                        const result = await handleImportPaths(task.paths, task.variant, {
-                            isStartup: true,
-                            skipStateManagement: true,
-                            forceRescan: true,
-                            waitForStableFiles: true,
-                            onProgress: (current, total, message) => {
-                                // Add accumulated count from previous batches
-                                const actualCurrent = globalCurrent + current;
-                                setImportProgress({
-                                    current: actualCurrent,
-                                    total: totalFilesFound,
-                                    message: message
-                                });
+                    try {
+                        for (const task of tasks) {
+                            // We use skipStateManagement: true to prevent handleImportPaths from resetting our global progress
+                            const result = await handleImportPaths(task.paths, task.variant, {
+                                isStartup: true,
+                                skipStateManagement: true,
+                                forceRescan: true,
+                                waitForStableFiles: true,
+                                deferFacetCacheRefresh: true,
+                                onProgress: (current, total, message) => {
+                                    // Add accumulated count from previous batches
+                                    const actualCurrent = globalCurrent + current;
+                                    setImportProgress({
+                                        current: actualCurrent,
+                                        total: totalFilesFound,
+                                        message: message
+                                    });
+                                }
+                            });
+                            globalCurrent += task.paths.length;
+
+                            if (result) {
+                                totalImported += result.stats.imported;
+                                touchedFacetTypes = orderFacetTypes([
+                                    ...touchedFacetTypes,
+                                    ...result.touchedFacetTypes
+                                ]);
+                                touchedFacetResources = mergeTouchedFacetResources(
+                                    touchedFacetResources,
+                                    result.touchedFacetResources
+                                );
                             }
-                        });
-                        globalCurrent += task.paths.length;
-                        // ONLY update once successfully imported
-                        if (isCompleteImport(result)) {
-                            updateFolderLastScanned(task.folderId, scanTime);
-                        } else {
-                            warnCursorHeld('Startup incremental scan', task.folderId, result);
-                        }
-                    }
 
-                    setIsImporting(false);
-                    setImportProgress(null);
+                            // ONLY update once successfully imported
+                            if (isCompleteImport(result)) {
+                                updateFolderLastScanned(task.folderId, scanTime);
+                            } else {
+                                warnCursorHeld('Startup incremental scan', task.folderId, result);
+                            }
+                        }
+
+                        setImportProgress({ current: totalFilesFound, total: totalFilesFound, message: 'Updating startup filters...' });
+                        await refreshStartupFacetCache({
+                            source: 'folder',
+                            totalProcessed: totalImported,
+                            touchedFacetTypes,
+                            touchedFacetResources,
+                            onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
+                        });
+                    } catch (error) {
+                        console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
+                    } finally {
+                        setIsImporting(false);
+                        setImportProgress(null);
+                    }
 
                     // Force UI Refresh
                     await refreshMetadata();
