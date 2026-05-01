@@ -1,6 +1,7 @@
 use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
-use rusqlite::{params, types::Value};
+use rusqlite::{params, types::Value, OptionalExtension};
+use std::collections::BTreeSet;
 use tauri::Emitter;
 
 #[tauri::command(rename_all = "camelCase")]
@@ -191,36 +192,853 @@ pub async fn rebuild_facet_cache_incremental(
     app: tauri::AppHandle,
     facet_type: String,
 ) -> Result<usize, String> {
+    rebuild_facet_cache_incremental_batch(app, vec![facet_type]).await
+}
+
+fn normalize_facet_type(facet_type: &str) -> Result<&'static str, String> {
+    match facet_type {
+        "checkpoints" => Ok("checkpoints"),
+        "tools" => Ok("tools"),
+        "loras" => Ok("loras"),
+        "embeddings" => Ok("embeddings"),
+        "hypernetworks" => Ok("hypernetworks"),
+        "controlNets" | "control_nets" => Ok("control_nets"),
+        "ipAdapters" | "ip_adapters" => Ok("ip_adapters"),
+        _ => Err(format!(
+            "Unknown facet type for incremental build: {}",
+            facet_type
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FacetResourceTouches {
+    pub checkpoints: Vec<String>,
+    pub loras: Vec<String>,
+    pub embeddings: Vec<String>,
+    pub hypernetworks: Vec<String>,
+    pub control_nets: Vec<String>,
+    pub ip_adapters: Vec<String>,
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct FacetStats {
+    count: i64,
+    last_used_at: Option<i64>,
+    created_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct FacetThumb {
+    image_id: String,
+    thumbnail_path: String,
+    privacy_hidden: i64,
+}
+
+#[derive(Debug, Clone)]
+struct FacetModelSource {
+    name: String,
+    hash: Option<String>,
+    thumbnail_path: Option<String>,
+    sidecar_thumbnail_path: Option<String>,
+    preview_url: Option<String>,
+    thumbnail_mode: Option<String>,
+    guidance_subtype: Option<String>,
+    thumbnail_sensitivity_override: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResourceFacetConfig {
+    facet_type: &'static str,
+    resource_type: &'static str,
+    junction_table: &'static str,
+    name_col: &'static str,
+    hash_prefix: &'static str,
+    harvest_source: &'static str,
+}
+
+fn clean_live_resource_name(raw: &str) -> Option<String> {
+    let mut name = raw.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    let weighted_index = name.find(" (");
+    let colon_index = name.find(':');
+    let cut_index = [weighted_index, colon_index]
+        .into_iter()
+        .flatten()
+        .filter(|index| *index > 0)
+        .min();
+
+    if let Some(index) = cut_index {
+        name.truncate(index);
+        name = name.trim().to_string();
+    }
+
+    let lower = name.to_lowercase();
+    for suffix in [".safetensors", ".ckpt", ".pt", ".bin", ".pth"] {
+        if lower.ends_with(suffix) {
+            let new_len = name.len().saturating_sub(suffix.len());
+            name.truncate(new_len);
+            name = name.trim().to_string();
+            break;
+        }
+    }
+
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+fn normalize_live_names(names: &[String], fallback: Option<&str>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+
+    if names.is_empty() {
+        return normalized;
+    }
+
+    for name in names {
+        if let Some(cleaned) = clean_live_resource_name(name) {
+            let key = cleaned.to_lowercase();
+            if seen.insert(key) {
+                normalized.push(cleaned);
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        if let Some(fallback) = fallback {
+            normalized.push(fallback.to_string());
+        }
+    }
+
+    normalized
+}
+
+fn resource_config(facet_type: &str) -> Result<ResourceFacetConfig, String> {
+    match facet_type {
+        "loras" => Ok(ResourceFacetConfig {
+            facet_type: "loras",
+            resource_type: "loras",
+            junction_table: "image_loras",
+            name_col: "lora_name",
+            hash_prefix: "lora_",
+            harvest_source: "harvest_lora",
+        }),
+        "embeddings" => Ok(ResourceFacetConfig {
+            facet_type: "embeddings",
+            resource_type: "embeddings",
+            junction_table: "image_embeddings",
+            name_col: "embedding_name",
+            hash_prefix: "emb_",
+            harvest_source: "harvest_embedding",
+        }),
+        "hypernetworks" => Ok(ResourceFacetConfig {
+            facet_type: "hypernetworks",
+            resource_type: "hypernetworks",
+            junction_table: "image_hypernetworks",
+            name_col: "hypernetwork_name",
+            hash_prefix: "hyper_",
+            harvest_source: "harvest_hypernet",
+        }),
+        "control_nets" => Ok(ResourceFacetConfig {
+            facet_type: "control_nets",
+            resource_type: "control_nets",
+            junction_table: "image_controlnets",
+            name_col: "controlnet_name",
+            hash_prefix: "cnet_",
+            harvest_source: "harvest_controlnet",
+        }),
+        "ip_adapters" => Ok(ResourceFacetConfig {
+            facet_type: "ip_adapters",
+            resource_type: "ip_adapters",
+            junction_table: "image_ipadapters",
+            name_col: "ipadapter_name",
+            hash_prefix: "ipad_",
+            harvest_source: "harvest_ip_adapter",
+        }),
+        _ => Err(format!("Unsupported resource facet type: {}", facet_type)),
+    }
+}
+
+fn privacy_keyword_matches(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
+    let matches: i64 = conn
+        .query_row(
+            "SELECT EXISTS (
+                SELECT 1 FROM privacy_mask_keywords k
+                WHERE LOWER(?1) LIKE '%' || k.keyword || '%'
+            )",
+            [name],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(matches != 0)
+}
+
+fn manual_thumbnail_image(
+    conn: &rusqlite::Connection,
+    thumbnail_path: &str,
+) -> Result<Option<(String, i64)>, String> {
+    conn.query_row(
+        "SELECT id, COALESCE(privacy_hidden, 0)
+         FROM images
+         WHERE id = ?1 OR path = ?1 OR thumbnail_path = ?1
+         LIMIT 1",
+        [thumbnail_path],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn compute_thumbnail_fields(
+    conn: &rusqlite::Connection,
+    model: &FacetModelSource,
+    dynamic_thumb: Option<&FacetThumb>,
+    safe_thumb: Option<&FacetThumb>,
+) -> Result<(Option<String>, Option<String>, Option<String>, i64), String> {
+    let manual_thumb = model
+        .thumbnail_path
+        .as_deref()
+        .filter(|value| !value.is_empty());
+    let sidecar_thumb = model
+        .sidecar_thumbnail_path
+        .as_deref()
+        .filter(|value| !value.is_empty());
+    let preview_url = model
+        .preview_url
+        .as_deref()
+        .filter(|value| !value.is_empty());
+    let dynamic_path = dynamic_thumb.map(|thumb| thumb.thumbnail_path.as_str());
+    let thumbnail_mode = model.thumbnail_mode.as_deref();
+
+    let thumbnail_path = if let Some(path) = manual_thumb {
+        Some(path.to_string())
+    } else if thumbnail_mode == Some("dynamic") {
+        dynamic_path.or(preview_url).map(str::to_string)
+    } else {
+        sidecar_thumb
+            .or(dynamic_path)
+            .or(preview_url)
+            .map(str::to_string)
+    };
+
+    let manual_image = match manual_thumb {
+        Some(path) => manual_thumbnail_image(conn, path)?,
+        None => None,
+    };
+    let thumbnail_image_id = if manual_thumb.is_some() {
+        manual_image.as_ref().map(|(id, _)| id.clone())
+    } else {
+        dynamic_thumb.map(|thumb| thumb.image_id.clone())
+    };
+
+    let sensitive = if model.thumbnail_sensitivity_override == Some(0) {
+        0
+    } else if model.thumbnail_sensitivity_override == Some(1) {
+        1
+    } else if privacy_keyword_matches(conn, &model.name)? {
+        1
+    } else if manual_thumb.is_some() {
+        manual_image.map(|(_, hidden)| hidden).unwrap_or(1)
+    } else if thumbnail_mode == Some("dynamic") {
+        dynamic_thumb.map(|thumb| thumb.privacy_hidden).unwrap_or(0)
+    } else if sidecar_thumb.is_some() || preview_url.is_some() {
+        1
+    } else {
+        dynamic_thumb.map(|thumb| thumb.privacy_hidden).unwrap_or(0)
+    };
+
+    Ok((
+        thumbnail_path,
+        safe_thumb.map(|thumb| thumb.thumbnail_path.clone()),
+        thumbnail_image_id,
+        sensitive,
+    ))
+}
+
+fn insert_facet_row(
+    conn: &rusqlite::Connection,
+    facet_type: &str,
+    model: &FacetModelSource,
+    stats: &FacetStats,
+    dynamic_thumb: Option<&FacetThumb>,
+    safe_thumb: Option<&FacetThumb>,
+) -> Result<(), String> {
+    let (thumbnail_path, safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive) =
+        compute_thumbnail_fields(conn, model, dynamic_thumb, safe_thumb)?;
+    let has_sidecar = model
+        .sidecar_thumbnail_path
+        .as_ref()
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
+    let is_user_override = model
+        .thumbnail_path
+        .as_ref()
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
+    let is_manual = is_user_override || (has_sidecar && model.thumbnail_mode.is_none());
+
+    conn.execute(
+        "INSERT INTO facet_cache (
+            facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url,
+            last_used_at, created_at, is_manual, has_sidecar, is_user_override,
+            guidance_subtype, safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+            thumbnail_sensitivity_override
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        params![
+            facet_type,
+            &model.name,
+            &model.hash,
+            stats.count,
+            &thumbnail_path,
+            &model.preview_url,
+            stats.last_used_at,
+            stats.created_at,
+            if is_manual { 1 } else { 0 },
+            if has_sidecar { 1 } else { 0 },
+            if is_user_override { 1 } else { 0 },
+            &model.guidance_subtype,
+            &safe_thumbnail_path,
+            &thumbnail_image_id,
+            thumbnail_is_sensitive,
+            model.thumbnail_sensitivity_override
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn select_model_source(
+    conn: &rusqlite::Connection,
+    resource_type: &str,
+    name: &str,
+) -> Result<Option<FacetModelSource>, String> {
+    conn.query_row(
+        "SELECT name, hash, thumbnail_path, sidecar_thumbnail_path, preview_url,
+                thumbnail_mode, guidance_subtype, thumbnail_sensitivity_override
+         FROM models
+         WHERE resource_type = ?1 AND LOWER(name) = LOWER(?2)
+         ORDER BY CASE WHEN name = ?2 THEN 0 ELSE 1 END
+         LIMIT 1",
+        params![resource_type, name],
+        |row| {
+            Ok(FacetModelSource {
+                name: row.get(0)?,
+                hash: row.get(1)?,
+                thumbnail_path: row.get(2)?,
+                sidecar_thumbnail_path: row.get(3)?,
+                preview_url: row.get(4)?,
+                thumbnail_mode: row.get(5)?,
+                guidance_subtype: row.get(6)?,
+                thumbnail_sensitivity_override: row.get(7)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn fallback_model_source(
+    name: &str,
+    hash: Option<String>,
+    guidance_subtype: Option<String>,
+) -> FacetModelSource {
+    FacetModelSource {
+        name: name.to_string(),
+        hash,
+        thumbnail_path: None,
+        sidecar_thumbnail_path: None,
+        preview_url: None,
+        thumbnail_mode: None,
+        guidance_subtype,
+        thumbnail_sensitivity_override: None,
+    }
+}
+
+fn query_checkpoint_stats(
+    conn: &rusqlite::Connection,
+    name: &str,
+    is_unknown: bool,
+) -> Result<FacetStats, String> {
+    let map_row = |row: &rusqlite::Row<'_>| {
+        Ok(FacetStats {
+            count: row.get(0)?,
+            last_used_at: row.get(1)?,
+            created_at: row.get(2)?,
+        })
+    };
+
+    if is_unknown {
+        conn.query_row(
+            "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
+             FROM images
+             WHERE is_deleted = 0
+             AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'",
+            [],
+            map_row,
+        )
+    } else {
+        conn.query_row(
+            "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
+             FROM images
+             WHERE is_deleted = 0
+             AND resolved_model_name = ?1",
+            params![name],
+            map_row,
+        )
+    }
+    .map_err(|e| e.to_string())
+}
+
+fn query_checkpoint_thumb(
+    conn: &rusqlite::Connection,
+    name: &str,
+    is_unknown: bool,
+    safe_only: bool,
+) -> Result<Option<FacetThumb>, String> {
+    let privacy_filter = if safe_only {
+        "AND privacy_hidden = 0"
+    } else {
+        ""
+    };
+    let map_row = |row: &rusqlite::Row<'_>| {
+        Ok(FacetThumb {
+            image_id: row.get(0)?,
+            thumbnail_path: row.get(1)?,
+            privacy_hidden: row.get(2)?,
+        })
+    };
+
+    if is_unknown {
+        conn.query_row(
+            &format!(
+                "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
+                 FROM images
+                 WHERE is_deleted = 0
+                 {privacy_filter}
+                 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                 AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
+                 ORDER BY is_pinned DESC, timestamp DESC
+                 LIMIT 1"
+            ),
+            [],
+            map_row,
+        )
+    } else {
+        conn.query_row(
+            &format!(
+                "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
+                 FROM images
+                 WHERE is_deleted = 0
+                 {privacy_filter}
+                 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                 AND resolved_model_name = ?1
+                 ORDER BY is_pinned DESC, timestamp DESC
+                 LIMIT 1"
+            ),
+            params![name],
+            map_row,
+        )
+    }
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn query_checkpoint_hash(
+    conn: &rusqlite::Connection,
+    name: &str,
+    is_unknown: bool,
+) -> Result<Option<String>, String> {
+    if is_unknown {
+        conn.query_row(
+            "SELECT model_hash
+             FROM images
+             WHERE is_deleted = 0
+             AND model_hash IS NOT NULL AND model_hash != ''
+             AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
+             ORDER BY timestamp DESC
+             LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+    } else {
+        conn.query_row(
+            "SELECT model_hash
+             FROM images
+             WHERE is_deleted = 0
+             AND model_hash IS NOT NULL AND model_hash != ''
+             AND resolved_model_name = ?1
+             ORDER BY timestamp DESC
+             LIMIT 1",
+            params![name],
+            |row| row.get::<_, String>(0),
+        )
+    }
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn refresh_checkpoint_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
+    let started_at = std::time::Instant::now();
+    conn.execute(
+        "DELETE FROM facet_cache WHERE facet_type = 'checkpoints' AND LOWER(resource_name) = LOWER(?1)",
+        [name],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let is_unknown = name == "Unknown";
+    let stats = query_checkpoint_stats(conn, name, is_unknown)?;
+
+    let model = select_model_source(conn, "checkpoint", name)?;
+    if stats.count == 0 && model.is_none() {
+        println!(
+            "[FacetCache] Resource refresh checkpoints:{} removed in {:?}.",
+            name,
+            started_at.elapsed()
+        );
+        return Ok(false);
+    }
+
+    let dynamic_thumb = query_checkpoint_thumb(conn, name, is_unknown, false)?;
+    let safe_thumb = query_checkpoint_thumb(conn, name, is_unknown, true)?;
+    let model_hash = query_checkpoint_hash(conn, name, is_unknown)?;
+
+    let source = model.unwrap_or_else(|| fallback_model_source(name, model_hash, None));
+    insert_facet_row(
+        conn,
+        "checkpoints",
+        &source,
+        &stats,
+        dynamic_thumb.as_ref(),
+        safe_thumb.as_ref(),
+    )?;
+
+    println!(
+        "[FacetCache] Resource refresh checkpoints:{} completed in {:?}.",
+        source.name,
+        started_at.elapsed()
+    );
+    Ok(true)
+}
+
+fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
+    let started_at = std::time::Instant::now();
+    conn.execute(
+        "DELETE FROM facet_cache WHERE facet_type = 'tools' AND resource_name = ?1",
+        [name],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let stats = conn
+        .query_row(
+            "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
+             FROM images
+             WHERE is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1",
+            [name],
+            |row| {
+                Ok(FacetStats {
+                    count: row.get(0)?,
+                    last_used_at: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    if stats.count == 0 {
+        println!(
+            "[FacetCache] Resource refresh tools:{} removed in {:?}.",
+            name,
+            started_at.elapsed()
+        );
+        return Ok(false);
+    }
+
+    let source = fallback_model_source(name, None, None);
+    insert_facet_row(conn, "tools", &source, &stats, None, None)?;
+
+    println!(
+        "[FacetCache] Resource refresh tools:{} completed in {:?}.",
+        name,
+        started_at.elapsed()
+    );
+    Ok(true)
+}
+
+fn refresh_resource_facet(
+    conn: &rusqlite::Connection,
+    config: ResourceFacetConfig,
+    name: &str,
+    now: u64,
+) -> Result<bool, String> {
+    let started_at = std::time::Instant::now();
+
+    conn.execute(
+        "DELETE FROM facet_cache WHERE facet_type = ?1 AND LOWER(resource_name) = LOWER(?2)",
+        params![config.facet_type, name],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let match_started_at = std::time::Instant::now();
+    conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+        .map_err(|e| e.to_string())?;
+    let matches_sql = format!(
+        "CREATE TEMP TABLE live_resource_matches AS
+         SELECT
+            i.id,
+            i.timestamp,
+            COALESCE(i.is_pinned, 0) AS is_pinned,
+            i.thumbnail_path,
+            COALESCE(i.privacy_hidden, 0) AS privacy_hidden
+         FROM {} jt
+         JOIN images i ON i.id = jt.image_id
+         WHERE i.is_deleted = 0 AND jt.{} = ?1",
+        config.junction_table, config.name_col
+    );
+    conn.execute(&matches_sql, [name])
+        .map_err(|e| e.to_string())?;
+    let match_ms = match_started_at.elapsed();
+
+    let stats_started_at = std::time::Instant::now();
+    let stats = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT id), MAX(timestamp), MIN(timestamp)
+             FROM live_resource_matches",
+            [],
+            |row| {
+                Ok(FacetStats {
+                    count: row.get(0)?,
+                    last_used_at: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    let stats_ms = stats_started_at.elapsed();
+
+    let model_started_at = std::time::Instant::now();
+    if stats.count > 0 {
+        conn.execute(
+            "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                format!("{}{}", config.hash_prefix, name),
+                name,
+                config.harvest_source,
+                now as i64,
+                config.resource_type
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let model = select_model_source(conn, config.resource_type, name)?;
+    let model_ms = model_started_at.elapsed();
+    if stats.count == 0 && model.is_none() {
+        conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+            .ok();
+        println!(
+            "[FacetCache] Resource refresh {}:{} removed in {:?}. Timings: match={:?}, stats={:?}, model={:?}.",
+            config.facet_type,
+            name,
+            started_at.elapsed(),
+            match_ms,
+            stats_ms,
+            model_ms
+        );
+        return Ok(false);
+    }
+
+    let thumb_started_at = std::time::Instant::now();
+    let dynamic_thumb = conn
+        .query_row(
+            "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
+         FROM live_resource_matches i
+         WHERE i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+         ORDER BY i.is_pinned DESC, i.timestamp DESC
+         LIMIT 1",
+            [],
+            |row| {
+                Ok(FacetThumb {
+                    image_id: row.get(0)?,
+                    thumbnail_path: row.get(1)?,
+                    privacy_hidden: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let safe_thumb = conn
+        .query_row(
+            "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
+         FROM live_resource_matches i
+         WHERE i.privacy_hidden = 0
+         AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+         ORDER BY i.is_pinned DESC, i.timestamp DESC
+         LIMIT 1",
+            [],
+            |row| {
+                Ok(FacetThumb {
+                    image_id: row.get(0)?,
+                    thumbnail_path: row.get(1)?,
+                    privacy_hidden: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let thumb_ms = thumb_started_at.elapsed();
+
+    let source = model.unwrap_or_else(|| {
+        fallback_model_source(name, Some(format!("{}{}", config.hash_prefix, name)), None)
+    });
+    let insert_started_at = std::time::Instant::now();
+    insert_facet_row(
+        conn,
+        config.facet_type,
+        &source,
+        &stats,
+        dynamic_thumb.as_ref(),
+        safe_thumb.as_ref(),
+    )?;
+    let insert_ms = insert_started_at.elapsed();
+    conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+        .ok();
+
+    println!(
+        "[FacetCache] Resource refresh {}:{} completed in {:?}. Timings: match={:?}, stats={:?}, model={:?}, thumbs={:?}, insert={:?}.",
+        config.facet_type,
+        source.name,
+        started_at.elapsed(),
+        match_ms,
+        stats_ms,
+        model_ms,
+        thumb_ms,
+        insert_ms
+    );
+    Ok(true)
+}
+
+fn refresh_resource_names(
+    conn: &rusqlite::Connection,
+    facet_type: &str,
+    names: &[String],
+    now: u64,
+) -> Result<usize, String> {
+    let normalized_names = normalize_live_names(names, None);
+    if normalized_names.is_empty() {
+        return Ok(0);
+    }
+
+    let config = resource_config(facet_type)?;
+    let mut refreshed = 0;
+    for name in normalized_names {
+        if refresh_resource_facet(conn, config, &name, now)? {
+            refreshed += 1;
+        }
+    }
+
+    Ok(refreshed)
+}
+
+fn refresh_live_facet_resources(
+    conn: &mut rusqlite::Connection,
+    touches: &FacetResourceTouches,
+) -> Result<usize, String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut refreshed = 0;
+
+    for name in normalize_live_names(&touches.checkpoints, Some("Unknown")) {
+        if refresh_checkpoint_facet(&tx, &name)? {
+            refreshed += 1;
+        }
+    }
+    refreshed += refresh_resource_names(&tx, "loras", &touches.loras, now)?;
+    refreshed += refresh_resource_names(&tx, "embeddings", &touches.embeddings, now)?;
+    refreshed += refresh_resource_names(&tx, "hypernetworks", &touches.hypernetworks, now)?;
+    refreshed += refresh_resource_names(&tx, "control_nets", &touches.control_nets, now)?;
+    refreshed += refresh_resource_names(&tx, "ip_adapters", &touches.ip_adapters, now)?;
+    for name in normalize_live_names(&touches.tools, Some("Unknown")) {
+        if refresh_tool_facet(&tx, &name)? {
+            refreshed += 1;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(refreshed)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn refresh_facet_cache_for_resources(
+    app: tauri::AppHandle,
+    touches: FacetResourceTouches,
+) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
         configure_connection(&conn).map_err(|e| e.to_string())?;
 
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let refreshed = refresh_live_facet_resources(&mut conn, &touches)?;
+        println!(
+            "[FacetCache] Resource incremental refresh complete in {:?}. Rows refreshed: {}",
+            start_total.elapsed(),
+            refreshed
+        );
 
-        // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
-        harvest_models(&tx)?;
+        Ok(refreshed)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
-        // Map frontend types to DB types if necessary
-        let db_facet_type = match facet_type.as_str() {
-            "checkpoints" => "checkpoints",
-            "tools" => "tools",
-            "loras" => "loras",
-            "embeddings" => "embeddings",
-            "hypernetworks" => "hypernetworks",
-            "controlNets" | "control_nets" => "control_nets",
-            "ipAdapters" | "ip_adapters" => "ip_adapters",
-            other => other,
-        };
+fn rebuild_incremental_facet_types(
+    conn: &mut rusqlite::Connection,
+    facet_types: &[String],
+) -> Result<Vec<String>, String> {
+    let mut normalized_types: Vec<String> = Vec::new();
 
-        // Clear existing cache for this specific type
+    for facet_type in facet_types {
+        let db_facet_type = normalize_facet_type(facet_type)?.to_string();
+        if !normalized_types.contains(&db_facet_type) {
+            normalized_types.push(db_facet_type);
+        }
+    }
+
+    if normalized_types.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Modeling harvesting ensures any new models from recent image imports/edits are in 'models' table
+    harvest_models(&tx)?;
+
+    for db_facet_type in &normalized_types {
+        let facet_started_at = std::time::Instant::now();
+
         tx.execute(
             "DELETE FROM facet_cache WHERE facet_type = ?1",
             [db_facet_type],
         )
         .map_err(|e| e.to_string())?;
 
-        match db_facet_type {
+        match db_facet_type.as_str() {
             "checkpoints" => build_checkpoint_facets(&tx)?,
             "tools" => build_tool_facets(&tx)?,
             "loras" => build_resource_facets(&tx, "loras", "loras")?,
@@ -228,26 +1046,55 @@ pub async fn rebuild_facet_cache_incremental(
             "hypernetworks" => build_resource_facets(&tx, "hypernetworks", "hypernetworks")?,
             "control_nets" => build_resource_facets(&tx, "control_nets", "control_nets")?,
             "ip_adapters" => build_resource_facets(&tx, "ip_adapters", "ip_adapters")?,
-            _ => {
-                return Err(format!(
-                    "Unknown facet type for incremental build: {}",
-                    facet_type
-                ))
-            }
+            _ => unreachable!("facet types are normalized before rebuild"),
         }
 
-        tx.commit().map_err(|e| e.to_string())?;
+        println!(
+            "[FacetCache] Incremental rebuild for {} completed in {:?}.",
+            db_facet_type,
+            facet_started_at.elapsed()
+        );
+    }
 
-        // Return current count for this type
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = ?1",
-                [db_facet_type],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
-        Ok(count as usize)
+    Ok(normalized_types)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn rebuild_facet_cache_incremental_batch(
+    app: tauri::AppHandle,
+    facet_types: Vec<String>,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let start_total = std::time::Instant::now();
+        let db_path = resolve_db_path(&app)?;
+        let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+        configure_connection(&conn).map_err(|e| e.to_string())?;
+
+        let normalized_types = rebuild_incremental_facet_types(&mut conn, &facet_types)?;
+
+        let mut total_count = 0_i64;
+        for db_facet_type in &normalized_types {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM facet_cache WHERE facet_type = ?1",
+                    [db_facet_type],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            total_count += count;
+        }
+
+        println!(
+            "[FacetCache] Incremental rebuild complete in {:?}. Facets: {:?}. Total entries: {}",
+            start_total.elapsed(),
+            normalized_types,
+            total_count
+        );
+
+        Ok(total_count as usize)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1542,6 +2389,224 @@ mod tests {
         assert_eq!(thumb, "unsafe.webp");
         assert_eq!(safe_thumb, "safe.webp");
         assert_eq!(image_id, "unsafe-img");
+        assert_eq!(sensitive, 1);
+    }
+
+    #[test]
+    fn test_rebuild_incremental_facet_types_rebuilds_only_requested_types() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        let metadata = r#"{
+            "model": "Flux Base",
+            "modelHash": "flux-hash",
+            "tool": "InvokeAI"
+        }"#;
+
+        conn.execute(
+            "INSERT INTO images (id, path, metadata_json, timestamp, tool, thumbnail_path, resolved_model_name, model_hash)
+             VALUES ('img1', 'test.png', ?1, 100, 'InvokeAI', 'thumb1.png', 'Flux Base', 'flux-hash')",
+            params![metadata],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img1', 'CinematicDetail')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_embeddings (image_id, embedding_name) VALUES ('img1', 'UnusedEmbedding')",
+            [],
+        )
+        .unwrap();
+
+        let rebuilt = rebuild_incremental_facet_types(
+            &mut conn,
+            &[
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string(),
+                "checkpoints".to_string(),
+            ],
+        )
+        .unwrap();
+
+        let facet_types: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT facet_type FROM facet_cache ORDER BY facet_type")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+
+        assert_eq!(
+            rebuilt,
+            vec![
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string()
+            ]
+        );
+        assert_eq!(
+            facet_types,
+            vec![
+                "checkpoints".to_string(),
+                "loras".to_string(),
+                "tools".to_string()
+            ]
+        );
+
+        let embedding_facets: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache WHERE facet_type = 'embeddings'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(embedding_facets, 0);
+    }
+
+    #[test]
+    fn live_resource_refresh_updates_only_touched_rows() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, tool, thumbnail_path, resolved_model_name, model_hash)
+             VALUES ('img-live', 'live.png', 100, 'InvokeAI', 'old.webp', 'OldModel', 'old-hash')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img-live', 'OldLora')",
+            [],
+        )
+        .unwrap();
+
+        harvest_models(&conn).unwrap();
+        build_checkpoint_facets(&conn).unwrap();
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_tool_facets(&conn).unwrap();
+
+        conn.execute(
+            "UPDATE images
+             SET timestamp = 200,
+                 thumbnail_path = 'new.webp',
+                 resolved_model_name = 'NewModel',
+                 model_hash = 'new-hash'
+             WHERE id = 'img-live'",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM image_loras WHERE image_id = 'img-live'", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('img-live', 'NewLora')",
+            [],
+        )
+        .unwrap();
+
+        let touches = FacetResourceTouches {
+            checkpoints: vec!["OldModel".to_string(), "NewModel".to_string()],
+            loras: vec!["OldLora".to_string(), "NewLora".to_string()],
+            embeddings: vec![],
+            hypernetworks: vec![],
+            control_nets: vec![],
+            ip_adapters: vec![],
+            tools: vec!["InvokeAI".to_string()],
+        };
+
+        let refreshed = refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        assert_eq!(refreshed, 5);
+
+        let old_lora_count: i64 = conn
+            .query_row(
+                "SELECT count FROM facet_cache WHERE facet_type = 'loras' AND resource_name = 'OldLora'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let new_lora_count: i64 = conn
+            .query_row(
+                "SELECT count FROM facet_cache WHERE facet_type = 'loras' AND resource_name = 'NewLora'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let old_model_count: i64 = conn
+            .query_row(
+                "SELECT count FROM facet_cache WHERE facet_type = 'checkpoints' AND resource_name = 'OldModel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let (new_model_count, new_model_thumb): (i64, String) = conn
+            .query_row(
+                "SELECT count, thumbnail_path FROM facet_cache WHERE facet_type = 'checkpoints' AND resource_name = 'NewModel'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(old_lora_count, 0);
+        assert_eq!(new_lora_count, 1);
+        assert_eq!(old_model_count, 0);
+        assert_eq!(new_model_count, 1);
+        assert_eq!(new_model_thumb, "new.webp");
+    }
+
+    #[test]
+    fn live_resource_refresh_updates_lora_thumbnails_from_matched_rows() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, is_pinned, user_masked, thumbnail_path)
+             VALUES
+                ('unsafe-img', 'unsafe.png', 300, 1, 1, 'unsafe.webp'),
+                ('safe-img', 'safe.png', 200, 0, 0, 'safe.webp')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('unsafe-img', 'SharedLora'), ('safe-img', 'SharedLora')",
+            [],
+        )
+        .unwrap();
+
+        let touches = FacetResourceTouches {
+            loras: vec!["SharedLora".to_string()],
+            ..FacetResourceTouches::default()
+        };
+
+        let refreshed = refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        assert_eq!(refreshed, 1);
+
+        let (count, dynamic_thumb, safe_thumb, sensitive): (i64, String, String, i64) = conn
+            .query_row(
+                "SELECT count, thumbnail_path, safe_thumbnail_path, thumbnail_is_sensitive
+                 FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'SharedLora'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(dynamic_thumb, "unsafe.webp");
+        assert_eq!(safe_thumb, "safe.webp");
         assert_eq!(sensitive, 1);
     }
 

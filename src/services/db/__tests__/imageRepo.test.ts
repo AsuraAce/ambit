@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { GeneratorTool } from '../../../types';
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
@@ -17,6 +18,17 @@ vi.mock('../../../bindings', () => ({
 const dispatchMock = vi.fn(async (fn: () => Promise<unknown>) => fn());
 const getDbMock = vi.fn();
 
+const liveImportMetadata = {
+    tool: GeneratorTool.INVOKEAI,
+    model: 'Checkpoint',
+    seed: 1,
+    steps: 20,
+    cfg: 7,
+    sampler: 'euler',
+    positivePrompt: 'prompt',
+    negativePrompt: '',
+};
+
 vi.mock('../connection', () => ({
     dbMutex: {
         dispatch: (...args: unknown[]) => dispatchMock(...args as [() => Promise<unknown>]),
@@ -27,6 +39,63 @@ vi.mock('../connection', () => ({
 describe('imageRepo batch removal', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('skips user_masked cleanup when imported records do not contain default-visible overrides', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+
+        const { insertImagesBatch } = await import('../imageRepo');
+        await insertImagesBatch([{
+            id: 'C:/images/live.png',
+            url: 'C:/images/live.png',
+            thumbnailUrl: 'C:/thumbs/live.webp',
+            filename: 'live.png',
+            width: 512,
+            height: 512,
+            timestamp: 1700000000000,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+        }]);
+
+        expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    it('limits user_masked cleanup to imported record ids when default-visible overrides are present', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+
+        const { insertImagesBatch } = await import('../imageRepo');
+        await insertImagesBatch([{
+            id: 'C:/images/live-visible.png',
+            url: 'C:/images/live-visible.png',
+            thumbnailUrl: 'C:/thumbs/live-visible.webp',
+            filename: 'live-visible.png',
+            width: 512,
+            height: 512,
+            timestamp: 1700000000000,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+            userMasked: false,
+        }]);
+
+        expect(db.execute).toHaveBeenCalledTimes(1);
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining('UPDATE images SET user_masked = NULL WHERE user_masked = 0 AND id IN (?)'),
+            ['C:/images/live-visible.png']
+        );
     });
 
     it('loads full metadata columns for ID lookups used by sync flows', async () => {

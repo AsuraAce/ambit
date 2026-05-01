@@ -128,6 +128,22 @@ async rebuildFacetCacheIncremental(facetType: string) : Promise<Result<number, s
     else return { status: "error", error: e  as any };
 }
 },
+async rebuildFacetCacheIncrementalBatch(facetTypes: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rebuild_facet_cache_incremental_batch", { facetTypes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshFacetCacheForResources(touches: FacetResourceTouches) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_facet_cache_for_resources", { touches }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Get distinct facet names that exist in the current filtered result set.
  * This is used for drill-down filtering - hiding facets that have no images
@@ -478,6 +494,7 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
+export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
 export type FileEntry = { path: string; modified: number; size: number }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }

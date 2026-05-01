@@ -5,7 +5,7 @@ import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
 import { APP_NAME } from '../../constants/app';
-import { AIImage } from '../../types';
+import { AIImage, FacetType } from '../../types';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -13,6 +13,14 @@ import {
     InvokeLiveWatchPerfContext,
     liveWatchNow,
 } from '../../utils/liveWatchPerf';
+import {
+    collectTouchedFacetResourcesFromMetadataDiff,
+    collectTouchedFacetTypesFromMetadataDiff,
+    createEmptyTouchedFacetResources,
+    mergeTouchedFacetResources,
+    orderFacetTypes,
+    TouchedFacetResources
+} from '../../utils/touchedFacetTypes';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
@@ -29,7 +37,7 @@ export const syncImages = async (
     onProgress: (current: number, total: number, message?: string) => void,
     signal?: AbortSignal,
     options: InvokeSyncOptions = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }> }> => {
+): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
@@ -45,7 +53,7 @@ export const syncImages = async (
             ...(data ?? {})
         });
     };
-    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map() };
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -155,6 +163,8 @@ export const syncImages = async (
     }
 
     const syncedIds = new Set<string>();
+    const touchedFacetTypes = new Set<FacetType>();
+    let touchedFacetResources = createEmptyTouchedFacetResources();
 
     if (totalToImport === 0) {
         logSyncInfo('Invoke sync service complete', {
@@ -164,7 +174,7 @@ export const syncImages = async (
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map() };
+        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let hasBoardsTable = false;
@@ -445,6 +455,14 @@ export const syncImages = async (
                     totalUpdated++;
                 }
 
+                collectTouchedFacetTypesFromMetadataDiff(existing?.metadata, finalMetadata).forEach(type => {
+                    touchedFacetTypes.add(type);
+                });
+                touchedFacetResources = mergeTouchedFacetResources(
+                    touchedFacetResources,
+                    collectTouchedFacetResourcesFromMetadataDiff(existing?.metadata, finalMetadata)
+                );
+
                 currentBatch.push(newImg);
                 syncedIds.add(row.image_name);
                 processed++;
@@ -526,5 +544,13 @@ export const syncImages = async (
         totalMs: elapsedMs(syncStartedAt)
     });
 
-    return { imported: newImportedCount, updated: totalUpdated, maxTimestamp: maxTimestampNum, syncedIds, boardMapping: boards };
+    return {
+        imported: newImportedCount,
+        updated: totalUpdated,
+        maxTimestamp: maxTimestampNum,
+        syncedIds,
+        boardMapping: boards,
+        touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
+        touchedFacetResources
+    };
 };

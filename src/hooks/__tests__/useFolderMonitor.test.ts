@@ -121,7 +121,7 @@ describe('useFolderMonitor', () => {
             handleImportPaths: vi.fn(),
             refreshMetadata: vi.fn()
         }), {
-            initialProps: { folders: [], isLoaded: false }
+            initialProps: { folders: [] as MonitoredFolder[], isLoaded: false }
         });
 
         // Set loaded and add folder

@@ -122,7 +122,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     void queryClient.invalidateQueries({ queryKey: ['images'] });
                     void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
                     void queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
-                    void refreshCollections(true);
+                    void refreshCollections();
                 }
             } catch (error) {
                 console.error('[Privacy] Failed to refresh privacy mask index', error);

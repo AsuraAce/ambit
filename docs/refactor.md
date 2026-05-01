@@ -5,6 +5,42 @@ Last reviewed: 2026-05-01
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Live Watch Pending Completion State
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Live Watch currently uses the `watching` phase for both passive idle display and real pending work after filesystem or InvokeAI DB activity is detected.
+- InvokeAI Live Watch observes SQLite DB/WAL changes, not a final image file write. Several no-op DB events can arrive while generation is still in progress before the completed image row becomes importable.
+- The toggle-off UX can therefore feel too eager: if the dock says "Watching for completed images...", the user may reasonably expect Ambit to finish evaluating the already-detected activity before closing.
+
+### Current Pain Points
+- The Activity Dock copy does not distinguish "detected activity, waiting for completion" from "idle and ready for future events."
+- Store-level stop behavior can only reason about the current phase, not whether WatcherContext still has a pending Invoke debounce or final evaluation to drain.
+- Generic folder Live Watch is less ambiguous because targeted imports wait for stable files; InvokeAI remains harder because the event source is DB activity.
+
+### Safe-Change Warning
+- Do not mix this UX follow-up with InvokeAI no-op candidate-check optimization, Tauri path-scope warning cleanup, favicon noise, or generic SQL cleanup.
+- Stopping Live Watch should stop accepting new watcher events immediately, but it can still drain one bounded already-detected activity window if the UI is in a pending-completion state.
+- Avoid an unbounded background poll after toggle-off. The final drain needs a short timeout and explicit logs so it cannot look like Live Watch remained enabled.
+
+### Suggested Future Direction
+- Split Live Watch phases so pending work is explicit, for example `detected` or `pending_completion`, separate from passive `watching` and `summary`.
+- For InvokeAI, when toggled off during pending completion, stop the watcher and run one bounded final evaluation loop until a completed image imports, a no-op settles, or a short timeout expires.
+- Add Live Watch perf logs for the state transitions: detected, debounce scheduled, final drain started, completed image imported, no-op settled, and timeout.
+- Keep the current incremental facet refresh path unchanged; this follow-up is about session state and stop UX, not facet-cache behavior.
+
+### Not Part of the Current Task
+- Do not change manual imports or manual sync behavior.
+- Do not replace the full rebuild fallback.
+- Do not add broader InvokeAI no-op scan optimization unless it is planned as its own performance pass.
+
+### Related Code
+- `src/stores/libraryStore.ts`
+- `src/contexts/WatcherContext.tsx`
+- `src/contexts/SyncContext.tsx`
+- `src/services/invoke/syncService.ts`
+- `src/utils/liveWatchPerf.ts`
+
 ## Evaluate FTS-Backed Search
 Status: Deferred
 

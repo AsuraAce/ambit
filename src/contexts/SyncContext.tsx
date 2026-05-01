@@ -6,7 +6,8 @@ import { useToast } from '../hooks/useToast';
 import { getLiveWatchSummaryMessage, useLibraryStore } from '../stores/libraryStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { MetadataRefreshScope } from '../types';
+import { useSettingsStore } from '../stores/settingsStore';
+import { FacetType, MetadataRefreshScope } from '../types';
 import { isInvokeDbSnapshotCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
 import {
     debugLiveWatchPerf,
@@ -17,6 +18,8 @@ import {
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
 import { isBrowserMockMode } from '../services/runtime';
+import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
+import { TouchedFacetResources } from '../utils/touchedFacetTypes';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -130,6 +133,35 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     const pendingTargetedPathsRef = useRef<Set<string>>(new Set());
     const pendingTargetedPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
+    const liveFacetRefreshQueueRef = useRef(createLiveFacetRefreshQueue({
+        runIncremental: async (facetTypes: FacetType[]) => {
+            const { rebuildFacetCacheIncrementalBatchStrict } = await import('../services/db/imageRepo');
+            return await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
+        },
+        runResourceIncremental: async (resources: TouchedFacetResources) => {
+            const { refreshFacetCacheForResourcesStrict } = await import('../services/db/imageRepo');
+            return await refreshFacetCacheForResourcesStrict(resources);
+        },
+        runFullFallback: async () => {
+            const { rebuildFacetCacheStrict } = await import('../services/db/imageRepo');
+            return await rebuildFacetCacheStrict();
+        },
+        onRefreshApplied: () => {
+            useLibraryStore.getState().incrementFacetCacheVersion();
+        }
+    }));
+
+    const queueLiveFacetRefresh = useCallback((
+        facetTypes: FacetType[],
+        meta: {
+            source: 'generic' | 'invoke';
+            cycleId?: string;
+            changedImageCount?: number;
+        },
+        resources?: TouchedFacetResources
+    ) => {
+        return liveFacetRefreshQueueRef.current.queue(facetTypes, meta, resources);
+    }, []);
 
     const startInvokeSync = useCallback(async (optionsInput?: StartInvokeSyncOptions) => {
         if (isBrowserMockMode()) {
@@ -250,7 +282,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             const { syncImages } = await import('../services/invoke/syncService');
             const { scanForOrphans } = await import('../services/invoke/orphanScanner');
 
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds } = await syncImages(
+            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncImages(
                 settingsRef.current.invokeAiPath!,
                 (c, t, msg) => {
                     if (options.mode === 'live') {
@@ -362,6 +394,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         .catch((invalidateError) => {
                             console.error('[Sync] Live image refresh invalidation failed', invalidateError);
                         });
+
+                    void queueLiveFacetRefresh(touchedFacetTypes, {
+                        source: 'invoke',
+                        cycleId: livePerfContext?.cycleId,
+                        changedImageCount: totalProcessed
+                    }, touchedFacetResources);
                 } else {
                     // MANUAL HEAVY REBUILD
                     setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
@@ -474,7 +512,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 }
             }
         }
-    }, [syncStatus, addToast, onSyncComplete, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {
@@ -567,6 +605,51 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
 
                     // Targeted watcher events do not prove the whole folder has been swept.
                     // The startup/catch-up scanner owns the monitored-folder cursor.
+                    if (result.handledPaths.length > 0) {
+                        const invalidateStartedAt = liveWatchNow();
+                        const invalidatePromise = queryClient.invalidateQueries({ queryKey: ['images'] });
+                        debugLiveWatchPerf('Generic live image refresh invalidation triggered', {
+                            cycleId: cyclePerfContext?.cycleId,
+                            handledPathCount: result.handledPaths.length,
+                            importedCount: result.stats.imported,
+                            triggerMs: elapsedMs(invalidateStartedAt)
+                        });
+                        void invalidatePromise
+                            .then(() => {
+                                debugLiveWatchPerf('Generic live image refresh invalidation settled', {
+                                    cycleId: cyclePerfContext?.cycleId,
+                                    handledPathCount: result.handledPaths.length,
+                                    importedCount: result.stats.imported,
+                                    settleMs: elapsedMs(invalidateStartedAt)
+                                });
+                            })
+                            .catch((invalidateError) => {
+                                console.error('[LiveSync] Generic live image refresh invalidation failed', invalidateError);
+                            });
+
+                        void queueLiveFacetRefresh(result.touchedFacetTypes, {
+                            source: 'generic',
+                            cycleId: cyclePerfContext?.cycleId,
+                            changedImageCount: result.stats.imported
+                        }, result.touchedFacetResources);
+                    }
+
+                    if (result.handledPaths.length > 0) {
+                        // Keep the catch-up cursor aligned only for files we actually handled.
+                        const { updateFolderLastScanned } = useSettingsStore.getState();
+                        const monitoredFolders = settingsRef.current.monitoredFolders || [];
+                        const now = Date.now();
+                        const updatedFolderIds = new Set<string>();
+
+                        result.handledPaths.forEach(path => {
+                            const lowerPath = path.toLowerCase();
+                            const folder = monitoredFolders.find(f => lowerPath.startsWith(f.path.replace(/\\/g, '/').toLowerCase()));
+                            if (folder && !updatedFolderIds.has(folder.id)) {
+                                updatedFolderIds.add(folder.id);
+                                updateFolderLastScanned(folder.id, now);
+                            }
+                        });
+                    }
 
                     infoLiveWatchPerf('Targeted live cycle complete', {
                         cycleId: cyclePerfContext?.cycleId,
@@ -606,7 +689,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         });
 
         return targetedLiveDrainPromiseRef.current;
-    }, [reportLiveImagesReceived, startLiveWatchSession, updateLiveWatchSession]);
+    }, [queryClient, queueLiveFacetRefresh, reportLiveImagesReceived, startLiveWatchSession, updateLiveWatchSession]);
 
     const cancelSync = useCallback(() => {
         cancelSyncAction();

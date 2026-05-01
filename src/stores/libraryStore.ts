@@ -88,6 +88,14 @@ const clearLiveWatchSessionEnd = () => {
     }
 };
 
+const isActiveLiveWatchPhase = (phase: LiveWatchSessionPhase | null) => (
+    phase === 'watching' || phase === 'syncing' || phase === 'importing'
+);
+
+const shouldCloseLiveWatchOnStop = (session: LiveWatchSessionState) => (
+    !session.active || !isActiveLiveWatchPhase(session.phase)
+);
+
 export interface MaintenanceCounts {
     untagged: number;
     orphans: number;
@@ -151,6 +159,7 @@ interface LibraryState {
 
     // Live Watch Session State
     liveWatchSession: LiveWatchSessionState;
+    liveWatchSessionCloseRequested: boolean;
 
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
@@ -263,6 +272,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
     // Live Watch Session State
     liveWatchSession: createInitialLiveWatchSessionState(),
+    liveWatchSessionCloseRequested: false,
 
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
@@ -277,7 +287,25 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         return {};
     }),
 
-    setIsLiveWatching: (isWatching) => set({ isLiveWatching: isWatching }),
+    setIsLiveWatching: (isWatching) => set((state) => {
+        if (isWatching) {
+            return { isLiveWatching: true, liveWatchSessionCloseRequested: false };
+        }
+
+        clearLiveWatchSessionEnd();
+        if (shouldCloseLiveWatchOnStop(state.liveWatchSession)) {
+            return {
+                isLiveWatching: false,
+                liveWatchSession: createInitialLiveWatchSessionState(),
+                liveWatchSessionCloseRequested: false
+            };
+        }
+
+        return {
+            isLiveWatching: false,
+            liveWatchSessionCloseRequested: true
+        };
+    }),
     setMaintenanceCounts: (counts) => set({ maintenanceCounts: counts }),
 
     setIsImporting: (val) => {
@@ -363,32 +391,45 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         set((state) => {
             const currentSession = state.liveWatchSession;
             const resolvedSource = mergeLiveWatchSource(currentSession.source, source);
+            const nextPhase = update.phase ?? 'watching';
             return {
                 liveWatchSession: {
                     active: true,
                     source: resolvedSource,
-                    phase: update.phase ?? 'watching',
+                    phase: nextPhase,
                     message: update.message,
                     progress: update.progress ?? null,
                     receivedCount: currentSession.receivedCount,
                     startedAt: currentSession.active ? currentSession.startedAt : now,
                     lastActivityAt: now
                 },
+                liveWatchSessionCloseRequested: state.liveWatchSessionCloseRequested && isActiveLiveWatchPhase(nextPhase),
                 isActivityDockDismissed: false
             };
         });
-        scheduleLiveWatchSessionEnd();
+        if (useLibraryStore.getState().isLiveWatching) {
+            scheduleLiveWatchSessionEnd();
+        }
     },
     updateLiveWatchSession: (update) => {
         const now = Date.now();
         set((state) => {
             const currentSession = state.liveWatchSession;
             const resolvedSource = mergeLiveWatchSource(currentSession.source, update.source);
+            const nextPhase = update.phase ?? currentSession.phase ?? 'watching';
+            if (state.liveWatchSessionCloseRequested && !isActiveLiveWatchPhase(nextPhase)) {
+                clearLiveWatchSessionEnd();
+                return {
+                    liveWatchSession: createInitialLiveWatchSessionState(),
+                    liveWatchSessionCloseRequested: false
+                };
+            }
+
             return {
                 liveWatchSession: {
                     active: true,
                     source: resolvedSource,
-                    phase: update.phase ?? currentSession.phase ?? 'watching',
+                    phase: nextPhase,
                     message: update.message ?? currentSession.message,
                     progress: update.progress !== undefined ? update.progress : currentSession.progress,
                     receivedCount: currentSession.receivedCount,
@@ -398,12 +439,22 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                 isActivityDockDismissed: false
             };
         });
-        scheduleLiveWatchSessionEnd();
+        if (useLibraryStore.getState().isLiveWatching) {
+            scheduleLiveWatchSessionEnd();
+        }
     },
     reportLiveImagesReceived: (count, update = {}) => {
         const now = Date.now();
         set((state) => {
             const currentSession = state.liveWatchSession;
+            if (state.liveWatchSessionCloseRequested) {
+                clearLiveWatchSessionEnd();
+                return {
+                    liveWatchSession: createInitialLiveWatchSessionState(),
+                    liveWatchSessionCloseRequested: false
+                };
+            }
+
             const receivedCount = currentSession.receivedCount + count;
             const resolvedSource = mergeLiveWatchSource(currentSession.source, update.source);
             return {
@@ -420,25 +471,15 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                 isActivityDockDismissed: false
             };
         });
-        scheduleLiveWatchSessionEnd();
+        if (useLibraryStore.getState().isLiveWatching) {
+            scheduleLiveWatchSessionEnd();
+        }
     },
     endLiveImageSession: async () => {
         clearLiveWatchSessionEnd();
-        const { liveWatchSession } = useLibraryStore.getState();
-        const shouldRebuildFacetCache = liveWatchSession.receivedCount > 0;
-        set({ liveWatchSession: createInitialLiveWatchSessionState() });
-
-        if (!shouldRebuildFacetCache) {
-            return;
-        }
-
-        try {
-            console.log('[LiveWatch] Idle timeout reached. Rebuilding Facet Cache.');
-            const { rebuildFacetCache } = await import('../services/db/imageRepo');
-            await rebuildFacetCache();
-            useLibraryStore.getState().incrementFacetCacheVersion();
-        } catch(e) { 
-            console.error('[LiveWatch] Failed facet cache rebuild after idle timeout', e); 
-        }
+        set({
+            liveWatchSession: createInitialLiveWatchSessionState(),
+            liveWatchSessionCloseRequested: false
+        });
     },
 }));

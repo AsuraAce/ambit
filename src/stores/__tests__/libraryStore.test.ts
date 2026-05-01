@@ -1,7 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../libraryStore';
-import { rebuildFacetCache } from '../../services/db/imageRepo';
 
 vi.mock('../../bindings', () => ({
     commands: {
@@ -12,10 +11,6 @@ vi.mock('../../bindings', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn().mockResolvedValue(undefined)
-}));
-
-vi.mock('../../services/db/imageRepo', () => ({
-    rebuildFacetCache: vi.fn().mockResolvedValue(undefined)
 }));
 
 const resetLibraryStore = () => {
@@ -40,6 +35,7 @@ describe('libraryStore live watch session', () => {
 
     it('resets the idle timer when new live activity arrives', async () => {
         act(() => {
+            useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
                 message: 'Detected InvokeAI activity.'
@@ -54,7 +50,6 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
@@ -70,17 +65,106 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(1000);
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
-        expect(rebuildFacetCache).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
     });
 
-    it('skips the idle facet rebuild when no images were received', async () => {
+    it('closes passive live watch sessions immediately when live watch is turned off', () => {
+        act(() => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'summary',
+                message: '1 image received this session. Watching for more...'
+            });
+            useLibraryStore.getState().setIsLiveWatching(false);
+        });
+
+        expect(useLibraryStore.getState().isLiveWatching).toBe(false);
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
+    });
+
+    it('keeps active live watch sessions visible after stop until the cycle settles', () => {
+        act(() => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'Synchronizing InvokeAI images...'
+            });
+            useLibraryStore.getState().setIsLiveWatching(false);
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
+        expect(useLibraryStore.getState().liveWatchSession.phase).toBe('syncing');
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(true);
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: '1 image received this session. Watching for more...',
+                progress: null
+            });
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
+    });
+
+    it('keeps detected live watch activity visible after stop until the scheduled cycle settles', () => {
+        act(() => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'watching',
+                message: 'Detected InvokeAI activity. Waiting for completed images...'
+            });
+            useLibraryStore.getState().setIsLiveWatching(false);
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
+        expect(useLibraryStore.getState().liveWatchSession.phase).toBe('watching');
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(true);
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for completed images...',
+                progress: null
+            });
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
+    });
+
+    it('closes active live watch sessions after stop when images are reported', () => {
+        act(() => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+            useLibraryStore.getState().startLiveWatchSession('generic', {
+                phase: 'importing',
+                message: 'Importing live images...'
+            });
+            useLibraryStore.getState().setIsLiveWatching(false);
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(true);
+        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(true);
+
+        act(() => {
+            useLibraryStore.getState().reportLiveImagesReceived(1, { source: 'generic' });
+        });
+
+        expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
+    });
+
+    it('ends the live session immediately when the session is closed manually', async () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
@@ -93,7 +177,7 @@ describe('libraryStore live watch session', () => {
         });
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
-        expect(rebuildFacetCache).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
     });
 
     it('cancels duplicate hashing when an import starts', () => {
