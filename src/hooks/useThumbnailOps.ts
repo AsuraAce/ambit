@@ -3,7 +3,6 @@ import { useCallback } from 'react';
 import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
-import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 import { isBrowserMockMode } from '../services/runtime';
 
 interface UseThumbnailOpsProps {
@@ -58,6 +57,7 @@ export const useThumbnailOps = ({
         setThumbnailProgress({ current: 0, total: candidates.length });
 
         try {
+            const { regenerateThumbnailsForImages } = await import('../services/thumbnailService');
             const updates = await regenerateThumbnailsForImages(candidates, (curr, tot) => {
                 setThumbnailProgress({ current: curr, total: tot });
                 if (onProgress) onProgress(curr, tot);

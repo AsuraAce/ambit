@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { HashRouter } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
@@ -8,7 +7,6 @@ import { AppContextMenu } from './components/ui/AppContextMenu';
 import { UpdateDialog } from './components/ui/UpdateDialog';
 import { OnboardingWizard } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
-import { ImageViewer } from './features/viewer/components/ImageViewer';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
 import { useToast } from './hooks/useToast';
@@ -37,6 +35,8 @@ import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
+
+const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 
 export default function App() {
     const { addToast } = useToast();
@@ -377,174 +377,174 @@ export default function App() {
 
 
     return (
-        <HashRouter>
-            <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
-                <TitleBar />
+        <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
+            <TitleBar />
 
-                <AppLayout
+            <AppLayout
 
-                    filters={filters}
-                    setFilters={setFilters}
-                    isFilterPanelOpen={isFilterPanelOpen}
-                    setIsFilterPanelOpen={setIsFilterPanelOpen}
-                    colOps={colOps}
-                    setExportIds={setExportIds}
-                    modals={modals}
-                    addToast={addToast}
-                    viewMode={viewMode}
-                    changeViewMode={changeViewMode}
-                    searchProps={searchProps}
-                    layoutMode={layoutMode}
-                    setLayoutMode={setLayoutMode}
-                    sortOption={sortOption}
-                    setSortOption={setSortOption}
-                    totalImages={totalImages}
-                    scopeTotal={scopeTotal}
-                    scopeName={scopeName}
-                    isFiltering={isFiltering}
-                    fileOps={fileOps}
-                    onOpenImportModal={() => {
-                        if (settings.hideImportModal) {
-                            void handleSelectFilesImport();
-                        } else {
-                            setIsImportModalOpen(true);
-                        }
-                    }}
-                    clearAllFilters={clearAllFilters}
-                    scrollContainerRef={scrollContainerRef}
-                    images={images}
-                    handlers={{ ...handlers, setImages, setContextMenu }}
-                    setViewingImageId={setViewingImageId}
+                filters={filters}
+                setFilters={setFilters}
+                isFilterPanelOpen={isFilterPanelOpen}
+                setIsFilterPanelOpen={setIsFilterPanelOpen}
+                colOps={colOps}
+                setExportIds={setExportIds}
+                modals={modals}
+                addToast={addToast}
+                viewMode={viewMode}
+                changeViewMode={changeViewMode}
+                searchProps={searchProps}
+                layoutMode={layoutMode}
+                setLayoutMode={setLayoutMode}
+                sortOption={sortOption}
+                setSortOption={setSortOption}
+                totalImages={totalImages}
+                scopeTotal={scopeTotal}
+                scopeName={scopeName}
+                isFiltering={isFiltering}
+                fileOps={fileOps}
+                onOpenImportModal={() => {
+                    if (settings.hideImportModal) {
+                        void handleSelectFilesImport();
+                    } else {
+                        setIsImportModalOpen(true);
+                    }
+                }}
+                clearAllFilters={clearAllFilters}
+                scrollContainerRef={scrollContainerRef}
+                images={images}
+                handlers={{ ...handlers, setImages, setContextMenu }}
+                setViewingImageId={setViewingImageId}
 
-                    toggleFavorite={toggleFavorite}
-                    actions={actions}
-                    availableTags={availableTags}
-                    selectedIds={selectedIds}
-                    handleImageClick={handleImageClick}
-                    setSelectedImageIndex={setSelectedImageIndex}
-                    handleSelectionToggle={handleSelectionToggle}
-                    activeCollection={activeCollection}
-                    activeSmartCollection={activeSmartCollection}
-                    handleRangeSelection={handleRangeSelection}
-                    clearSelection={clearSelection}
-                    gridRef={gridRef}
-                    loadMoreImages={loadMoreImages}
-                    handleLayoutChange={handleLayoutChange}
-                    isSearchFocused={isSearchFocused}
-                    setIsSearchFocused={setIsSearchFocused}
-                    lastSelectedId={lastSelectedId}
-                    handleRemoveFromCollection={handleRemoveFromCollection}
-                    handleOpenCollectionModal={handleOpenCollectionModal}
-                    onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
+                toggleFavorite={toggleFavorite}
+                actions={actions}
+                availableTags={availableTags}
+                selectedIds={selectedIds}
+                handleImageClick={handleImageClick}
+                setSelectedImageIndex={setSelectedImageIndex}
+                handleSelectionToggle={handleSelectionToggle}
+                activeCollection={activeCollection}
+                activeSmartCollection={activeSmartCollection}
+                handleRangeSelection={handleRangeSelection}
+                clearSelection={clearSelection}
+                gridRef={gridRef}
+                loadMoreImages={loadMoreImages}
+                handleLayoutChange={handleLayoutChange}
+                isSearchFocused={isSearchFocused}
+                setIsSearchFocused={setIsSearchFocused}
+                lastSelectedId={lastSelectedId}
+                handleRemoveFromCollection={handleRemoveFromCollection}
+                handleOpenCollectionModal={handleOpenCollectionModal}
+                onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
+            />
+
+            {/* Overlays & Portals */}
+            <OnboardingWizard
+                isOpen={!settings.hasCompletedOnboarding && !hasDismissedOnboarding}
+                onComplete={(s) => {
+                    setSettings(p => ({ ...p, ...s }));
+                    setHasDismissedOnboarding(true);
+                    addToast("Setup complete!", "success");
+                }}
+                onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
+            />
+            <ImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
+                onImportFiles={() => { void handleSelectFilesImport(); }}
+                settings={settings}
+                setSettings={setSettings}
+            />
+            <input
+                type="file"
+                ref={fileOps.fileInputRef}
+                className="hidden"
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                onChange={fileOps.importImages}
+            />
+            <DragOverlay isVisible={isDraggingExternal} />
+
+            <GlobalModals
+                modals={modals.modals}
+                setModals={modals.setModals}
+                selectedIds={selectedIds}
+                filteredImages={images}
+                canCheckForUpdates={updater.canCheckForUpdates}
+                onSettingsSave={setSettings}
+                onExportConfirm={(name, folder) => {
+                    actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
+                    setExportIds(new Set());
+                }}
+                onDeleteConfirm={actions.executeDelete}
+                onDeleteCollectionConfirm={() => {
+                    if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
+                    modals.closeModal('deleteCollection');
+                    modals.setCollectionToDelete(null);
+                }}
+                onRecoverMetadata={actions.executeMetadataRecovery}
+                onCollectionAction={async (ids, targetId, mode, sourceId) => {
+                    if (mode === 'move' && sourceId) {
+                        await colOps.moveImagesBetweenCollections(ids, sourceId, targetId);
+                    } else {
+                        await colOps.addImagesToCollection(ids, targetId);
+                    }
+                    clearSelection();
+                }}
+                onCloseExport={() => setExportIds(new Set())}
+                exportIds={exportIds}
+                pendingViewerDeleteId={modals.pendingViewerDeleteId}
+                collectionToDeleteId={modals.collectionToDelete}
+                addToCollectionMode={modals.addToCollectionMode}
+                sourceCollectionId={modals.sourceCollectionId}
+                isRecoveringMetadata={fileOps.isRecoveringMetadata}
+                isExporting={fileOps.isExporting}
+                slideshowShuffle={modals.slideshowShuffle}
+                initialSettingsTab={modals.initialSettingsTab}
+                shortcutsModalTab={modals.shortcutsModalTab}
+                commandPaletteProps={{
+                    onNavigate: changeViewMode,
+                    onToggleTheme: toggleTheme,
+                    onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
+                    onImport: () => { void handleSelectFilesImport(); },
+                    onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
+                    onToggleAI: toggleAiSearch,
+                    settings: settings
+                }}
+                collections={collections}
+                smartCollections={smartCollections}
+                toggleFavorite={toggleFavorite}
+                settings={settings}
+                filters={filters}
+                collectionToEditId={modals.collectionToEditId}
+                onSaveCollectionFilters={colOps.updateCollectionFilters}
+                onScanFolder={fileOps.handleImportFolders}
+                onInvokeSync={fileOps.handleInvokeSync}
+                hasPendingUpdate={Boolean(updater.update)}
+                pendingUpdateVersion={updater.update?.version ?? null}
+                updateErrorMessage={updater.errorMessage}
+                updateStatus={updater.status}
+                onCheckForUpdates={async () => {
+                    await updater.checkForUpdates({ manual: true });
+                }}
+                onOpenUpdatePrompt={updater.openUpdateDialog}
+            />
+
+            {updater.update && (
+                <UpdateDialog
+                    isOpen={updater.isDialogOpen}
+                    currentVersion={appVersion}
+                    availableVersion={updater.update.version}
+                    notes={updater.update.body}
+                    publishedAt={updater.update.date}
+                    status={updater.status}
+                    errorMessage={updater.errorMessage}
+                    onClose={updater.dismissUpdateDialog}
+                    onInstall={updater.installUpdate}
                 />
+            )}
 
-                {/* Overlays & Portals */}
-                <OnboardingWizard
-                    isOpen={!settings.hasCompletedOnboarding && !hasDismissedOnboarding}
-                    onComplete={(s) => {
-                        setSettings(p => ({ ...p, ...s }));
-                        setHasDismissedOnboarding(true);
-                        addToast("Setup complete!", "success");
-                    }}
-                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-                />
-                <ImportModal
-                    isOpen={isImportModalOpen}
-                    onClose={() => setIsImportModalOpen(false)}
-                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-                    onImportFiles={() => { void handleSelectFilesImport(); }}
-                    settings={settings}
-                    setSettings={setSettings}
-                />
-                <input
-                    type="file"
-                    ref={fileOps.fileInputRef}
-                    className="hidden"
-                    multiple
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={fileOps.importImages}
-                />
-                <DragOverlay isVisible={isDraggingExternal} />
-
-                <GlobalModals
-                    modals={modals.modals}
-                    setModals={modals.setModals}
-                    selectedIds={selectedIds}
-                    filteredImages={images}
-                    canCheckForUpdates={updater.canCheckForUpdates}
-                    onSettingsSave={setSettings}
-                    onExportConfirm={(name, folder) => {
-                        actions.handleExportConfirm(name, folder, exportIds.size > 0 ? exportIds : undefined);
-                        setExportIds(new Set());
-                    }}
-                    onDeleteConfirm={actions.executeDelete}
-                    onDeleteCollectionConfirm={() => {
-                        if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
-                        modals.closeModal('deleteCollection');
-                        modals.setCollectionToDelete(null);
-                    }}
-                    onRecoverMetadata={actions.executeMetadataRecovery}
-                    onCollectionAction={async (ids, targetId, mode, sourceId) => {
-                        if (mode === 'move' && sourceId) {
-                            await colOps.moveImagesBetweenCollections(ids, sourceId, targetId);
-                        } else {
-                            await colOps.addImagesToCollection(ids, targetId);
-                        }
-                        clearSelection();
-                    }}
-                    onCloseExport={() => setExportIds(new Set())}
-                    exportIds={exportIds}
-                    pendingViewerDeleteId={modals.pendingViewerDeleteId}
-                    collectionToDeleteId={modals.collectionToDelete}
-                    addToCollectionMode={modals.addToCollectionMode}
-                    sourceCollectionId={modals.sourceCollectionId}
-                    isRecoveringMetadata={fileOps.isRecoveringMetadata}
-                    isExporting={fileOps.isExporting}
-                    slideshowShuffle={modals.slideshowShuffle}
-                    initialSettingsTab={modals.initialSettingsTab}
-                    shortcutsModalTab={modals.shortcutsModalTab}
-                    commandPaletteProps={{
-                        onNavigate: changeViewMode,
-                        onToggleTheme: toggleTheme,
-                        onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
-                        onImport: () => { void handleSelectFilesImport(); },
-                        onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
-                        onToggleAI: toggleAiSearch,
-                        settings: settings
-                    }}
-                    collections={collections}
-                    smartCollections={smartCollections}
-                    toggleFavorite={toggleFavorite}
-                    settings={settings}
-                    filters={filters}
-                    collectionToEditId={modals.collectionToEditId}
-                    onSaveCollectionFilters={colOps.updateCollectionFilters}
-                    onScanFolder={fileOps.handleImportFolders}
-                    onInvokeSync={fileOps.handleInvokeSync}
-                    hasPendingUpdate={Boolean(updater.update)}
-                    pendingUpdateVersion={updater.update?.version ?? null}
-                    updateErrorMessage={updater.errorMessage}
-                    updateStatus={updater.status}
-                    onCheckForUpdates={async () => {
-                        await updater.checkForUpdates({ manual: true });
-                    }}
-                    onOpenUpdatePrompt={updater.openUpdateDialog}
-                />
-
-                {updater.update && (
-                    <UpdateDialog
-                        isOpen={updater.isDialogOpen}
-                        currentVersion={appVersion}
-                        availableVersion={updater.update.version}
-                        notes={updater.update.body}
-                        publishedAt={updater.update.date}
-                        status={updater.status}
-                        errorMessage={updater.errorMessage}
-                        onClose={updater.dismissUpdateDialog}
-                        onInstall={updater.installUpdate}
-                    />
-                )}
-
+            <React.Suspense fallback={null}>
                 <AnimatePresence>
                     {displayedViewerImage && (
                         <ImageViewer
@@ -587,19 +587,19 @@ export default function App() {
                         />
                     )}
                 </AnimatePresence>
+            </React.Suspense>
 
-                <AppContextMenu
-                    contextMenu={contextMenu}
-                    onClose={() => setContextMenu(null)}
-                    images={images}
-                    actions={actions}
-                    fileOps={fileOps}
-                    colOps={colOps}
-                    onMoveToCollection={onMoveToCollection}
-                    modals={modals}
-                    filters={filters}
-                />
-            </div>
-        </HashRouter >
+            <AppContextMenu
+                contextMenu={contextMenu}
+                onClose={() => setContextMenu(null)}
+                images={images}
+                actions={actions}
+                fileOps={fileOps}
+                colOps={colOps}
+                onMoveToCollection={onMoveToCollection}
+                modals={modals}
+                filters={filters}
+            />
+        </div>
     );
 }

@@ -114,8 +114,8 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('timeline-view')).toBeTruthy();
     });
 
-    it('renders MaintenanceView when viewMode is maintenance', () => {
+    it('renders MaintenanceView when viewMode is maintenance', async () => {
         render(<AppLayout {...defaultProps} viewMode="maintenance" />);
-        expect(screen.getByTestId('maintenance-view')).toBeTruthy();
+        expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
     });
 });

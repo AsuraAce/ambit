@@ -2,7 +2,6 @@
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { FilterState, AppSettings } from '../types';
-import { generateFiltersFromQuery } from '../services/geminiService';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -77,6 +76,7 @@ export const useAiSearchLogic = ({
       setIsSearchingAi(true);
       addToast("Gemini is analyzing your request...", "info");
       try {
+        const { generateFiltersFromQuery } = await import('../services/geminiService');
         const aiFilters = await generateFiltersFromQuery(trimmed, apiKey!, settings.aiModel);
         setFilters(prev => ({
           ...prev,

@@ -1,6 +1,5 @@
 
 import { useState } from 'react';
-import { analyzePromptAndSuggest, generatePromptVariations } from '../services/geminiService';
 import { useSettingsStore } from '../stores/settingsStore';
 
 /**
@@ -51,6 +50,7 @@ export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOp
 
     setIsAnalyzing(true);
     try {
+      const { analyzePromptAndSuggest } = await import('../services/geminiService');
       const insight = await analyzePromptAndSuggest(prompt, apiKey, aiModel, prompts);
       setResult(insight);
       setModalType('analysis');
@@ -72,6 +72,7 @@ export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOp
 
     setIsAnalyzing(true);
     try {
+      const { generatePromptVariations } = await import('../services/geminiService');
       const vars = await generatePromptVariations(prompt, apiKey, aiModel, prompts);
       setResult(vars);
       setModalType('variations');

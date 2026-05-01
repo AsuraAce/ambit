@@ -1,7 +1,6 @@
 import React, { ReactElement } from 'react';
 import { render, renderHook, RenderOptions, RenderHookOptions } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
 
 const createTestQueryClient = () => new QueryClient({
     defaultOptions: {
@@ -16,9 +15,7 @@ const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
     const queryClient = createTestQueryClient();
     return (
         <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
-                {children}
-            </BrowserRouter>
+            {children}
         </QueryClientProvider>
     );
 };

@@ -1,13 +1,10 @@
 import * as React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { APP_NAME } from '../constants/app';
 import { AppSidebar } from '../features/collections/components/AppSidebar';
 import { AppHeader } from './ui/AppHeader';
 import { SelectionBar } from '../features/library/components/SelectionBar';
 import { FilterPanel } from '../features/filters/components/FilterPanel';
 import { ErrorBoundary } from './ui/ErrorBoundary';
-import { StatsDashboard } from './ui/Charts';
-import { MaintenanceView } from '../features/maintenance/components/MaintenanceView';
 import { GridSkeleton } from '../features/library/components/GridSkeleton';
 import { PinnedShelf } from '../features/library/components/PinnedShelf';
 import { TimelineView } from '../features/library/components/TimelineView';
@@ -17,7 +14,6 @@ import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
 import { Import, Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
-import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
@@ -25,6 +21,15 @@ import { setupGlobalLogging } from '../utils/logger';
 import { isCollectionThumbnailImage } from '../utils/thumbnailUtils';
 
 setupGlobalLogging();
+
+const StatsDashboard = React.lazy(() => import('./ui/Charts').then(module => ({ default: module.StatsDashboard })));
+const MaintenanceView = React.lazy(() => import('../features/maintenance/components/MaintenanceView').then(module => ({ default: module.MaintenanceView })));
+
+const ViewLoadingFallback = () => (
+    <div className="h-full w-full flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-sage-500/20 border-t-sage-500 animate-spin" />
+    </div>
+);
 
 interface AppLayoutProps {
     // Sidebar Props
@@ -105,7 +110,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
 
     const allCollections = useCollectionStore(s => s.collections);
-    const onRefreshCollections = useCollectionStore(s => s.refreshCollections);
 
     // Local State
     const [showSupportPulse, setShowSupportPulse] = React.useState(true);
@@ -118,9 +122,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }, []);
 
     // Derived
-    const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
-    const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
-
     // Store Access
     const {
         images,
@@ -271,44 +272,48 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
                         <ErrorBoundary>
                             {viewMode === 'dashboard' ? (
-                                <StatsDashboard images={images} onFilter={(t, v) => {
-                                    if (t === 'model') {
-                                        setFilters(p => ({
-                                            ...p,
-                                            models: p.models.includes(v) ? p.models : [...p.models, v]
-                                        }));
-                                    }
-                                    changeViewMode('grid');
-                                }} />
-                            ) : viewMode === 'maintenance' ? (
-                                <MaintenanceView
-                                    images={images}
-                                    onResolveDuplicate={handlers.handleResolveDuplicate}
-                                    onRestoreImages={handlers.handleRestoreImages}
-                                    onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
-                                    onDeleteFile={handlers.handleDeleteFile}
-                                    onEmptyTrash={handlers.handleEmptyTrash}
-                                    onGroupImages={handlers.handleGroupImages}
-                                    onViewImage={(id) => setViewingImageId(id)}
-                                    onRegenerateThumbnails={fileOps.regenerateThumbnails}
-                                    maskedKeywords={settings.maskedKeywords}
-                                    onUpdatePrompt={handlers.handleUpdatePrompt}
-                                    onUpdateModel={handlers.handleUpdateModel}
-                                    onUpdateTool={handlers.handleUpdateTool}
-                                    onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
-                                    onRecoverMetadata={() => {
-                                        if (!settings.enableAI || !geminiApiKey) {
-                                            addToast("Enable AI features and configure a Gemini API key first", "error");
-                                            modals.setInitialSettingsTab('intelligence');
-                                            modals.openModal('settings');
-                                        } else {
-                                            modals.openModal('recovery');
+                                <React.Suspense fallback={<ViewLoadingFallback />}>
+                                    <StatsDashboard images={images} onFilter={(t, v) => {
+                                        if (t === 'model') {
+                                            setFilters(p => ({
+                                                ...p,
+                                                models: p.models.includes(v) ? p.models : [...p.models, v]
+                                            }));
                                         }
-                                    }}
-                                    onToggleFavorite={(id) => toggleFavorite(id)}
-                                    onTogglePin={actions.handlePinImage}
-                                    availableTags={availableTags}
-                                />
+                                        changeViewMode('grid');
+                                    }} />
+                                </React.Suspense>
+                            ) : viewMode === 'maintenance' ? (
+                                <React.Suspense fallback={<ViewLoadingFallback />}>
+                                    <MaintenanceView
+                                        images={images}
+                                        onResolveDuplicate={handlers.handleResolveDuplicate}
+                                        onRestoreImages={handlers.handleRestoreImages}
+                                        onRemoveFromLibrary={handlers.handleRemoveFromLibrary}
+                                        onDeleteFile={handlers.handleDeleteFile}
+                                        onEmptyTrash={handlers.handleEmptyTrash}
+                                        onGroupImages={handlers.handleGroupImages}
+                                        onViewImage={(id) => setViewingImageId(id)}
+                                        onRegenerateThumbnails={fileOps.regenerateThumbnails}
+                                        maskedKeywords={settings.maskedKeywords}
+                                        onUpdatePrompt={handlers.handleUpdatePrompt}
+                                        onUpdateModel={handlers.handleUpdateModel}
+                                        onUpdateTool={handlers.handleUpdateTool}
+                                        onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
+                                        onRecoverMetadata={() => {
+                                            if (!settings.enableAI || !geminiApiKey) {
+                                                addToast("Enable AI features and configure a Gemini API key first", "error");
+                                                modals.setInitialSettingsTab('intelligence');
+                                                modals.openModal('settings');
+                                            } else {
+                                                modals.openModal('recovery');
+                                            }
+                                        }}
+                                        onToggleFavorite={(id) => toggleFavorite(id)}
+                                        onTogglePin={actions.handlePinImage}
+                                        availableTags={availableTags}
+                                    />
+                                </React.Suspense>
                             ) : (images.length > 0 || isFiltering) ? (
                                 <>
                                     {isFiltering ? (

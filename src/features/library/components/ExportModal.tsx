@@ -2,7 +2,6 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { X, Share, Archive, FolderOpen, CheckCircle2 } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
 
 interface ExportModalProps {
     isOpen: boolean;
@@ -23,6 +22,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const [folder, setFolder] = useState<string | null>(null);
 
     const handlePickFolder = async () => {
+        const { open } = await import('@tauri-apps/plugin-dialog');
         const selected = await open({
             directory: true,
             multiple: false,
