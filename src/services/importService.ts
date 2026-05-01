@@ -77,6 +77,7 @@ export interface ImportOptions {
     forceRescan?: boolean;
     skipThumbnail?: boolean;
     waitForStableFiles?: boolean;
+    deferFacetCacheRefresh?: boolean;
     perfContext?: TargetedLiveSyncPerfContext;
 }
 
@@ -416,7 +417,7 @@ export async function processFoldersUnified(
         touchedFacetResources: createEmptyTouchedFacetResources()
     };
 
-    const { onProgress, abortSignal } = options;
+    const { onProgress, abortSignal, deferFacetCacheRefresh = false } = options;
 
     console.log(`[ImportUnified] Starting for ${folders.length} folders/items`);
 
@@ -532,12 +533,21 @@ export async function processFoldersUnified(
     }
 
     // 3. Post-Import Cleanup
-    // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images
-    import('./db/imageRepo').then(({ rebuildFacetCache }) => {
-        rebuildFacetCache()
-            .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
-            .catch(e => console.error('[Import] Failed cleanup', e));
-    });
+    // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images.
+    // Startup smart scans can defer this so useFolderMonitor can run one bounded incremental refresh.
+    if (!deferFacetCacheRefresh) {
+        import('./db/imageRepo').then(({ rebuildFacetCache }) => {
+            rebuildFacetCache()
+                .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
+                .catch(e => console.error('[Import] Failed cleanup', e));
+        });
+    } else {
+        console.info('[ImportUnified] Deferred facet cache refresh to startup catch-up coordinator.', {
+            processed: result.stats.processed,
+            imported: result.stats.imported,
+            touchedFacetTypes: result.touchedFacetTypes
+        });
+    }
 
     return result;
 }
@@ -622,7 +632,8 @@ export const processNativePaths = async (
     abortSignal?: AbortSignal,
     isStartup: boolean = false,
     forceRescan: boolean = false,
-    waitForStableFiles: boolean = isStartup
+    waitForStableFiles: boolean = isStartup,
+    deferFacetCacheRefresh: boolean = false
 ): Promise<ImportResult> => {
 
     // Convert string[] list to typed inputs for unified processor
@@ -637,6 +648,7 @@ export const processNativePaths = async (
         isStartup,
         forceRescan,
         waitForStableFiles,
+        deferFacetCacheRefresh,
         skipThumbnail: false
     });
 };

@@ -14,6 +14,7 @@ interface ImportOptions {
     onProgress?: (current: number, total: number, message?: string) => void;
     forceRescan?: boolean;
     waitForStableFiles?: boolean;
+    deferFacetCacheRefresh?: boolean;
 }
 
 interface UseImportOpsProps {
@@ -147,7 +148,8 @@ export const useImportOps = ({
             skipStateManagement = false,
             onProgress: externalOnProgress,
             forceRescan = false,
-            waitForStableFiles = isStartup
+            waitForStableFiles = isStartup,
+            deferFacetCacheRefresh = false
         } = options;
 
         if (paths.length === 0 && isStartup) return;
@@ -175,7 +177,8 @@ export const useImportOps = ({
                 abortCtrl.signal,
                 isStartup,
                 forceRescan,
-                waitForStableFiles
+                waitForStableFiles,
+                deferFacetCacheRefresh
             );
             await commitImportResult(result, isStartup);
             return result;

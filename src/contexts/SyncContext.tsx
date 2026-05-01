@@ -20,6 +20,7 @@ import {
 import { isBrowserMockMode } from '../services/runtime';
 import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
 import { TouchedFacetResources } from '../utils/touchedFacetTypes';
+import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -412,12 +413,27 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
                     }
 
-                    setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Rebuilding filter cache...' });
+                    setSyncProgress({
+                        current: totalProcessed,
+                        total: totalProcessed,
+                        message: options.mode === 'startup' ? 'Updating startup filters...' : 'Rebuilding filter cache...'
+                    });
 
-                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
                     try {
-                        await rebuildFacetCache();
-                        useLibraryStore.getState().incrementFacetCacheVersion();
+                        if (options.mode === 'startup') {
+                            await refreshStartupFacetCache({
+                                source: 'invoke',
+                                totalProcessed,
+                                touchedFacetTypes,
+                                touchedFacetResources,
+                                orphanScanEnabled: shouldImportOrphans !== false,
+                                onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
+                            });
+                        } else {
+                            const { rebuildFacetCache } = await import('../services/db/imageRepo');
+                            await rebuildFacetCache();
+                            useLibraryStore.getState().incrementFacetCacheVersion();
+                        }
                     } catch (e) {
                         console.error('[Sync] Failed to rebuild facet cache after sync', e);
                         setSyncStatus('error');
@@ -451,6 +467,16 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         progress: null
                     });
                 } else {
+                    if (options.mode === 'startup') {
+                        await refreshStartupFacetCache({
+                            source: 'invoke',
+                            totalProcessed,
+                            touchedFacetTypes,
+                            touchedFacetResources,
+                            orphanScanEnabled: shouldImportOrphans !== false,
+                            onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
+                        });
+                    }
                     debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
                         mode: options.mode,
                         totalProcessed,

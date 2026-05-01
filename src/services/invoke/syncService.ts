@@ -141,6 +141,12 @@ export const syncImages = async (
             hasCandidates,
             candidateCheckMs: elapsedMs(candidateCheckStartedAt)
         });
+        if (options.mode === 'startup' && !hasCandidates) {
+            console.info('[Startup Catch-up] Invoke sync skipped; no candidates after saved cursor.', {
+                afterTimestamp: options.afterTimestamp,
+                candidateCheckMs: elapsedMs(candidateCheckStartedAt)
+            });
+        }
     }
 
     if (hasCandidates) {

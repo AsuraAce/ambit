@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { processTargetedFiles } from '../importService';
+import { processFoldersUnified, processTargetedFiles } from '../importService';
 
 const mocks = vi.hoisted(() => ({
     listen: vi.fn(),
+    scanDirectoryWithStats: vi.fn(),
     scanImagesBulk: vi.fn(),
     insertImagesBatch: vi.fn(),
-    getExistingMetadata: vi.fn()
+    getExistingMetadata: vi.fn(),
+    rebuildFacetCache: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -17,6 +19,12 @@ vi.mock('@tauri-apps/api/event', () => ({
     listen: mocks.listen
 }));
 
+vi.mock('../../bindings', () => ({
+    commands: {
+        scanDirectoryWithStats: mocks.scanDirectoryWithStats
+    }
+}));
+
 vi.mock('../metadataParser', () => ({
     parseImageFile: vi.fn(),
     scanImageNative: vi.fn(),
@@ -26,7 +34,8 @@ vi.mock('../metadataParser', () => ({
 vi.mock('../db/imageRepo', () => ({
     insertImage: vi.fn(),
     insertImagesBatch: mocks.insertImagesBatch,
-    getExistingMetadata: mocks.getExistingMetadata
+    getExistingMetadata: mocks.getExistingMetadata,
+    rebuildFacetCache: mocks.rebuildFacetCache
 }));
 
 describe('processTargetedFiles', () => {
@@ -34,6 +43,17 @@ describe('processTargetedFiles', () => {
         vi.clearAllMocks();
         mocks.listen.mockResolvedValue(vi.fn());
         mocks.insertImagesBatch.mockResolvedValue(undefined);
+        mocks.rebuildFacetCache.mockResolvedValue(0);
+        mocks.scanDirectoryWithStats.mockResolvedValue({
+            status: 'ok',
+            data: [
+                {
+                    path: 'C:/library/new-image.png',
+                    modified: 3000,
+                    size: 333
+                }
+            ]
+        });
         mocks.getExistingMetadata.mockResolvedValue(new Map([
             [
                 'C:/library/updated-image.png',
@@ -127,5 +147,51 @@ describe('processTargetedFiles', () => {
                 expect.objectContaining({ id: 'C:/library/new-image.png' })
             ])
         );
+    });
+
+    it('can defer folder-import facet cleanup for startup coordination', async () => {
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: {
+                    tool: 'ComfyUI',
+                    model: 'Startup Model',
+                    loras: ['StartupLora']
+                },
+                timestamp: 3000,
+                width: 768,
+                height: 768,
+                fileSize: 333,
+                thumbnail: 'C:/thumbs/startup.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-startup',
+                originalChunks: {}
+            }
+        ]);
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library' }],
+            {
+                forceRescan: true,
+                deferFacetCacheRefresh: true
+            }
+        );
+
+        expect(result.stats.imported).toBe(1);
+        expect(result.touchedFacetTypes).toEqual([
+            'checkpoints',
+            'loras',
+            'tools'
+        ]);
+        expect(result.touchedFacetResources).toEqual({
+            checkpoints: ['Startup Model'],
+            loras: ['StartupLora'],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: ['ComfyUI']
+        });
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
     });
 });
