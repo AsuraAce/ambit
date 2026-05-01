@@ -104,7 +104,9 @@ describe('imageRepo batch removal', () => {
         const { getImagesByIds } = await import('../imageRepo');
         const images = await getImagesByIds([id]);
 
-        const sql = db.select.mock.calls[0][0] as string;
+        const selectCalls = db.select.mock.calls as unknown as [string, unknown[]?][];
+        const sql = selectCalls[0]?.[0];
+        expect(sql).toBeDefined();
         expect(sql).toContain('images.metadata_json');
         expect(sql).toContain('images.original_metadata_json');
         expect(sql).toContain('images.original_parsed_json');

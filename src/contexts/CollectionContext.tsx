@@ -9,8 +9,8 @@ interface CollectionContextType {
     smartCollections: SmartCollection[];
     setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
     setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-    refreshCollections: () => Promise<void>;
-    refreshCollectionThumbnails: () => Promise<void>;
+    refreshCollections: (debounced?: boolean) => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
     isLoaded: boolean;
 }
 

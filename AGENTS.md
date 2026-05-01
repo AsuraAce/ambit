@@ -1,4 +1,5 @@
 # AGENTS.md
+Agent doc system: agent-doc-system v1.1.0
 
 ## Purpose
 Ambit is a local-first desktop image manager for large AI-generated image libraries. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
@@ -34,11 +35,13 @@ Start here for common tasks:
 - Desktop dev app: `pnpm run app:dev`
 - Frontend build: `pnpm run build`
 - Desktop build: `pnpm run app:build`
-- Frontend tests: `pnpm run test`
+- TypeScript check: `pnpm run typecheck`
+- Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
+- Release verification gate: `pnpm run verify:release`
 
-No dedicated lint or typecheck script is defined in `package.json`. If you add one, document it here.
+No dedicated lint script is defined in `package.json`. Production app builds now run `verify:release` before `tauri build --ci`.
 
 ## Change Policy
 - No `any`. Keep TypeScript strict.

@@ -2,6 +2,7 @@
 import { renderHook } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFolderMonitor } from '../useFolderMonitor';
+import type { MonitoredFolder } from '../../types';
 
 vi.mock('../../contexts/WatcherContext', () => ({
     useWatchers: () => ({
@@ -21,7 +22,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should NOT scan if not loaded', () => {
-        const folders = [{ id: '1', path: '/test', isActive: true, imageCount: 0 }];
+        const folders: MonitoredFolder[] = [{ id: '1', path: '/test', isActive: true, imageCount: 0 }];
         renderHook(() => useFolderMonitor({
             isLoaded: false,
             monitoredFolders: folders,
@@ -35,7 +36,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should scan new active folders', () => {
-        const initialFolders = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
+        const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
         const { rerender } = renderHook(({ folders }) => useFolderMonitor({
             isLoaded: true,
             monitoredFolders: folders,
@@ -60,7 +61,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should not auto-scan newly added folders that already have a scan timestamp', () => {
-        const initialFolders = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
+        const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
         const { rerender } = renderHook(({ folders }) => useFolderMonitor({
             isLoaded: true,
             monitoredFolders: folders,
@@ -86,7 +87,7 @@ describe('useFolderMonitor', () => {
     });
 
     it('should not auto-scan newly added folders whose first scan is already queued', () => {
-        const initialFolders = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
+        const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
         const { rerender } = renderHook(({ folders }) => useFolderMonitor({
             isLoaded: true,
             monitoredFolders: folders,

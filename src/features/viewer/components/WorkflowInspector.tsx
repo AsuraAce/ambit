@@ -3,8 +3,6 @@ import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download } from 'lucide-react';
 import { AIImage } from '../../../types';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 
@@ -173,12 +171,14 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             const baseName = image.filename.replace(/\.[^/.]+$/, "");
             const defaultPath = `${baseName}_workflow.json`;
 
+            const { save } = await import('@tauri-apps/plugin-dialog');
             const filePath = await save({
                 filters: [{ name: 'JSON', extensions: ['json'] }],
                 defaultPath
             });
 
             if (filePath) {
+                const { writeTextFile } = await import('@tauri-apps/plugin-fs');
                 await writeTextFile(filePath, wf);
                 console.log('[Workflow] Saved to', filePath);
             }
