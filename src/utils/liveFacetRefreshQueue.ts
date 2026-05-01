@@ -1,6 +1,13 @@
 import { FacetType } from '../types';
 import { debugLiveWatchPerf, elapsedMs, infoLiveWatchPerf, liveWatchNow } from './liveWatchPerf';
-import { orderFacetTypes } from './touchedFacetTypes';
+import {
+    createEmptyTouchedFacetResources,
+    hasTouchedFacetResources,
+    mergeTouchedFacetResources,
+    orderFacetTypes,
+    TouchedFacetResources,
+    touchedFacetResourcesToTypes
+} from './touchedFacetTypes';
 
 export interface LiveFacetRefreshQueueMeta {
     source: 'generic' | 'invoke' | 'mixed';
@@ -13,6 +20,7 @@ interface LiveFacetRefreshQueueOptions {
     onRefreshApplied: () => void | Promise<void>;
     runFullFallback: () => Promise<number>;
     runIncremental: (facetTypes: FacetType[]) => Promise<number>;
+    runResourceIncremental: (resources: TouchedFacetResources) => Promise<number>;
 }
 
 const formatErrorMessage = (error: unknown): string => {
@@ -56,14 +64,21 @@ const mergeMeta = (
 export const createLiveFacetRefreshQueue = ({
     onRefreshApplied,
     runFullFallback,
-    runIncremental
+    runIncremental,
+    runResourceIncremental
 }: LiveFacetRefreshQueueOptions) => {
     let activePromise: Promise<void> | null = null;
     let pendingFacetTypes = new Set<FacetType>();
+    let pendingResources = createEmptyTouchedFacetResources();
     let pendingMeta: LiveFacetRefreshQueueMeta | null = null;
 
-    const queue = (facetTypes: FacetType[], meta: LiveFacetRefreshQueueMeta): Promise<void> => {
-        const orderedFacetTypes = orderFacetTypes(facetTypes);
+    const queue = (
+        facetTypes: FacetType[],
+        meta: LiveFacetRefreshQueueMeta,
+        resources = createEmptyTouchedFacetResources()
+    ): Promise<void> => {
+        const resourceFacetTypes = touchedFacetResourcesToTypes(resources);
+        const orderedFacetTypes = orderFacetTypes([...facetTypes, ...resourceFacetTypes]);
 
         if (orderedFacetTypes.length === 0) {
             debugLiveWatchPerf('Live facet refresh skipped', {
@@ -76,6 +91,7 @@ export const createLiveFacetRefreshQueue = ({
         }
 
         orderedFacetTypes.forEach(type => pendingFacetTypes.add(type));
+        pendingResources = mergeTouchedFacetResources(pendingResources, resources);
         pendingMeta = mergeMeta(pendingMeta, meta);
 
         if (activePromise) {
@@ -92,15 +108,20 @@ export const createLiveFacetRefreshQueue = ({
         activePromise = (async () => {
             while (pendingFacetTypes.size > 0) {
                 const currentTypes = orderFacetTypes(pendingFacetTypes);
+                const currentResources = pendingResources;
                 const currentMeta = pendingMeta ?? meta;
                 pendingFacetTypes = new Set<FacetType>();
+                pendingResources = createEmptyTouchedFacetResources();
                 pendingMeta = null;
 
                 const refreshStartedAt = liveWatchNow();
                 const incrementalStartedAt = liveWatchNow();
 
                 try {
-                    const entryCount = await runIncremental(currentTypes);
+                    const useResourceRefresh = hasTouchedFacetResources(currentResources);
+                    const entryCount = useResourceRefresh
+                        ? await runResourceIncremental(currentResources)
+                        : await runIncremental(currentTypes);
                     const incrementalMs = elapsedMs(incrementalStartedAt);
                     await onRefreshApplied();
 
@@ -110,7 +131,7 @@ export const createLiveFacetRefreshQueue = ({
                         facetTypes: currentTypes,
                         changedImageCount: currentMeta.changedImageCount ?? 0,
                         mergedRunCount: currentMeta.mergedRunCount ?? 1,
-                        mode: 'incremental',
+                        mode: useResourceRefresh ? 'resource-incremental' : 'incremental',
                         entryCount,
                         incrementalMs,
                         totalMs: elapsedMs(refreshStartedAt)

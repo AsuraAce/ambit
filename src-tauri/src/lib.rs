@@ -39,6 +39,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::facets::rebuild_facet_cache,
         db::facets::rebuild_facet_cache_incremental,
         db::facets::rebuild_facet_cache_incremental_batch,
+        db::facets::refresh_facet_cache_for_resources,
         db::facets::get_valid_facet_names,
         db::commands::image_commands::mark_images_corrupt,
         db::commands::image_commands::verify_library_integrity,

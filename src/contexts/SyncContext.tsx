@@ -19,6 +19,7 @@ import {
 } from '../utils/liveWatchPerf';
 import { isBrowserMockMode } from '../services/runtime';
 import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
+import { TouchedFacetResources } from '../utils/touchedFacetTypes';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -137,6 +138,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             const { rebuildFacetCacheIncrementalBatchStrict } = await import('../services/db/imageRepo');
             return await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
         },
+        runResourceIncremental: async (resources: TouchedFacetResources) => {
+            const { refreshFacetCacheForResourcesStrict } = await import('../services/db/imageRepo');
+            return await refreshFacetCacheForResourcesStrict(resources);
+        },
         runFullFallback: async () => {
             const { rebuildFacetCacheStrict } = await import('../services/db/imageRepo');
             return await rebuildFacetCacheStrict();
@@ -152,9 +157,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             source: 'generic' | 'invoke';
             cycleId?: string;
             changedImageCount?: number;
-        }
+        },
+        resources?: TouchedFacetResources
     ) => {
-        return liveFacetRefreshQueueRef.current.queue(facetTypes, meta);
+        return liveFacetRefreshQueueRef.current.queue(facetTypes, meta, resources);
     }, []);
 
     const startInvokeSync = useCallback(async (optionsInput?: StartInvokeSyncOptions) => {
@@ -276,8 +282,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             const { syncImages } = await import('../services/invoke/syncService');
             const { scanForOrphans } = await import('../services/invoke/orphanScanner');
 
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes } = await syncImages(
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes } = await syncImages(
+            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncImages(
                 settingsRef.current.invokeAiPath!,
                 (c, t, msg) => {
                     if (options.mode === 'live') {
@@ -394,7 +399,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         source: 'invoke',
                         cycleId: livePerfContext?.cycleId,
                         changedImageCount: totalProcessed
-                    });
+                    }, touchedFacetResources);
                 } else {
                     // MANUAL HEAVY REBUILD
                     setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
@@ -626,7 +631,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             source: 'generic',
                             cycleId: cyclePerfContext?.cycleId,
                             changedImageCount: result.stats.imported
-                        });
+                        }, result.touchedFacetResources);
                     }
 
                     if (result.handledPaths.length > 0) {

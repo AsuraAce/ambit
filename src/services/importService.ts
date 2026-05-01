@@ -7,7 +7,14 @@ import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
-import { collectTouchedFacetTypesFromMetadataDiff, orderFacetTypes } from '../utils/touchedFacetTypes';
+import {
+    collectTouchedFacetResourcesFromMetadataDiff,
+    collectTouchedFacetTypesFromMetadataDiff,
+    createEmptyTouchedFacetResources,
+    mergeTouchedFacetResources,
+    orderFacetTypes,
+    TouchedFacetResources
+} from '../utils/touchedFacetTypes';
 import {
     createLiveWatchPerfId,
     debugLiveWatchPerf,
@@ -60,6 +67,7 @@ export interface ImportResult {
     handledPaths: string[];
     failedPaths: string[];
     touchedFacetTypes: FacetType[];
+    touchedFacetResources: TouchedFacetResources;
 }
 
 export interface ImportOptions {
@@ -145,7 +153,7 @@ async function processFileEntries(
     stats: ImportStats,
     options: ImportOptions = {},
     defaultTool?: GeneratorTool
-): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[] }> {
+): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources }> {
     const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
@@ -153,6 +161,7 @@ async function processFileEntries(
     const importStartedAt = liveWatchNow();
     const cycleId = perfContext?.cycleId ?? createLiveWatchPerfId('import');
     const touchedFacetTypes = new Set<FacetType>();
+    let touchedFacetResources = createEmptyTouchedFacetResources();
 
     // Sort by Modified Date (Newest First)
     entries.sort((a, b) => b.modified - a.modified);
@@ -190,7 +199,7 @@ async function processFileEntries(
             failedPathCount: failedPaths.length,
             totalMs: elapsedMs(importStartedAt)
         });
-        return { images: [], handledPaths, failedPaths, touchedFacetTypes: [] };
+        return { images: [], handledPaths, failedPaths, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     if (waitForStableFiles) {
@@ -314,6 +323,10 @@ async function processFileEntries(
                     collectTouchedFacetTypesFromMetadataDiff(previousMetadata, img.metadata).forEach(type => {
                         touchedFacetTypes.add(type);
                     });
+                    touchedFacetResources = mergeTouchedFacetResources(
+                        touchedFacetResources,
+                        collectTouchedFacetResourcesFromMetadataDiff(previousMetadata, img.metadata)
+                    );
                 });
 
                 let upsertMs = 0;
@@ -381,7 +394,7 @@ async function processFileEntries(
         totalMs: elapsedMs(importStartedAt)
     });
 
-    return { images: newImages, handledPaths, failedPaths, touchedFacetTypes: orderFacetTypes(touchedFacetTypes) };
+    return { images: newImages, handledPaths, failedPaths, touchedFacetTypes: orderFacetTypes(touchedFacetTypes), touchedFacetResources };
 }
 
 // --- Unified Folder Import ---
@@ -399,7 +412,8 @@ export async function processFoldersUnified(
         stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
         handledPaths: [],
         failedPaths: [],
-        touchedFacetTypes: []
+        touchedFacetTypes: [],
+        touchedFacetResources: createEmptyTouchedFacetResources()
     };
 
     const { onProgress, abortSignal } = options;
@@ -508,6 +522,10 @@ export async function processFoldersUnified(
             ...result.touchedFacetTypes,
             ...imported.touchedFacetTypes
         ]);
+        result.touchedFacetResources = mergeTouchedFacetResources(
+            result.touchedFacetResources,
+            imported.touchedFacetResources
+        );
 
         // precise increment
         globalProcessed += task.files.length;
@@ -575,7 +593,8 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         },
         handledPaths: [],
         failedPaths: [],
-        touchedFacetTypes: []
+        touchedFacetTypes: [],
+        touchedFacetResources: createEmptyTouchedFacetResources()
     };
 };
 
@@ -632,7 +651,8 @@ export const processTargetedFiles = async (
         stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
         handledPaths: [],
         failedPaths: [],
-        touchedFacetTypes: []
+        touchedFacetTypes: [],
+        touchedFacetResources: createEmptyTouchedFacetResources()
     };
 
     if (paths.length === 0) return result;
@@ -650,6 +670,7 @@ export const processTargetedFiles = async (
     result.handledPaths = imported.handledPaths;
     result.failedPaths = imported.failedPaths;
     result.touchedFacetTypes = imported.touchedFacetTypes;
+    result.touchedFacetResources = imported.touchedFacetResources;
 
     // Live Watch keeps the grid responsive here and lets SyncContext queue the
     // targeted incremental facet refresh immediately after the import settles.

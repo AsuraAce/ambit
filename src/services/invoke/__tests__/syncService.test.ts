@@ -107,6 +107,15 @@ describe('syncImages live mode', () => {
         expect(result.imported).toBe(0);
         expect(result.updated).toBe(0);
         expect(result.touchedFacetTypes).toEqual([]);
+        expect(result.touchedFacetResources).toEqual({
+            checkpoints: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: []
+        });
         expect(fetchBoardMappings).not.toHaveBeenCalled();
         expect(getImagesByIds).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
@@ -221,6 +230,9 @@ describe('syncImages live mode', () => {
             'ipAdapters',
             'tools'
         ]);
+        expect(result.touchedFacetResources.checkpoints).toEqual(['Test Model']);
+        expect(result.touchedFacetResources.loras).toEqual(['DetailBoost']);
+        expect(result.touchedFacetResources.tools).toEqual(['invokeai']);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([

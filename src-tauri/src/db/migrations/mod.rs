@@ -19,6 +19,7 @@ pub mod m49_removed_images;
 pub mod m50_privacy_index;
 pub mod m51_file_hash;
 pub mod m52_thumbnail_privacy;
+pub mod m53_live_facet_indexes;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -47,6 +48,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m50_privacy_index::migration50());
     migrations.push(m51_file_hash::migration51());
     migrations.push(m52_thumbnail_privacy::migration52());
+    migrations.push(m53_live_facet_indexes::migration53());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -58,7 +60,8 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_49_privacy_50_file_hash_51_and_thumbnail_privacy_52() {
+    fn migrations_include_mainline_49_privacy_50_file_hash_51_thumbnail_privacy_52_and_live_facet_indexes_53(
+    ) {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -68,6 +71,7 @@ mod tests {
         assert!(versions.contains(&50));
         assert!(versions.contains(&51));
         assert!(versions.contains(&52));
+        assert!(versions.contains(&53));
     }
 
     #[test]
@@ -93,7 +97,8 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_privacy_50_file_hash_51_and_thumbnail_privacy_52_pending() {
+    fn database_at_mainline_49_has_privacy_50_file_hash_51_thumbnail_privacy_52_and_live_facet_indexes_53_pending(
+    ) {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -103,6 +108,6 @@ mod tests {
             .collect();
 
         assert!(has_49);
-        assert_eq!(pending_after_49, vec![50, 51, 52]);
+        assert_eq!(pending_after_49, vec![50, 51, 52, 53]);
     }
 }

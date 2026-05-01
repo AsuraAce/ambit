@@ -111,6 +111,15 @@ describe('processTargetedFiles', () => {
             'ipAdapters',
             'tools'
         ]);
+        expect(result.touchedFacetResources).toEqual({
+            checkpoints: ['Old Model', 'Updated Model', 'Fresh Model'],
+            loras: ['OldLora', 'NewLora'],
+            embeddings: ['OldEmbedding'],
+            hypernetworks: ['Hyper One'],
+            controlNets: ['OldControl'],
+            ipAdapters: ['Face Adapter'],
+            tools: ['ComfyUI', 'InvokeAI']
+        });
         expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(mocks.insertImagesBatch).toHaveBeenCalledWith(
             expect.arrayContaining([

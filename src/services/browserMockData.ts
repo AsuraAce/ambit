@@ -1,4 +1,4 @@
-import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SortOption } from '../types';
+import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption } from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, ValidFacetNames } from './db/searchRepo';
 
@@ -582,8 +582,8 @@ export const upsertBrowserMockCollection = (collection: Partial<Collection> & { 
         ? collections.map((item) => item.id === collection.id ? next : item)
         : [...collections, next];
 
-    state.collections = nextCollections.filter((item) => !item.filters);
-    state.smartCollections = nextCollections.filter((item) => item.filters);
+    state.collections = nextCollections.filter((item): item is Collection => !item.filters);
+    state.smartCollections = nextCollections.filter((item): item is SmartCollection => !!item.filters);
     persistState();
 };
 

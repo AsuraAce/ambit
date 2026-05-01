@@ -5,7 +5,7 @@ import { AIImage, FacetType, GeneratorTool } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
-import { orderFacetTypes } from '../../utils/touchedFacetTypes';
+import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -106,7 +106,23 @@ const persistImageRecords = async (
         }
     }
 
-    await db.execute('UPDATE images SET user_masked = NULL WHERE user_masked = 0');
+    const defaultVisibleIds = records
+        .filter(record => record.userMasked === false)
+        .map(record => record.id);
+
+    const cleanupStartedAt = liveWatchNow();
+    for (const chunk of chunkItems(defaultVisibleIds)) {
+        const placeholders = chunk.map(() => '?').join(',');
+        await db.execute(
+            `UPDATE images SET user_masked = NULL WHERE user_masked = 0 AND id IN (${placeholders})`,
+            chunk
+        );
+    }
+    debugLiveWatchPerf('DB user_masked cleanup complete', {
+        imageCount: records.length,
+        cleanupCandidates: defaultVisibleIds.length,
+        cleanupMs: elapsedMs(cleanupStartedAt)
+    });
 };
 
 const clearFacetRelatedStatsCache = async () => {
@@ -154,6 +170,12 @@ const runRebuildFacetCacheIncrementalBatch = async (types: string[]): Promise<nu
     return count;
 };
 
+const runRefreshFacetCacheForResources = async (resources: TouchedFacetResources): Promise<number> => {
+    const count = await invoke<number>('refresh_facet_cache_for_resources', { touches: resources });
+    await clearFacetRelatedStatsCache();
+    return count;
+};
+
 export const insertImage = async (image: AIImage) => {
     if (isBrowserMockMode()) return;
 
@@ -184,11 +206,6 @@ export const insertImagesBatch = async (images: AIImage[]) => {
         await persistImageRecords(records, db);
     });
 
-    const cleanupStartedAt = insertStartedAt;
-    debugLiveWatchPerf('DB user_masked cleanup complete', {
-        imageCount: images.length,
-        cleanupMs: elapsedMs(cleanupStartedAt)
-    });
     infoLiveWatchPerf('insertImagesBatch complete', {
         imageCount: images.length,
         totalMs: elapsedMs(insertStartedAt)
@@ -253,6 +270,12 @@ export const rebuildFacetCacheIncrementalBatch = async (types: string[]): Promis
 export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[]): Promise<number> => {
     const count = await runRebuildFacetCacheIncrementalBatch(types);
     console.log(`[DB] Rebuilt incremental facet cache for ${types.join(', ')}: ${count} entries`);
+    return count;
+};
+
+export const refreshFacetCacheForResourcesStrict = async (resources: TouchedFacetResources): Promise<number> => {
+    const count = await runRefreshFacetCacheForResources(resources);
+    console.log('[DB] Refreshed live facet cache resources:', count);
     return count;
 };
 

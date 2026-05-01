@@ -173,13 +173,25 @@ fn save_images_batch_inner(
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
 
-        let mut delete_loras = tx.prepare_cached("DELETE FROM image_loras WHERE image_id = ?1").map_err(|e| e.to_string())?;
-        let mut delete_controlnets = tx.prepare_cached("DELETE FROM image_controlnets WHERE image_id = ?1").map_err(|e| e.to_string())?;
-        let mut delete_ipadapters = tx.prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1").map_err(|e| e.to_string())?;
-        let mut delete_embeddings = tx.prepare_cached("DELETE FROM image_embeddings WHERE image_id = ?1").map_err(|e| e.to_string())?;
-        let mut delete_hypernetworks = tx.prepare_cached("DELETE FROM image_hypernetworks WHERE image_id = ?1").map_err(|e| e.to_string())?;
+        let mut delete_loras = tx
+            .prepare_cached("DELETE FROM image_loras WHERE image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut delete_controlnets = tx
+            .prepare_cached("DELETE FROM image_controlnets WHERE image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut delete_ipadapters = tx
+            .prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut delete_embeddings = tx
+            .prepare_cached("DELETE FROM image_embeddings WHERE image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut delete_hypernetworks = tx
+            .prepare_cached("DELETE FROM image_hypernetworks WHERE image_id = ?1")
+            .map_err(|e| e.to_string())?;
 
-        let mut lora_stmt = tx.prepare_cached("
+        let mut lora_stmt = tx
+            .prepare_cached(
+                "
             INSERT OR IGNORE INTO image_loras (image_id, lora_name)
             SELECT ?1,
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -191,9 +203,13 @@ fn save_images_batch_inner(
                 '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
             FROM json_each(?2, '$.loras')
             WHERE value IS NOT NULL AND value != ''
-        ").map_err(|e| e.to_string())?;
+        ",
+            )
+            .map_err(|e| e.to_string())?;
 
-        let mut cn_stmt = tx.prepare_cached("
+        let mut cn_stmt = tx
+            .prepare_cached(
+                "
             INSERT OR IGNORE INTO image_controlnets (image_id, controlnet_name)
             SELECT ?1,
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -205,9 +221,13 @@ fn save_images_batch_inner(
                 '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
             FROM json_each(?2, '$.controlNets')
             WHERE value IS NOT NULL AND value != ''
-        ").map_err(|e| e.to_string())?;
+        ",
+            )
+            .map_err(|e| e.to_string())?;
 
-        let mut ip_stmt = tx.prepare_cached("
+        let mut ip_stmt = tx
+            .prepare_cached(
+                "
             INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name)
             SELECT ?1,
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -219,9 +239,13 @@ fn save_images_batch_inner(
                 '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
             FROM json_each(?2, '$.ipAdapters')
             WHERE value IS NOT NULL AND value != ''
-        ").map_err(|e| e.to_string())?;
+        ",
+            )
+            .map_err(|e| e.to_string())?;
 
-        let mut emb_stmt = tx.prepare_cached("
+        let mut emb_stmt = tx
+            .prepare_cached(
+                "
             INSERT OR IGNORE INTO image_embeddings (image_id, embedding_name)
             SELECT ?1,
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -233,9 +257,13 @@ fn save_images_batch_inner(
                 '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
             FROM json_each(?2, '$.embeddings')
             WHERE value IS NOT NULL AND value != ''
-        ").map_err(|e| e.to_string())?;
+        ",
+            )
+            .map_err(|e| e.to_string())?;
 
-        let mut hn_stmt = tx.prepare_cached("
+        let mut hn_stmt = tx
+            .prepare_cached(
+                "
             INSERT OR IGNORE INTO image_hypernetworks (image_id, hypernetwork_name)
             SELECT ?1,
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -247,29 +275,71 @@ fn save_images_batch_inner(
                 '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
             FROM json_each(?2, '$.hypernetworks')
             WHERE value IS NOT NULL AND value != ''
-        ").map_err(|e| e.to_string())?;
+        ",
+            )
+            .map_err(|e| e.to_string())?;
 
         for img in images {
-            let rows_affected = stmt.execute(params![
-                img.id, img.path, img.width, img.height, img.file_size as i64, img.file_hash, img.timestamp as i64,
-                img.metadata_json, img.thumbnail_path, img.micro_thumbnail, img.thumbnail_source,
-                img.is_favorite, img.is_pinned, img.is_deleted, img.is_missing, img.user_masked,
-                img.group_id, img.board_id, img.notes, img.original_metadata_json, img.original_state_json,
-                img.is_corrupt, CURRENT_PARSER_VERSION
-            ]).map_err(|e| e.to_string())?;
+            let rows_affected = stmt
+                .execute(params![
+                    img.id,
+                    img.path,
+                    img.width,
+                    img.height,
+                    img.file_size as i64,
+                    img.file_hash,
+                    img.timestamp as i64,
+                    img.metadata_json,
+                    img.thumbnail_path,
+                    img.micro_thumbnail,
+                    img.thumbnail_source,
+                    img.is_favorite,
+                    img.is_pinned,
+                    img.is_deleted,
+                    img.is_missing,
+                    img.user_masked,
+                    img.group_id,
+                    img.board_id,
+                    img.notes,
+                    img.original_metadata_json,
+                    img.original_state_json,
+                    img.is_corrupt,
+                    CURRENT_PARSER_VERSION
+                ])
+                .map_err(|e| e.to_string())?;
 
             if rows_affected > 0 {
-                delete_loras.execute(params![img.id]).map_err(|e| e.to_string())?;
-                delete_controlnets.execute(params![img.id]).map_err(|e| e.to_string())?;
-                delete_ipadapters.execute(params![img.id]).map_err(|e| e.to_string())?;
-                delete_embeddings.execute(params![img.id]).map_err(|e| e.to_string())?;
-                delete_hypernetworks.execute(params![img.id]).map_err(|e| e.to_string())?;
+                delete_loras
+                    .execute(params![img.id])
+                    .map_err(|e| e.to_string())?;
+                delete_controlnets
+                    .execute(params![img.id])
+                    .map_err(|e| e.to_string())?;
+                delete_ipadapters
+                    .execute(params![img.id])
+                    .map_err(|e| e.to_string())?;
+                delete_embeddings
+                    .execute(params![img.id])
+                    .map_err(|e| e.to_string())?;
+                delete_hypernetworks
+                    .execute(params![img.id])
+                    .map_err(|e| e.to_string())?;
 
-                lora_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                emb_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                hn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                cn_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
-                ip_stmt.execute(params![img.id, img.metadata_json]).map_err(|e| e.to_string())?;
+                lora_stmt
+                    .execute(params![img.id, img.metadata_json])
+                    .map_err(|e| e.to_string())?;
+                emb_stmt
+                    .execute(params![img.id, img.metadata_json])
+                    .map_err(|e| e.to_string())?;
+                hn_stmt
+                    .execute(params![img.id, img.metadata_json])
+                    .map_err(|e| e.to_string())?;
+                cn_stmt
+                    .execute(params![img.id, img.metadata_json])
+                    .map_err(|e| e.to_string())?;
+                ip_stmt
+                    .execute(params![img.id, img.metadata_json])
+                    .map_err(|e| e.to_string())?;
             }
         }
 
@@ -309,10 +379,10 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
         // Retry loop for database lock issues
         let max_retries = 5;
         let mut retry_delay_ms = 100;
-        
+
         for attempt in 0..max_retries {
             let result = save_images_batch_inner(conn, &images);
-            
+
             match result {
                 Ok(count) => return Ok(count),
                 Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
@@ -324,7 +394,8 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
             }
         }
         Err("Failed to save images after max retries".to_string())
-    }).await
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -504,16 +575,22 @@ pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult,
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::{params, Connection};
     use crate::db::{migrations::init_db, ImageRecord};
+    use rusqlite::{params, Connection};
 
-    fn create_image_record(id: &str, timestamp: u64, file_size: u64, metadata_json: &str) -> ImageRecord {
+    fn create_image_record(
+        id: &str,
+        timestamp: u64,
+        file_size: u64,
+        metadata_json: &str,
+    ) -> ImageRecord {
         ImageRecord {
             id: id.to_string(),
             path: format!("C:/library/{}.png", id),
             width: 1024,
             height: 1024,
             file_size,
+            file_hash: Some(format!("hash-{}", id)),
             timestamp,
             metadata_json: metadata_json.to_string(),
             thumbnail_path: format!("C:/thumbs/{}.webp", id),
@@ -686,7 +763,8 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
 
         for migration in init_db() {
-            conn.execute_batch(&migration.sql).expect("apply migrations");
+            conn.execute_batch(&migration.sql)
+                .expect("apply migrations");
         }
 
         let initial_metadata = r#"{
@@ -719,7 +797,9 @@ mod tests {
 
         let lora_rows: Vec<String> = {
             let mut stmt = conn
-                .prepare("SELECT lora_name FROM image_loras WHERE image_id = 'img-1' ORDER BY lora_name")
+                .prepare(
+                    "SELECT lora_name FROM image_loras WHERE image_id = 'img-1' ORDER BY lora_name",
+                )
                 .expect("prepare lora query");
             stmt.query_map([], |row| row.get(0))
                 .expect("query loras")

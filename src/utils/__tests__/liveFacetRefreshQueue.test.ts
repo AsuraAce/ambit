@@ -26,11 +26,13 @@ describe('createLiveFacetRefreshQueue', () => {
             .fn()
             .mockImplementationOnce(() => firstRun.promise)
             .mockResolvedValueOnce(4);
+        const runResourceIncremental = vi.fn().mockResolvedValue(0);
         const runFullFallback = vi.fn().mockResolvedValue(0);
         const onRefreshApplied = vi.fn();
 
         const queue = createLiveFacetRefreshQueue({
             runIncremental,
+            runResourceIncremental,
             runFullFallback,
             onRefreshApplied
         });
@@ -58,17 +60,55 @@ describe('createLiveFacetRefreshQueue', () => {
 
         expect(runIncremental).toHaveBeenCalledTimes(2);
         expect(runIncremental).toHaveBeenNthCalledWith(2, ['loras', 'tools']);
+        expect(runResourceIncremental).not.toHaveBeenCalled();
         expect(runFullFallback).not.toHaveBeenCalled();
         expect(onRefreshApplied).toHaveBeenCalledTimes(2);
     });
 
+    it('uses resource-row refresh when touched resources are supplied', async () => {
+        const runIncremental = vi.fn().mockResolvedValue(0);
+        const runResourceIncremental = vi.fn().mockResolvedValue(3);
+        const runFullFallback = vi.fn().mockResolvedValue(0);
+        const onRefreshApplied = vi.fn();
+
+        const queue = createLiveFacetRefreshQueue({
+            runIncremental,
+            runResourceIncremental,
+            runFullFallback,
+            onRefreshApplied
+        });
+
+        const resources = {
+            checkpoints: ['Flux Base'],
+            loras: ['CinematicDetail'],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: ['InvokeAI']
+        };
+
+        await queue.queue(['checkpoints', 'loras', 'tools'], {
+            source: 'invoke',
+            cycleId: 'cycle-resource',
+            changedImageCount: 1
+        }, resources);
+
+        expect(runResourceIncremental).toHaveBeenCalledWith(resources);
+        expect(runIncremental).not.toHaveBeenCalled();
+        expect(runFullFallback).not.toHaveBeenCalled();
+        expect(onRefreshApplied).toHaveBeenCalledTimes(1);
+    });
+
     it('falls back to a full rebuild when the incremental refresh fails', async () => {
         const runIncremental = vi.fn().mockRejectedValue(new Error('incremental failed'));
+        const runResourceIncremental = vi.fn().mockResolvedValue(0);
         const runFullFallback = vi.fn().mockResolvedValue(9);
         const onRefreshApplied = vi.fn();
 
         const queue = createLiveFacetRefreshQueue({
             runIncremental,
+            runResourceIncremental,
             runFullFallback,
             onRefreshApplied
         });
