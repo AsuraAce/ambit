@@ -781,29 +781,51 @@ fn refresh_resource_facet(
     now: u64,
 ) -> Result<bool, String> {
     let started_at = std::time::Instant::now();
+
     conn.execute(
         "DELETE FROM facet_cache WHERE facet_type = ?1 AND LOWER(resource_name) = LOWER(?2)",
         params![config.facet_type, name],
     )
     .map_err(|e| e.to_string())?;
 
-    let stats_sql = format!(
-        "SELECT COUNT(DISTINCT i.id), MAX(i.timestamp), MIN(i.timestamp)
+    let match_started_at = std::time::Instant::now();
+    conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+        .map_err(|e| e.to_string())?;
+    let matches_sql = format!(
+        "CREATE TEMP TABLE live_resource_matches AS
+         SELECT
+            i.id,
+            i.timestamp,
+            COALESCE(i.is_pinned, 0) AS is_pinned,
+            i.thumbnail_path,
+            COALESCE(i.privacy_hidden, 0) AS privacy_hidden
          FROM {} jt
          JOIN images i ON i.id = jt.image_id
          WHERE i.is_deleted = 0 AND jt.{} = ?1",
         config.junction_table, config.name_col
     );
-    let stats = conn
-        .query_row(&stats_sql, [name], |row| {
-            Ok(FacetStats {
-                count: row.get(0)?,
-                last_used_at: row.get(1)?,
-                created_at: row.get(2)?,
-            })
-        })
+    conn.execute(&matches_sql, [name])
         .map_err(|e| e.to_string())?;
+    let match_ms = match_started_at.elapsed();
 
+    let stats_started_at = std::time::Instant::now();
+    let stats = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT id), MAX(timestamp), MIN(timestamp)
+             FROM live_resource_matches",
+            [],
+            |row| {
+                Ok(FacetStats {
+                    count: row.get(0)?,
+                    last_used_at: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    let stats_ms = stats_started_at.elapsed();
+
+    let model_started_at = std::time::Instant::now();
     if stats.count > 0 {
         conn.execute(
             "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
@@ -820,64 +842,67 @@ fn refresh_resource_facet(
     }
 
     let model = select_model_source(conn, config.resource_type, name)?;
+    let model_ms = model_started_at.elapsed();
     if stats.count == 0 && model.is_none() {
+        conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+            .ok();
         println!(
-            "[FacetCache] Resource refresh {}:{} removed in {:?}.",
+            "[FacetCache] Resource refresh {}:{} removed in {:?}. Timings: match={:?}, stats={:?}, model={:?}.",
             config.facet_type,
             name,
-            started_at.elapsed()
+            started_at.elapsed(),
+            match_ms,
+            stats_ms,
+            model_ms
         );
         return Ok(false);
     }
 
-    let thumb_sql = format!(
-        "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
-         FROM {} jt
-         JOIN images i ON i.id = jt.image_id
-         WHERE i.is_deleted = 0
-         AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
-         AND jt.{} = ?1
+    let thumb_started_at = std::time::Instant::now();
+    let dynamic_thumb = conn
+        .query_row(
+            "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
+         FROM live_resource_matches i
+         WHERE i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
          ORDER BY i.is_pinned DESC, i.timestamp DESC
          LIMIT 1",
-        config.junction_table, config.name_col
-    );
-    let dynamic_thumb = conn
-        .query_row(&thumb_sql, [name], |row| {
-            Ok(FacetThumb {
-                image_id: row.get(0)?,
-                thumbnail_path: row.get(1)?,
-                privacy_hidden: row.get(2)?,
-            })
-        })
+            [],
+            |row| {
+                Ok(FacetThumb {
+                    image_id: row.get(0)?,
+                    thumbnail_path: row.get(1)?,
+                    privacy_hidden: row.get(2)?,
+                })
+            },
+        )
         .optional()
         .map_err(|e| e.to_string())?;
 
-    let safe_thumb_sql = format!(
-        "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
-         FROM {} jt
-         JOIN images i ON i.id = jt.image_id
-         WHERE i.is_deleted = 0
-         AND i.privacy_hidden = 0
+    let safe_thumb = conn
+        .query_row(
+            "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
+         FROM live_resource_matches i
+         WHERE i.privacy_hidden = 0
          AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
-         AND jt.{} = ?1
          ORDER BY i.is_pinned DESC, i.timestamp DESC
          LIMIT 1",
-        config.junction_table, config.name_col
-    );
-    let safe_thumb = conn
-        .query_row(&safe_thumb_sql, [name], |row| {
-            Ok(FacetThumb {
-                image_id: row.get(0)?,
-                thumbnail_path: row.get(1)?,
-                privacy_hidden: row.get(2)?,
-            })
-        })
+            [],
+            |row| {
+                Ok(FacetThumb {
+                    image_id: row.get(0)?,
+                    thumbnail_path: row.get(1)?,
+                    privacy_hidden: row.get(2)?,
+                })
+            },
+        )
         .optional()
         .map_err(|e| e.to_string())?;
+    let thumb_ms = thumb_started_at.elapsed();
 
     let source = model.unwrap_or_else(|| {
         fallback_model_source(name, Some(format!("{}{}", config.hash_prefix, name)), None)
     });
+    let insert_started_at = std::time::Instant::now();
     insert_facet_row(
         conn,
         config.facet_type,
@@ -886,12 +911,20 @@ fn refresh_resource_facet(
         dynamic_thumb.as_ref(),
         safe_thumb.as_ref(),
     )?;
+    let insert_ms = insert_started_at.elapsed();
+    conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
+        .ok();
 
     println!(
-        "[FacetCache] Resource refresh {}:{} completed in {:?}.",
+        "[FacetCache] Resource refresh {}:{} completed in {:?}. Timings: match={:?}, stats={:?}, model={:?}, thumbs={:?}, insert={:?}.",
         config.facet_type,
         source.name,
-        started_at.elapsed()
+        started_at.elapsed(),
+        match_ms,
+        stats_ms,
+        model_ms,
+        thumb_ms,
+        insert_ms
     );
     Ok(true)
 }
@@ -2528,6 +2561,53 @@ mod tests {
         assert_eq!(old_model_count, 0);
         assert_eq!(new_model_count, 1);
         assert_eq!(new_model_thumb, "new.webp");
+    }
+
+    #[test]
+    fn live_resource_refresh_updates_lora_thumbnails_from_matched_rows() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let migrations = init_db();
+        for m in migrations {
+            conn.execute_batch(&m.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, is_pinned, user_masked, thumbnail_path)
+             VALUES
+                ('unsafe-img', 'unsafe.png', 300, 1, 1, 'unsafe.webp'),
+                ('safe-img', 'safe.png', 200, 0, 0, 'safe.webp')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('unsafe-img', 'SharedLora'), ('safe-img', 'SharedLora')",
+            [],
+        )
+        .unwrap();
+
+        let touches = FacetResourceTouches {
+            loras: vec!["SharedLora".to_string()],
+            ..FacetResourceTouches::default()
+        };
+
+        let refreshed = refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        assert_eq!(refreshed, 1);
+
+        let (count, dynamic_thumb, safe_thumb, sensitive): (i64, String, String, i64) = conn
+            .query_row(
+                "SELECT count, thumbnail_path, safe_thumbnail_path, thumbnail_is_sensitive
+                 FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'SharedLora'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(dynamic_thumb, "unsafe.webp");
+        assert_eq!(safe_thumb, "safe.webp");
+        assert_eq!(sensitive, 1);
     }
 
     #[test]

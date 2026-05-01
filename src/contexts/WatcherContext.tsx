@@ -353,8 +353,15 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
         return () => {
             clearTimeout(timer);
             if (invokeSyncTimeoutRef.current) {
-                clearTimeout(invokeSyncTimeoutRef.current);
-                invokeSyncTimeoutRef.current = null;
+                const shouldDrainPendingInvoke = (
+                    useLibraryStore.getState().liveWatchSessionCloseRequested
+                    && pendingInvokePerfRef.current !== null
+                );
+
+                if (!shouldDrainPendingInvoke) {
+                    clearTimeout(invokeSyncTimeoutRef.current);
+                    invokeSyncTimeoutRef.current = null;
+                }
             }
         };
 
