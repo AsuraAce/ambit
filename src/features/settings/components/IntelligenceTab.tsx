@@ -2,7 +2,6 @@ import * as React from 'react';
 import { FlaskConical, Cpu } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
-import { verifyApiKey } from '../../../services/geminiService';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -62,6 +61,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
         setVerificationError(null);
 
         try {
+            const { verifyApiKey } = await import('../../../services/geminiService');
             const result = await verifyApiKey(localApiKey, settings.aiModel || DEFAULT_AI_MODEL);
             if (result.valid) {
                 setVerificationStatus('success');
@@ -124,6 +124,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                             setIsVerifying(true);
                                             setVerificationStatus('idle');
                                             try {
+                                                const { verifyApiKey } = await import('../../../services/geminiService');
                                                 const result = await verifyApiKey(keyToTest, settings.aiModel || DEFAULT_AI_MODEL);
                                                 if (result.valid) {
                                                     setVerificationStatus('success');

@@ -3,7 +3,6 @@ import { useState, useCallback } from 'react';
 import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
 import { imageToBase64 } from '../services/imageService';
-import { recoverImageMetadata } from '../services/geminiService';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { urlToPath } from '../utils/pathUtils';
@@ -88,6 +87,7 @@ export const useMaintenanceOps = ({
             const apiKey = useSettingsStore.getState().geminiApiKey;
             if (!apiKey) throw new Error("No API Key");
 
+            const { recoverImageMetadata } = await import('../services/geminiService');
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey, settings.aiModel, settings.systemPrompts);
             const recoveredPrompt = recoveredMeta.positivePrompt;
 

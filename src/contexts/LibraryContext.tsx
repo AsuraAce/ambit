@@ -74,8 +74,8 @@ export interface LibraryContextType {
   clearAllFilters: () => void;
   refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
   fetchData: (loadMore: boolean) => Promise<void>;
-  refreshCollections: () => Promise<void>;
-  refreshCollectionThumbnails: () => Promise<void>;
+  refreshCollections: (debounced?: boolean) => Promise<void>;
+  refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
   activeSqlWhere: string;
   activeSqlParams: any[];
   maintenanceCounts: any;

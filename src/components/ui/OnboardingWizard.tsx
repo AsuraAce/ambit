@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
-import { verifyApiKey } from '../../services/geminiService';
 import { useToast } from '../../hooks/useToast';
 import { ApiKeyInput } from './ApiKeyInput';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -44,6 +43,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         setVerificationStatus('idle');
         setVerificationError(null);
         try {
+            const { verifyApiKey } = await import('../../services/geminiService');
             const result = await verifyApiKey(keyToVerify);
             if (result.valid) {
                 setVerificationStatus('success');

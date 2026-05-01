@@ -1,4 +1,4 @@
-import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SortOption } from '../types';
+import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption } from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, ValidFacetNames } from './db/searchRepo';
 
@@ -257,6 +257,8 @@ const getCollectionCount = (collection: Collection): number => {
 
     return collection.imageIds.length;
 };
+
+const isSmartCollection = (collection: Collection): collection is SmartCollection => !!collection.filters;
 
 const getDateFloor = (range: FilterState['dateRange']): number | null => {
     const now = new Date();
@@ -582,8 +584,8 @@ export const upsertBrowserMockCollection = (collection: Partial<Collection> & { 
         ? collections.map((item) => item.id === collection.id ? next : item)
         : [...collections, next];
 
-    state.collections = nextCollections.filter((item) => !item.filters);
-    state.smartCollections = nextCollections.filter((item) => item.filters);
+    state.collections = nextCollections.filter((item) => !isSmartCollection(item));
+    state.smartCollections = nextCollections.filter(isSmartCollection);
     persistState();
 };
 

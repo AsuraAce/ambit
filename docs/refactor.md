@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-04-30
+Last reviewed: 2026-05-01
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -113,6 +113,24 @@ Status: Deferred
 ### Related Docs
 - `docs/architecture.md#sqlite-data-migrations-and-maintenance`
 - `docs/architecture.md#desktop-shell-and-command-surface`
+
+## Tauri Bundle Identifier Migration
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Production config currently uses `com.ambit.app` as the bundle identifier.
+- Tauri warns because identifiers ending in `.app` can conflict with the macOS application bundle extension.
+
+### Safe-Change Warning
+- Do not rename the production identifier as an incidental build-warning cleanup.
+- Changing the identifier can affect installer identity, update continuity, app data locations, and OS-level permissions.
+
+### Suggested Future Direction
+- Coordinate a future identifier migration before a macOS release or at an explicitly breaking installer/update boundary.
+- Include existing-user upgrade notes and validate app data, updater, and filesystem-scope behavior across old and new identifiers.
+
+### Not Part of the Current Task
+- Keep `src-tauri/tauri.conf.json` on `com.ambit.app` for the current production build-hardening pass.
 
 ## Smart Thumbnail Optimization and Removed Maintenance Tab
 Status: Deferred

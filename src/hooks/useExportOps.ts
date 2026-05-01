@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AIImage } from '../types';
 import { useToast } from './useToast';
-import { exportImagesToZip } from '../services/exportService';
 import { isBrowserMockMode } from '../services/runtime';
 
 interface UseExportOpsProps {
@@ -35,6 +34,7 @@ export const useExportOps = ({ images }: UseExportOpsProps) => {
                 return;
             }
 
+            const { exportImagesToZip } = await import('../services/exportService');
             await exportImagesToZip(targetImages, destinationFolder, filename);
             addToast(`Export complete`, 'success');
             if (onComplete) onComplete();
