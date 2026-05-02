@@ -1,11 +1,24 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
+import type { MutableRefObject, RefObject, UIEvent } from 'react';
+
+interface TimelineHeaderItem {
+    y: number;
+    height: number;
+    id?: string;
+    date?: string;
+    count?: number;
+}
 
 interface UseTimelineScrollProps {
-    headers: any[];
-    stickyHeaderRef: React.RefObject<HTMLDivElement | null>;
-    activeHeaderIdRef: React.MutableRefObject<string | null>;
+    headers: TimelineHeaderItem[];
+    stickyHeaderRef: RefObject<HTMLDivElement | null>;
+    activeHeaderIdRef: MutableRefObject<string | null>;
     setScrollTop: (top: number) => void;
     setActiveHeaderData: (data: { date: string, count: number } | null) => void;
+    hasMoreImages?: boolean;
+    isLoadingMore?: boolean;
+    onLoadMore?: () => void | Promise<void>;
+    loadMoreThreshold?: number;
 }
 
 export const useTimelineScroll = ({
@@ -13,16 +26,43 @@ export const useTimelineScroll = ({
     stickyHeaderRef,
     activeHeaderIdRef,
     setScrollTop,
-    setActiveHeaderData
+    setActiveHeaderData,
+    hasMoreImages = false,
+    isLoadingMore = false,
+    onLoadMore,
+    loadMoreThreshold = 6000
 }: UseTimelineScrollProps) => {
-    return useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        const currentScroll = e.currentTarget.scrollTop;
+    const loadMoreRequestedRef = useRef(false);
+
+    const maybeLoadMore = useCallback((container: HTMLDivElement) => {
+        if (!hasMoreImages || isLoadingMore || !onLoadMore || loadMoreRequestedRef.current) return;
+
+        const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+        if (distanceFromBottom >= loadMoreThreshold) return;
+
+        loadMoreRequestedRef.current = true;
+
+        try {
+            const result = onLoadMore();
+            void Promise.resolve(result).finally(() => {
+                loadMoreRequestedRef.current = false;
+            });
+        } catch (error) {
+            loadMoreRequestedRef.current = false;
+            console.error('[TimelineView] Failed to load more images:', error);
+        }
+    }, [hasMoreImages, isLoadingMore, onLoadMore, loadMoreThreshold]);
+
+    return useCallback((e: UIEvent<HTMLDivElement>) => {
+        const currentTarget = e.currentTarget;
+        const currentScroll = currentTarget.scrollTop;
         setScrollTop(currentScroll);
+        maybeLoadMore(currentTarget);
 
         if (!stickyHeaderRef.current || headers.length === 0) return;
 
-        let active = null;
-        let next = null;
+        let active: TimelineHeaderItem | null = null;
+        let next: TimelineHeaderItem | null = null;
 
         for (let i = 0; i < headers.length; i++) {
             if (headers[i].y <= currentScroll + 20) {
@@ -60,5 +100,5 @@ export const useTimelineScroll = ({
             stickyHeaderRef.current.style.pointerEvents = 'none';
             activeHeaderIdRef.current = null;
         }
-    }, [headers, stickyHeaderRef, activeHeaderIdRef, setScrollTop, setActiveHeaderData]);
+    }, [headers, stickyHeaderRef, activeHeaderIdRef, setScrollTop, maybeLoadMore, setActiveHeaderData]);
 };

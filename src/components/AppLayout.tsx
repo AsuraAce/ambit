@@ -130,6 +130,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isFiltering,
         clearAllFilters,
         toggleFavorite,
+        hasMoreImages,
         loadMoreImages,
         isLoadingMore
     } = useSearch();
@@ -335,6 +336,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
                                             onRangeSelection={handleRangeSelection}
                                             onBackgroundClick={clearSelection}
+                                            hasMoreImages={hasMoreImages}
+                                            isLoadingMore={isLoadingMore}
+                                            onLoadMore={loadMoreImages}
                                         />
                                     ) : (
                                         <>

@@ -23,6 +23,9 @@ interface TimelineViewProps {
     onContextMenu: (e: React.MouseEvent, id: string) => void;
     onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
     onBackgroundClick?: () => void;
+    hasMoreImages?: boolean;
+    isLoadingMore?: boolean;
+    onLoadMore?: () => void | Promise<void>;
     maskedKeywords: string[];
 }
 
@@ -38,6 +41,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     onContextMenu,
     onRangeSelection,
     onBackgroundClick,
+    hasMoreImages = false,
+    isLoadingMore = false,
+    onLoadMore,
     maskedKeywords
 }) => {
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
@@ -82,8 +88,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         stickyHeaderRef,
         activeHeaderIdRef,
         setScrollTop,
-        setActiveHeaderData
+        setActiveHeaderData,
+        hasMoreImages,
+        isLoadingMore,
+        onLoadMore
     });
+
+    const loadingMoreHeight = isLoadingMore && images.length > 0 ? 80 : 0;
 
     return (
         <div className="h-full w-full relative">
@@ -111,7 +122,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 onScroll={handleScroll}
                 onMouseDown={handleMouseDown}
             >
-                <div style={{ height: totalHeight, position: 'relative' }} className="overflow-hidden">
+                <div style={{ height: totalHeight + loadingMoreHeight, position: 'relative' }} className="overflow-hidden">
                     {visibleItems.map((item) => {
                         if (item.type === 'header') {
                             return (
@@ -179,6 +190,16 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                     {images.length === 0 && (
                         <div className="absolute inset-0 flex items-center justify-center text-gray-500">
                             No images found in this timeframe.
+                        </div>
+                    )}
+
+                    {loadingMoreHeight > 0 && (
+                        <div
+                            className="absolute left-0 w-full flex items-center justify-center gap-3 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500"
+                            style={{ top: totalHeight, height: loadingMoreHeight }}
+                        >
+                            <div className="h-5 w-5 rounded-full border-2 border-sage-500/20 border-t-sage-500 animate-spin" />
+                            Loading older images
                         </div>
                     )}
                 </div>
