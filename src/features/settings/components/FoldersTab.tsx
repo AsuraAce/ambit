@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Monitor, RefreshCcw, FolderSearch, RefreshCw, X, CheckCircle2, Info } from 'lucide-react';
+import { commands } from '../../../bindings';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useFoldersTabLogic } from '../hooks/useFoldersTabLogic';
 import { FolderItem } from './FolderItem';
@@ -10,6 +12,9 @@ import { useMetadataRefresh } from '../../../hooks/useMetadataRefresh';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { useLibraryStore } from '../../../stores/libraryStore';
+import { unwrap } from '../../../utils/spectaUtils';
+import { formatHashResolutionMessage, isHashResolutionPartial } from '../utils/hashResolution';
 import type { ImportResult } from '../../../services/importService';
 
 interface TabProps {
@@ -18,6 +23,20 @@ interface TabProps {
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>;
 }
+
+const isLibraryBusyForHashResolution = () => {
+    const state = useLibraryStore.getState();
+    return state.syncStatus === 'syncing'
+        || state.isImporting
+        || state.isLiveSyncing
+        || state.isRegeneratingThumbnails
+        || state.isRefreshingMetadata
+        || state.isScanningDiscovery
+        || state.isScanningDuplicates
+        || state.isScanningMissingFiles
+        || state.isPopulatingThumbnails
+        || state.isBackgroundHealingActive;
+};
 
 export const FoldersTab: React.FC<TabProps> = React.memo(({
     settings,
@@ -54,6 +73,18 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
     } = useLibraryContext() as any;
 
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
+    const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
+    const isHashResolutionBlocked = useLibraryStore(state => state.syncStatus === 'syncing'
+        || state.isImporting
+        || state.isLiveSyncing
+        || state.isRegeneratingThumbnails
+        || state.isRefreshingMetadata
+        || state.isScanningDiscovery
+        || state.isScanningDuplicates
+        || state.isScanningMissingFiles
+        || state.isPopulatingThumbnails
+        || state.isBackgroundHealingActive);
     const [confirmState, setConfirmState] = React.useState({
         isOpen: false,
         title: '',
@@ -63,6 +94,9 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
     });
 
     const { forceRefresh } = useMetadataRefresh();
+    const resolutionProgressPercent = resolutionProgress && resolutionProgress.total > 0
+        ? Math.min(100, Math.max(0, Math.round((resolutionProgress.current / resolutionProgress.total) * 100)))
+        : 0;
 
     // Route refresh to the correct handler based on integration type.
     // InvokeAI folders re-sync from their database; all others re-parse stored PNG chunks.
@@ -197,8 +231,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                             <button
                                 onClick={async (e) => {
                                     e.stopPropagation();
-                                    const { invoke } = await import('@tauri-apps/api/core');
-                                    await invoke('cancel_model_resolution');
+                                    await commands.cancelModelResolution().catch(console.error);
                                 }}
                                 className="text-blue-600 hover:text-blue-700 transition-colors"
                             >
@@ -208,39 +241,83 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                     ) : (
                         <button
                             onClick={() => {
+                                if (isHashResolutionBlocked) {
+                                    addToast("Wait for the current library task to finish before resolving hashes", "warning");
+                                    return;
+                                }
+
                                 setConfirmState({
                                     isOpen: true,
                                     title: "Resolve Online?",
-                                    message: "Search CivitAI for metadata for all images with unknown models? This may take some time and requires internet access.",
+                                    message: "Search CivitAI for metadata for images with unresolved model hashes? This sends model hashes to CivitAI, requires internet access, and may take some time.",
                                     confirmLabel: "Resolve Online",
                                     onConfirm: async () => {
                                         setConfirmState(prev => ({ ...prev, isOpen: false }));
+                                        if (isLibraryBusyForHashResolution()) {
+                                            setResolutionResult({
+                                                success: false,
+                                                message: "Resolution paused: wait for the current sync, import, scan, or cache rebuild to finish, then run it again."
+                                            });
+                                            addToast("Hash resolution is paused while the library is busy", "warning");
+                                            return;
+                                        }
+
                                         setIsResolving(true);
-                                        setResolutionProgress(null);
+                                        setResolutionProgress({
+                                            current: 0,
+                                            total: 100,
+                                            message: "Starting hash resolution..."
+                                        });
                                         setResolutionResult(null);
                                         addToast("Resolving unknown hashes...", "info");
 
                                         try {
-                                            const { invoke } = await import('@tauri-apps/api/core');
-                                            const res = await invoke<{ resolvedCount: number, failedCount: number, namedFallbackCount: number, unknownCount: number }>('resolve_hashes_online', { skipHarvest: false });
+                                            const res = await unwrap(commands.resolveHashesOnline(false));
+                                            const isPartial = isHashResolutionPartial(res);
+                                            let message = formatHashResolutionMessage(res);
+                                            let refreshFailed = false;
 
-                                            const isSafe = res.unknownCount === 0;
-                                            setResolutionResult({
-                                                success: isSafe,
-                                                message: `Resolution: ${res.resolvedCount} Verified, ${res.namedFallbackCount} Named (Fallback), ${res.unknownCount} Unknown.`
+                                            setResolutionProgress({
+                                                current: 95,
+                                                total: 100,
+                                                message: "Refreshing checkpoint filters..."
                                             });
 
-                                            if (isSafe) {
-                                                addToast(`Lookup finished: ${res.resolvedCount} verified`, "success");
-                                            } else {
-                                                addToast(`Lookup finished with ${res.unknownCount} unknown models`, "warning");
+                                            try {
+                                                const { rebuildFacetCacheIncremental } = await import('../../../services/db/imageRepo');
+                                                await rebuildFacetCacheIncremental('checkpoints');
+                                                incrementFacetCacheVersion();
+                                                await Promise.all([
+                                                    queryClient.invalidateQueries({ queryKey: ['images'] }),
+                                                    queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
+                                                ]);
+                                            } catch (refreshError: unknown) {
+                                                refreshFailed = true;
+                                                const refreshMessage = refreshError instanceof Error ? refreshError.message : String(refreshError);
+                                                console.error(refreshError);
+                                                message = `${message} UI refresh pending: ${refreshMessage}`;
+                                                addToast("Lookup finished, but the UI refresh needs another pass", "warning");
                                             }
-                                        } catch (e: any) {
-                                            if (e.includes("cancelled")) {
+
+                                            setResolutionResult({
+                                                success: !isPartial,
+                                                message
+                                            });
+
+                                            if (!refreshFailed) {
+                                                if (isPartial) {
+                                                    addToast(`Lookup finished with ${res.failedCount} failed and ${res.unknownCount} unknown`, "warning");
+                                                } else {
+                                                    addToast(`Lookup finished: ${res.resolvedCount} verified online`, "success");
+                                                }
+                                            }
+                                        } catch (e: unknown) {
+                                            const errorMessage = e instanceof Error ? e.message : String(e);
+                                            if (errorMessage.toLowerCase().includes("cancelled")) {
                                                 addToast("Resolution cancelled", "info");
                                             } else {
                                                 console.error(e);
-                                                setResolutionResult({ success: false, message: `Lookup failed: ${e.message || e}` });
+                                                setResolutionResult({ success: false, message: `Lookup failed: ${errorMessage}` });
                                                 addToast("Lookup failed", "error");
                                             }
                                         } finally {
@@ -250,9 +327,11 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                     }
                                 });
                             }}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-500/20"
+                            disabled={isHashResolutionBlocked}
+                            title={isHashResolutionBlocked ? 'Wait for the current library task to finish' : undefined}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 dark:disabled:bg-white/10 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-500/20 disabled:shadow-none"
                         >
-                            Resolve Online
+                            {isHashResolutionBlocked ? 'Library Busy' : 'Resolve Online'}
                         </button>
                     )}
                 </div>
@@ -261,12 +340,12 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                     <div className="mb-6 space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-blue-600/60">
                             <span>{resolutionProgress.message}</span>
-                            <span>{Math.round(resolutionProgress.current / (resolutionProgress.total || 1))} %</span>
+                            <span>{resolutionProgressPercent} %</span>
                         </div>
                         <div className="h-1.5 w-full bg-blue-500/10 rounded-full overflow-hidden">
                             <div
                                 className="h-full bg-blue-500 transition-all duration-300"
-                                style={{ width: `${(resolutionProgress.current / (resolutionProgress.total || 1)) * 100}%` }}
+                                style={{ width: `${resolutionProgressPercent}%` }}
                             />
                         </div>
                     </div>

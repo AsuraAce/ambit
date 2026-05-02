@@ -2,6 +2,7 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { commands } from '../../bindings';
 
 export const ActivityDock: React.FC = () => {
     const {
@@ -243,9 +244,7 @@ export const ActivityDock: React.FC = () => {
                                             if (isManualSyncing) cancelSync();
                                             if (isRegeneratingThumbnails) cancelThumbnailRegeneration();
                                             if (isResolvingModels) {
-                                                import('@tauri-apps/api/core').then(({ invoke }) => {
-                                                    invoke('cancel_model_resolution').catch(console.error);
-                                                });
+                                                commands.cancelModelResolution().catch(console.error);
                                                 setIsResolvingModels(false);
                                             }
                                             if (isScanningDiscovery) cancelDiscoveryScan();

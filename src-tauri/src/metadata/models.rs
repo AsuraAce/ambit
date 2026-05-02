@@ -45,6 +45,7 @@ pub struct ModelCacheEntry {
 #[serde(rename_all = "camelCase")]
 pub struct ResolutionResult {
     pub resolved_count: usize,
+    pub harvested_count: usize,
     pub failed_count: usize,
     pub named_fallback_count: usize,
     pub unknown_count: usize,

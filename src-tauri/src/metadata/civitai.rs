@@ -1,10 +1,14 @@
 use crate::db::resolve_db_path;
-use crate::metadata::models::{ModelCacheEntry, ModelResolutionState, ProgressPayload, ResolutionResult};
+use crate::metadata::models::{
+    ModelCacheEntry, ModelResolutionState, ProgressPayload, ResolutionResult,
+};
 use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 
 #[derive(Deserialize)]
@@ -28,6 +32,125 @@ pub struct ImportResult {
     pub added: usize,
     pub total_found: usize,
     pub message: String,
+}
+
+const LOCAL_HASH_PREFIXES: [&str; 7] = [
+    "name:", "file:", "lora_", "emb_", "hyper_", "cnet_", "ipad_",
+];
+
+fn is_online_resolvable_hash(hash: &str) -> bool {
+    let trimmed = hash.trim();
+    let normalized = trimmed.to_ascii_lowercase();
+    !trimmed.is_empty()
+        && !LOCAL_HASH_PREFIXES
+            .iter()
+            .any(|prefix| normalized.starts_with(prefix))
+}
+
+fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT hash FROM (
+                SELECT DISTINCT i.model_hash as hash
+                FROM images i
+                WHERE i.model_hash IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM models m
+                    WHERE m.hash = i.model_hash
+                )
+
+                UNION
+
+                SELECT DISTINCT json_extract(i.metadata_json, '$.modelHash') as hash
+                FROM images i
+                WHERE json_extract(i.metadata_json, '$.modelHash') IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM models m
+                    WHERE m.hash = json_extract(i.metadata_json, '$.modelHash')
+                )
+
+                UNION
+
+                SELECT hash FROM models
+                WHERE civitai_version_id IS NULL
+                AND (
+                    lookup_source IS NULL
+                    OR lookup_source != 'civitai_failed'
+                    OR (
+                        lookup_source = 'civitai_failed'
+                        AND (
+                            scanned_at IS NULL
+                            OR scanned_at < unixepoch('now', '-1 day')
+                        )
+                    )
+                )
+            )
+            WHERE hash IS NOT NULL AND hash != ''",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut hashes = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|hash| hash.trim().to_string())
+        .filter(|hash| is_online_resolvable_hash(hash))
+        .collect::<Vec<_>>();
+
+    hashes.sort();
+    hashes.dedup();
+    Ok(hashes)
+}
+
+fn count_unresolved_hashes(conn: &Connection) -> Result<(usize, usize), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT i.model_hash, i.model_name
+             FROM images i
+             LEFT JOIN models m ON m.hash = i.model_hash
+             WHERE i.model_hash IS NOT NULL
+             AND i.model_hash != ''
+             AND (m.hash IS NULL OR m.lookup_source = 'civitai_failed')",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut named_fallback = HashSet::new();
+    let mut unknown = HashSet::new();
+
+    for row in rows {
+        let (hash, model_name) = row.map_err(|e| e.to_string())?;
+        if !is_online_resolvable_hash(&hash) {
+            continue;
+        }
+
+        if model_name
+            .as_deref()
+            .map(|name| !name.trim().is_empty())
+            .unwrap_or(false)
+        {
+            named_fallback.insert(hash);
+        } else {
+            unknown.insert(hash);
+        }
+    }
+
+    unknown.retain(|hash| !named_fallback.contains(hash));
+
+    Ok((named_fallback.len(), unknown.len()))
+}
+
+fn open_configured_connection(db_path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
+    Ok(conn)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -128,7 +251,8 @@ pub fn import_a1111_cache(
                 }
             }
             if added == 0 {
-                debug_info.push_str("Fallback: top-level object was empty or had non-string values. ");
+                debug_info
+                    .push_str("Fallback: top-level object was empty or had non-string values. ");
             }
         } else {
             debug_info.push_str("Root is not an object. ");
@@ -144,7 +268,7 @@ pub fn import_a1111_cache(
     }
 
     let db_path = resolve_db_path(&app)?;
-    let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let mut conn = open_configured_connection(&db_path)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let mut added_count = 0;
@@ -172,7 +296,11 @@ pub fn import_a1111_cache(
     tx.commit().map_err(|e| e.to_string())?;
 
     let added_unique = added_count / 2;
-    let total_unique = if entries.first().map(|e| e.lookup_source.starts_with("local_cache")).unwrap_or(false) {
+    let total_unique = if entries
+        .first()
+        .map(|e| e.lookup_source.starts_with("local_cache"))
+        .unwrap_or(false)
+    {
         entries.len() / 2
     } else {
         entries.len()
@@ -180,7 +308,7 @@ pub fn import_a1111_cache(
 
     // CRITICAL FIX: Update the 'images' table to reflect the new resolved names immediately
     // models table has been updated, now sync images
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let conn = open_configured_connection(&db_path)?;
     let _ = update_images_with_resolved_names(&conn);
 
     Ok(ImportResult {
@@ -211,8 +339,7 @@ pub async fn resolve_hashes_online(
     let mut harvest_count = 0;
 
     let hashes_to_resolve = {
-        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-        crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
+        let conn = open_configured_connection(&db_path)?;
 
         if !skip_harvest {
             let _ = app.emit(
@@ -288,7 +415,7 @@ pub async fn resolve_hashes_online(
                 params![now],
             )
             .map_err(|e| e.to_string())?;
-            
+
             harvest_count += conn.execute(
                 "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type) 
                  SELECT DISTINCT 
@@ -327,57 +454,51 @@ pub async fn resolve_hashes_online(
             );
         }
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT hash FROM (
-                    SELECT DISTINCT json_extract(metadata_json, '$.modelHash') as hash 
-                    FROM images 
-                    WHERE hash IS NOT NULL 
-                    AND hash NOT IN (SELECT hash FROM models)
-                    
-                    UNION
-                    
-                    SELECT hash FROM models 
-                    WHERE civitai_version_id IS NULL 
-                    AND (lookup_source != 'civitai_failed' OR (lookup_source = 'civitai_failed' AND scanned_at < datetime('now', '-1 day')))
-                    AND hash NOT LIKE 'file:%'
-                    AND hash NOT LIKE 'lora_%'
-                    AND hash NOT LIKE 'emb_%'
-                    AND hash NOT LIKE 'hyper_%'
-                    AND hash NOT LIKE 'cnet_%'
-                    AND hash NOT LIKE 'ipad_%'
-                )",
-            )
-            .map_err(|e| e.to_string())?;
+        let _ = app.emit(
+            "model_resolution_progress",
+            ProgressPayload {
+                current: 15,
+                total: 100,
+                message: "Collecting unresolved online hashes...".to_string(),
+            },
+        );
 
-        let res = stmt
-            .query_map([], |row| row.get(0))
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<String>, _>>()
-            .map_err(|e| e.to_string())?;
-        res
+        collect_hashes_to_resolve(&conn)?
     };
 
     let total = hashes_to_resolve.len();
 
     // CRITICAL: Always sync images table, even if no NEW hashes to resolve.
     // This handles cases where models table is populated but images table is stale.
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let conn = open_configured_connection(&db_path)?;
     let _ = update_images_with_resolved_names(&conn);
 
     if total == 0 {
+        let _ = app.emit(
+            "model_resolution_progress",
+            ProgressPayload {
+                current: 100,
+                total: 100,
+                message: "No unresolved online hashes found.".to_string(),
+            },
+        );
+        let (named_fallback_count, unknown_count) =
+            count_unresolved_hashes(&conn).unwrap_or((0, 0));
         return Ok(ResolutionResult {
-            resolved_count: harvest_count,
+            resolved_count: 0,
+            harvested_count: harvest_count,
             failed_count: 0,
-            named_fallback_count: 0,
-            unknown_count: 0,
+            named_fallback_count,
+            unknown_count,
         });
     }
 
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
     let mut resolved_items = Vec::new();
     let mut failed_items = Vec::new();
-    let mut failed = 0;
 
     for (i, hash) in hashes_to_resolve.into_iter().enumerate() {
         if state.is_cancelled.load(Ordering::SeqCst) {
@@ -403,7 +524,7 @@ pub async fn resolve_hashes_online(
                 if resp.status().is_success() {
                     if let Ok(version) = resp.json::<CivitAiVersion>().await {
                         let full_name = format!("{} {}", version.model.name, version.name);
-                        
+
                         let r_type = match version.model.model_type.to_lowercase().as_str() {
                             "checkpoint" => "checkpoint",
                             "lora" | "lycoris" => "loras",
@@ -415,16 +536,13 @@ pub async fn resolve_hashes_online(
 
                         resolved_items.push((hash, full_name, version.id, r_type.to_string()));
                     } else {
-                        failed += 1;
                         failed_items.push(hash);
                     }
                 } else {
-                    failed += 1;
                     failed_items.push(hash);
                 }
             }
             Err(_) => {
-                failed += 1;
                 failed_items.push(hash);
             }
         }
@@ -434,7 +552,7 @@ pub async fn resolve_hashes_online(
     let newly_failed = failed_items.len();
 
     if newly_resolved > 0 || newly_failed > 0 {
-        let mut conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let mut conn = open_configured_connection(&db_path)?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
         // 1. Insert/Update Resolved Models
@@ -452,65 +570,58 @@ pub async fn resolve_hashes_online(
         }
 
         // 2. Insert/Update Failed Models (to prevent infinite retry loops)
-        // We mark them as 'civitai_failed' and set a timestamp. 
+        // We mark them as 'civitai_failed' and set a timestamp.
         // Future logic could retry these after X days if needed.
         for hash in failed_items {
-             let _ = tx.execute(
-                "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type) 
-                 VALUES (?1, 'Unknown Model', 'civitai_failed', ?2, 'checkpoint')
+            let _ = tx.execute(
+                "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+                 VALUES (
+                    ?1,
+                    COALESCE(
+                        (
+                            SELECT model_name
+                            FROM images
+                            WHERE model_hash = ?1
+                            AND model_name IS NOT NULL
+                            AND model_name != ''
+                            ORDER BY timestamp DESC
+                            LIMIT 1
+                        ),
+                        'Unknown Model'
+                    ),
+                    'civitai_failed',
+                    ?2,
+                    'checkpoint'
+                 )
                  ON CONFLICT(hash) DO UPDATE SET 
-                    lookup_source = 'civitai_failed', 
-                    scanned_at = excluded.scanned_at",
+                    lookup_source = 'civitai_failed',
+                    scanned_at = excluded.scanned_at,
+                    name = CASE
+                        WHEN models.name IS NULL OR models.name = '' OR models.name = 'Unknown Model'
+                        THEN excluded.name
+                        ELSE models.name
+                    END",
                 params![hash, now]
             );
         }
-        
+
         let _ = crate::metadata::models::classify_unlabeled_models(&tx);
-        
+
         tx.commit().map_err(|e| e.to_string())?;
 
         // CRITICAL FIX: Update the 'images' table to reflect the new resolved names immediately
         // This ensures the UI updates without requiring a full re-scan
-        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let conn = open_configured_connection(&db_path)?;
         let _ = update_images_with_resolved_names(&conn);
     }
 
-    let mut named_fallback = 0;
-    let mut truly_unknown = 0;
-
-    if failed > 0 {
-        let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
-             FROM images 
-             WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
-             AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
-             AND json_extract(metadata_json, '$.model') IS NOT NULL",
-            )
-            .map_err(|e| e.to_string())?;
-
-        let fallback_count: usize = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
-
-        named_fallback = fallback_count;
-
-        let mut stmt_unknown = conn
-            .prepare(
-                "SELECT COUNT(DISTINCT json_extract(metadata_json, '$.modelHash')) 
-             FROM images 
-             WHERE json_extract(metadata_json, '$.modelHash') IS NOT NULL 
-             AND json_extract(metadata_json, '$.modelHash') NOT IN (SELECT hash FROM models)
-             AND json_extract(metadata_json, '$.model') IS NULL",
-            )
-            .map_err(|e| e.to_string())?;
-
-        truly_unknown = stmt_unknown.query_row([], |row| row.get(0)).unwrap_or(0);
-    }
+    let conn = open_configured_connection(&db_path)?;
+    let (named_fallback, truly_unknown) = count_unresolved_hashes(&conn)?;
 
     Ok(ResolutionResult {
-        resolved_count: harvest_count + newly_resolved,
-        failed_count: failed,
+        resolved_count: newly_resolved,
+        harvested_count: harvest_count,
+        failed_count: newly_failed,
         named_fallback_count: named_fallback,
         unknown_count: truly_unknown,
     })
@@ -520,22 +631,212 @@ pub async fn resolve_hashes_online(
 /// This fixes the issue where resolved hashes wouldn't show up in the UI until a re-scan.
 fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlite::Error> {
     log::info!("[CivitAI] Syncing resolved model names to images table...");
-    
-    // We update any image where the model_hash matches a known model, 
-    // AND the current resolved_name is either missing or outdated.
-    let count = conn.execute(
-        "UPDATE images 
-         SET resolved_model_name = (SELECT name FROM models WHERE models.hash = images.model_hash)
-         WHERE model_hash IS NOT NULL 
-         AND model_hash IN (SELECT hash FROM models)
+
+    let fallback_count = conn.execute(
+        "UPDATE images
+         SET resolved_model_name = model_name
+         WHERE model_name IS NOT NULL
+         AND model_name != ''
          AND (
-            resolved_model_name IS NULL 
-            OR resolved_model_name = 'Unknown' 
-            OR resolved_model_name != (SELECT name FROM models WHERE models.hash = images.model_hash)
+            resolved_model_name IS NULL
+            OR resolved_model_name = ''
+            OR resolved_model_name = 'Unknown'
+            OR resolved_model_name = 'Unknown Model'
          )",
         [],
     )?;
-    
+
+    // We update any image where the model_hash matches a known non-failed model,
+    // and the current resolved_name is either missing or outdated.
+    let resolved_count = conn.execute(
+        "UPDATE images 
+         SET resolved_model_name = (
+            SELECT m.name
+            FROM models m
+            WHERE m.hash = images.model_hash
+            AND COALESCE(m.lookup_source, '') != 'civitai_failed'
+            AND m.name != 'Unknown Model'
+            LIMIT 1
+         )
+         WHERE model_hash IS NOT NULL 
+         AND EXISTS (
+            SELECT 1
+            FROM models m
+            WHERE m.hash = images.model_hash
+            AND COALESCE(m.lookup_source, '') != 'civitai_failed'
+            AND m.name != 'Unknown Model'
+         )
+         AND (
+            resolved_model_name IS NULL 
+            OR resolved_model_name = ''
+            OR resolved_model_name = 'Unknown' 
+            OR resolved_model_name = 'Unknown Model'
+            OR resolved_model_name != (
+                SELECT m.name
+                FROM models m
+                WHERE m.hash = images.model_hash
+                AND COALESCE(m.lookup_source, '') != 'civitai_failed'
+                AND m.name != 'Unknown Model'
+                LIMIT 1
+            )
+         )",
+        [],
+    )?;
+
+    let count = fallback_count + resolved_count;
+
     log::info!("[CivitAI] Synced {} images with new model names.", count);
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrations::init_db;
+    use serde_json::json;
+
+    fn setup_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).expect("apply migration");
+        }
+        conn
+    }
+
+    fn insert_image(
+        conn: &Connection,
+        id: &str,
+        model_hash: &str,
+        model_name: Option<&str>,
+        resolved_model_name: Option<&str>,
+    ) {
+        let metadata_json = match model_name {
+            Some(name) => json!({ "modelHash": model_hash, "model": name }).to_string(),
+            None => json!({ "modelHash": model_hash }).to_string(),
+        };
+
+        conn.execute(
+            "INSERT INTO images (
+                id, path, timestamp, metadata_json, model_hash, model_name, resolved_model_name
+             )
+             VALUES (?1, ?2, 100, ?3, ?4, ?5, ?6)",
+            params![
+                id,
+                format!("{id}.png"),
+                metadata_json,
+                model_hash,
+                model_name,
+                resolved_model_name
+            ],
+        )
+        .expect("insert image");
+    }
+
+    #[test]
+    fn pseudo_and_local_hashes_are_excluded_from_online_candidates() {
+        let conn = setup_conn();
+        for hash in [
+            "abc123",
+            "name:ParsedModel",
+            "Name:UpperParsedModel",
+            "file:C:/models/foo.safetensors",
+            "lora_style",
+            "LORA_upper",
+            "emb_negative",
+            "hyper_old",
+            "cnet_pose",
+            "ipad_face",
+        ] {
+            insert_image(&conn, hash, hash, Some("ParsedModel"), Some("ParsedModel"));
+        }
+
+        let hashes = collect_hashes_to_resolve(&conn).expect("collect hashes");
+
+        assert_eq!(hashes, vec!["abc123".to_string()]);
+    }
+
+    #[test]
+    fn failed_lookup_retry_uses_unix_second_cutoff() {
+        let conn = setup_conn();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES
+                ('oldfailed', 'Old Failed', 'civitai_failed', ?1, 'checkpoint'),
+                ('recentfailed', 'Recent Failed', 'civitai_failed', ?2, 'checkpoint'),
+                ('nullfailed', 'Missing Timestamp Failed', 'civitai_failed', NULL, 'checkpoint'),
+                ('name:oldfailed', 'Pseudo Failed', 'civitai_failed', ?1, 'checkpoint')",
+            params![now - (2 * 24 * 60 * 60), now],
+        )
+        .expect("insert failed models");
+
+        let hashes = collect_hashes_to_resolve(&conn).expect("collect hashes");
+
+        assert_eq!(
+            hashes,
+            vec!["nullfailed".to_string(), "oldfailed".to_string()]
+        );
+    }
+
+    #[test]
+    fn civitai_failed_rows_do_not_overwrite_parsed_model_names() {
+        let conn = setup_conn();
+        insert_image(
+            &conn,
+            "img1",
+            "failedhash",
+            Some("Parsed Model"),
+            Some("Parsed Model"),
+        );
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES ('failedhash', 'Unknown Model', 'civitai_failed', 1, 'checkpoint')",
+            [],
+        )
+        .expect("insert failed model");
+
+        update_images_with_resolved_names(&conn).expect("sync names");
+
+        let resolved: String = conn
+            .query_row(
+                "SELECT resolved_model_name FROM images WHERE id = 'img1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query resolved name");
+        assert_eq!(resolved, "Parsed Model");
+    }
+
+    #[test]
+    fn unknown_model_damage_is_repaired_to_parsed_model_name() {
+        let conn = setup_conn();
+        insert_image(
+            &conn,
+            "img1",
+            "failedhash",
+            Some("Parsed Model"),
+            Some("Unknown Model"),
+        );
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES ('failedhash', 'Unknown Model', 'civitai_failed', 1, 'checkpoint')",
+            [],
+        )
+        .expect("insert failed model");
+
+        update_images_with_resolved_names(&conn).expect("sync names");
+
+        let resolved: String = conn
+            .query_row(
+                "SELECT resolved_model_name FROM images WHERE id = 'img1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query resolved name");
+        assert_eq!(resolved, "Parsed Model");
+    }
 }
