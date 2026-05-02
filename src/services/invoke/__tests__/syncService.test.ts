@@ -240,4 +240,75 @@ describe('syncImages live mode', () => {
         ]);
         expect(upsertCollection).toHaveBeenCalledTimes(1);
     });
+
+    it('keeps startup changed cycles incremental and skips the final full collection sync', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [
+                    { name: 'metadata_json' },
+                    { name: 'updated_at' },
+                    { name: 'is_intermediate' },
+                    { name: 'starred' },
+                    { name: 'thumbnail_name' },
+                    { name: 'has_workflow' }
+                ];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) {
+                return [{ found: 1 }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) {
+                return [{ count: 1 }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'")) {
+                return [{ name: 'boards' }];
+            }
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [
+                    {
+                        image_name: 'startup-image.png',
+                        metadata_blob: { positive_prompt: 'test' },
+                        created_at: '2026-04-18 12:00:00',
+                        updated_at: '2026-04-18 12:00:05',
+                        width: 1024,
+                        height: 1024,
+                        starred: 1,
+                        thumbnail_name: 'startup-image.webp',
+                        has_workflow: 1,
+                        is_intermediate: 0
+                    }
+                ];
+            }
+            return [];
+        });
+
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValue({
+            imageToBoardId: new Map([['startup-image.png', 'board-1']]),
+            boards: new Map([['board-1', { name: 'Board One', createdAt: 123 }]])
+        });
+
+        const result = await syncImages(
+            'D:/AI/art/webUI/invokeai/databases',
+            vi.fn(),
+            undefined,
+            {
+                mode: 'startup',
+                afterTimestamp: 100,
+                syncBoards: true,
+                syncFavorites: true,
+                starredAs: 'both'
+            }
+        );
+
+        expect(result.imported).toBe(1);
+        expect(insertImagesBatch).toHaveBeenCalledTimes(1);
+        expect(syncCollectionImages).toHaveBeenCalledTimes(1);
+        expect(syncCollectionImages).toHaveBeenCalledWith([
+            'D:/AI/art/webUI/invokeai/outputs/images/startup-image.png'
+        ]);
+        expect(upsertCollection).toHaveBeenCalledTimes(1);
+    });
 });

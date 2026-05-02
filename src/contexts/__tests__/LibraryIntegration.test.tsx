@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
             files: []
         }
     }),
+    getCollectionThumbnailSummaries: vi.fn().mockResolvedValue({}),
+    getSmartCollectionSummaries: vi.fn().mockResolvedValue({}),
     getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
     getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
     getAllCollectionsWithStats: vi.fn().mockResolvedValue([
@@ -99,6 +101,8 @@ vi.mock('../../services/db/collectionRepo', () => ({
     upsertCollection: vi.fn().mockResolvedValue({}),
     addImagesToCollection: vi.fn().mockResolvedValue({}),
     ensureCollectionSchema: vi.fn().mockResolvedValue({}),
+    getCollectionThumbnailSummaries: (...args: unknown[]) => mocks.getCollectionThumbnailSummaries(...args),
+    getSmartCollectionSummaries: (...args: unknown[]) => mocks.getSmartCollectionSummaries(...args),
     getSmartCollectionCounts: (...args: unknown[]) => mocks.getSmartCollectionCounts(...args),
     deleteCollectionFromDb: vi.fn().mockResolvedValue({}),
     removeImagesFromCollection: vi.fn().mockResolvedValue({}),
@@ -795,6 +799,66 @@ describe('Library Integration (Provider Stack)', () => {
                     importOrphans: false,
                     syncBoardsToCollections: false,
                     files
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('skips startup Invoke SQLite sync when the DB file is missing', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                files: [
+                    {
+                        path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                        exists: false,
+                        size: 0,
+                        modifiedMs: null
+                    }
+                ]
+            }
+        });
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                invokeDbSnapshot: {
+                    dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                    lastSyncedAt: 100,
+                    importIntermediates: false,
+                    importOrphans: false,
+                    syncBoardsToCollections: false,
+                    files: [
+                        {
+                            path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                            exists: true,
+                            size: 10,
+                            modifiedMs: 100
+                        }
+                    ]
                 }
             });
         });

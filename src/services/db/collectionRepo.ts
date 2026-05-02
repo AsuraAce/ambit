@@ -55,6 +55,26 @@ export interface SmartCollectionSummary {
     thumbnailSourceKind?: 'dynamic';
 }
 
+export interface CollectionThumbnailSummary {
+    thumbnail?: string;
+    safeThumbnail?: string;
+    thumbnailIsSensitive?: boolean;
+    thumbnailSourceKind?: Collection['thumbnailSourceKind'];
+}
+
+interface CollectionStatsOptions {
+    includeThumbnails?: boolean;
+}
+
+interface SmartCollectionSummaryOptions {
+    includeThumbnails?: boolean;
+}
+
+interface CollectionThumbnailInput {
+    id: string;
+    custom_thumbnail?: string | null;
+}
+
 const toDisplayUrl = (rawPath?: string | null): string | undefined => {
     if (!rawPath) return undefined;
     if (
@@ -111,6 +131,102 @@ const loadImageThumbnailLookup = async (
     }
 
     return matches;
+};
+
+const buildCollectionThumbnailSummaries = async (
+    db: Awaited<ReturnType<typeof getDb>>,
+    collections: CollectionThumbnailInput[]
+): Promise<Record<string, CollectionThumbnailSummary>> => {
+    if (collections.length === 0) return {};
+
+    const ids = [...new Set(collections.map((collection) => collection.id).filter(Boolean))];
+    const thumbnailRows: CollectionThumbnailRow[] = [];
+
+    for (const idBatch of chunk(ids, 900)) {
+        const placeholders = idBatch.map(() => '?').join(',');
+        const rows = await db.select<CollectionThumbnailRow[]>(`
+            SELECT
+                c.id as collection_id,
+                (
+                    SELECT i.thumbnail_path
+                    FROM collection_images cii
+                    INNER JOIN images i ON cii.image_id = i.id
+                    WHERE cii.collection_id = c.id
+                        AND i.is_deleted = 0
+                        AND i.thumbnail_path IS NOT NULL
+                        AND i.thumbnail_path != ''
+                    ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    LIMIT 1
+                ) as dynamic_thumb,
+                (
+                    SELECT i.privacy_hidden
+                    FROM collection_images cii
+                    INNER JOIN images i ON cii.image_id = i.id
+                    WHERE cii.collection_id = c.id
+                        AND i.is_deleted = 0
+                        AND i.thumbnail_path IS NOT NULL
+                        AND i.thumbnail_path != ''
+                    ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    LIMIT 1
+                ) as dynamic_privacy,
+                (
+                    SELECT i.thumbnail_path
+                    FROM collection_images cii
+                    INNER JOIN images i ON cii.image_id = i.id
+                    WHERE cii.collection_id = c.id
+                        AND i.is_deleted = 0
+                        AND i.privacy_hidden = 0
+                        AND i.thumbnail_path IS NOT NULL
+                        AND i.thumbnail_path != ''
+                    ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    LIMIT 1
+                ) as safe_thumb
+            FROM collections c
+            WHERE c.id IN (${placeholders})
+        `, idBatch);
+
+        thumbnailRows.push(...rows);
+    }
+
+    const thumbMap = new Map(thumbnailRows.map((row) => [row.collection_id, row]));
+    const customThumbValues = collections
+        .map((collection) => collection.custom_thumbnail)
+        .filter((value): value is string => !!value);
+    const customById = await loadImageThumbnailLookup(db, 'id', customThumbValues);
+    const unresolvedCustomValues = customThumbValues.filter((value) => !customById.has(value));
+    const customByPath = await loadImageThumbnailLookup(db, 'path', unresolvedCustomValues);
+
+    return Object.fromEntries(collections.map((collection) => {
+        const thumbRow = thumbMap.get(collection.id);
+        const customThumb = collection.custom_thumbnail
+            ? customById.get(collection.custom_thumbnail) ?? customByPath.get(collection.custom_thumbnail)
+            : undefined;
+        let rawThumb = thumbRow?.dynamic_thumb;
+        let safeThumb = thumbRow?.safe_thumb;
+        let thumbnailIsSensitive = thumbRow?.dynamic_privacy === 1;
+        let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
+
+        if (collection.custom_thumbnail) {
+            if (customThumb) {
+                rawThumb = customThumb.thumb || collection.custom_thumbnail;
+                safeThumb = undefined;
+                thumbnailIsSensitive = customThumb.privacyHidden === 1;
+                thumbnailSourceKind = 'customImage';
+            } else {
+                rawThumb = collection.custom_thumbnail;
+                safeThumb = undefined;
+                thumbnailIsSensitive = false;
+                thumbnailSourceKind = 'customPath';
+            }
+        }
+
+        return [collection.id, {
+            thumbnail: toDisplayUrl(rawThumb),
+            safeThumbnail: collection.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
+            thumbnailIsSensitive,
+            thumbnailSourceKind
+        }];
+    }));
 };
 
 export const parsePersistedCollectionFilters = (filterState?: string | null): FilterState | undefined => {
@@ -274,11 +390,12 @@ export const removeImagesFromCollection = async (collectionId: string, imageIds:
     await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [Date.now(), collectionId]);
 };
 
-export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
+export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockCollections();
     }
 
+    const includeThumbnails = options.includeThumbnails !== false;
     const startedAt = nowMs();
     const db = await getDb();
 
@@ -291,100 +408,31 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
     );
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
-    const thumbnailStartedAt = nowMs();
-    const thumbnails = await db.select<CollectionThumbnailRow[]>(`
-        SELECT
-            c.id as collection_id,
-            (
-                SELECT i.thumbnail_path
-                FROM collection_images cii
-                INNER JOIN images i ON cii.image_id = i.id
-                WHERE cii.collection_id = c.id
-                    AND i.is_deleted = 0
-                    AND i.thumbnail_path IS NOT NULL
-                    AND i.thumbnail_path != ''
-                ORDER BY i.is_pinned DESC, i.timestamp DESC
-                LIMIT 1
-            ) as dynamic_thumb,
-            (
-                SELECT i.privacy_hidden
-                FROM collection_images cii
-                INNER JOIN images i ON cii.image_id = i.id
-                WHERE cii.collection_id = c.id
-                    AND i.is_deleted = 0
-                    AND i.thumbnail_path IS NOT NULL
-                    AND i.thumbnail_path != ''
-                ORDER BY i.is_pinned DESC, i.timestamp DESC
-                LIMIT 1
-            ) as dynamic_privacy,
-            (
-                SELECT i.thumbnail_path
-                FROM collection_images cii
-                INNER JOIN images i ON cii.image_id = i.id
-                WHERE cii.collection_id = c.id
-                    AND i.is_deleted = 0
-                    AND i.privacy_hidden = 0
-                    AND i.thumbnail_path IS NOT NULL
-                    AND i.thumbnail_path != ''
-                ORDER BY i.is_pinned DESC, i.timestamp DESC
-                LIMIT 1
-            ) as safe_thumb
-        FROM collections c
-    `);
-    const thumbMap = new Map(thumbnails.map(t => [t.collection_id, t]));
+    let mappedCollections: Collection[] = collections.map(c => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        isArchived: !!c.is_archived,
+        isPinned: !!c.is_pinned,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
+        count: countMap.get(c.id) || 0,
+        imageIds: [] as string[],
+        customThumbnail: c.custom_thumbnail,
+        filters: parsePersistedCollectionFilters(c.filter_state),
+        manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
+        source: c.source
+    }));
 
-    const customThumbValues = collections
-        .map((collection) => collection.custom_thumbnail)
-        .filter((value): value is string => !!value);
-    const customById = await loadImageThumbnailLookup(db, 'id', customThumbValues);
-    const unresolvedCustomValues = customThumbValues.filter((value) => !customById.has(value));
-    const customByPath = await loadImageThumbnailLookup(db, 'path', unresolvedCustomValues);
-    logStartupDuration('collection thumbnail hydration', thumbnailStartedAt);
-
-    const mappedCollections = collections.map(c => {
-        const thumbRow = thumbMap.get(c.id);
-        const customThumb = c.custom_thumbnail
-            ? customById.get(c.custom_thumbnail) ?? customByPath.get(c.custom_thumbnail)
-            : undefined;
-        let rawThumb = thumbRow?.dynamic_thumb;
-        let safeThumb = thumbRow?.safe_thumb;
-        let thumbnailIsSensitive = thumbRow?.dynamic_privacy === 1;
-        let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
-
-        if (c.custom_thumbnail) {
-            if (customThumb) {
-                rawThumb = customThumb.thumb || c.custom_thumbnail;
-                safeThumb = undefined;
-                thumbnailIsSensitive = customThumb.privacyHidden === 1;
-                thumbnailSourceKind = 'customImage';
-            } else {
-                rawThumb = c.custom_thumbnail;
-                safeThumb = undefined;
-                thumbnailIsSensitive = false;
-                thumbnailSourceKind = 'customPath';
-            }
-        }
-
-        return {
-            id: c.id,
-            name: c.name,
-            color: c.color,
-            isArchived: !!c.is_archived,
-            isPinned: !!c.is_pinned,
-            createdAt: c.created_at,
-            updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
-            count: countMap.get(c.id) || 0,
-            imageIds: [] as string[],
-            thumbnail: toDisplayUrl(rawThumb),
-            customThumbnail: c.custom_thumbnail,
-            safeThumbnail: c.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
-            thumbnailIsSensitive,
-            thumbnailSourceKind,
-            filters: parsePersistedCollectionFilters(c.filter_state),
-            manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
-            source: c.source
-        } as Collection;
-    });
+    if (includeThumbnails) {
+        const thumbnailStartedAt = nowMs();
+        const thumbnails = await buildCollectionThumbnailSummaries(db, collections);
+        mappedCollections = mappedCollections.map((collection) => ({
+            ...collection,
+            ...thumbnails[collection.id]
+        }));
+        logStartupDuration('collection thumbnail hydration', thumbnailStartedAt);
+    }
 
     // Smart collection counts are calculated lazily via refreshSmartCollectionCounts().
     // Do not block the initial collection list on smart-thumbnail queries: those can
@@ -394,11 +442,44 @@ export const getAllCollectionsWithStats = async (): Promise<Collection[]> => {
     return result;
 };
 
+export const getCollectionThumbnailSummaries = async (
+    collections: Collection[]
+): Promise<Record<string, CollectionThumbnailSummary>> => {
+    if (isBrowserMockMode()) {
+        const mockCollections = new Map(getBrowserMockCollections().map((collection) => [collection.id, collection]));
+        return Object.fromEntries(collections.map((collection) => {
+            const match = mockCollections.get(collection.id) ?? collection;
+            return [collection.id, {
+                thumbnail: match.thumbnail,
+                safeThumbnail: match.safeThumbnail,
+                thumbnailIsSensitive: match.thumbnailIsSensitive,
+                thumbnailSourceKind: match.thumbnailSourceKind
+            }];
+        }));
+    }
+
+    if (collections.length === 0) return {};
+
+    const db = await getDb();
+    return buildCollectionThumbnailSummaries(
+        db,
+        collections.map((collection) => ({
+            id: collection.id,
+            custom_thumbnail: collection.customThumbnail ?? null
+        }))
+    );
+};
+
 /**
  * Lazily calculate smart collection counts without blocking the main collection load.
  * Returns a map of collectionId -> count for smart collections only.
  */
-export const getSmartCollectionSummaries = async (smartCollections: Collection[]): Promise<Record<string, SmartCollectionSummary>> => {
+export const getSmartCollectionSummaries = async (
+    smartCollections: Collection[],
+    options: SmartCollectionSummaryOptions = {}
+): Promise<Record<string, SmartCollectionSummary>> => {
+    const includeThumbnails = options.includeThumbnails !== false;
+
     if (isBrowserMockMode()) {
         const collections = getBrowserMockCollections();
         return Object.fromEntries(
@@ -406,9 +487,11 @@ export const getSmartCollectionSummaries = async (smartCollections: Collection[]
                 const match = collections.find((item) => item.id === collection.id);
                 return [collection.id, {
                     count: match?.count ?? 0,
-                    thumbnail: match?.thumbnail,
-                    safeThumbnail: match?.safeThumbnail,
-                    thumbnailIsSensitive: match?.thumbnailIsSensitive,
+                    ...(includeThumbnails ? {
+                        thumbnail: match?.thumbnail,
+                        safeThumbnail: match?.safeThumbnail,
+                        thumbnailIsSensitive: match?.thumbnailIsSensitive,
+                    } : {}),
                     thumbnailSourceKind: 'dynamic' as const
                 }];
             })
@@ -452,6 +535,8 @@ export const getSmartCollectionSummaries = async (smartCollections: Collection[]
 
         const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
         res.forEach(row => { summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' }; });
+
+        if (!includeThumbnails) return summaries;
 
         for (const query of queries) {
             const normalRows = await db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(

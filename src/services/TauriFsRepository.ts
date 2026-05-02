@@ -4,25 +4,19 @@ import { generateMockImages, INITIAL_COLLECTIONS } from '../constants';
 
 export class TauriFsRepository implements IRepository {
     private fileName = 'library.json';
+    private hasLoggedDirectoryError = false;
 
     // Use AppLocalData to store in Local AppData (Windows) or appropriate local path
     private baseDir = BaseDirectory.AppLocalData;
 
     private async ensureDirectory() {
-        // Ensure the directory exists (create if not)
-        // In Tauri v2, the plugin normally handles permissions, but we might need to ensure the folder structure
-        // appDataDir() returns the path. 
-        // Simply try writing usually works if the app folder exists, but explicit mkdir is safer.
-        // However, with BaseDirectory usage, check if we need to mkDir base.
-        // Usually Tauri handles the app directory creation on setup, but let's be safe.
-        // Actually, 'mkdir' with recursive: true on the base dir is good practice.
         try {
-            const hasDir = await exists('', { baseDir: this.baseDir });
-            if (!hasDir) {
-                await mkdir('', { baseDir: this.baseDir, recursive: true });
-            }
+            await mkdir('', { baseDir: this.baseDir, recursive: true });
         } catch (e) {
-            console.error('Error ensuring directory:', e);
+            if (!this.hasLoggedDirectoryError) {
+                this.hasLoggedDirectoryError = true;
+                console.error('Error ensuring directory:', e);
+            }
         }
     }
 

@@ -10,14 +10,14 @@ import { urlToPath } from '../utils/pathUtils';
 interface UseMaintenanceOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    refreshCollectionThumbnails: () => Promise<void>;
+    refreshCollections: () => Promise<void>;
     settings: AppSettings;
 }
 
 export const useMaintenanceOps = ({
     images,
     setImages,
-    refreshCollectionThumbnails,
+    refreshCollections,
     settings
 }: UseMaintenanceOpsProps) => {
     const { addToast } = useToast();
@@ -50,11 +50,11 @@ export const useMaintenanceOps = ({
 
             if (!permanent) {
                 try {
-                    console.info(`${logPrefix}: refreshing collection thumbnails`);
-                    await refreshCollectionThumbnails();
-                } catch (thumbnailError) {
-                    console.error(`${logPrefix}: collection thumbnail refresh failed`, thumbnailError);
-                    addToast('Removed from library, but collection thumbnails may need a refresh.', 'warning');
+                    console.info(`${logPrefix}: refreshing collections`);
+                    await refreshCollections();
+                } catch (collectionRefreshError) {
+                    console.error(`${logPrefix}: collection refresh failed`, collectionRefreshError);
+                    addToast('Removed from library, but collections may need a refresh.', 'warning');
                 }
             }
 
@@ -75,7 +75,7 @@ export const useMaintenanceOps = ({
             console.error(`${logPrefix}: mutation failed`, e);
             addToast("Failed to update library state", "error");
         }
-    }, [setImages, addToast, refreshCollectionThumbnails, incrementFacetCacheVersion]);
+    }, [setImages, addToast, refreshCollections, incrementFacetCacheVersion]);
 
     const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle, onComplete: () => void) => {
         const img = images.find(i => i.id === targetId);

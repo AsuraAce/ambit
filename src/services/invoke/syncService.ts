@@ -531,7 +531,7 @@ export const syncImages = async (
     }
 
     // Final cleanup / sync (optional fallback)
-    if (options.syncBoards && boards.size > 0 && options.mode !== 'live') {
+    if (options.syncBoards && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
         const { syncCollectionImages } = await import('../db/imageRepo');

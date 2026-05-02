@@ -20,14 +20,14 @@ interface ImportOptions {
 interface UseImportOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    refreshCollectionThumbnails: () => Promise<void>;
+    refreshCollections: () => Promise<void>;
     settings: AppSettings;
 }
 
 export const useImportOps = ({
     images,
     setImages,
-    refreshCollectionThumbnails,
+    refreshCollections,
     settings
 }: UseImportOpsProps) => {
     const { addToast } = useToast();
@@ -62,7 +62,7 @@ export const useImportOps = ({
                     if (reallyUnique.length === 0) return prev;
                     return [...reallyUnique, ...prev];
                 });
-                await refreshCollectionThumbnails();
+                await refreshCollections();
             }
 
             let msg = `Imported ${uniqueNewImages.length} images.`;
@@ -85,7 +85,7 @@ export const useImportOps = ({
                 if (!silent && stats.errors > 0) addToast(`Failed to load ${stats.errors} files.`, 'error');
             }
         }
-    }, [images, setImages, addToast, refreshCollectionThumbnails, refreshMetadata, refreshHiddenAvailability]);
+    }, [images, setImages, addToast, refreshCollections, refreshMetadata, refreshHiddenAvailability]);
 
     const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
@@ -293,7 +293,7 @@ export const useImportOps = ({
 
             await syncCollectionImages();
             await rebuildFacetCache();
-            await refreshCollectionThumbnails();
+            await refreshCollections();
 
             addToast(`InvokeAI sync complete: ${result.imported} imported, ${result.updated} updated`, 'success');
         } catch (e) {
@@ -304,7 +304,7 @@ export const useImportOps = ({
             setImportProgress(null);
             setImportAbortController(null);
         }
-    }, [settings.invokeAiPath, settings.importIntermediates, addToast, setIsImporting, setImportProgress, setImportAbortController, refreshCollectionThumbnails]);
+    }, [settings.invokeAiPath, settings.importIntermediates, addToast, setIsImporting, setImportProgress, setImportAbortController, refreshCollections]);
 
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,

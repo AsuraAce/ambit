@@ -73,6 +73,7 @@ vi.mock('../../services/db/imageRepo', () => ({
 
 describe('useFileOperations', () => {
     const mockSetImages = vi.fn();
+    const mockRefreshCollections = vi.fn();
     const mockRefreshCollectionThumbnails = vi.fn();
 
     const mockSettings = {
@@ -95,16 +96,20 @@ describe('useFileOperations', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockRefreshCollections.mockResolvedValue(undefined);
         mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
     });
 
+    const renderFileOperations = (images = mockImages) => renderHook(() => useFileOperations({
+        images,
+        setImages: mockSetImages,
+        refreshCollections: mockRefreshCollections,
+        refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
+        settings: mockSettings,
+    }));
+
     it('should initialize correctly', () => {
-        const { result } = renderHook(() => useFileOperations({
-            images: mockImages,
-            setImages: mockSetImages,
-            refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-            settings: mockSettings,
-        }));
+        const { result } = renderFileOperations();
 
         expect(result.current.isExporting).toBe(false);
         expect(result.current.isRecoveringMetadata).toBe(false);
@@ -113,12 +118,7 @@ describe('useFileOperations', () => {
     describe('deleteImages', () => {
         it('should perform soft delete and update local state', async () => {
             const { removeImagesFromLibrary } = await import('../../services/db/imageRepo');
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.deleteImages(['1'], false);
@@ -127,17 +127,14 @@ describe('useFileOperations', () => {
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockSetImages).toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
+            expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });
 
-        it('should keep delete success even if collection thumbnail refresh fails', async () => {
+        it('should keep delete success even if collection refresh fails', async () => {
             const { removeImagesFromLibrary } = await import('../../services/db/imageRepo');
-            mockRefreshCollectionThumbnails.mockRejectedValueOnce(new Error('thumbnail refresh failed'));
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            mockRefreshCollections.mockRejectedValueOnce(new Error('collection refresh failed'));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.deleteImages(['1'], false);
@@ -145,19 +142,16 @@ describe('useFileOperations', () => {
 
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('collection thumbnails may need a refresh'), 'warning');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('collections may need a refresh'), 'warning');
             expect(mockAddToast).not.toHaveBeenCalledWith('Failed to update library state', 'error');
+            expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });
 
         it('should perform permanent delete and remove from local state', async () => {
             const { deleteImageFromDisk, getImagesByIds } = await import('../../services/db/imageRepo');
             (getImagesByIds as any).mockResolvedValue([mockImages[1]]);
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.deleteImages(['2'], true);
@@ -172,12 +166,7 @@ describe('useFileOperations', () => {
     describe('exportImages', () => {
         it('should call export service with correct parameters', async () => {
             const { exportImagesToZip } = await import('../../services/exportService');
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.exportImages('test.zip', ['1'], 'C:/dest');
@@ -190,12 +179,7 @@ describe('useFileOperations', () => {
         it('should bail if no images match the IDs', async () => {
             const { getImagesByIds } = await import('../../services/db/imageRepo');
             (getImagesByIds as any).mockResolvedValue([]);
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.exportImages('test.zip', ['non-existent'], 'C:/dest');
@@ -215,12 +199,7 @@ describe('useFileOperations', () => {
             };
             (processWebFiles as any).mockResolvedValue(mockImportResult);
 
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 const event = { target: { files: mockFiles } } as any;
@@ -230,6 +209,8 @@ describe('useFileOperations', () => {
             expect(processWebFiles).toHaveBeenCalled();
             expect(mockSetImages).toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Imported 1 images'), 'success');
+            expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });
     });
 
@@ -239,12 +220,7 @@ describe('useFileOperations', () => {
             const mockUpdates = [{ ...mockImages[2], thumbnailUrl: 'new-thumb-3' }];
             (regenerateThumbnailsForImages as any).mockResolvedValue(mockUpdates);
 
-            const { result } = renderHook(() => useFileOperations({
-                images: mockImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations();
 
             await act(async () => {
                 await result.current.regenerateThumbnails();
@@ -254,16 +230,13 @@ describe('useFileOperations', () => {
 
             expect(mockSetImages).toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Successfully optimized 1 of 1 thumbnails'), 'success');
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollections).not.toHaveBeenCalled();
         });
 
         it('should show success message if no candidates found', async () => {
             const optimizedImages = [mockImages[0], mockImages[1]];
-            const { result } = renderHook(() => useFileOperations({
-                images: optimizedImages,
-                setImages: mockSetImages,
-                refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
-                settings: mockSettings,
-            }));
+            const { result } = renderFileOperations(optimizedImages);
 
             await act(async () => {
                 await result.current.regenerateThumbnails();

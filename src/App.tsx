@@ -117,7 +117,7 @@ export default function App() {
     } = useSelection(images);
 
     const setAllCollections = useCollectionStore(s => s.setCollections);
-    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollections);
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const { refreshMaintenanceCounts } = useWatchers();
 
     const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
@@ -135,6 +135,7 @@ export default function App() {
     const fileOps = useFileOperations({
         images,
         setImages,
+        refreshCollections,
         refreshCollectionThumbnails,
         settings
     });
