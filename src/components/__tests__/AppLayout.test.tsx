@@ -29,7 +29,14 @@ vi.mock('../../features/library/components/PinnedShelf', () => ({
     PinnedShelf: () => <div data-testid="pinned-shelf" />
 }));
 vi.mock('../../features/library/components/TimelineView', () => ({
-    TimelineView: () => <div data-testid="timeline-view" />
+    TimelineView: (props: { hasMoreImages?: boolean; isLoadingMore?: boolean; onLoadMore?: () => void }) => (
+        <div
+            data-testid="timeline-view"
+            data-has-more-images={String(props.hasMoreImages)}
+            data-is-loading-more={String(props.isLoadingMore)}
+            data-has-load-more={String(typeof props.onLoadMore === 'function')}
+        />
+    )
 }));
 vi.mock('../../features/library/components/VirtualGrid', () => ({
     VirtualGrid: () => <div data-testid="virtual-grid" />
@@ -41,7 +48,13 @@ vi.mock('../ui/ErrorBoundary', () => ({
     ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>
 }));
 vi.mock('../../contexts/SearchContext', () => ({
-    useSearch: () => ({ images: [{id: '1', filename: 'test.png', timestamp: 123}], filters: {} })
+    useSearch: () => ({
+        images: [{ id: '1', filename: 'test.png', timestamp: 123 }],
+        filters: {},
+        hasMoreImages: true,
+        isLoadingMore: false,
+        loadMoreImages: vi.fn()
+    })
 }));
 
 describe('AppLayout', () => {
@@ -112,6 +125,15 @@ describe('AppLayout', () => {
     it('renders TimelineView when viewMode is timeline', () => {
         render(<AppLayout {...defaultProps} viewMode="timeline" images={[{ id: '1' } as any]} />);
         expect(screen.getByTestId('timeline-view')).toBeTruthy();
+    });
+
+    it('passes pagination state to TimelineView', () => {
+        render(<AppLayout {...defaultProps} viewMode="timeline" />);
+
+        const timeline = screen.getByTestId('timeline-view');
+        expect(timeline.getAttribute('data-has-more-images')).toBe('true');
+        expect(timeline.getAttribute('data-is-loading-more')).toBe('false');
+        expect(timeline.getAttribute('data-has-load-more')).toBe('true');
     });
 
     it('renders MaintenanceView when viewMode is maintenance', async () => {

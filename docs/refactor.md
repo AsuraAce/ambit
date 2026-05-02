@@ -100,6 +100,38 @@ Status: Deferred
 - `docs/architecture.md#frontend-app-shell-and-feature-surfaces`
 - `docs/architecture.md#query-state-and-persistence-adapters`
 
+## Backend-Supported Timeline Buckets
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Timeline now progressively loads older image pages as the user scrolls, matching Grid behavior without fetching the full library up front.
+- For very large libraries, the Timeline can still only build month/day headers from image cards that have already been fetched.
+- Deep-history navigation would be faster and more accurate with a backend-supported date bucket index that is independent from loaded card pages.
+
+### Current Pain Points
+- Timeline headers are derived client-side from the current paginated `images` array.
+- Users cannot see the full historical span until enough pages have been loaded.
+- Jumping directly to an older month would require loading every intervening page under the current implementation.
+
+### Safe-Change Warning
+- Do not replace the current progressive pagination with eager full-library loading.
+- A bucket-level Timeline needs new query contracts and acceptance testing against large libraries before it should become the default.
+
+### Suggested Future Direction
+- Add a SQLite-backed Timeline aggregate query that returns day/month buckets with counts for the active filters.
+- Use those buckets to render the full Timeline structure independently from loaded image cards.
+- Page image cards per bucket, or around scroll position, so deep history can be reached without loading all newer images first.
+
+### Not Part of the Current Task
+- Do not add Rust commands, Specta bindings, or SQLite migrations for the immediate Timeline loading fix.
+- Do not change existing search result cursor pagination semantics.
+
+### Related Code
+- `src/features/library/components/TimelineView.tsx`
+- `src/features/library/hooks/useTimelineLayout.ts`
+- `src/hooks/useImagesQuery.ts`
+- `src/services/db/searchRepo.ts`
+
 ## Persistence Boundary Cleanup
 Status: Deferred
 
