@@ -4,6 +4,7 @@ import { useCollectionStore } from '../collectionStore';
 import { FilterState } from '../../types';
 
 const mockGetSmartCollectionSummaries = vi.fn();
+const mockGetCollectionThumbnailSummaries = vi.fn();
 
 vi.mock('../libraryStore', () => ({
     useLibraryStore: {
@@ -14,7 +15,8 @@ vi.mock('../libraryStore', () => ({
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
-    getSmartCollectionSummaries: mockGetSmartCollectionSummaries
+    getSmartCollectionSummaries: mockGetSmartCollectionSummaries,
+    getCollectionThumbnailSummaries: mockGetCollectionThumbnailSummaries
 }));
 
 const resetCollectionStore = () => {
@@ -149,6 +151,103 @@ describe('collectionStore smart count refresh', () => {
             safeThumbnail: 'custom-safe.webp',
             thumbnailIsSensitive: false,
             thumbnailSourceKind: 'customImage'
+        }));
+    });
+
+    it('updates smart collection counts without clearing thumbnails when thumbnail refresh is skipped', async () => {
+        const smartFilters: FilterState = {
+            searchQuery: 'portrait',
+            models: [],
+            tools: [],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            samplers: [],
+            generationTypes: [],
+            controlNets: [],
+            ipAdapters: [],
+            dateRange: 'all',
+            favoritesOnly: false,
+            collectionId: null
+        };
+        mockGetSmartCollectionSummaries.mockResolvedValue({
+            'smart-1': {
+                count: 9,
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'smart-1',
+                    name: 'Smart One',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    count: 0,
+                    imageIds: [],
+                    filters: smartFilters,
+                    thumbnail: 'existing-thumb.webp',
+                    safeThumbnail: 'existing-safe.webp',
+                    thumbnailIsSensitive: true,
+                    thumbnailSourceKind: 'dynamic'
+                }],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
+
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-1' })],
+            { includeThumbnails: false }
+        );
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            count: 9,
+            thumbnail: 'existing-thumb.webp',
+            safeThumbnail: 'existing-safe.webp',
+            thumbnailIsSensitive: true,
+            thumbnailSourceKind: 'dynamic'
+        }));
+    });
+
+    it('refreshes collection thumbnails without reloading collection rows', async () => {
+        mockGetCollectionThumbnailSummaries.mockResolvedValue({
+            'static-1': {
+                thumbnail: 'asset://thumb.webp',
+                safeThumbnail: 'asset://safe.webp',
+                thumbnailIsSensitive: true,
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'static-1',
+                    name: 'Static One',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    count: 3,
+                    imageIds: []
+                }],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshCollectionThumbnails();
+
+        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
+            expect.objectContaining({ id: 'static-1' })
+        ]);
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            count: 3,
+            thumbnail: 'asset://thumb.webp',
+            safeThumbnail: 'asset://safe.webp',
+            thumbnailIsSensitive: true,
+            thumbnailSourceKind: 'dynamic'
         }));
     });
 });

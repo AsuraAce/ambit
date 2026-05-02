@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { createContext, useContext, useCallback, useRef, ReactNode } from 'react';
 import { useSettings } from './SettingsContext';
-import { useCollections } from './CollectionContext';
 import { useToast } from '../hooks/useToast';
 import { getLiveWatchSummaryMessage, useLibraryStore } from '../stores/libraryStore';
+import { useCollectionStore } from '../stores/collectionStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -110,9 +110,9 @@ export interface TargetedLiveSyncResult {
 
 export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
     const { settings, settingsRef, setSettings } = useSettings();
-    const { setCollections } = useCollections();
     const { addToast } = useToast();
     const queryClient = useQueryClient();
+    const setCollections = useCollectionStore(s => s.setCollections);
 
     // Zustand State
     const syncStatus = useLibraryStore(s => s.syncStatus);
@@ -220,6 +220,15 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     settingsRef.current.invokeAiPath!,
                     effectiveSnapshotConfig
                 );
+                const dbSnapshotFile = currentSnapshot.files.find(file => file.path === currentSnapshot.dbPath);
+
+                if (dbSnapshotFile && !dbSnapshotFile.exists) {
+                    console.warn('[Startup Catch-up] Invoke DB file is missing; skipped SQLite sync.', {
+                        dbPath: currentSnapshot.dbPath,
+                        checkMs: elapsedMs(snapshotStartedAt)
+                    });
+                    return;
+                }
 
                 if (isInvokeDbSnapshotCurrent(settingsRef.current.invokeDbSnapshot, currentSnapshot)) {
                     console.info('[Startup Catch-up] Invoke DB snapshot unchanged; skipped SQLite sync.', {
@@ -317,7 +326,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 if (options.mode !== 'live') {
                     setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' });
                 }
-                // Note: setCollections is still from CollectionContext (Phase 3)
                 setCollections(prev => {
                     const next = [...prev];
                     let changed = false;

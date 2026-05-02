@@ -135,6 +135,32 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(queries.join('\n')).not.toContain('OR ci.path');
     });
 
+    it('can load base collection rows without blocking on thumbnail hydration', async () => {
+        const queries: string[] = [];
+        dbMocks.select.mockImplementation(async (query: string) => {
+            queries.push(query);
+            if (query.includes('SELECT * FROM collections')) {
+                return [makeCollectionRow({ name: 'Base Only' })];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
+            return [];
+        });
+
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        const collections = await getAllCollectionsWithStats({ includeThumbnails: false });
+
+        expect(collections[0]).toEqual(expect.objectContaining({
+            id: 'c1',
+            name: 'Base Only',
+            count: 3,
+            imageIds: []
+        }));
+        expect(collections[0].thumbnail).toBeUndefined();
+        expect(queries.join('\n')).not.toContain('c.id as collection_id');
+        expect(queries.join('\n')).not.toContain('WHERE id IN');
+        expect(queries.join('\n')).not.toContain('WHERE path IN');
+    });
+
     it('resolves custom image paths through the targeted path lookup', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('SELECT * FROM collections')) {

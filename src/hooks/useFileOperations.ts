@@ -9,6 +9,7 @@ import { useMaintenanceOps } from './useMaintenanceOps';
 interface UseFileOperationsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
+    refreshCollections: () => Promise<void>;
     refreshCollectionThumbnails: () => Promise<void>;
     settings: AppSettings;
 }
@@ -16,6 +17,7 @@ interface UseFileOperationsProps {
 export const useFileOperations = ({
     images,
     setImages,
+    refreshCollections,
     refreshCollectionThumbnails,
     settings
 }: UseFileOperationsProps) => {
@@ -25,7 +27,7 @@ export const useFileOperations = ({
     const importOps = useImportOps({
         images,
         setImages,
-        refreshCollectionThumbnails,
+        refreshCollections,
         settings
     });
 
@@ -40,7 +42,7 @@ export const useFileOperations = ({
     const maintenanceOps = useMaintenanceOps({
         images,
         setImages,
-        refreshCollectionThumbnails,
+        refreshCollections,
         settings
     });
 

@@ -20,6 +20,7 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
     const allCollections = useCollectionStore(s => s.collections);
     const isLoaded = useCollectionStore(s => s.isLoaded);
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const initialize = useCollectionStore(s => s.initialize);
 
     useEffect(() => {
@@ -37,7 +38,7 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
             setSmartCollections: () => { console.warn('setSmartCollections is deprecated, use store actions'); },
             setAllCollections: () => { console.warn('setAllCollections is deprecated, use store actions'); },
             refreshCollections,
-            refreshCollectionThumbnails: refreshCollections,
+            refreshCollectionThumbnails,
             isLoaded
         }}>
             {children}

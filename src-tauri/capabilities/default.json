@@ -14,6 +14,7 @@
     "core:window:allow-close",
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
+    "core:window:allow-set-icon",
     "core:window:allow-start-dragging",
     "fs:default",
     "dialog:default",
@@ -95,6 +96,20 @@
     {
       "identifier": "fs:allow-exists",
       "allow": [
+        {
+          "path": "$APPLOCALDATA"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA"
+        },
         {
           "path": "$APPLOCALDATA/**"
         }

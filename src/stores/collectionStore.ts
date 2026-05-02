@@ -15,6 +15,7 @@ interface RefreshSmartCountsOptions {
     includeArchived?: boolean;
     collectionIds?: string[];
     delayMs?: number;
+    includeThumbnails?: boolean;
 }
 
 type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
@@ -26,11 +27,13 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
     refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let thumbnailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useCollectionStore = create<CollectionState>()(
     devtools(
@@ -66,6 +69,40 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
+            refreshCollectionThumbnails: async (debounced = false) => {
+                const run = async () => {
+                    try {
+                        const currentCollections = get().collections;
+                        if (currentCollections.length === 0) return;
+
+                        const { getCollectionThumbnailSummaries } = await import('../services/db/collectionRepo');
+                        const summaries = await getCollectionThumbnailSummaries(currentCollections);
+
+                        set((state) => ({
+                            collections: state.collections.map((collection) => {
+                                const summary = summaries[collection.id];
+                                return summary ? { ...collection, ...summary } : collection;
+                            })
+                        }));
+                    } catch (e) {
+                        console.error('[CollectionStore] Failed to refresh collection thumbnails', e);
+                    }
+                };
+
+                if (debounced) {
+                    if (thumbnailDebounceTimer) clearTimeout(thumbnailDebounceTimer);
+                    return new Promise((resolve) => {
+                        thumbnailDebounceTimer = setTimeout(async () => {
+                            await run();
+                            thumbnailDebounceTimer = null;
+                            resolve();
+                        }, 300);
+                    });
+                }
+
+                await run();
+            },
+
             refreshSmartCounts: async (input = {}) => {
                 const runId = ++smartCountRunId;
                 try {
@@ -97,7 +134,8 @@ export const useCollectionStore = create<CollectionState>()(
                     for (const smartCol of smartCols) {
                         if (runId !== smartCountRunId) return;
 
-                        const summaries = await getSmartCollectionSummaries([smartCol]);
+                        const includeThumbnails = options.includeThumbnails !== false;
+                        const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
                         if (runId !== smartCountRunId) return;
                         const summary = summaries[smartCol.id];
 
@@ -105,7 +143,7 @@ export const useCollectionStore = create<CollectionState>()(
                             set((state) => ({
                                 collections: state.collections.map(c =>
                                     c.id === smartCol.id && c.filters
-                                        ? c.customThumbnail
+                                        ? c.customThumbnail || !includeThumbnails
                                             ? {
                                                 ...c,
                                                 count: summary.count
@@ -152,7 +190,7 @@ export const useCollectionStore = create<CollectionState>()(
                         console.info(`[Startup] Collection schema check completed in ${Math.round(performance.now() - startedAt)}ms`);
 
                         // 1. Try to load from SQLite
-                        let dbCols = await getAllCollectionsWithStats();
+                        let dbCols = await getAllCollectionsWithStats({ includeThumbnails: false });
                         let needsReload = false;
 
                         // 2. Only migrate if DB is EMPTY - if it has any collections (invoke or ambit), skip migration
@@ -213,16 +251,19 @@ export const useCollectionStore = create<CollectionState>()(
 
                         // Final reload ONLY if the DB was mutated during init
                         if (needsReload) {
-                            dbCols = await getAllCollectionsWithStats();
+                            dbCols = await getAllCollectionsWithStats({ includeThumbnails: false });
                         }
 
                         set({ collections: dbCols, isLoaded: true });
                         console.info(`[Startup] Collection initialization completed in ${Math.round(performance.now() - startedAt)}ms`);
 
+                        void get().refreshCollectionThumbnails();
+
                         // Defer visible smart collection counts so startup remains responsive.
                         void get().refreshSmartCounts({
                             includeArchived: false,
-                            delayMs: STARTUP_SMART_COUNT_DELAY_MS
+                            delayMs: STARTUP_SMART_COUNT_DELAY_MS,
+                            includeThumbnails: false
                         });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to initialize', e);
