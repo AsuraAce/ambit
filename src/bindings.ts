@@ -522,7 +522,7 @@ export type ReparseBatchResult = { processed: number; updated: number; errors: n
  * Result of a reparse job.
  */
 export type ReparseJobResult = { processed: number; updated: number; errors: number; wasCancelled: boolean }
-export type ResolutionResult = { resolvedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
+export type ResolutionResult = { resolvedCount: number; harvestedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**
  * Base64 encoded 32px WebP micro-thumbnail for instant previews
