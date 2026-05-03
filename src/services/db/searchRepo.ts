@@ -2,6 +2,7 @@ import { AIImage, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
+import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
 
 export interface LibraryStats {
     totalImages: number;
@@ -72,6 +73,7 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
 export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
 
     // For combined Collection + LoRA counts
     if (collectionId && loraName) {
@@ -82,7 +84,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
         `;
-        const result = await db.select<any[]>(query, [collectionId, loraName, ...params]);
+        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [collectionId, loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -94,7 +96,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
-        const result = await db.select<any[]>(query, [collectionId, ...params]);
+        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [collectionId, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -106,7 +108,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
         `;
-        const result = await db.select<any[]>(query, [loraName, ...params]);
+        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -116,7 +118,7 @@ export const countImages = async (whereClause: string, params: any[], collection
         : 'FROM images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
-    const result = await db.select<any[]>(query, params);
+    const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, params));
     return result[0]?.count || 0;
 };
 
@@ -126,9 +128,9 @@ export const countImages = async (whereClause: string, params: any[], collection
  */
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
-    const result = await db.select<any[]>(
+    const result = await timeDbCall('countGlobalImages', 'default', () => db.select<any[]>(
         `SELECT count(*) as count FROM images WHERE is_deleted = 0`
-    );
+    ));
     return result[0]?.count || 0;
 };
 
@@ -157,6 +159,7 @@ export const searchImages = async (
 ): Promise<AIImage[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
 
     const orderBy = prioritizePinned
         ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}` // Strict tie-breaker
@@ -217,7 +220,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await db.select<any[]>(query, [collectionId, loraName, ...params]);
+        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [collectionId, loraName, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -232,7 +235,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await db.select<any[]>(query, [collectionId, ...params]);
+        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [collectionId, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -248,7 +251,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await db.select<any[]>(query, [loraName, ...params]);
+        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [loraName, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -271,9 +274,7 @@ export const searchImages = async (
         LIMIT ${limit}
     `;
 
-    console.time('[DB] searchImages');
-    const rows = await db.select<any[]>(query, params);
-    console.timeEnd('[DB] searchImages');
+    const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, params));
     
     return rows.map(mapRowToImage);
 };
@@ -292,6 +293,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
 
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
 
     try {
         const statsQuery = `
@@ -304,9 +306,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             ${finalWhere}
         `;
 
-        console.time('[DB] getLibraryStats: basicStats');
-        const basicStats = await db.select<any[]>(statsQuery, params);
-        console.timeEnd('[DB] getLibraryStats: basicStats');
+        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<any[]>(statsQuery, params));
         
         const total = basicStats[0]?.total || 0;
         const avgSteps = 0; // Temporarily disabled for performance
@@ -326,9 +326,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             LIMIT 20
             `;
             
-        console.time('[DB] getLibraryStats: modelStats');
-        const modelRows = await db.select<any[]>(modelQuery, params);
-        console.timeEnd('[DB] getLibraryStats: modelStats');
+        const modelRows = await timeDbCall('libraryStats.modelStats', reason, () => db.select<any[]>(modelQuery, params));
 
         const modelStats = modelRows.map(r => ({
             name: (r.name || 'Unknown').split(' ')[0],
@@ -337,7 +335,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
         }));
 
         // Get Keyword Stats
-        const keywordStats = await getKeywordStats(finalWhere, params, collectionId, loraName);
+        const keywordStats = await timeDbCall('libraryStats.keywordStats', reason, () => getKeywordStats(finalWhere, params, collectionId, loraName));
 
         const finalResult = {
             totalImages: total,
@@ -438,9 +436,8 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
             LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
         `;
         
-        console.time('[DB] getKeywordStats');
-        const rows = await db.select<any[]>(promptQuery, params);
-        console.timeEnd('[DB] getKeywordStats');
+        const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
+        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<any[]>(promptQuery, params));
         
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
         const counts: Record<string, number> = {};
@@ -567,11 +564,16 @@ export const getValidFacetNames = async (
     try {
         // Import the command dynamically to avoid circular dependencies
         const { commands } = await import('../../bindings');
-        const result = await commands.getValidFacetNames(
-            whereClause,
-            JSON.stringify(params),
-            collectionId ?? null,
-            loraName ?? null
+        const reason = describeDbQueryReason(whereClause, collectionId, loraName);
+        const result = await timeDbCall(
+            'validFacets',
+            reason,
+            () => commands.getValidFacetNames(
+                whereClause,
+                JSON.stringify(params),
+                collectionId ?? null,
+                loraName ?? null
+            )
         );
 
         if (result.status === 'ok') {

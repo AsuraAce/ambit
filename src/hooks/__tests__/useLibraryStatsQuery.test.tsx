@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLibraryStatsQuery } from '../useLibraryStatsQuery';
-import { AppSettings, Collection } from '../../types';
+import { AppSettings, Collection, FilterState } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import type { Facets, LibraryStats, ValidFacetNames } from '../../services/db/searchRepo';
 import { SIDE_QUERY_SEARCH_DEBOUNCE_MS } from '../useDebouncedSideQueryFilters';
@@ -58,7 +58,11 @@ const settings = {
     maskedKeywords: [],
 } as AppSettings;
 
-const renderStatsHook = (filters = createDefaultFilters(), allCollections: Collection[] = []) => {
+const renderStatsHook = (
+    filters = createDefaultFilters(),
+    allCollections: Collection[] = [],
+    validFacetsEnabled = true
+) => {
     const queryClient = new QueryClient({
         defaultOptions: {
             queries: {
@@ -73,16 +77,17 @@ const renderStatsHook = (filters = createDefaultFilters(), allCollections: Colle
     );
 
     return renderHook(
-        ({ currentFilters }) => useLibraryStatsQuery({
+        ({ currentFilters, drilldownEnabled = true }: { currentFilters: FilterState; drilldownEnabled?: boolean }) => useLibraryStatsQuery({
             filters: currentFilters,
             settings,
             privacyEnabled: false,
             allCollections,
             settingsLoaded: true,
+            validFacetsEnabled: drilldownEnabled,
         }),
         {
             wrapper,
-            initialProps: { currentFilters: filters },
+            initialProps: { currentFilters: filters, drilldownEnabled: validFacetsEnabled },
         }
     );
 };
@@ -159,6 +164,18 @@ describe('useLibraryStatsQuery valid facets', () => {
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalled());
 
         expect(searchRepoMocks.getValidFacetNames).not.toHaveBeenCalled();
+    });
+
+    it('defers valid facets until drill-down UI is active', async () => {
+        const filteredState = createDefaultFilters({ searchQuery: 'portrait' });
+        const { rerender } = renderStatsHook(filteredState, [], false);
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalled());
+        expect(searchRepoMocks.getValidFacetNames).not.toHaveBeenCalled();
+
+        rerender({ currentFilters: filteredState, drilldownEnabled: true });
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalled());
     });
 
     it('uses a self-excluded query plan for ANY-mode disjunctive facets', async () => {

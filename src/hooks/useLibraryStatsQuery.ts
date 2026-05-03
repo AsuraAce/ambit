@@ -15,6 +15,7 @@ interface UseLibraryStatsQueryProps {
     privacyEnabled: boolean;
     allCollections: Collection[];
     settingsLoaded?: boolean;
+    validFacetsEnabled?: boolean;
 }
 
 
@@ -75,7 +76,8 @@ export const useLibraryStatsQuery = ({
     settings,
     privacyEnabled,
     allCollections,
-    settingsLoaded = true
+    settingsLoaded = true,
+    validFacetsEnabled = true
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
@@ -97,15 +99,15 @@ export const useLibraryStatsQuery = ({
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
     const fetchValidFacets = useMemo(
-        () => shouldFetchValidFacets(sideQueryFilters, privacyEnabled, settings.maskingMode),
-        [sideQueryFilters, privacyEnabled, settings.maskingMode]
+        () => validFacetsEnabled && shouldFetchValidFacets(sideQueryFilters, privacyEnabled, settings.maskingMode),
+        [sideQueryFilters, privacyEnabled, settings.maskingMode, validFacetsEnabled]
     );
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
     return useQuery({
-        queryKey: ['libraryStats', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return {

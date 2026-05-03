@@ -68,7 +68,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         facets,
         isFacetsLoading,
         clearAllFilters,
-        validFacetNames
+        validFacetNames,
+        setFacetDrilldownActive
     } = useSearch();
 
     // Contexts
@@ -82,6 +83,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // const loadFacet = ... removed
 
     const [activeTab, setActiveTab] = React.useState<FilterTab>('organize');
+
+    React.useEffect(() => {
+        const needsDrilldownFacets = isVisible && (activeTab === 'resources' || activeTab === 'generate');
+        setFacetDrilldownActive(needsDrilldownFacets);
+
+        return () => setFacetDrilldownActive(false);
+    }, [activeTab, isVisible, setFacetDrilldownActive]);
 
     // Section expansion states (internal to tabs now)
     const [expanded, setExpanded] = React.useState<Record<string, boolean>>({

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, Collection, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useCollectionStore } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
   upsertCollection,
@@ -87,6 +88,13 @@ export const useCollectionOperations = ({
       await upsertCollection({ ...col, filters: cleanFilters });
       addToast(cleanFilters ? "Filters updated" : "Collection converted to static", "success");
       await refreshCollections();
+      if (cleanFilters) {
+        void useCollectionStore.getState().refreshSmartCounts({
+          collectionIds: [id],
+          includeArchived: true,
+          includePromptSearch: true
+        });
+      }
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === id ? col : c));

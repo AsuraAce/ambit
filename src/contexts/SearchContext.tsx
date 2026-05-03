@@ -60,6 +60,7 @@ interface SearchContextType {
 
     /** Valid facet names for drill-down filtering. null = show all (no active filters) */
     validFacetNames: ValidFacetNames | null;
+    setFacetDrilldownActive: (active: boolean) => void;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -94,6 +95,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         && !isBrowserMockMode();
     const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
     const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
+    const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
     useEffect(() => {
         if (!shouldRefreshPrivacyMaskIndex) {
@@ -208,12 +210,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settings,
         privacyEnabled,
         allCollections,
-        settingsLoaded: databaseQueriesEnabled
+        settingsLoaded: databaseQueriesEnabled,
+        validFacetsEnabled: facetDrilldownActive
     });
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
     const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
-    const activeValidNames = statsData?.validNames || null;
+    const activeValidNames = facetDrilldownActive ? statsData?.validNames || null : null;
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -393,6 +396,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isFacetsLoading: isStatsFetching,
             isLoadingMore: isFetchingNextPage,
             validFacetNames: activeValidNames,
+            setFacetDrilldownActive,
 
         }}>
             {children}
