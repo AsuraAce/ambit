@@ -90,14 +90,14 @@ describe('GridItem memoized motion styles', () => {
             <GridItem
                 {...createProps({
                     ...baseStyle,
-                    transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    transition: 'transform 260ms cubic-bezier(0.2, 1.12, 0.22, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)',
                     willChange: 'transform',
                     opacity: 0.98
                 })}
             />
         );
 
-        expect(getGridItemRoot().style.transition).toContain('transform 220ms');
+        expect(getGridItemRoot().style.transition).toContain('transform 260ms');
         expect(getGridItemRoot().style.willChange).toBe('transform');
         expect(getGridItemRoot().style.opacity).toBe('0.98');
 

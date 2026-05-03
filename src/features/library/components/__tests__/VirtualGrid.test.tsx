@@ -150,7 +150,7 @@ describe('VirtualGrid gallery motion', () => {
         );
 
         const motionItem = screen.getByTestId('grid-item-item-0');
-        expect(motionItem.style.transition).toContain('transform 220ms');
+        expect(motionItem.style.transition).toContain('transform 260ms');
         expect(motionItem.style.transition).toContain('width 220ms');
         expect(motionItem.style.transition).toContain('height 220ms');
         expect(motionItem.style.willChange).toBe('transform');
@@ -258,7 +258,7 @@ describe('VirtualGrid gallery motion', () => {
         await waitFor(() => expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('500px, 0px'));
 
         expect(onLayoutChange.mock.calls.length).toBe(callsAfterInitialLayout + 1);
-        expect(screen.getByTestId('grid-item-item-5').style.transition).toContain('transform 220ms');
+        expect(screen.getByTestId('grid-item-item-5').style.transition).toContain('transform 260ms');
         expect(screen.getByTestId('grid-item-item-5').style.willChange).toBe('transform');
     });
 

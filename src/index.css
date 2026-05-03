@@ -173,16 +173,19 @@
 
 @keyframes gallery-grid-settle {
   0% {
-    opacity: 0.96;
+    opacity: 0.965;
+    transform: translateY(2px) scale(0.998);
   }
 
   100% {
     opacity: 1;
+    transform: none;
   }
 }
 
 .gallery-grid-settle {
-  animation: gallery-grid-settle 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: gallery-grid-settle 220ms cubic-bezier(0.2, 1.08, 0.22, 1);
+  transform-origin: 50% 0%;
 }
 
 @media (prefers-reduced-motion: reduce) {

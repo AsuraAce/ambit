@@ -35,7 +35,7 @@ describe('useGalleryMotion', () => {
         expect(result.current.shouldAnimateLayout).toBe(false);
         expect(result.current.shouldAnimateGrid).toBe(false);
         expect(result.current.layoutTransition).toBe(
-            'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)'
+            'transform 260ms cubic-bezier(0.2, 1.12, 0.22, 1), width 220ms cubic-bezier(0.16, 1, 0.3, 1), height 220ms cubic-bezier(0.16, 1, 0.3, 1)'
         );
         expect(result.current.gridTransition).toBe('opacity 180ms ease-out');
     });
@@ -56,7 +56,13 @@ describe('useGalleryMotion', () => {
         expect(result.current.shouldAnimateGrid).toBe(false);
 
         act(() => {
-            vi.advanceTimersByTime(40);
+            vi.advanceTimersByTime(78);
+        });
+
+        expect(result.current.shouldAnimateLayout).toBe(true);
+
+        act(() => {
+            vi.advanceTimersByTime(1);
         });
 
         expect(result.current.shouldAnimateLayout).toBe(false);

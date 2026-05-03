@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-const DEFAULT_LAYOUT_DURATION_MS = 220;
+const DEFAULT_LAYOUT_DURATION_MS = 260;
+const DEFAULT_LAYOUT_SIZE_DURATION_MS = 220;
 const DEFAULT_GRID_DURATION_MS = 180;
 const DEFAULT_MAX_LAYOUT_ITEMS = 120;
 
@@ -130,9 +131,9 @@ export const useGalleryMotion = ({
         shouldAnimateGrid: motionAllowed && (keyChangedThisRender || gridWindowActive),
         motionAllowed,
         layoutTransition: [
-            `transform ${layoutDurationMs}ms cubic-bezier(0.16, 1, 0.3, 1)`,
-            `width ${layoutDurationMs}ms cubic-bezier(0.16, 1, 0.3, 1)`,
-            `height ${layoutDurationMs}ms cubic-bezier(0.16, 1, 0.3, 1)`
+            `transform ${layoutDurationMs}ms cubic-bezier(0.2, 1.12, 0.22, 1)`,
+            `width ${DEFAULT_LAYOUT_SIZE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+            `height ${DEFAULT_LAYOUT_SIZE_DURATION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`
         ].join(', '),
         gridTransition: `opacity ${gridDurationMs}ms ease-out`
     };
