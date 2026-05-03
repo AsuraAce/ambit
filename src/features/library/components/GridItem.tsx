@@ -186,6 +186,10 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         prev.selectedIds === next.selectedIds &&
         prev.maskedKeywords === next.maskedKeywords &&
         prev.index === next.index &&
+        prev.style.transform === next.style.transform &&
+        prev.style.transition === next.style.transition &&
+        prev.style.willChange === next.style.willChange &&
+        prev.style.opacity === next.style.opacity &&
         prev.style.width === next.style.width &&
         prev.style.height === next.style.height &&
         // Check layout pos instead of style.top/left
