@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-05-01
+Last reviewed: 2026-05-03
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -240,6 +240,58 @@ Status: Deferred
 - `src/services/db/searchRepo.ts`
 - `src-tauri/src/db/facets.rs`
 - `src-tauri/src/db/migrations/`
+
+## Resource Discovery Taxonomy Phase 2
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Resource folder discovery can recurse through a broad root such as a ComfyUI `models` directory, but current disk-scan classification is heuristic.
+- The scanner recognizes common supported assets from path text: LoRA, embedding, hypernetwork, ControlNet, and IP-Adapter; anything else with a model-like extension currently falls back to checkpoint.
+- This makes standard folders such as `models/loras`, `models/checkpoints`, `models/controlnet`, and `models/ipadapter` mostly usable, but broad roots can misclassify unsupported model folders such as VAE, CLIP/text encoders, upscale models, detectors, or custom extension folders as checkpoints.
+
+### Current Pain Points
+- Adding each supported resource folder separately gives cleaner inventory today, but it is tedious for users with normal ComfyUI or A1111-style directory trees.
+- Adding a full model root is convenient, but noisy misclassification can make the Assets tab look less trustworthy.
+- Unknown or unsupported local model files do not have a neutral inventory bucket, so the fallback checkpoint behavior carries too much meaning.
+- Local disk discovery and image-metadata harvesting currently meet through `models` and `facet_cache`, but the relationship is not a first-class asset identity.
+- Disk-scanned rows use a file-path-derived hash and file-stem name, while image-harvested rows can use metadata hashes, parser-cleaned names, or CivitAI-resolved display names. If those names do not match exactly enough, the same real asset can appear as separate local and image-found rows with split counts.
+
+### Safe-Change Warning
+- Do not treat every unknown `.safetensors`, `.ckpt`, `.pt`, `.bin`, or `.pth` file under a model root as a checkpoint in a future taxonomy pass.
+- Filtering semantics must remain tied to image metadata usage. Unused disk-scanned assets can be shown as inventory, but they should not become active image filters until Ambit has at least one matching image usage.
+- Keep resource discovery opt-in and path-scoped; do not add automatic filesystem-wide model scanning.
+
+### Suggested Future Direction
+- Add taxonomy-aware folder classification for known layouts, especially ComfyUI `models/`, A1111/Forge `models/`, and other common local AI image app structures.
+- Map supported folders explicitly, for example checkpoints, LoRAs, embeddings or textual inversion, hypernetworks, ControlNet, and IP-Adapter.
+- Route unsupported folders such as VAE, CLIP, text encoders, upscale models, detectors, and unknown/custom categories to `ignored` or `other` instead of checkpoint.
+- Add a resource-folder type override in Settings: `Auto`, explicit supported asset types, `Other`, and `Ignore`.
+- Show a scan preview or summary with counts by inferred type plus warnings for unknown or ignored folders before users trust a broad model-root scan.
+- Store enough scan-source metadata to support stable rescans, stale `disk_scan` cleanup when folders are removed, and future per-folder classification overrides.
+- Introduce a canonical asset identity or alias layer so local disk files and image-used assets can merge even when their display names differ.
+- Treat `Local` as a property of an asset row, not as a competing row. The intended UI is: one used asset row with an image count and a `Local` marker when it exists on disk; one unused inventory row only when there is no image usage yet.
+- Use one shared normalization/match-key function for disk scan, image metadata junctions, facet cache building, and filtering. Keep display names separate from identity keys.
+- For checkpoints, evaluate cached local file hashing or metadata-derived hashes so disk files can match image `model_hash` or CivitAI records by hash instead of filename only.
+- Make filters resolve through the canonical identity or its aliases so selecting an asset can match all known equivalent names rather than only the clicked display name.
+
+### Not Part of the Current Task
+- Do not add new asset categories for VAE, CLIP, text encoders, upscalers, or detectors as part of the current Assets tab scope control.
+- Do not persist Assets tab scope state unless a separate UX decision asks for it.
+
+### Acceptance Direction
+- A user can add a normal ComfyUI `models` root and Ambit classifies standard supported resources correctly without polluting checkpoints with unsupported model files.
+- A user can override a folder type when auto-detection is wrong.
+- Broad root scans report unknown or ignored files clearly enough that users know why something did or did not appear in the Assets tab.
+- If a checkpoint, LoRA, ControlNet, or IP-Adapter is both used in images and present on disk, it appears once in `Used in Library` with the correct combined image count and a local marker.
+- Alias variants caused by filename, parser-cleaned name, metadata display name, or CivitAI-resolved name do not create duplicate visible asset rows.
+
+### Related Code
+- `src-tauri/src/metadata/thumbs_scan.rs`
+- `src/features/settings/hooks/useFoldersTabLogic.ts`
+- `src/features/settings/components/ResourceDiscoverySection.tsx`
+- `src/features/filters/components/FilterPanel.tsx`
+- `src/features/filters/components/ResourceSection.tsx`
+- `src/services/db/searchRepo.ts`
 
 ## Privacy-Aware Thumbnail Follow-Ups
 Status: Deferred

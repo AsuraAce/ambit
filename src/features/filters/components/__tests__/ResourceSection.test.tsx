@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ResourceSection } from '../ResourceSection';
+import { ResourceSection, type AssetScope } from '../ResourceSection';
 import { FilterState } from '../../../../types';
 
 const commandMocks = vi.hoisted(() => ({
@@ -118,5 +118,93 @@ describe('ResourceSection thumbnail privacy menu', () => {
         await waitFor(() => {
             expect(commandMocks.clearAllThumbnails).toHaveBeenCalledWith('lora_Alpha', 'Alpha', 'loras');
         });
+    });
+});
+
+describe('ResourceSection asset scope filtering', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    const renderScopedSection = ({
+        assetScope = 'used',
+        validNames,
+        setFilters = vi.fn()
+    }: {
+        assetScope?: AssetScope;
+        validNames?: string[] | null;
+        setFilters?: (update: (prev: FilterState) => FilterState) => void;
+    } = {}) => render(
+        <ResourceSection
+            title="Resources"
+            type="loras"
+            filters={filters}
+            setFilters={setFilters}
+            data={[
+                {
+                    name: 'UnusedLocal',
+                    hash: 'file:C:/models/UnusedLocal.safetensors',
+                    count: 0,
+                    isLocalDisk: true
+                },
+                {
+                    name: 'UsedLocal',
+                    hash: 'lora_UsedLocal',
+                    count: 3,
+                    isLocalDisk: true
+                },
+                {
+                    name: 'HarvestedOnly',
+                    hash: 'lora_HarvestedOnly',
+                    count: 2
+                }
+            ]}
+            isOpen
+            onToggle={vi.fn()}
+            assetScope={assetScope}
+            validNames={validNames}
+        />
+    );
+
+    it('hides zero-count local assets in the used scope', () => {
+        renderScopedSection();
+
+        expect(screen.queryByText('UnusedLocal')).toBeNull();
+        expect(screen.getByText('UsedLocal')).toBeTruthy();
+        expect(screen.getByText('HarvestedOnly')).toBeTruthy();
+    });
+
+    it('shows zero-count local assets in the local scope', () => {
+        renderScopedSection({ assetScope: 'local' });
+
+        expect(screen.getByText('UnusedLocal')).toBeTruthy();
+        expect(screen.getByText('Unused')).toBeTruthy();
+        expect(screen.getByText('UsedLocal')).toBeTruthy();
+        expect(screen.queryByText('HarvestedOnly')).toBeNull();
+    });
+
+    it('does not toggle filters when an unused local asset is clicked', () => {
+        const setFilters = vi.fn();
+        renderScopedSection({ assetScope: 'local', setFilters });
+
+        fireEvent.click(screen.getByText('UnusedLocal'));
+
+        expect(setFilters).not.toHaveBeenCalled();
+    });
+
+    it('still toggles filters for used local assets', () => {
+        const setFilters = vi.fn();
+        renderScopedSection({ assetScope: 'local', setFilters });
+
+        fireEvent.click(screen.getByText('UsedLocal'));
+
+        expect(setFilters).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores validNames in the local scope', () => {
+        renderScopedSection({ assetScope: 'local', validNames: ['DifferentLora'] });
+
+        expect(screen.getByText('UnusedLocal')).toBeTruthy();
+        expect(screen.getByText('UsedLocal')).toBeTruthy();
     });
 });

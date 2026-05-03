@@ -27,6 +27,7 @@ export interface FacetItem {
     thumbnailImageId?: string;
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
+    isLocalDisk?: boolean;
 }
 
 export interface Facets {
@@ -487,18 +488,40 @@ export const getFacets = async (
     const result: Facets = { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] };
 
     try {
-        // Map frontend type names to cache type names and create parameterized query
-        const cacheTypes = types;
+        const cacheTypeMap: Record<FacetType, string> = {
+            checkpoints: 'checkpoints',
+            loras: 'loras',
+            embeddings: 'embeddings',
+            hypernetworks: 'hypernetworks',
+            controlNets: 'control_nets',
+            ipAdapters: 'ip_adapters',
+            tools: 'tools'
+        };
+        const cacheTypes = Array.from(new Set(types.map(type => cacheTypeMap[type])));
+        if (cacheTypes.length === 0) return result;
+
         const placeholders = cacheTypes.map(() => '?').join(',');
 
         const cacheRows = await db.select<any[]>(`
             SELECT
-                facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url,
-                last_used_at, created_at, is_manual, has_sidecar, is_user_override,
-                safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive, thumbnail_sensitivity_override
-            FROM facet_cache
-            WHERE facet_type IN(${placeholders})
-            ORDER BY count DESC, resource_name ASC
+                fc.facet_type, fc.resource_name, fc.resource_hash, fc.count, fc.thumbnail_path, fc.preview_url,
+                fc.last_used_at, fc.created_at, fc.is_manual, fc.has_sidecar, fc.is_user_override,
+                fc.safe_thumbnail_path, fc.thumbnail_image_id, fc.thumbnail_is_sensitive, fc.thumbnail_sensitivity_override,
+                CASE WHEN EXISTS (
+                    SELECT 1 FROM models m
+                    WHERE m.lookup_source = 'disk_scan'
+                      AND m.resource_type = CASE fc.facet_type
+                          WHEN 'checkpoints' THEN 'checkpoint'
+                          ELSE fc.facet_type
+                      END
+                      AND (
+                          (fc.resource_hash IS NOT NULL AND m.hash = fc.resource_hash)
+                          OR LOWER(m.name) = LOWER(fc.resource_name)
+                      )
+                ) THEN 1 ELSE 0 END AS is_local_disk
+            FROM facet_cache fc
+            WHERE fc.facet_type IN(${placeholders})
+            ORDER BY fc.count DESC, fc.resource_name ASC
             `, cacheTypes);
 
         // Map cache rows to facet result
@@ -517,7 +540,8 @@ export const getFacets = async (
                 safeThumbnailPath: row.safe_thumbnail_path,
                 thumbnailImageId: row.thumbnail_image_id,
                 thumbnailIsSensitive: row.thumbnail_is_sensitive,
-                thumbnailSensitivityOverride: row.thumbnail_sensitivity_override
+                thumbnailSensitivityOverride: row.thumbnail_sensitivity_override,
+                isLocalDisk: row.is_local_disk === 1
             };
 
             switch (row.facet_type) {

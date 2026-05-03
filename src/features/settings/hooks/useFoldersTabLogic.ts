@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
+import { AppSettings, FacetType, MonitoredFolder, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useLibraryStore } from '../../../stores/libraryStore';
@@ -8,6 +8,15 @@ import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
 import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
+
+const RESOURCE_FACET_TYPES: FacetType[] = [
+    'checkpoints',
+    'loras',
+    'embeddings',
+    'hypernetworks',
+    'controlNets',
+    'ipAdapters'
+];
 
 // Helper to detect generator from path
 const detectGeneratorVariant = (path: string): GeneratorTool => {
@@ -54,6 +63,18 @@ export const useFoldersTabLogic = ({
         isScanningDiscovery, setIsScanningDiscovery,
         discoveryScanProgress, isPopulatingThumbnails
     } = useLibraryStore();
+
+    const refreshResourceFacetCache = useCallback(async () => {
+        const { rebuildFacetCacheIncrementalBatch } = await import('../../../services/db/imageRepo');
+        await rebuildFacetCacheIncrementalBatch(RESOURCE_FACET_TYPES);
+        useLibraryStore.getState().incrementFacetCacheVersion();
+    }, []);
+
+    const runResourceDiscoveryScan = useCallback(async (paths: string[]) => {
+        const result = await scanResourceThumbnails(paths);
+        await refreshResourceFacetCache();
+        return result;
+    }, [refreshResourceFacetCache]);
 
     const isCompleteImport = (result: ImportResult | void): result is ImportResult =>
         !!result && result.failedPaths.length === 0;
@@ -323,19 +344,44 @@ export const useFoldersTabLogic = ({
         }
     };
 
+    const handleBrowseResource = async () => {
+        try {
+            const { open } = await import('@tauri-apps/plugin-dialog');
+            const selected = await open({ directory: true, multiple: false });
+            if (selected && typeof selected === 'string') {
+                setNewResourcePath(normalizePath(selected));
+            }
+        } catch (e) {
+            resourceInputRef.current?.click();
+        }
+    };
+
     const handleAddResourceFolder = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newResourcePath.trim()) return;
-        const pathToAdd = newResourcePath.trim();
+
+        const pathToAdd = normalizePath(newResourcePath.trim());
+        const existing = (settings.resourceFolders || []).some(path => normalizePath(path) === pathToAdd);
+        if (existing) {
+            addToast('Resource folder is already added', 'info');
+            setNewResourcePath('');
+            return;
+        }
+
+        const nextResourceFolders = [...(settings.resourceFolders || []), pathToAdd];
         setSettings(prev => ({
             ...prev,
-            resourceFolders: [...(prev.resourceFolders || []), pathToAdd]
+            resourceFolders: nextResourceFolders
         }));
         setNewResourcePath('');
         addToast(`Added resource folder`, 'success');
         setIsScanningDiscovery(true);
         try {
-            await scanResourceThumbnails([...(settings.resourceFolders || []), pathToAdd]);
+            const result = await runResourceDiscoveryScan(nextResourceFolders);
+            addToast(`Resource scan complete: ${result.found} assets found`, 'success');
+        } catch (e) {
+            console.error('Resource scan failed', e);
+            addToast('Resource scan failed', 'error');
         } finally {
             setIsScanningDiscovery(false);
         }
@@ -352,9 +398,10 @@ export const useFoldersTabLogic = ({
         if (!settings.resourceFolders?.length) return;
         setIsScanningDiscovery(true);
         try {
-            await scanResourceThumbnails(settings.resourceFolders);
-            addToast('Resource scan complete', 'success');
+            const result = await runResourceDiscoveryScan(settings.resourceFolders);
+            addToast(`Resource scan complete: ${result.found} assets found`, 'success');
         } catch (e) {
+            console.error('Resource scan failed', e);
             addToast('Resource scan failed', 'error');
         } finally {
             setIsScanningDiscovery(false);
@@ -375,6 +422,7 @@ export const useFoldersTabLogic = ({
         handleAddFolder,
         removeFolder,
         handleBrowse,
+        handleBrowseResource,
         handleAddResourceFolder,
         handleRemoveResourceFolder,
         handleScanNow
