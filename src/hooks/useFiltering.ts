@@ -22,6 +22,8 @@ export const useFiltering = (
         samplers: [],
         generationTypes: [],
         dateRange: 'all',
+        dateFrom: undefined,
+        dateTo: undefined,
         favoritesOnly: false,
         collectionId: null,
     });
@@ -56,6 +58,8 @@ export const useFiltering = (
             ...prev,
             searchQuery: '',
             dateRange: 'all',
+            dateFrom: undefined,
+            dateTo: undefined,
             favoritesOnly: false,
             models: [],
             tools: [],

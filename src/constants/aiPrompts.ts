@@ -29,13 +29,14 @@ export const AI_PROMPTS = {
             
             Available tools (enums): ComfyUI, Automatic1111, Midjourney, InvokeAI.
             Available models (strings): SDXL 1.0, Stable Diffusion 1.5, Flux.1, Pony Diffusion V6.
-            Date ranges: 'today', 'week', 'month', 'all'.
+            Current local date: {{today}}.
+            Date ranges: 'today', 'week', 'month', 'custom', 'all'. For 'custom', return dateFrom and/or dateTo as YYYY-MM-DD.
             
             CRITICAL INSTRUCTIONS:
             1. 'searchQuery': Extract ONLY the key subject matter keywords. Remove conversational phrases like "show me", "find", "images of", "pictures from", "look for". 
                Example: "Show me cyberpunk cities" -> searchQuery: "cyberpunk cities".
                Example: "Find images from yesterday" -> searchQuery: "".
-            2. 'dateRange': If the user mentions "yesterday", "last 24 hours", or "today", set dateRange to 'today'. "Last 7 days" -> 'week'.
+            2. 'dateRange': If the user mentions "today", set dateRange to 'today'. "Last 7 days" -> 'week'. "Last 30 days" -> 'month'. For concrete calendar dates like "yesterday", "April 2026", or "2026-04-15", set dateRange to 'custom' and return absolute dateFrom/dateTo.
             3. 'favoritesOnly': Set to true if "favorites", "liked", or "best" is mentioned.
             4. 'tools'/'models': Match loosely.
             `,

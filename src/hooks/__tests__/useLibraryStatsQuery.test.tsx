@@ -1,11 +1,12 @@
 import React, { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLibraryStatsQuery } from '../useLibraryStatsQuery';
 import { AppSettings, Collection } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import type { Facets, LibraryStats, ValidFacetNames } from '../../services/db/searchRepo';
+import { SIDE_QUERY_SEARCH_DEBOUNCE_MS } from '../useDebouncedSideQueryFilters';
 
 const searchRepoMocks = vi.hoisted(() => ({
     getFacets: vi.fn(),
@@ -72,16 +73,21 @@ const renderStatsHook = (filters = createDefaultFilters(), allCollections: Colle
     );
 
     return renderHook(
-        () => useLibraryStatsQuery({
-            filters,
+        ({ currentFilters }) => useLibraryStatsQuery({
+            filters: currentFilters,
             settings,
             privacyEnabled: false,
             allCollections,
             settingsLoaded: true,
         }),
-        { wrapper }
+        {
+            wrapper,
+            initialProps: { currentFilters: filters },
+        }
     );
 };
+
+const waitForMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 describe('useLibraryStatsQuery valid facets', () => {
     beforeEach(() => {
@@ -89,6 +95,10 @@ describe('useLibraryStatsQuery valid facets', () => {
         searchRepoMocks.getFacets.mockResolvedValue(emptyFacets);
         searchRepoMocks.getLibraryStats.mockResolvedValue(emptyStats);
         searchRepoMocks.getValidFacetNames.mockResolvedValue(validNames);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('fetches valid facets for plain search terms', async () => {
@@ -165,5 +175,43 @@ describe('useLibraryStatsQuery valid facets', () => {
         expect(baseCall[3]).toBe('CollectionLora');
         expect(loraSelfExcludedCall[1]).not.toContain('CollectionLora');
         expect(loraSelfExcludedCall[3]).toBeUndefined();
+    });
+
+    it('debounces search-only stats updates and collapses rapid corrections', async () => {
+        const { rerender } = renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1));
+
+        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026' }) });
+        await waitForMs(600);
+        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026-04' }) });
+        await waitForMs(SIDE_QUERY_SEARCH_DEBOUNCE_MS - 100);
+
+        expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1);
+        await waitForMs(120);
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(2));
+
+        const calls = searchRepoMocks.getLibraryStats.mock.calls as Array<
+            [string, unknown[], string | undefined, string | undefined]
+        >;
+        const [where, params] = calls[1];
+
+        expect(where).toContain('timestamp >= ?');
+        expect(where).toContain('timestamp < ?');
+        expect(params).toEqual([
+            new Date(2026, 3, 1).getTime(),
+            new Date(2026, 4, 1).getTime(),
+        ]);
+    });
+
+    it('updates stats immediately for non-search filter changes', async () => {
+        const { rerender } = renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1));
+
+        rerender({ currentFilters: createDefaultFilters({ dateRange: 'today' }) });
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(2));
     });
 });

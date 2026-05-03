@@ -16,6 +16,8 @@ export const createDefaultFilters = (
     samplers: [],
     generationTypes: [],
     dateRange: 'all',
+    dateFrom: undefined,
+    dateTo: undefined,
     favoritesOnly: false,
     collectionId: null,
     minSteps: undefined,
@@ -29,6 +31,47 @@ export const createDefaultFilters = (
     matchModes: undefined,
     ...overrides,
 });
+
+const hasRangeFilter = (value: number | null | undefined): boolean =>
+    value !== undefined && value !== null;
+
+export const hasActiveResultFilters = (filters: FilterState): boolean => (
+    filters.searchQuery.trim().length > 0 ||
+    filters.models.length > 0 ||
+    filters.tools.length > 0 ||
+    filters.loras.length > 0 ||
+    filters.embeddings.length > 0 ||
+    filters.hypernetworks.length > 0 ||
+    filters.controlNets.length > 0 ||
+    filters.ipAdapters.length > 0 ||
+    filters.samplers.length > 0 ||
+    filters.generationTypes.length > 0 ||
+    filters.dateRange !== 'all' ||
+    !!filters.dateFrom ||
+    !!filters.dateTo ||
+    filters.favoritesOnly ||
+    !!filters.pinnedOnly ||
+    !!filters.collectionId ||
+    !!filters.showIntermediates ||
+    !!filters.showGrids ||
+    hasRangeFilter(filters.minSteps) ||
+    hasRangeFilter(filters.maxSteps) ||
+    hasRangeFilter(filters.minCfg) ||
+    hasRangeFilter(filters.maxCfg)
+);
+
+export const shouldPrefetchResultPages = (
+    filters: FilterState,
+    hasNextPage: boolean,
+    isFetchingNextPage: boolean,
+    currentPageCount: number
+): boolean => (
+    !hasActiveResultFilters(filters) &&
+    hasNextPage &&
+    !isFetchingNextPage &&
+    currentPageCount > 0 &&
+    currentPageCount < 3
+);
 
 const preserveViewFilters = (filters: FilterState): PreservedViewFilters => ({
     showGrids: filters.showGrids,

@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
+import { shouldPrefetchResultPages } from '../utils/filterState';
 
 interface LibraryStats {
     totalImages: number;
@@ -138,6 +139,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded
         && (!requiresPrivacyMaskIndex || privacyMaskReady);
+    const allCollections = React.useMemo(
+        () => [...collections, ...smartCollections],
+        [collections, smartCollections]
+    );
 
     // React Query
     const {
@@ -152,7 +157,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         sortOption,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections],
+        allCollections,
         settingsLoaded: databaseQueriesEnabled
     });
 
@@ -182,13 +187,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Only prefetch if we have less than 3 pages and user might scroll soon
     useEffect(() => {
         const currentPageCount = queryData?.pages.length ?? 0;
-        if (hasNextPage && !isFetchingNextPage && currentPageCount > 0 && currentPageCount < 3) {
+        if (shouldPrefetchResultPages(filters, hasNextPage, isFetchingNextPage, currentPageCount)) {
             const timer = setTimeout(() => {
                 fetchNextPage();
             }, 500); // Increased delay to reduce load during filter changes
             return () => clearTimeout(timer);
         }
-    }, [hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
+    }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
     const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
@@ -202,7 +207,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         filters,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections],
+        allCollections,
         settingsLoaded: databaseQueriesEnabled
     });
 
@@ -219,10 +224,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Track loaded facet types for lazy loading logic handled by facetTypes state above
 
     useEffect(() => {
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, [...collections, ...smartCollections]);
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections);
         setActiveSqlWhere(where);
         setActiveSqlParams(params);
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.

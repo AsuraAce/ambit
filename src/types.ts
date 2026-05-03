@@ -146,7 +146,9 @@ export interface FilterState {
   generationTypes: string[]; // Filter by generation type (txt2img, img2img, etc.)
   controlNets: string[];
   ipAdapters: string[];
-  dateRange: 'all' | 'today' | 'week' | 'month';
+  dateRange: 'all' | 'today' | 'week' | 'month' | 'custom';
+  dateFrom?: string;
+  dateTo?: string;
   favoritesOnly: boolean;
   collectionId: string | null;
   minSteps?: number;

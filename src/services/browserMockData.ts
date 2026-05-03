@@ -1,6 +1,7 @@
 import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption } from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, ValidFacetNames } from './db/searchRepo';
+import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -260,17 +261,6 @@ const getCollectionCount = (collection: Collection): number => {
 
 const isSmartCollection = (collection: Collection): collection is SmartCollection => !!collection.filters;
 
-const getDateFloor = (range: FilterState['dateRange']): number | null => {
-    const now = new Date();
-    if (range === 'today') {
-        now.setHours(0, 0, 0, 0);
-        return now.getTime();
-    }
-    if (range === 'week') return Date.now() - 7 * 24 * 60 * 60 * 1000;
-    if (range === 'month') return Date.now() - 30 * 24 * 60 * 60 * 1000;
-    return null;
-};
-
 const matchesEverySelected = (values: string[] | undefined, selected: string[] | undefined): boolean => {
     if (!selected || selected.length === 0) return true;
     const lowerValues = new Set((values ?? []).map((value) => value.toLowerCase()));
@@ -343,7 +333,9 @@ const matchesScopedSearchToken = (image: AIImage, token: BrowserSearchToken): bo
     ].filter(Boolean).join(' ').toLowerCase();
 
     let matched: boolean | null = null;
-    if (key === 'steps') matched = matchesNumberExpression(image.metadata.steps, val);
+    const dateBounds = getSearchDateBounds(key, val);
+    if (dateBounds) matched = timestampMatchesDateBounds(image.timestamp, dateBounds);
+    else if (key === 'steps') matched = matchesNumberExpression(image.metadata.steps, val);
     else if (key === 'cfg') matched = matchesNumberExpression(image.metadata.cfg, val);
     else if (key === 'w' || key === 'width') matched = matchesNumberExpression(image.width, val);
     else if (key === 'h' || key === 'height') matched = matchesNumberExpression(image.height, val);
@@ -409,7 +401,8 @@ const matchesSearchQuery = (image: AIImage, query: string): boolean => {
 
 const filterImages = (images: AIImage[], filters: FilterState, collections: Collection[]): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
-    const dateFloor = getDateFloor(filters.dateRange);
+    const dateBounds = getDateFilterBounds(filters);
+    const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
     const selectedCollection = filters.collectionId
         ? collections.find((collection) => collection.id === filters.collectionId)
         : null;
@@ -417,7 +410,11 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         ? new Set(selectedCollection.imageIds)
         : null;
     const smartFilters = selectedCollection?.filters
-        ? { ...selectedCollection.filters, collectionId: null }
+        ? {
+            ...selectedCollection.filters,
+            collectionId: null,
+            ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {})
+        }
         : null;
     const smartMatches = smartFilters
         ? new Set(filterImages(images, smartFilters, collections).map((image) => image.id))
@@ -429,7 +426,7 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         if (!filters.showGrids && image.metadata.isGrid) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
         if (filters.pinnedOnly && !image.isPinned) return false;
-        if (dateFloor && image.timestamp < dateFloor) return false;
+        if (!timestampMatchesDateBounds(image.timestamp, dateBounds)) return false;
         if (collectionIds && !collectionIds.has(image.id)) return false;
         if (smartMatches && !smartMatches.has(image.id)) return false;
         if (filters.models.length > 0 && !filters.models.includes(image.metadata.model)) return false;
