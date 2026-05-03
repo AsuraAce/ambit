@@ -24,12 +24,20 @@ setupGlobalLogging();
 
 const StatsDashboard = React.lazy(() => import('./ui/Charts').then(module => ({ default: module.StatsDashboard })));
 const MaintenanceView = React.lazy(() => import('../features/maintenance/components/MaintenanceView').then(module => ({ default: module.MaintenanceView })));
+const FILTER_PANEL_LAYOUT_TRANSITION_MS = 540;
 
 const ViewLoadingFallback = () => (
     <div className="h-full w-full flex items-center justify-center">
         <div className="h-8 w-8 rounded-full border-2 border-sage-500/20 border-t-sage-500 animate-spin" />
     </div>
 );
+
+interface GridLayoutPosition {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
 
 interface AppLayoutProps {
     // Sidebar Props
@@ -113,6 +121,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     // Local State
     const [showSupportPulse, setShowSupportPulse] = React.useState(true);
+    const [isFilterPanelLayoutTransitioning, setIsFilterPanelLayoutTransitioning] = React.useState(false);
+    const previousFilterPanelOpenRef = React.useRef(isFilterPanelOpen);
+    const filterPanelTransitionTimerRef = React.useRef<number | null>(null);
 
     React.useEffect(() => {
         const timer = setTimeout(() => {
@@ -120,6 +131,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         }, 30000);
         return () => clearTimeout(timer);
     }, []);
+
+    React.useEffect(() => {
+        const filterPanelChanged = previousFilterPanelOpenRef.current !== isFilterPanelOpen;
+        previousFilterPanelOpenRef.current = isFilterPanelOpen;
+
+        if (!filterPanelChanged) {
+            return;
+        }
+
+        if (filterPanelTransitionTimerRef.current !== null) {
+            window.clearTimeout(filterPanelTransitionTimerRef.current);
+        }
+
+        setIsFilterPanelLayoutTransitioning(true);
+        filterPanelTransitionTimerRef.current = window.setTimeout(() => {
+            filterPanelTransitionTimerRef.current = null;
+            setIsFilterPanelLayoutTransitioning(false);
+        }, FILTER_PANEL_LAYOUT_TRANSITION_MS);
+
+        return () => {
+            if (filterPanelTransitionTimerRef.current !== null) {
+                window.clearTimeout(filterPanelTransitionTimerRef.current);
+                filterPanelTransitionTimerRef.current = null;
+            }
+        };
+    }, [isFilterPanelOpen]);
 
     // Derived
     // Store Access
@@ -171,7 +208,27 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         [activeThumbnailCollection]
     );
 
-    const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout: any) => (
+    const galleryTransitionKey = React.useMemo(() => [
+        layoutMode,
+        settings.thumbnailSize ?? 'default-size',
+        sortOption,
+        filters.collectionId ?? 'library',
+        filters.favoritesOnly ? 'favorites' : 'all-images',
+        filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
+        filters.showGrids ? 'show-grids' : 'hide-grids',
+        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates'
+    ].join('|'), [
+        layoutMode,
+        settings.thumbnailSize,
+        sortOption,
+        filters.collectionId,
+        filters.favoritesOnly,
+        filters.pinnedOnly,
+        filters.showGrids,
+        filters.showIntermediates
+    ]);
+
+    const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (
         <GridItem
             key={img.id}
             image={img}
@@ -385,6 +442,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                 }}
                                                 onBackgroundClick={clearSelection}
                                                 renderItem={renderGridItem}
+                                                transitionKey={galleryTransitionKey}
+                                                suspendResizeLayout={isFilterPanelLayoutTransitioning}
                                             />
                                             {isLoadingMore && (
                                                 <div className="w-full py-8 flex justify-center items-center">

@@ -171,6 +171,26 @@
   animation: shimmer 2.5s infinite linear;
 }
 
+@keyframes gallery-grid-settle {
+  0% {
+    opacity: 0.96;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.gallery-grid-settle {
+  animation: gallery-grid-settle 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-grid-settle {
+    animation: none;
+  }
+}
+
 @keyframes pulse-glow {
 
   0%,
