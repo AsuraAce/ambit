@@ -1,10 +1,17 @@
 import * as React from 'react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Columns, Layers, PanelLeft, ChevronRight, Sidebar, SplitSquareHorizontal, Heart, GitCompare, Eye, EyeOff } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { getFilename } from '../../../utils/pathUtils';
+import {
+    CENTER_ANCHOR,
+    Point,
+    ViewportRect,
+    getAnchorPoint,
+    getZoomTransform
+} from '../../../utils/zoomMath';
 
 interface CompareModalProps {
     imageA: AIImage;
@@ -15,6 +22,30 @@ interface CompareModalProps {
 
 type CompareMode = 'split' | 'slider' | 'overlay';
 type DiffMode = 'diff' | 'raw';
+
+const COMPARE_MIN_SCALE = 1;
+const COMPARE_MAX_SCALE = 5;
+const COMPARE_BUTTON_ZOOM_STEP = 0.5;
+
+const getCompareViewportRect = (
+    containerRect: DOMRect,
+    clientX: number,
+    mode: CompareMode
+): ViewportRect => {
+    if (mode !== 'split') {
+        return containerRect;
+    }
+
+    const halfWidth = containerRect.width / 2;
+    const isRightPane = clientX >= containerRect.left + halfWidth;
+
+    return {
+        left: isRightPane ? containerRect.left + halfWidth : containerRect.left,
+        top: containerRect.top,
+        width: halfWidth,
+        height: containerRect.height
+    };
+};
 
 // Extracted Component to prevent re-renders
 const ImageContainer = ({
@@ -95,23 +126,52 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
 
     // --- Zoom/Pan Handlers ---
+    const resetZoom = useCallback(() => {
+        setScale(COMPARE_MIN_SCALE);
+        setPosition(CENTER_ANCHOR);
+    }, []);
+
+    const applyZoom = useCallback((targetScale: number, anchor: Point = CENTER_ANCHOR) => {
+        const nextView = getZoomTransform({
+            currentPosition: position,
+            currentScale: scale,
+            targetScale,
+            minScale: COMPARE_MIN_SCALE,
+            maxScale: COMPARE_MAX_SCALE,
+            anchor
+        });
+
+        setScale(nextView.scale);
+        setPosition(nextView.position);
+    }, [position, scale]);
+
+    const getAnchorForEvent = useCallback((e: React.MouseEvent | React.WheelEvent): Point => {
+        if (!containerRef.current) {
+            return CENTER_ANCHOR;
+        }
+
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const viewportRect = getCompareViewportRect(containerRect, e.clientX, mode);
+
+        return getAnchorPoint({ x: e.clientX, y: e.clientY }, viewportRect);
+    }, [mode]);
+
     const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
         e.stopPropagation();
-        const delta = e.deltaY * -0.001;
-        const newScale = Math.min(Math.max(1, scale + delta), 5);
-        setScale(newScale);
-        if (newScale === 1) setPosition({ x: 0, y: 0 });
+        applyZoom(scale + e.deltaY * -0.001, getAnchorForEvent(e));
     };
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if (scale > 1 && !isDraggingSlider) {
+        if (scale > COMPARE_MIN_SCALE && !isDraggingSlider) {
+            e.preventDefault();
             setIsDraggingCanvas(true);
             dragStartRef.current = { x: e.clientX - position.x, y: e.clientY - position.y };
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (isDraggingCanvas && scale > 1) {
+        if (isDraggingCanvas && scale > COMPARE_MIN_SCALE) {
             e.preventDefault();
             setPosition({
                 x: e.clientX - dragStartRef.current.x,
@@ -132,7 +192,14 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         setIsDraggingSlider(false);
     };
 
-    const resetZoom = () => { setScale(1); setPosition({ x: 0, y: 0 }); };
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (scale > COMPARE_MIN_SCALE) {
+            resetZoom();
+        } else {
+            applyZoom(2, getAnchorForEvent(e));
+        }
+    };
 
     // --- Resize Logic ---
     const startPanelResize = (e: React.MouseEvent) => {
@@ -253,9 +320,9 @@ export const CompareModal: React.FC<CompareModalProps> = ({
 
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 bg-black rounded-full px-3 py-1 border border-white/10">
-                        <button onClick={() => setScale(Math.max(1, scale - 0.5))} className="p-1 hover:text-white text-gray-500"><ZoomOut className="w-4 h-4" /></button>
+                        <button onClick={() => applyZoom(scale - COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomOut className="w-4 h-4" /></button>
                         <span className="text-xs font-mono text-gray-400 w-12 text-center">{Math.round(scale * 100)}%</span>
-                        <button onClick={() => setScale(Math.min(5, scale + 0.5))} className="p-1 hover:text-white text-gray-500"><ZoomIn className="w-4 h-4" /></button>
+                        <button onClick={() => applyZoom(scale + COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomIn className="w-4 h-4" /></button>
                         <div className="w-px h-3 bg-white/10 mx-1" />
                         <button onClick={resetZoom} className="p-1 hover:text-white text-gray-500" title="Reset Zoom"><RotateCcw className="w-4 h-4" /></button>
                     </div>
@@ -284,6 +351,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     className="flex-1 flex overflow-hidden relative bg-[#050505] select-none"
                     onWheel={handleWheel}
                     onMouseDown={handleMouseDown}
+                    onDoubleClick={handleDoubleClick}
                     onClick={e => e.stopPropagation()}
                 >
 

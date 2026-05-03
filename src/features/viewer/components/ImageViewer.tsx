@@ -128,7 +128,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const isReallyLoading = isLoadingFull || (activeVersionId ? (fullImage?.id !== activeVersionId) : (fullImage?.id !== image.id));
 
     // --- Hooks ---
-    const { scale, position, isDragging, resetZoom, handlers } = useZoomPan();
+    const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
     const { palette, isLoading: isPaletteLoading } = usePalette(displayImage.url);
     const { addToast } = useToast();
     const ai = useImageAI({
@@ -278,8 +278,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onPrev={onPrev}
                     onNext={onNext}
                     onClose={onClose}
-                    onZoomIn={() => handlers.onWheel({ deltaY: -100 } as any)}
-                    onZoomOut={() => handlers.onWheel({ deltaY: 100 } as any)}
+                    onZoomIn={zoomIn}
+                    onZoomOut={zoomOut}
                     onResetZoom={resetZoom}
                     isTheaterMode={isTheaterMode}
                     onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
