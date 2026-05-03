@@ -9,6 +9,7 @@ import { formatCountCompact, formatModelName } from '../../../utils/formatUtils'
 import { useQueryClient } from '@tanstack/react-query';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 import { commands } from '../../../bindings';
+import { uniqueAssetAliases } from '../../../utils/assetIdentity';
 
 export type AssetScope = 'used' | 'local' | 'all';
 
@@ -31,6 +32,8 @@ interface ResourceItem {
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
     isLocalDisk?: boolean;
+    assetMatchKey?: string;
+    filterAliases?: string[];
 }
 
 interface ResourceSectionProps {
@@ -104,22 +107,54 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const selectedNames = useMemo(() => new Set((filters[filterKey] || []) as string[]), [filters, filterKey]);
     const validNameSet = useMemo(() => validNames ? new Set(validNames) : null, [validNames]);
 
+    const getItemAliases = useCallback((item: ResourceItem) => (
+        uniqueAssetAliases([item.name, ...(item.filterAliases || [])])
+    ), []);
+
+    const isItemSelected = useCallback((item: ResourceItem) => (
+        getItemAliases(item).some(alias => selectedNames.has(alias))
+    ), [getItemAliases, selectedNames]);
+
     const toggleItem = (item: ResourceItem) => {
         if (item.count === 0 && item.isLocalDisk) return;
         setFilters(prev => {
             const currentList = (prev[filterKey] as string[]) || [];
-            const newList = currentList.includes(item.name)
-                ? currentList.filter(l => l !== item.name)
-                : [...currentList, item.name];
-            return { ...prev, [filterKey]: newList };
+            const itemAliases = getItemAliases(item);
+            const itemAliasSet = new Set(itemAliases);
+            const selected = currentList.some(value => itemAliasSet.has(value));
+            const nextAliasGroups: NonNullable<FilterState['assetFilterAliases']> = {
+                ...(prev.assetFilterAliases || {})
+            };
+            const aliasGroup = { ...(prev.assetFilterAliases?.[filterKey] || {}) };
+            nextAliasGroups[filterKey] = aliasGroup;
+
+            if (selected) {
+                for (const alias of itemAliases) {
+                    delete aliasGroup[alias];
+                }
+                return {
+                    ...prev,
+                    [filterKey]: currentList.filter(value => !itemAliasSet.has(value)),
+                    assetFilterAliases: nextAliasGroups
+                };
+            }
+
+            aliasGroup[item.name] = itemAliases;
+            return {
+                ...prev,
+                [filterKey]: currentList.includes(item.name) ? currentList : [...currentList, item.name],
+                assetFilterAliases: nextAliasGroups
+            };
         });
     };
 
     const filteredItems = useMemo(() => (data || [])
         .filter(item => {
-            if (!item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+            const aliases = getItemAliases(item);
+            const query = searchQuery.toLowerCase();
+            if (!aliases.some(alias => alias.toLowerCase().includes(query))) return false;
 
-            const isSelected = selectedNames.has(item.name);
+            const isSelected = aliases.some(alias => selectedNames.has(alias));
             const isUnusedLocal = item.count === 0 && item.isLocalDisk;
             const isUsed = item.count > 0 || isSelected;
 
@@ -128,7 +163,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             if (assetScope === 'all' && !isUsed && !item.isLocalDisk) return false;
 
             if (assetScope === 'used' && validNameSet) {
-                if (!isSelected && !validNameSet.has(item.name)) return false;
+                if (!isSelected && !aliases.some(alias => validNameSet.has(alias))) return false;
             }
 
             return assetScope !== 'used' || !isUnusedLocal;
@@ -145,7 +180,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 case 'added_asc': return (a.createdAt || 0) - (b.createdAt || 0);
                 default: return b.count - a.count;
             }
-        }), [assetScope, data, searchQuery, selectedNames, sortOption, validNameSet]);
+        }), [assetScope, data, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
 
     const singularType = type === 'loras'
         ? 'LoRA'
@@ -260,7 +295,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const renderGridItem = (item: ResourceItem) => {
-        const isSelected = selectedNames.has(item.name);
+        const isSelected = isItemSelected(item);
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
 
@@ -330,7 +365,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
 
     const renderListItem = (item: ResourceItem) => {
-        const isSelected = selectedNames.has(item.name);
+        const isSelected = isItemSelected(item);
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
 

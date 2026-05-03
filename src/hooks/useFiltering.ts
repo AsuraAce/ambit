@@ -62,11 +62,14 @@ export const useFiltering = (
             loras: [],
             embeddings: [],
             hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
             minSteps: undefined,
             maxSteps: undefined,
             minCfg: undefined,
             maxCfg: undefined,
-            collectionId: null // Clear collection too
+            collectionId: null, // Clear collection too
+            assetFilterAliases: undefined
         }));
     };
 

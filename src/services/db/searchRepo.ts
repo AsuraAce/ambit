@@ -2,6 +2,7 @@ import { AIImage, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
+import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 
 export interface LibraryStats {
     totalImages: number;
@@ -28,6 +29,8 @@ export interface FacetItem {
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
     isLocalDisk?: boolean;
+    assetMatchKey?: string;
+    filterAliases?: string[];
 }
 
 export interface Facets {
@@ -49,6 +52,98 @@ export interface ValidFacetNames {
     controlNets: string[];
     ipAdapters: string[];
 }
+
+interface FacetCacheRow {
+    facet_type: string;
+    resource_name: string | null;
+    resource_hash: string | null;
+    count: number | null;
+    thumbnail_path: string | null;
+    preview_url: string | null;
+    last_used_at: number | null;
+    created_at: number | null;
+    is_manual: number | null;
+    has_sidecar: number | null;
+    is_user_override: number | null;
+    safe_thumbnail_path: string | null;
+    thumbnail_image_id: string | null;
+    thumbnail_is_sensitive: number | null;
+    thumbnail_sensitivity_override: number | null;
+    is_local_disk: number | null;
+}
+
+interface FacetMergeGroup {
+    item: FacetItem;
+    usedAliases: Set<string>;
+    displayCount: number;
+}
+
+const maxOptionalNumber = (a: number | undefined, b: number | undefined): number | undefined => {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.max(a, b);
+};
+
+const minOptionalNumber = (a: number | undefined, b: number | undefined): number | undefined => {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.min(a, b);
+};
+
+const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetItem => ({
+    ...target,
+    thumbnailPath: target.thumbnailPath || source.thumbnailPath,
+    previewUrl: target.previewUrl || source.previewUrl,
+    safeThumbnailPath: target.safeThumbnailPath || source.safeThumbnailPath,
+    thumbnailImageId: target.thumbnailImageId || source.thumbnailImageId,
+    thumbnailIsSensitive: target.thumbnailIsSensitive ?? source.thumbnailIsSensitive,
+    thumbnailSensitivityOverride: target.thumbnailSensitivityOverride ?? source.thumbnailSensitivityOverride,
+    isManual: Math.max(target.isManual ?? 0, source.isManual ?? 0),
+    hasSidecar: Math.max(target.hasSidecar ?? 0, source.hasSidecar ?? 0),
+    isUserOverride: Math.max(target.isUserOverride ?? 0, source.isUserOverride ?? 0),
+});
+
+const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
+    if (candidate.count > 0) {
+        group.usedAliases.add(candidate.name);
+    }
+
+    const totalCount = group.item.count + candidate.count;
+    const isLocalDisk = Boolean(group.item.isLocalDisk || candidate.isLocalDisk);
+    const lastUsedAt = maxOptionalNumber(group.item.lastUsedAt, candidate.lastUsedAt);
+    const createdAt = minOptionalNumber(group.item.createdAt, candidate.createdAt);
+
+    if (candidate.count > 0 && (group.displayCount === 0 || candidate.count > group.displayCount)) {
+        group.item = copyFallbackFacetFields(
+            {
+                ...candidate,
+                count: totalCount,
+                isLocalDisk,
+                lastUsedAt,
+                createdAt,
+                assetMatchKey: group.item.assetMatchKey,
+            },
+            group.item
+        );
+        group.displayCount = candidate.count;
+        return;
+    }
+
+    group.item = copyFallbackFacetFields(
+        {
+            ...group.item,
+            count: totalCount,
+            isLocalDisk,
+            lastUsedAt,
+            createdAt,
+        },
+        candidate
+    );
+};
+
+const sortFacetItems = (items: FacetItem[]): FacetItem[] => (
+    items.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+);
 
 const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
 
@@ -502,7 +597,7 @@ export const getFacets = async (
 
         const placeholders = cacheTypes.map(() => '?').join(',');
 
-        const cacheRows = await db.select<any[]>(`
+        const cacheRows = await db.select<FacetCacheRow[]>(`
             SELECT
                 fc.facet_type, fc.resource_name, fc.resource_hash, fc.count, fc.thumbnail_path, fc.preview_url,
                 fc.last_used_at, fc.created_at, fc.is_manual, fc.has_sidecar, fc.is_user_override,
@@ -524,50 +619,69 @@ export const getFacets = async (
             ORDER BY fc.count DESC, fc.resource_name ASC
             `, cacheTypes);
 
-        // Map cache rows to facet result
+        const mergedResources: Record<string, Map<string, FacetMergeGroup>> = {
+            checkpoints: new Map(),
+            loras: new Map(),
+            embeddings: new Map(),
+            hypernetworks: new Map(),
+            control_nets: new Map(),
+            ip_adapters: new Map()
+        };
+
         for (const row of cacheRows) {
+            if (row.facet_type === 'tools') {
+                result.tools.push(row.resource_name || 'Unknown');
+                continue;
+            }
+
+            const assetMatchKey = getAssetMatchKey(row.resource_name) || (row.resource_name || 'Unknown').toLowerCase();
             const item: FacetItem = {
                 name: row.resource_name || 'Unknown',
-                hash: row.resource_hash,
-                count: row.count || 0,
-                lastUsedAt: row.last_used_at,
-                createdAt: row.created_at,
-                thumbnailPath: row.thumbnail_path,
-                previewUrl: row.preview_url,
-                isManual: row.is_manual,
-                hasSidecar: row.has_sidecar,
-                isUserOverride: row.is_user_override,
-                safeThumbnailPath: row.safe_thumbnail_path,
-                thumbnailImageId: row.thumbnail_image_id,
-                thumbnailIsSensitive: row.thumbnail_is_sensitive,
+                hash: row.resource_hash ?? undefined,
+                count: row.count ?? 0,
+                lastUsedAt: row.last_used_at ?? undefined,
+                createdAt: row.created_at ?? undefined,
+                thumbnailPath: row.thumbnail_path ?? undefined,
+                previewUrl: row.preview_url ?? undefined,
+                isManual: row.is_manual ?? undefined,
+                hasSidecar: row.has_sidecar ?? undefined,
+                isUserOverride: row.is_user_override ?? undefined,
+                safeThumbnailPath: row.safe_thumbnail_path ?? undefined,
+                thumbnailImageId: row.thumbnail_image_id ?? undefined,
+                thumbnailIsSensitive: row.thumbnail_is_sensitive ?? undefined,
                 thumbnailSensitivityOverride: row.thumbnail_sensitivity_override,
-                isLocalDisk: row.is_local_disk === 1
+                isLocalDisk: row.is_local_disk === 1,
+                assetMatchKey
             };
 
-            switch (row.facet_type) {
-                case 'checkpoints':
-                    result.checkpoints.push(item);
-                    break;
-                case 'loras':
-                    result.loras.push(item);
-                    break;
-                case 'embeddings':
-                    result.embeddings.push(item);
-                    break;
-                case 'hypernetworks':
-                    result.hypernetworks.push(item);
-                    break;
-                case 'control_nets':
-                    result.controlNets.push(item);
-                    break;
-                case 'ip_adapters':
-                    result.ipAdapters.push(item);
-                    break;
-                case 'tools':
-                    result.tools.push(row.resource_name);
-                    break;
+            const groupMap = mergedResources[row.facet_type];
+            if (!groupMap) continue;
+
+            const existing = groupMap.get(assetMatchKey);
+            if (existing) {
+                mergeFacetItem(existing, item);
+            } else {
+                groupMap.set(assetMatchKey, {
+                    item,
+                    usedAliases: new Set(item.count > 0 ? [item.name] : []),
+                    displayCount: item.count
+                });
             }
         }
+
+        const finalizeGroups = (facetType: keyof typeof mergedResources): FacetItem[] => sortFacetItems(
+            Array.from(mergedResources[facetType].values()).map(group => ({
+                ...group.item,
+                filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
+            }))
+        );
+
+        result.checkpoints = finalizeGroups('checkpoints');
+        result.loras = finalizeGroups('loras');
+        result.embeddings = finalizeGroups('embeddings');
+        result.hypernetworks = finalizeGroups('hypernetworks');
+        result.controlNets = finalizeGroups('control_nets');
+        result.ipAdapters = finalizeGroups('ip_adapters');
 
         return result;
 

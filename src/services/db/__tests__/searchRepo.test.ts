@@ -35,12 +35,12 @@ describe('searchRepo getFacets', () => {
         const { getFacets } = await import('../searchRepo');
         const facets = await getFacets('', [], ['loras']);
 
-        expect(facets.loras[0]).toMatchObject({
+        expect(facets.loras.find(item => item.name === 'LocalLora')).toMatchObject({
             name: 'LocalLora',
             count: 0,
             isLocalDisk: true
         });
-        expect(facets.loras[1]).toMatchObject({
+        expect(facets.loras.find(item => item.name === 'HarvestedLora')).toMatchObject({
             name: 'HarvestedLora',
             count: 4,
             isLocalDisk: false
@@ -76,5 +76,88 @@ describe('searchRepo getFacets', () => {
         expect(params).toEqual(['control_nets', 'ip_adapters']);
         expect(facets.controlNets[0].isLocalDisk).toBe(true);
         expect(facets.ipAdapters[0].isLocalDisk).toBe(false);
+    });
+
+    it('merges disk and image-found assets by asset match key', async () => {
+        const db = {
+            select: vi.fn(async () => [
+                {
+                    facet_type: 'checkpoints',
+                    resource_name: 'Pony Diffusion V6 XL',
+                    resource_hash: 'metadata-hash',
+                    count: 8,
+                    thumbnail_path: 'used.webp',
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'checkpoints',
+                    resource_name: 'ponyDiffusionV6XL',
+                    resource_hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
+                    count: 0,
+                    thumbnail_path: 'local.webp',
+                    is_local_disk: 1
+                },
+                {
+                    facet_type: 'checkpoints',
+                    resource_name: 'Other Model',
+                    resource_hash: 'other-hash',
+                    count: 2,
+                    is_local_disk: 0
+                }
+            ])
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['checkpoints']);
+
+        expect(facets.checkpoints).toHaveLength(2);
+        expect(facets.checkpoints[0]).toMatchObject({
+            name: 'Pony Diffusion V6 XL',
+            count: 8,
+            isLocalDisk: true,
+            assetMatchKey: 'ponydiffusionv6xl',
+            filterAliases: ['Pony Diffusion V6 XL']
+        });
+    });
+
+    it('combines image-used aliases under one local-aware row', async () => {
+        const db = {
+            select: vi.fn(async () => [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'detailer style',
+                    resource_hash: 'lora_detailer style',
+                    count: 3,
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Detailer-Style',
+                    resource_hash: 'lora_Detailer-Style',
+                    count: 4,
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'detailer_style',
+                    resource_hash: 'file:C:/models/detailer_style.safetensors',
+                    count: 0,
+                    is_local_disk: 1
+                }
+            ])
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['loras']);
+
+        expect(facets.loras).toHaveLength(1);
+        expect(facets.loras[0]).toMatchObject({
+            name: 'Detailer-Style',
+            count: 7,
+            isLocalDisk: true,
+            filterAliases: ['Detailer-Style', 'detailer style']
+        });
     });
 });

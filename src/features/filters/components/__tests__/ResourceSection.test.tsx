@@ -207,4 +207,59 @@ describe('ResourceSection asset scope filtering', () => {
         expect(screen.getByText('UnusedLocal')).toBeTruthy();
         expect(screen.getByText('UsedLocal')).toBeTruthy();
     });
+
+    it('stores aliases for merged used local assets when clicked', () => {
+        let nextFilters: FilterState | null = null;
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            nextFilters = update(filters);
+        });
+
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={setFilters}
+                data={[{
+                    name: 'Detailer-Style',
+                    hash: 'lora_Detailer-Style',
+                    count: 7,
+                    isLocalDisk: true,
+                    filterAliases: ['Detailer-Style', 'detailer style']
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope="used"
+            />
+        );
+
+        fireEvent.click(screen.getByText('Detailer-Style'));
+
+        expect(nextFilters?.loras).toEqual(['Detailer-Style']);
+        expect(nextFilters?.assetFilterAliases?.loras?.['Detailer-Style']).toEqual(['Detailer-Style', 'detailer style']);
+    });
+
+    it('keeps merged aliases visible when a valid alias exists in the current result set', () => {
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'Detailer-Style',
+                    hash: 'lora_Detailer-Style',
+                    count: 7,
+                    isLocalDisk: true,
+                    filterAliases: ['Detailer-Style', 'detailer style']
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope="used"
+                validNames={['detailer style']}
+            />
+        );
+
+        expect(screen.getByText('Detailer-Style')).toBeTruthy();
+    });
 });

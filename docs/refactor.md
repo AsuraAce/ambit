@@ -253,8 +253,8 @@ Status: Deferred
 - Adding each supported resource folder separately gives cleaner inventory today, but it is tedious for users with normal ComfyUI or A1111-style directory trees.
 - Adding a full model root is convenient, but noisy misclassification can make the Assets tab look less trustworthy.
 - Unknown or unsupported local model files do not have a neutral inventory bucket, so the fallback checkpoint behavior carries too much meaning.
-- Local disk discovery and image-metadata harvesting currently meet through `models` and `facet_cache`, but the relationship is not a first-class asset identity.
-- Disk-scanned rows use a file-path-derived hash and file-stem name, while image-harvested rows can use metadata hashes, parser-cleaned names, or CivitAI-resolved display names. If those names do not match exactly enough, the same real asset can appear as separate local and image-found rows with split counts.
+- Local disk discovery and image-metadata harvesting meet through `models` and `facet_cache`, with a lightweight query-layer match key for obvious filename or display-name aliases.
+- The lightweight match key is not a durable asset identity. Disk-scanned rows still use a file-path-derived hash, while image-harvested rows can use metadata hashes, parser-cleaned names, or CivitAI-resolved display names.
 
 ### Safe-Change Warning
 - Do not treat every unknown `.safetensors`, `.ckpt`, `.pt`, `.bin`, or `.pth` file under a model root as a checkpoint in a future taxonomy pass.
@@ -268,9 +268,9 @@ Status: Deferred
 - Add a resource-folder type override in Settings: `Auto`, explicit supported asset types, `Other`, and `Ignore`.
 - Show a scan preview or summary with counts by inferred type plus warnings for unknown or ignored folders before users trust a broad model-root scan.
 - Store enough scan-source metadata to support stable rescans, stale `disk_scan` cleanup when folders are removed, and future per-folder classification overrides.
-- Introduce a canonical asset identity or alias layer so local disk files and image-used assets can merge even when their display names differ.
-- Treat `Local` as a property of an asset row, not as a competing row. The intended UI is: one used asset row with an image count and a `Local` marker when it exists on disk; one unused inventory row only when there is no image usage yet.
-- Use one shared normalization/match-key function for disk scan, image metadata junctions, facet cache building, and filtering. Keep display names separate from identity keys.
+- Introduce a durable canonical asset identity or alias layer so local disk files and image-used assets can merge beyond the current conservative query-layer match key.
+- Treat `Local` as a property of an asset row, not as a competing row. The intended UI remains: one used asset row with an image count and a `Local` marker when it exists on disk; one unused inventory row only when there is no image usage yet.
+- Keep display names separate from identity keys, and avoid relying on UI-only dedupe for filtering semantics.
 - For checkpoints, evaluate cached local file hashing or metadata-derived hashes so disk files can match image `model_hash` or CivitAI records by hash instead of filename only.
 - Make filters resolve through the canonical identity or its aliases so selecting an asset can match all known equivalent names rather than only the clicked display name.
 

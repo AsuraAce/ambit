@@ -43,6 +43,21 @@ describe('sqlHelpers', () => {
             expect(params).toEqual(['SDXL', 'Flux']);
         });
 
+        it('should filter model aliases as one selected asset', () => {
+            const { where, params } = buildSqlWhereClause({
+                ...defaultFilters,
+                models: ['Pony Diffusion V6 XL'],
+                assetFilterAliases: {
+                    models: {
+                        'Pony Diffusion V6 XL': ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']
+                    }
+                }
+            }, false, 'blur', []);
+
+            expect(where).toContain("(resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE)");
+            expect(params).toEqual(['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']);
+        });
+
         it('should handle tools filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, tools: [GeneratorTool.COMFYUI, GeneratorTool.UNKNOWN] }, false, 'blur', []);
             expect(where).toContain("tool = ?");
@@ -57,6 +72,22 @@ describe('sqlHelpers', () => {
             expect(loraName).toBe('MyLora');
             expect(where).not.toContain('image_loras'); // No EXISTS for single lora
             expect(params).toEqual([]);
+        });
+
+        it('should expand merged LoRA aliases instead of using the single-LoRA optimization', () => {
+            const { where, params, loraName } = buildSqlWhereClause({
+                ...defaultFilters,
+                loras: ['Detailer-Style'],
+                assetFilterAliases: {
+                    loras: {
+                        'Detailer-Style': ['Detailer-Style', 'detailer style']
+                    }
+                }
+            }, false, 'blur', []);
+
+            expect(loraName).toBeUndefined();
+            expect(where).toContain("il.lora_name = ? COLLATE NOCASE) OR EXISTS");
+            expect(params).toEqual(['Detailer-Style', 'detailer style']);
         });
 
         it('should use junction table for Embedding filters', () => {
@@ -225,6 +256,24 @@ describe('sqlHelpers', () => {
                 expect(where).toContain(') AND EXISTS (');
                 // Should NOT contain OR logic between EXISTS
                 expect(where).not.toContain(') OR EXISTS (');
+            });
+
+            it('should keep alias groups OR-ed while Match All combines selected assets with AND', () => {
+                const { where, params } = buildSqlWhereClause({
+                    ...defaultFilters,
+                    loras: ['Detailer-Style', 'PortraitBoost'],
+                    matchModes: { loras: 'all' },
+                    assetFilterAliases: {
+                        loras: {
+                            'Detailer-Style': ['Detailer-Style', 'detailer style'],
+                            PortraitBoost: ['PortraitBoost']
+                        }
+                    }
+                }, false, 'blur', []);
+
+                expect(where).toContain('il.lora_name = ? COLLATE NOCASE) OR EXISTS');
+                expect(where).toContain(') AND EXISTS (');
+                expect(params).toEqual(['Detailer-Style', 'detailer style', 'PortraitBoost']);
             });
 
             it('should use OR logic when matchMode is explicitly ANY', () => {

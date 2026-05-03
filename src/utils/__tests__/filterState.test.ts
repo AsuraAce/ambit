@@ -28,6 +28,11 @@ const activeFilters: FilterState = {
         loras: 'all',
         controlNets: 'all',
     },
+    assetFilterAliases: {
+        loras: {
+            'lora-a': ['lora-a', 'lora_a']
+        }
+    },
 };
 
 describe('filterState', () => {
@@ -55,6 +60,7 @@ describe('filterState', () => {
         expect(nextFilters.minCfg).toBeUndefined();
         expect(nextFilters.maxCfg).toBeUndefined();
         expect(nextFilters.matchModes).toBeUndefined();
+        expect(nextFilters.assetFilterAliases).toBeUndefined();
     });
 
     it('preserves view state and clears optional filters when merged by the store', () => {
@@ -69,5 +75,6 @@ describe('filterState', () => {
         expect(mergedFilters.minCfg).toBeUndefined();
         expect(mergedFilters.maxCfg).toBeUndefined();
         expect(mergedFilters.matchModes).toBeUndefined();
+        expect(mergedFilters.assetFilterAliases).toBeUndefined();
     });
 });
