@@ -56,7 +56,25 @@ describe('DateRangeSection', () => {
         });
     });
 
-    it('sets custom dates and normalizes inverted ranges', () => {
+    it('keeps custom date inputs hidden until the custom range control is opened', () => {
+        const harness = createHarness(createFilters());
+        render(
+            <DateRangeSection
+                filters={harness.getCurrentFilters()}
+                setFilters={harness.setFilters}
+            />
+        );
+
+        expect(screen.queryByLabelText('Filter from date')).toBeNull();
+        expect(screen.queryByLabelText('Filter to date')).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: /custom range/i }));
+
+        expect(screen.getByLabelText('Filter from date')).toBeTruthy();
+        expect(screen.getByLabelText('Filter to date')).toBeTruthy();
+    });
+
+    it('applies custom dates and normalizes inverted ranges', () => {
         const harness = createHarness(createFilters());
         const { rerender } = render(
             <DateRangeSection
@@ -65,8 +83,22 @@ describe('DateRangeSection', () => {
             />
         );
 
+        fireEvent.click(screen.getByRole('button', { name: /custom range/i }));
         fireEvent.change(screen.getByLabelText('Filter from date'), {
             target: { value: '2026-04-30' }
+        });
+        fireEvent.change(screen.getByLabelText('Filter to date'), {
+            target: { value: '2026-04-01' }
+        });
+
+        expect(harness.setFilters).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+
+        expect(harness.getCurrentFilters()).toMatchObject({
+            dateRange: 'custom',
+            dateFrom: '2026-04-01',
+            dateTo: '2026-04-30'
         });
 
         rerender(
@@ -76,14 +108,53 @@ describe('DateRangeSection', () => {
             />
         );
 
-        fireEvent.change(screen.getByLabelText('Filter to date'), {
-            target: { value: '2026-04-01' }
-        });
+        expect(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i })).toBeTruthy();
+        expect(screen.queryByLabelText('Filter from date')).toBeNull();
+    });
 
-        expect(harness.getCurrentFilters()).toMatchObject({
+    it('clears a custom range from the popover', () => {
+        const harness = createHarness(createFilters({
             dateRange: 'custom',
             dateFrom: '2026-04-01',
             dateTo: '2026-04-30'
+        }));
+
+        render(
+            <DateRangeSection
+                filters={harness.getCurrentFilters()}
+                setFilters={harness.setFilters}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /apr 1, 2026 to apr 30, 2026/i }));
+        fireEvent.click(screen.getByRole('button', { name: /^clear$/i }));
+
+        expect(harness.getCurrentFilters()).toMatchObject({
+            dateRange: 'all',
+            dateFrom: undefined,
+            dateTo: undefined
         });
+    });
+
+    it('closes the popover with Escape without applying draft edits', () => {
+        const harness = createHarness(createFilters());
+        render(
+            <DateRangeSection
+                filters={harness.getCurrentFilters()}
+                setFilters={harness.setFilters}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /custom range/i }));
+        fireEvent.change(screen.getByLabelText('Filter from date'), {
+            target: { value: '2026-04-30' }
+        });
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(screen.queryByLabelText('Filter from date')).toBeNull();
+        expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(harness.getCurrentFilters().dateRange).toBe('all');
+        expect(harness.getCurrentFilters().dateFrom).toBeUndefined();
+        expect(harness.getCurrentFilters().dateTo).toBeUndefined();
     });
 });
