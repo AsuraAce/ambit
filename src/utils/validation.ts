@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { GeneratorTool } from '../types';
+import { isValidDateInput } from './dateFilters';
 
 // ============================================================================
 // Gemini API Schemas
@@ -17,11 +18,18 @@ import { GeneratorTool } from '../types';
 /**
  * Schema for Gemini's generateFiltersFromQuery response
  */
+const OptionalDateInputSchema = z.preprocess(
+    value => value === '' ? undefined : value,
+    z.string().refine(isValidDateInput, 'Expected a real YYYY-MM-DD date').optional()
+);
+
 export const GeminiFilterResponseSchema = z.object({
     searchQuery: z.string().optional().default(''),
     models: z.array(z.string()).optional().default([]),
     tools: z.array(z.string()).optional().default([]),
-    dateRange: z.enum(['today', 'week', 'month', 'all']).optional(),
+    dateRange: z.enum(['today', 'week', 'month', 'custom', 'all']).optional(),
+    dateFrom: OptionalDateInputSchema,
+    dateTo: OptionalDateInputSchema,
     favoritesOnly: z.boolean().optional(),
     minSteps: z.number().optional(),
     minCfg: z.number().optional(),

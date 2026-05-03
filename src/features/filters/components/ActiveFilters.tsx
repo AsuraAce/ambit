@@ -3,6 +3,7 @@ import { X, FilterX } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { useSearch } from '../../../contexts/SearchContext';
+import { getDateFilterLabel } from '../../../utils/dateFilters';
 
 interface ActiveFiltersProps {
     filters: FilterState;
@@ -16,10 +17,12 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const { collections, smartCollections } = useCollections();
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
     const activeSmartCol = filters.collectionId ? allCols.find(sc => sc.id === filters.collectionId) : undefined;
+    const dateFilterLabel = getDateFilterLabel(filters);
+    const smartDateFilterLabel = activeSmartCol?.filters ? getDateFilterLabel(activeSmartCol.filters) : null;
 
     // Merge visible filters with smart collection implicit filters for display
     const hasActiveFilters =
-        filters.dateRange !== 'all' ||
+        !!dateFilterLabel ||
         filters.favoritesOnly ||
         filters.models.length > 0 ||
         filters.tools.length > 0 ||
@@ -85,9 +88,9 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}
-                    {activeSmartCol.filters.dateRange && activeSmartCol.filters.dateRange !== 'all' && (
+                    {smartDateFilterLabel && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
-                            <span className="capitalize">{activeSmartCol.filters.dateRange}</span>
+                            <span>{smartDateFilterLabel}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}
@@ -148,10 +151,10 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 </>
             )}
 
-            {filters.dateRange !== 'all' && (
+            {dateFilterLabel && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
-                    <span>{filters.dateRange}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, dateRange: 'all' }))}><X className="w-3 h-3" /></button>
+                    <span>{dateFilterLabel}</span>
+                    <button onClick={() => setFilters(f => ({ ...f, dateRange: 'all', dateFrom: undefined, dateTo: undefined }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 

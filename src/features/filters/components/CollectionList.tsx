@@ -84,6 +84,21 @@ export function CollectionList<T extends Collection>({
         }
     }, [showArchived, refreshSmartCounts]);
 
+    const lastSelectedSmartRefresh = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        const selectedSmartCollection = collections.find(collection =>
+            collection.id === filters.collectionId && !!collection.filters
+        );
+        if (!selectedSmartCollection || lastSelectedSmartRefresh.current === selectedSmartCollection.id) return;
+
+        lastSelectedSmartRefresh.current = selectedSmartCollection.id;
+        void refreshSmartCounts({
+            collectionIds: [selectedSmartCollection.id],
+            includeArchived: true,
+            includePromptSearch: true
+        });
+    }, [collections, filters.collectionId, refreshSmartCounts]);
+
     const toggleViewMode = (e: React.MouseEvent) => {
         e.stopPropagation();
         setSettings(prev => ({

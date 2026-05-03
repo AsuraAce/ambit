@@ -7,6 +7,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockImages } from '../services/browserMockData';
+import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 
 /**
  * Hook to fetch parameter ranges for dynamic filter UI.
@@ -21,16 +22,21 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { collections: allCollections } = useCollections();
     const browserMockMode = isBrowserMockMode();
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
+    const sideQueryFilters = useDebouncedSideQueryFilters(filters);
+    const searchQueryKey = sideQueryFilters.searchQuery.trim();
 
     return useQuery<ParameterRanges>({
         // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
         queryKey: [
             'parameterRanges',
-            filters.collectionId,
-            filters.dateRange,
-            filters.models,
-            filters.tools,
-            filters.loras,
+            sideQueryFilters.collectionId,
+            searchQueryKey,
+            sideQueryFilters.dateRange,
+            sideQueryFilters.dateFrom,
+            sideQueryFilters.dateTo,
+            sideQueryFilters.models,
+            sideQueryFilters.tools,
+            sideQueryFilters.loras,
             facetCacheVersion,
             // Intentionally EXCLUDE samplers and generationTypes from query key
             // so selecting them doesn't cause a refetch (Disjunctive)
@@ -59,7 +65,7 @@ export function useParameterRangesQuery(filters: FilterState) {
             // This ensures that selecting "Euler a" doesn't hide other samplers,
             // and selecting "txt2img" doesn't hide other generation types.
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
-                filters,
+                sideQueryFilters,
                 privacyEnabled,
                 settings.maskingMode,
                 settings.maskedKeywords,

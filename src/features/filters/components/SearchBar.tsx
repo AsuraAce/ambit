@@ -3,6 +3,7 @@ import { Search, X, Sparkles, History } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { APP_NAME } from '../../../constants/app';
 import { useSearch } from '../../../contexts/SearchContext';
+import { getAdvancedDateSearchReadiness } from '../../../utils/dateFilters';
 
 interface SearchBarProps {
     filters: FilterState;
@@ -33,6 +34,13 @@ export const SearchBar = React.memo(({
     const [localValue, setLocalValue] = React.useState(filters.searchQuery);
     const [suggestions, setSuggestions] = React.useState<string[]>([]);
     const [activeSuggestionIndex, setActiveSuggestionIndex] = React.useState(-1);
+    const dateSearchReadiness = React.useMemo(
+        () => getAdvancedDateSearchReadiness(localValue),
+        [localValue]
+    );
+    const dateSearchHint = dateSearchReadiness.isReady
+        ? null
+        : 'Use ISO dates like date:2026-04 or before:2025';
 
     // 2. EXTERNAL SYNC: If filters.searchQuery changes from outside (e.g. clear button), update local
     React.useEffect(() => {
@@ -44,13 +52,14 @@ export const SearchBar = React.memo(({
     // 3. DEBOUNCED GLOBAL SYNC: Only update parent app after typing stops
     React.useEffect(() => {
         if (localValue === filters.searchQuery) return;
+        if (!dateSearchReadiness.isReady) return;
 
         const timer = setTimeout(() => {
             setFilters(f => ({ ...f, searchQuery: localValue }));
         }, 500); // 500ms for safety on large libraries
 
         return () => clearTimeout(timer);
-    }, [localValue, filters.searchQuery, setFilters]);
+    }, [dateSearchReadiness.isReady, localValue, filters.searchQuery, setFilters]);
 
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -60,7 +69,7 @@ export const SearchBar = React.memo(({
         // Suggestions logic (isolated)
         const lastToken = val.split(' ').pop()?.toLowerCase() || '';
         if (lastToken.length >= 1) {
-            const operators = ['OR', 'neg:', 'file:', 'all:', 'model:', 'tool:', 'lora:', 'sampler:', 'seed:', 'steps:', 'cfg:', 'w:', 'h:', 'upscaled:'];
+            const operators = ['OR', 'neg:', 'file:', 'all:', 'model:', 'tool:', 'lora:', 'sampler:', 'seed:', 'steps:', 'cfg:', 'w:', 'h:', 'date:', 'after:', 'before:', 'upscaled:'];
             const opMatches = operators.filter(op => {
                 const normalized = op.toLowerCase();
                 return normalized.startsWith(lastToken) && normalized !== lastToken;
@@ -79,7 +88,9 @@ export const SearchBar = React.memo(({
         const newVal = prefix + s + ' ';
         setLocalValue(newVal);
         setSuggestions([]);
-        setFilters(f => ({ ...f, searchQuery: newVal }));
+        if (getAdvancedDateSearchReadiness(newVal).isReady) {
+            setFilters(f => ({ ...f, searchQuery: newVal }));
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -104,6 +115,10 @@ export const SearchBar = React.memo(({
         }
 
         if (e.key === 'Enter') {
+            if (!dateSearchReadiness.isReady) {
+                e.preventDefault();
+                return;
+            }
             setFilters(f => ({ ...f, searchQuery: localValue }));
             searchProps.submitSearch(localValue);
         }
@@ -144,6 +159,11 @@ export const SearchBar = React.memo(({
 
                 {searchProps.isFocused && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        {dateSearchHint && (
+                            <div role="status" className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-100 dark:border-amber-900/40">
+                                {dateSearchHint}
+                            </div>
+                        )}
                         {suggestions.length > 0 && (
                             <div className="py-2">
                                 <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Suggestions</div>

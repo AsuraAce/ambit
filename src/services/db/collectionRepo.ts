@@ -5,6 +5,7 @@ import { Collection, FilterState } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
+import { timeDbCall } from '../../utils/dbTiming';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -461,12 +462,16 @@ export const getCollectionThumbnailSummaries = async (
     if (collections.length === 0) return {};
 
     const db = await getDb();
-    return buildCollectionThumbnailSummaries(
-        db,
-        collections.map((collection) => ({
-            id: collection.id,
-            custom_thumbnail: collection.customThumbnail ?? null
-        }))
+    return timeDbCall(
+        'collectionThumbnails',
+        `${collections.length} collections`,
+        () => buildCollectionThumbnailSummaries(
+            db,
+            collections.map((collection) => ({
+                id: collection.id,
+                custom_thumbnail: collection.customThumbnail ?? null
+            }))
+        )
     );
 };
 
@@ -533,13 +538,20 @@ export const getSmartCollectionSummaries = async (
         ).join(' UNION ALL ');
         const unionParams = queries.flatMap(q => [q.id, ...q.params]);
 
-        const res = await db.select<{ id: string, count: number }[]>(unionSql, unionParams);
+        const res = await timeDbCall(
+            'smartCollectionSummaries.counts',
+            `${smartCollections.length} collections`,
+            () => db.select<{ id: string, count: number }[]>(unionSql, unionParams)
+        );
         res.forEach(row => { summaries[row.id] = { count: row.count, thumbnailSourceKind: 'dynamic' }; });
 
         if (!includeThumbnails) return summaries;
 
         for (const query of queries) {
-            const normalRows = await db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
+            const normalRows = await timeDbCall(
+                'smartCollectionSummaries.thumbnail',
+                query.id,
+                () => db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
                 `SELECT thumbnail_path, privacy_hidden
                  FROM images
                  ${query.where}
@@ -548,8 +560,12 @@ export const getSmartCollectionSummaries = async (
                  ORDER BY is_pinned DESC, timestamp DESC
                  LIMIT 1`,
                 query.params
+                )
             );
-            const safeRows = await db.select<{ thumbnail_path?: string | null }[]>(
+            const safeRows = await timeDbCall(
+                'smartCollectionSummaries.safeThumbnail',
+                query.id,
+                () => db.select<{ thumbnail_path?: string | null }[]>(
                 `SELECT thumbnail_path
                  FROM images
                  ${query.where}
@@ -559,6 +575,7 @@ export const getSmartCollectionSummaries = async (
                  ORDER BY is_pinned DESC, timestamp DESC
                  LIMIT 1`,
                 query.params
+                )
             );
 
             const normal = normalRows[0];
