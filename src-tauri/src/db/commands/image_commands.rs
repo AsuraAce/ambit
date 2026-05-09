@@ -118,8 +118,10 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                    CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
+                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
                     json_extract(?8, '$.tool'),
@@ -141,7 +143,34 @@ fn save_images_batch_inner(
                     metadata_json=excluded.metadata_json,
                     thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
                     micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
-                    thumbnail_source=COALESCE(excluded.thumbnail_source, images.thumbnail_source),
+                    thumbnail_source=CASE
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN excluded.thumbnail_source
+                        ELSE images.thumbnail_source
+                    END,
+                    thumbnail_version=CASE
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND excluded.thumbnail_source = 'ambit' THEN excluded.thumbnail_version
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                        ELSE images.thumbnail_version
+                    END,
+                    thumbnail_failure_count=CASE
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                        ELSE images.thumbnail_failure_count
+                    END,
+                    thumbnail_last_error=CASE
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                        ELSE images.thumbnail_last_error
+                    END,
+                    thumbnail_last_attempt_at=CASE
+                        WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                        ELSE images.thumbnail_last_attempt_at
+                    END,
                     is_favorite=excluded.is_favorite,
                     is_pinned=excluded.is_pinned,
                     group_id=COALESCE(images.group_id, excluded.group_id),
@@ -166,6 +195,7 @@ fn save_images_batch_inner(
                     OR images.timestamp != excluded.timestamp
                     OR images.file_size != excluded.file_size
                     OR images.file_hash IS NOT excluded.file_hash
+                    OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path)
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.board_id IS NOT excluded.board_id
@@ -610,6 +640,48 @@ mod tests {
         }
     }
 
+    fn apply_all_migrations(conn: &Connection) {
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql)
+                .expect("apply migrations");
+        }
+    }
+
+    fn fetch_thumbnail_state(
+        conn: &Connection,
+        id: &str,
+    ) -> (
+        String,
+        Option<String>,
+        i64,
+        i64,
+        Option<String>,
+        Option<i64>,
+    ) {
+        conn.query_row(
+            "SELECT thumbnail_path,
+                    thumbnail_source,
+                    thumbnail_version,
+                    thumbnail_failure_count,
+                    thumbnail_last_error,
+                    thumbnail_last_attempt_at
+             FROM images
+             WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .expect("thumbnail state")
+    }
+
     #[test]
     fn upsert_updates_live_sync_controlled_fields_even_when_metadata_is_unchanged() {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -759,13 +831,86 @@ mod tests {
     }
 
     #[test]
+    fn save_images_batch_resets_stale_ambit_source_when_external_thumbnail_replaces_path() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let initial = create_image_record("img-source", 100, 200, "{}");
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial save");
+
+        let mut external = create_image_record("img-source", 101, 201, "{}");
+        external.thumbnail_path = "C:/invoke/img-source.webp".to_string();
+        external.thumbnail_source = None;
+
+        super::save_images_batch_inner(&conn, &[external]).expect("external update");
+
+        let row = fetch_thumbnail_state(&conn, "img-source");
+        assert_eq!(row.0, "C:/invoke/img-source.webp");
+        assert_eq!(row.1, None);
+        assert_eq!(row.2, 0);
+    }
+
+    #[test]
+    fn save_images_batch_preserves_thumbnail_source_when_path_is_unchanged() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let initial = create_image_record("img-same", 100, 200, "{}");
+        let unchanged_path = initial.thumbnail_path.clone();
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial save");
+
+        let mut update = create_image_record("img-same", 101, 201, "{}");
+        update.thumbnail_path = unchanged_path;
+        update.thumbnail_source = None;
+
+        super::save_images_batch_inner(&conn, &[update]).expect("same path update");
+
+        let row = fetch_thumbnail_state(&conn, "img-same");
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+    }
+
+    #[test]
+    fn save_images_batch_marks_ambit_replacement_current_and_clears_failure_metadata() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut initial = create_image_record("img-fixed", 100, 200, "{}");
+        initial.thumbnail_path = "C:/invoke/img-fixed.webp".to_string();
+        initial.thumbnail_source = Some("invokeai".to_string());
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial external save");
+
+        conn.execute(
+            "UPDATE images
+             SET thumbnail_version = 0,
+                 thumbnail_failure_count = 2,
+                 thumbnail_last_error = 'decode failed',
+                 thumbnail_last_attempt_at = 42
+             WHERE id = 'img-fixed'",
+            [],
+        )
+        .expect("mark failure");
+
+        let mut repaired = create_image_record("img-fixed", 101, 201, "{}");
+        repaired.thumbnail_path = "C:/thumbs/img-fixed-repaired.webp".to_string();
+        repaired.thumbnail_source = Some("ambit".to_string());
+
+        super::save_images_batch_inner(&conn, &[repaired]).expect("ambit repair");
+
+        let row = fetch_thumbnail_state(&conn, "img-fixed");
+        assert_eq!(row.0, "C:/thumbs/img-fixed-repaired.webp");
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+        assert_eq!(row.3, 0);
+        assert_eq!(row.4, None);
+        assert_eq!(row.5, None);
+    }
+
+    #[test]
     fn save_images_batch_replaces_existing_junction_rows_when_metadata_changes() {
         let conn = Connection::open_in_memory().expect("in-memory db");
 
-        for migration in init_db() {
-            conn.execute_batch(&migration.sql)
-                .expect("apply migrations");
-        }
+        apply_all_migrations(&conn);
 
         let initial_metadata = r#"{
             "model": "Base Model",

@@ -234,6 +234,10 @@ describe('syncImages live mode', () => {
         expect(result.touchedFacetResources.loras).toEqual(['DetailBoost']);
         expect(result.touchedFacetResources.tools).toEqual(['invokeai']);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
+            thumbnailSource: 'invokeai',
+            thumbnailUrl: 'D:/AI/art/webUI/invokeai/outputs/images/thumbnails/new-image.webp'
+        }));
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AI/art/webUI/invokeai/outputs/images/new-image.png'
@@ -305,6 +309,10 @@ describe('syncImages live mode', () => {
 
         expect(result.imported).toBe(1);
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
+            thumbnailSource: 'invokeai',
+            thumbnailUrl: 'D:/AI/art/webUI/invokeai/outputs/images/thumbnails/startup-image.webp'
+        }));
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AI/art/webUI/invokeai/outputs/images/startup-image.png'

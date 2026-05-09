@@ -12,6 +12,35 @@ export interface SyncProgress {
     message?: string;
 }
 
+export type ThumbnailOptimizationDetailProfile = 'quiet' | 'balanced' | 'fast';
+
+export interface ThumbnailOptimizationDetails {
+    checked: number;
+    optimized: number;
+    reused: number;
+    failed: number;
+    skipped: number;
+    imagesPerSecond: number;
+    batchMs: number;
+    dbMs: number;
+    encodeMs: number;
+    profile: ThumbnailOptimizationDetailProfile;
+    phase: string;
+    isThrottled: boolean;
+}
+
+export interface ThumbnailOptimizationRunSummary {
+    checked: number;
+    optimized: number;
+    reused: number;
+    failed: number;
+    skipped: number;
+    imagesPerSecond: number;
+    durationMs: number;
+    completedAt: number;
+    profile: ThumbnailOptimizationDetailProfile;
+}
+
 export type SyncStatus = 'idle' | 'syncing' | 'complete' | 'error';
 export type LiveWatchSessionSource = 'generic' | 'invoke' | 'mixed';
 export type LiveWatchSessionPhase = 'watching' | 'syncing' | 'importing' | 'summary';
@@ -151,7 +180,10 @@ interface LibraryState {
     // Background Auto-Healing State
     isBackgroundHealingActive: boolean;
     backgroundHealingProgress: SyncProgress | null;
+    backgroundHealingDetails: ThumbnailOptimizationDetails | null;
+    lastBackgroundHealingRun: ThumbnailOptimizationRunSummary | null;
     backgroundHealingPaused: boolean;
+    thumbnailOptimizationRetrySignal: number;
 
     // Background Metadata Refresh State
     isRefreshingMetadata: boolean;
@@ -206,7 +238,10 @@ interface LibraryState {
     // Background Healing Actions
     setBackgroundHealingActive: (val: boolean) => void;
     setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
+    setBackgroundHealingDetails: (details: ThumbnailOptimizationDetails | null) => void;
+    setLastBackgroundHealingRun: (summary: ThumbnailOptimizationRunSummary | null) => void;
     setBackgroundHealingPaused: (val: boolean) => void;
+    requestThumbnailOptimizationRun: () => void;
 
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val: boolean) => void;
@@ -264,7 +299,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Background Healing State
     isBackgroundHealingActive: false,
     backgroundHealingProgress: null,
+    backgroundHealingDetails: null,
+    lastBackgroundHealingRun: null,
     backgroundHealingPaused: false,
+    thumbnailOptimizationRetrySignal: 0,
 
     // Background Metadata Refresh State
     isRefreshingMetadata: false,
@@ -375,7 +413,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Background Healing Actions
     setBackgroundHealingActive: (val) => set({ isBackgroundHealingActive: val }),
     setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
+    setBackgroundHealingDetails: (details) => set({ backgroundHealingDetails: details }),
+    setLastBackgroundHealingRun: (summary) => set({ lastBackgroundHealingRun: summary }),
     setBackgroundHealingPaused: (val) => set({ backgroundHealingPaused: val }),
+    requestThumbnailOptimizationRun: () => set((state) => ({
+        thumbnailOptimizationRetrySignal: state.thumbnailOptimizationRetrySignal + 1
+    })),
 
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val) => set({ isRefreshingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
