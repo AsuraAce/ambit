@@ -199,6 +199,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         selectionRangeHandler(indexes, isAdditive);
     }, [selectionRangeHandler]);
 
+    const handleCompareTogglePin = useCallback((id: string, isPinned: boolean) => {
+        if (!onTogglePin) return;
+
+        setCompareImages(prev => {
+            if (!prev) return prev;
+            return [
+                prev[0].id === id ? { ...prev[0], isPinned } : prev[0],
+                prev[1].id === id ? { ...prev[1], isPinned } : prev[1]
+            ];
+        });
+        onTogglePin(id, isPinned);
+    }, [onTogglePin]);
+
 
     // --- Actions ---
 
@@ -634,6 +647,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     imageB={compareImages[1]}
                     onClose={() => setCompareImages(null)}
                     onToggleFavorite={(id) => onToggleFavorite?.(id)}
+                    onTogglePin={onTogglePin ? handleCompareTogglePin : undefined}
                 />
             )}
         </div>

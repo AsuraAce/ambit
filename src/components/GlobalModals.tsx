@@ -50,6 +50,7 @@ interface GlobalModalsProps {
     collections: any[];
     smartCollections?: any[];
     toggleFavorite: (id: string) => void;
+    togglePin?: (id: string, isPinned: boolean) => void;
     settings: AppSettings;
     filters?: any;
     collectionToEditId?: string | null;
@@ -91,6 +92,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     collections,
     smartCollections = [],
     toggleFavorite,
+    togglePin,
     settings,
     filters,
     collectionToEditId,
@@ -212,6 +214,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         imageB={filteredImages.find(i => i.id === Array.from(selectedIds)[1]) || filteredImages[1]}
                         onClose={() => closeModal('compare')}
                         onToggleFavorite={toggleFavorite}
+                        onTogglePin={togglePin}
                     />
                 )}
 
