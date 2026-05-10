@@ -269,6 +269,7 @@ export interface AppSettings {
   devMode?: boolean; // Toggle for experimental/dev features
   enableAutoThumbnailHealing?: boolean; // Auto-regenerate thumbnails in background
   enforceHighQualityThumbnails?: boolean; // Upgrade existing low-res thumbnails
+  thumbnailOptimizationProfile?: 'quiet' | 'balanced' | 'fast'; // Background thumbnail worker profile
   logLevel?: LogLevel; // Console log severity level
 }
 

@@ -1,321 +1,421 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
-import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import {
+    commands,
+    type ThumbnailOptimizationProfile,
+    type ThumbnailOptimizationResult
+} from '../bindings';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isBrowserMockMode } from '../services/runtime';
+import { unwrap } from '../utils/spectaUtils';
+import {
+    formatThumbnailQueueCompleteMessage,
+    formatThumbnailQueueRunningMessage,
+    THUMBNAIL_QUEUE_START_MESSAGE
+} from './thumbnailQueueProgress';
 
-// Delay before starting auto-healing on app startup (ms)
-// Ensures app initialization completes first
 const STARTUP_DELAY_MS = 30000;
-
-// Delay between batches to give UI breathing room (ms)
-const BATCH_DELAY_MS = 250;
-
-// Delay before resuming after import completes (ms)
 const RESUME_DELAY_MS = 5000;
+const COMPLETE_VISIBLE_MS = 1500;
+
+interface ThumbnailOptimizationProgress {
+    checked: number;
+    total: number;
+    optimized: number;
+    reused: number;
+    failed: number;
+    skipped: number;
+    imagesPerSecond: number;
+    batchMs: number;
+    dbMs: number;
+    encodeMs: number;
+    profile: ThumbnailOptimizationProfile;
+    phase: string;
+    message: string;
+    isThrottled: boolean;
+}
+
+type ToastFn = (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+type RunningThumbnailConfig = {
+    includeUpgradeable: boolean;
+    profile: ThumbnailOptimizationProfile;
+};
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 /**
- * Background thumbnail auto-healing queue.
- * 
- * This hook orchestrates automatic thumbnail regeneration in the background.
- * Key features:
- * - Deferred startup: Waits 30s after app launch to avoid blocking initialization
- * - Pause on import: Automatically pauses when user imports files
- * - Low priority: Uses requestIdleCallback (with fallback) for scheduling
- * - Progress tracking: Updates store for ActivityDock visibility
+ * Starts and supervises the backend-owned Smart Thumbnail optimization job.
+ *
+ * Rust owns candidate selection, thumbnail generation, DB updates, progress metrics,
+ * and cancellation. The hook only coordinates Settings, blocking activity, and the
+ * ActivityDock presentation.
  */
-export function useThumbnailQueue(addToast?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void): void {
+export function useThumbnailQueue(addToast?: ToastFn): void {
     const queryClient = useQueryClient();
     const activeImageQueryCount = useIsFetching({ queryKey: ['images'] });
-    const abortControllerRef = useRef<AbortController | null>(null);
     const isRunningRef = useRef(false);
+    const completionHandledRef = useRef(false);
+    const cancelRequestedRef = useRef(false);
+    const lastThrottleRef = useRef<boolean | null>(null);
+    const runningConfigRef = useRef<RunningThumbnailConfig | null>(null);
+    const restartRequestedRef = useRef(false);
+    const retryAfterCurrentRunRef = useRef(false);
+    const isImageQueryFetchingRef = useRef(false);
     const browserMockMode = isBrowserMockMode();
+    const [resumeSignal, setResumeSignal] = useState(0);
+    const [postRunRetrySignal, setPostRunRetrySignal] = useState(0);
 
-
-    // Store subscriptions
     const isImporting = useLibraryStore(s => s.isImporting);
     const isRegeneratingThumbnails = useLibraryStore(s => s.isRegeneratingThumbnails);
     const syncStatus = useLibraryStore(s => s.syncStatus);
+    const thumbnailOptimizationRetrySignal = useLibraryStore(s => s.thumbnailOptimizationRetrySignal);
 
     const setBackgroundHealingActive = useLibraryStore(s => s.setBackgroundHealingActive);
     const setBackgroundHealingProgress = useLibraryStore(s => s.setBackgroundHealingProgress);
     const setBackgroundHealingPaused = useLibraryStore(s => s.setBackgroundHealingPaused);
+    const setBackgroundHealingDetails = useLibraryStore(s => s.setBackgroundHealingDetails);
+    const setLastBackgroundHealingRun = useLibraryStore(s => s.setLastBackgroundHealingRun);
 
-    // Settings - check if auto-healing is enabled
-    // Note: No fallback needed since settingsStore merges loaded values with DEFAULT_SETTINGS
     const enableAutoThumbnailHealing = useSettingsStore(s => s.settings.enableAutoThumbnailHealing);
-    const enforceHighQualityThumbnails = useSettingsStore(s => s.settings.enforceHighQualityThumbnails); // New
+    const enforceHighQualityThumbnails = useSettingsStore(s => s.settings.enforceHighQualityThumbnails);
+    const thumbnailOptimizationProfile = useSettingsStore(s => s.settings.thumbnailOptimizationProfile ?? 'balanced');
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
 
-    // Check if any blocking activity is happening
     const isImageQueryFetching = activeImageQueryCount > 0;
-    const isBlocked = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing' || isImageQueryFetching;
+    const isHardBlocked = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing';
 
-    /**
-     * Schedule a callback with low priority using requestIdleCallback.
-     * Falls back to setTimeout for browsers without support.
-     */
+    useEffect(() => {
+        isImageQueryFetchingRef.current = isImageQueryFetching;
+    }, [isImageQueryFetching]);
+
+    const shouldPauseForActivity = useCallback(() => {
+        const store = useLibraryStore.getState();
+        return store.isImporting
+            || store.isRegeneratingThumbnails
+            || store.syncStatus === 'syncing';
+    }, []);
+
     const scheduleIdleCallback = useCallback((callback: () => void, delay: number = 0) => {
-        if (delay > 0) {
-            setTimeout(() => {
-                if ('requestIdleCallback' in window) {
-                    (window as typeof window & { requestIdleCallback: (cb: () => void) => number })
-                        .requestIdleCallback(callback, { timeout: 2000 });
-                } else {
-                    setTimeout(callback, 50);
-                }
-            }, delay);
-        } else {
+        const schedule = () => {
             if ('requestIdleCallback' in window) {
-                (window as typeof window & { requestIdleCallback: (cb: () => void) => number })
+                (window as typeof window & { requestIdleCallback: (cb: () => void, options?: { timeout: number }) => number })
                     .requestIdleCallback(callback, { timeout: 2000 });
             } else {
                 setTimeout(callback, 50);
             }
-        }
-    }, []);
-
-    /**
-     * Main processing loop that regenerates unoptimized thumbnails.
-     */
-    const runQueue = useCallback(async () => {
-        if (browserMockMode) return;
-        if (isRunningRef.current) return;
-        isRunningRef.current = true;
-
-        const { getUnoptimizedImageEntries } = await import('../services/db/maintenanceRepo');
-        const { getThumbnailDir } = await import('../services/thumbnailService');
-        const { scanImagesBulk } = await import('../services/metadataParser');
-        const { updateThumbnailPathsBatch } = await import('../services/db/imageRepo');
-
-        // Removed commands import to use raw invoke
-
-
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-
-        // Track attempted IDs in this session to prevent infinite loops on failing images
-        const attemptedIds = new Set<string>();
-        const shouldPauseForActivity = () => {
-            const store = useLibraryStore.getState();
-            return store.isImporting
-                || store.isRegeneratingThumbnails
-                || store.syncStatus === 'syncing'
-                || queryClient.isFetching({ queryKey: ['images'] }) > 0;
         };
 
+        if (delay > 0) {
+            setTimeout(schedule, delay);
+            return;
+        }
+
+        schedule();
+    }, []);
+
+    const setBackendThrottled = useCallback((throttled: boolean) => {
+        if (browserMockMode) return;
+        if (lastThrottleRef.current === throttled) return;
+
+        lastThrottleRef.current = throttled;
+        void commands.setThumbnailOptimizationThrottled(throttled).catch(error => {
+            console.error('[ThumbnailQueue] Failed to update backend throttle state', error);
+        });
+
+        const details = useLibraryStore.getState().backgroundHealingDetails;
+        if (details) {
+            setBackgroundHealingDetails({
+                ...details,
+                phase: throttled ? 'throttled' : 'running',
+                isThrottled: throttled
+            });
+        }
+    }, [browserMockMode, setBackgroundHealingDetails]);
+
+    const refreshThumbnailConsumers = useCallback(async (optimized: number) => {
+        if (optimized <= 0) return;
+
+        await queryClient.invalidateQueries({ queryKey: ['images'] });
+        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+
         try {
-            const thumbDir = await getThumbnailDir();
-            if (!thumbDir) {
-                console.warn('[ThumbnailQueue] No thumbnail directory');
-                isRunningRef.current = false;
-                setBackgroundHealingActive(false);
-                return;
-            }
+            const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
+            await rebuildThumbnailFacetCache();
+            useLibraryStore.getState().incrementFacetCacheVersion();
+        } catch (error) {
+            console.warn('[ThumbnailQueue] Thumbnail facet cache refresh failed', error);
+        }
+    }, [queryClient]);
 
-            let processed = 0;
-            let hasStarted = false;
-            let wasPaused = false;
-            const PAGE_SIZE = 200;
-            const BATCH_SIZE = 20;
+    const handleCompletion = useCallback(async (result: ThumbnailOptimizationResult) => {
+        if (completionHandledRef.current) return;
+        completionHandledRef.current = true;
+        const completedConfig = runningConfigRef.current;
+        isRunningRef.current = false;
+        runningConfigRef.current = null;
+        lastThrottleRef.current = null;
 
-            // Process in pages
-            while (!abortController.signal.aborted) {
-                // Check if we should pause
-                if (shouldPauseForActivity()) {
-                    console.log('[ThumbnailQueue] Pausing for blocking activity');
-                    setBackgroundHealingPaused(true);
-                    wasPaused = true;
-                    break;
-                }
-
-                // Fetch next page of entries (passed includeUpgradeable)
-                // We always fetch from offset 0 because successful processing removes items from the "unoptimized" set
-                const entries = await getUnoptimizedImageEntries(0, PAGE_SIZE, '', [], enforceHighQualityThumbnails);
-
-                if (entries.length === 0) break;
-
-                // Infinite loop protection: Filter out images we've already tried and failed to fix in this session
-                const freshEntries = entries.filter(e => !attemptedIds.has(e.id));
-
-                if (freshEntries.length === 0) {
-                    console.warn('[ThumbnailQueue] Aborting: All remaining unoptimized images have failed processing in this session.');
-                    break;
-                }
-
-                if (!hasStarted) {
-                    console.log(`[ThumbnailQueue] Starting background healing (High Quality: ${enforceHighQualityThumbnails})`);
-                    setBackgroundHealingActive(true);
-                    setBackgroundHealingProgress({ current: 0, total: 0, message: 'Optimizing thumbnails...' });
-                    hasStarted = true;
-                }
-
-                // Process in smaller batches
-                for (let i = 0; i < freshEntries.length; i += BATCH_SIZE) {
-                    if (abortController.signal.aborted) break;
-
-                    // Double-check for blocking activity between batches
-                    if (shouldPauseForActivity()) {
-                        console.log('[ThumbnailQueue] Pausing mid-batch for blocking activity');
-                        setBackgroundHealingPaused(true);
-                        isRunningRef.current = false;
-                        return;
-                    }
-
-                    const batchEntries = freshEntries.slice(i, i + BATCH_SIZE);
-                    const batchIds = batchEntries.map(e => e.id);
-                    const batchPaths = batchEntries.map(e => e.path);
-
-                    // Register attempts immediately
-                    batchIds.forEach(id => attemptedIds.add(id));
-
-                    const dbUpdates: { id: string; thumbnailPath: string; microThumbnail?: string | null; thumbnailSource?: string | null }[] = [];
-
-                    try {
-                        // FIX: Pass actual file paths to scanner, NOT IDs
-                        const results = await scanImagesBulk(batchPaths, thumbDir, false, false);
-                        results.forEach((res, idx) => {
-                            if (res.thumbnail) {
-                                dbUpdates.push({
-                                    id: batchIds[idx],
-                                    thumbnailPath: res.thumbnail,
-                                    microThumbnail: res.microThumbnail || null,
-                                    thumbnailSource: res.thumbnailSource || 'ambit'
-                                });
-                            }
-                        });
-
-                        if (dbUpdates.length > 0) {
-                            await updateThumbnailPathsBatch(dbUpdates);
-
-                            // Sync with UI: Update React Query cache immediately
-                            // We must update ALL queries starting with 'images' to catch various filter states
-                            const queries = queryClient.getQueriesData({ queryKey: ['images'] });
-                            const { convertFileSrc } = await import('@tauri-apps/api/core');
-
-                            let updateCount = 0;
-
-                            queries.forEach(([queryKey, oldData]: [any, any]) => {
-                                if (!oldData || !oldData.pages) return;
-
-                                queryClient.setQueryData(queryKey, (old: any) => {
-                                    if (!old || !old.pages) return old;
-
-                                    return {
-                                        ...old,
-                                        pages: old.pages.map((page: any) => ({
-                                            ...page,
-                                            images: page.images.map((img: any) => {
-                                                const update = dbUpdates.find(u => u.id === img.id);
-                                                if (update) {
-                                                    updateCount++;
-                                                    return {
-                                                        ...img,
-                                                        // CRITICAL FIX: Ensure protocol is correct for SmartImage detection
-                                                        thumbnailUrl: convertFileSrc(update.thumbnailPath),
-                                                        microThumbnail: null,
-                                                        thumbnailSource: 'ambit'
-                                                    };
-                                                }
-                                                return img;
-                                            })
-                                        }))
-                                    };
-                                });
-                            });
-
-                            if (updateCount > 0) {
-                                console.log(`[ThumbnailQueue] Silently updated ${updateCount} images in query cache`);
-                            }
-                        }
-
-                        // Check for failures in this batch
-                        const failedIds: string[] = [];
-
-                        results.forEach((res, idx) => {
-                            // Check for error field OR missing thumbnail
-                            if (res.error || res.errorReason || (!res.thumbnail && !res.microThumbnail)) {
-                                const failedId = batchIds[idx];
-                                const failedPath = batchPaths[idx];
-                                const errorReason = res.errorReason || (res as any).error || "Unknown Failure";
-
-                                failedIds.push(failedId);
-
-                                console.error(`[ThumbnailQueue] Failed to generate thumbnail for ID: ${failedId}`, errorReason);
-
-                                if (addToast) {
-                                    // Use the error message from backend if available
-                                    addToast(`Thumbnail failed for ${failedPath.split(/[\\/]/).pop()}: ${errorReason}`, 'error');
-                                }
-                            }
-                        });
-
-                        // Quarantine corrupt images
-                        if (failedIds.length > 0) {
-                            try {
-                                await invoke('mark_images_corrupt', { ids: failedIds });
-                                console.log(`[ThumbnailQueue] Quarantined ${failedIds.length} corrupt images`);
-                            } catch (e) {
-                                console.error('[ThumbnailQueue] Failed to mark images as corrupt', e);
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`[ThumbnailQueue] Batch failed at processed ${processed + i}`, e);
-                    }
-
-                    // Only increment processed count for what we actually attempted
-                    processed += batchEntries.length;
-
-                    setBackgroundHealingProgress({
-                        current: processed,
-                        total: 0,
-                        message: `Optimizing thumbnails...`
-                    });
-
-                    // Small delay between batches for UI responsiveness
-                    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-                }
-            }
-
-            if (wasPaused) {
-                return;
-            }
-
-            if (!hasStarted) {
-                console.log('[ThumbnailQueue] No unoptimized images found');
+        if (result.wasCancelled) {
+            if (!useLibraryStore.getState().backgroundHealingPaused) {
+                retryAfterCurrentRunRef.current = false;
                 setBackgroundHealingActive(false);
                 setBackgroundHealingProgress(null);
-                isRunningRef.current = false;
-                return;
+                setBackgroundHealingDetails(null);
+            } else if (enableAutoThumbnailHealing && !shouldPauseForActivity()) {
+                retryAfterCurrentRunRef.current = false;
+                setResumeSignal(signal => signal + 1);
             }
+            return;
+        }
 
-            // Complete
-            if (!abortController.signal.aborted) {
-                console.log(`[ThumbnailQueue] Complete: processed ${processed} images`);
-                setBackgroundHealingProgress({ current: processed, total: processed, message: 'Optimization complete' });
+        const imagesPerSecond = result.durationMs > 0
+            ? result.checked / (result.durationMs / 1000)
+            : 0;
+        const completeCount = Math.max(result.checked, 1);
+        setBackgroundHealingActive(true);
+        setBackgroundHealingPaused(false);
+        setBackgroundHealingProgress({
+            current: completeCount,
+            total: completeCount,
+            message: formatThumbnailQueueCompleteMessage({
+                checked: result.checked,
+                optimized: result.optimized,
+                failed: result.failed
+            })
+        });
+        setBackgroundHealingDetails(null);
+        setLastBackgroundHealingRun({
+            checked: result.checked,
+            optimized: result.optimized,
+            reused: result.reused,
+            failed: result.failed,
+            skipped: result.skipped,
+            imagesPerSecond,
+            durationMs: result.durationMs,
+            completedAt: Date.now(),
+            profile: completedConfig?.profile ?? thumbnailOptimizationProfile
+        });
 
-                // Brief delay before hiding
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                setBackgroundHealingActive(false);
-                setBackgroundHealingProgress(null);
+        void refreshThumbnailConsumers(result.optimized);
+
+        await sleep(COMPLETE_VISIBLE_MS);
+
+        if (!completionHandledRef.current || isRunningRef.current || useLibraryStore.getState().backgroundHealingPaused) {
+            return;
+        }
+
+        setBackgroundHealingActive(false);
+        setBackgroundHealingProgress(null);
+
+        if (retryAfterCurrentRunRef.current && enableAutoThumbnailHealing) {
+            retryAfterCurrentRunRef.current = false;
+            setPostRunRetrySignal(signal => signal + 1);
+        }
+    }, [
+        enableAutoThumbnailHealing,
+        refreshThumbnailConsumers,
+        setBackgroundHealingActive,
+        setBackgroundHealingDetails,
+        setBackgroundHealingPaused,
+        setBackgroundHealingProgress,
+        setLastBackgroundHealingRun,
+        shouldPauseForActivity,
+        thumbnailOptimizationProfile
+    ]);
+
+    useEffect(() => {
+        if (browserMockMode) return;
+
+        const unlistenProgress = listen<ThumbnailOptimizationProgress>(
+            'thumbnail-optimization-progress',
+            (event) => {
+                if (cancelRequestedRef.current) return;
+
+                setBackgroundHealingActive(true);
+                setBackgroundHealingPaused(false);
+                setBackgroundHealingProgress({
+                    current: event.payload.checked,
+                    total: 0,
+                    message: formatThumbnailQueueRunningMessage({
+                        checked: event.payload.checked,
+                        optimized: event.payload.optimized,
+                        failed: event.payload.failed
+                    })
+                });
+                setBackgroundHealingDetails({
+                    checked: event.payload.checked,
+                    optimized: event.payload.optimized,
+                    reused: event.payload.reused,
+                    failed: event.payload.failed,
+                    skipped: event.payload.skipped,
+                    imagesPerSecond: event.payload.imagesPerSecond,
+                    batchMs: event.payload.batchMs,
+                    dbMs: event.payload.dbMs,
+                    encodeMs: event.payload.encodeMs,
+                    profile: event.payload.profile,
+                    phase: event.payload.phase,
+                    isThrottled: event.payload.isThrottled
+                });
+
+                if (event.payload.checked > 0) {
+                    console.debug('[ThumbnailQueue] Backend progress', event.payload);
+                }
             }
+        );
 
-        } catch (e) {
-            console.error('[ThumbnailQueue] Error during background healing', e);
+        const unlistenComplete = listen<ThumbnailOptimizationResult>(
+            'thumbnail-optimization-complete',
+            (event) => {
+                void handleCompletion(event.payload);
+            }
+        );
+
+        return () => {
+            unlistenProgress.then(unlisten => unlisten());
+            unlistenComplete.then(unlisten => unlisten());
+        };
+    }, [
+        browserMockMode,
+        handleCompletion,
+        setBackgroundHealingActive,
+        setBackgroundHealingDetails,
+        setBackgroundHealingPaused,
+        setBackgroundHealingProgress
+    ]);
+
+    const cancelBackendJob = useCallback(async (clearDock: boolean) => {
+        if (browserMockMode) return;
+
+        cancelRequestedRef.current = true;
+
+        try {
+            await commands.cancelThumbnailOptimizationJob();
+        } catch (error) {
+            console.error('[ThumbnailQueue] Failed to cancel backend job', error);
+        }
+
+        if (clearDock) {
+            completionHandledRef.current = true;
+            isRunningRef.current = false;
+            runningConfigRef.current = null;
+            lastThrottleRef.current = null;
+            restartRequestedRef.current = false;
+            setBackgroundHealingActive(false);
+            setBackgroundHealingPaused(false);
+            setBackgroundHealingProgress(null);
+            setBackgroundHealingDetails(null);
+        }
+    }, [
+        browserMockMode,
+        setBackgroundHealingActive,
+        setBackgroundHealingDetails,
+        setBackgroundHealingPaused,
+        setBackgroundHealingProgress
+    ]);
+
+    const runQueue = useCallback(async () => {
+        if (browserMockMode) return;
+
+        const settings = useSettingsStore.getState().settings;
+        if (!settings.enableAutoThumbnailHealing) return;
+        if (isRunningRef.current) return;
+
+        if (shouldPauseForActivity()) {
+            setBackgroundHealingPaused(true);
+            return;
+        }
+
+        const { getThumbnailDir } = await import('../services/thumbnailService');
+        const thumbnailDir = await getThumbnailDir();
+
+        if (!thumbnailDir) {
+            console.warn('[ThumbnailQueue] No thumbnail directory');
             setBackgroundHealingActive(false);
             setBackgroundHealingProgress(null);
-        } finally {
-            isRunningRef.current = false;
-            abortControllerRef.current = null;
+            setBackgroundHealingDetails(null);
+            return;
         }
-    }, [setBackgroundHealingActive, setBackgroundHealingProgress, setBackgroundHealingPaused, browserMockMode, enforceHighQualityThumbnails, queryClient]);
+
+        const optimizerConfig: RunningThumbnailConfig = {
+            includeUpgradeable: Boolean(settings.enforceHighQualityThumbnails),
+            profile: settings.thumbnailOptimizationProfile ?? 'balanced'
+        };
+        const shouldStartThrottled = isImageQueryFetchingRef.current;
+
+        isRunningRef.current = true;
+        completionHandledRef.current = false;
+        cancelRequestedRef.current = false;
+        restartRequestedRef.current = false;
+        runningConfigRef.current = optimizerConfig;
+        setBackgroundHealingActive(true);
+        setBackgroundHealingPaused(false);
+        setBackgroundHealingProgress({
+            current: 0,
+            total: 0,
+            message: THUMBNAIL_QUEUE_START_MESSAGE
+        });
+        setBackgroundHealingDetails({
+            checked: 0,
+            optimized: 0,
+            reused: 0,
+            failed: 0,
+            skipped: 0,
+            imagesPerSecond: 0,
+            batchMs: 0,
+            dbMs: 0,
+            encodeMs: 0,
+            profile: optimizerConfig.profile,
+            phase: shouldStartThrottled ? 'throttled' : 'running',
+            isThrottled: shouldStartThrottled
+        });
+
+        console.log('[ThumbnailQueue] Starting backend thumbnail optimization', {
+            includeUpgradeable: optimizerConfig.includeUpgradeable,
+            profile: optimizerConfig.profile
+        });
+
+        try {
+            const jobPromise = unwrap(commands.startThumbnailOptimizationJob({
+                thumbnailDir,
+                includeUpgradeable: optimizerConfig.includeUpgradeable,
+                profile: optimizerConfig.profile
+            }));
+            setBackendThrottled(shouldStartThrottled);
+
+            const result = await jobPromise;
+
+            cancelRequestedRef.current = false;
+            await handleCompletion(result);
+        } catch (error) {
+            if (cancelRequestedRef.current) return;
+
+            console.error('[ThumbnailQueue] Backend thumbnail optimization failed', error);
+            addToast?.(`Smart thumbnail optimization failed: ${String(error)}`, 'error');
+            completionHandledRef.current = true;
+            isRunningRef.current = false;
+            runningConfigRef.current = null;
+            lastThrottleRef.current = null;
+            setBackgroundHealingActive(false);
+            setBackgroundHealingPaused(false);
+            setBackgroundHealingProgress(null);
+            setBackgroundHealingDetails(null);
+        }
+    }, [
+        addToast,
+        browserMockMode,
+        handleCompletion,
+        setBackendThrottled,
+        setBackgroundHealingActive,
+        setBackgroundHealingDetails,
+        setBackgroundHealingPaused,
+        setBackgroundHealingProgress,
+        shouldPauseForActivity
+    ]);
 
     const [isStartupDelayComplete, setStartupDelayComplete] = useState(false);
 
-    /**
-     * Handle initial startup delay.
-     */
     useEffect(() => {
         if (browserMockMode) return;
 
@@ -325,82 +425,136 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
         return () => clearTimeout(timer);
     }, [browserMockMode]);
 
-    /**
-     * Reactive control: Start or Stop based on Settings & Delay
-     */
     useEffect(() => {
         if (browserMockMode) return;
-
-        // 1. Prerequisites check
         if (!isSettingsLoaded || !isStartupDelayComplete) return;
 
-        // 2. Handle Enabled State
         if (enableAutoThumbnailHealing) {
-            // Only start if not already running and not paused by blocking activity
-            if (!isRunningRef.current) {
-                // Check if we are blocked before starting
-                const store = useLibraryStore.getState();
-                const currentlyBlocked = store.isImporting
-                    || store.isRegeneratingThumbnails
-                    || store.syncStatus === 'syncing'
-                    || store.backgroundHealingPaused
-                    || queryClient.isFetching({ queryKey: ['images'] }) > 0;
-
-                if (!currentlyBlocked) {
-                    console.log('[ThumbnailQueue] Smart Optimization enabled and idle, starting...');
-                    scheduleIdleCallback(() => runQueue());
-                }
+            if (!isRunningRef.current && !shouldPauseForActivity() && !useLibraryStore.getState().backgroundHealingPaused) {
+                scheduleIdleCallback(() => runQueue());
             }
+            return;
         }
-        // 3. Handle Disabled State
-        else {
-            if (isRunningRef.current) {
-                console.log('[ThumbnailQueue] Smart Optimization disabled by user, aborting...');
 
-                // Cancel operation
-                if (abortControllerRef.current) {
-                    abortControllerRef.current.abort();
-                    abortControllerRef.current = null;
-                }
-
-                // Reset state
-                isRunningRef.current = false;
-                setBackgroundHealingActive(false);
-                setBackgroundHealingPaused(false); // Clear pause state since we are fully stopping
-                setBackgroundHealingProgress(null);
-            }
-        }
+        void cancelBackendJob(true);
     }, [
+        browserMockMode,
+        cancelBackendJob,
         enableAutoThumbnailHealing,
+        enforceHighQualityThumbnails,
+        isHardBlocked,
         isSettingsLoaded,
         isStartupDelayComplete,
         runQueue,
         scheduleIdleCallback,
-        setBackgroundHealingActive,
-        setBackgroundHealingPaused,
-        setBackgroundHealingProgress,
-        enforceHighQualityThumbnails, // Added trigger
-        isBlocked, // Added: Restart when no longer blocked
-        queryClient
+        shouldPauseForActivity,
+        thumbnailOptimizationProfile
     ]);
 
-    /**
-     * Resume processing when blocking activities complete.
-     */
+    useEffect(() => {
+        if (browserMockMode) return;
+        if (!enableAutoThumbnailHealing) return;
+        if (!isRunningRef.current) return;
+
+        const runningConfig = runningConfigRef.current;
+        if (!runningConfig) return;
+
+        const nextConfig: RunningThumbnailConfig = {
+            includeUpgradeable: Boolean(enforceHighQualityThumbnails),
+            profile: thumbnailOptimizationProfile
+        };
+
+        if (
+            runningConfig.includeUpgradeable === nextConfig.includeUpgradeable
+            && runningConfig.profile === nextConfig.profile
+        ) {
+            return;
+        }
+
+        if (restartRequestedRef.current) return;
+
+        console.log('[ThumbnailQueue] Restarting backend job for Smart Thumbnail settings change');
+        restartRequestedRef.current = true;
+        setBackgroundHealingPaused(true);
+        void cancelBackendJob(false);
+    }, [
+        browserMockMode,
+        cancelBackendJob,
+        enableAutoThumbnailHealing,
+        enforceHighQualityThumbnails,
+        setBackgroundHealingPaused,
+        thumbnailOptimizationProfile
+    ]);
+
+    useEffect(() => {
+        if (browserMockMode) return;
+        if (!enableAutoThumbnailHealing || !isRunningRef.current) {
+            lastThrottleRef.current = null;
+            return;
+        }
+
+        setBackendThrottled(isImageQueryFetching);
+    }, [
+        browserMockMode,
+        enableAutoThumbnailHealing,
+        isImageQueryFetching,
+        setBackendThrottled
+    ]);
+
+    useEffect(() => {
+        if (browserMockMode) return;
+        if (!enableAutoThumbnailHealing) return;
+        if (!isHardBlocked || !isRunningRef.current) return;
+
+        console.log('[ThumbnailQueue] Pausing backend job for blocking activity');
+        setBackgroundHealingPaused(true);
+        void cancelBackendJob(false);
+    }, [
+        browserMockMode,
+        cancelBackendJob,
+        enableAutoThumbnailHealing,
+        isHardBlocked,
+        setBackgroundHealingPaused
+    ]);
+
+    useEffect(() => {
+        if (browserMockMode) return;
+        if (!isSettingsLoaded) return;
+        if (!enableAutoThumbnailHealing) return;
+        if (thumbnailOptimizationRetrySignal === 0 && postRunRetrySignal === 0) return;
+        if (isRunningRef.current) {
+            retryAfterCurrentRunRef.current = true;
+            return;
+        }
+
+        if (shouldPauseForActivity()) {
+            setBackgroundHealingPaused(true);
+            return;
+        }
+
+        scheduleIdleCallback(() => {
+            runQueue();
+        });
+    }, [
+        browserMockMode,
+        enableAutoThumbnailHealing,
+        isSettingsLoaded,
+        postRunRetrySignal,
+        runQueue,
+        scheduleIdleCallback,
+        setBackgroundHealingPaused,
+        shouldPauseForActivity,
+        thumbnailOptimizationRetrySignal
+    ]);
+
     useEffect(() => {
         if (browserMockMode) return;
 
         const store = useLibraryStore.getState();
-
-        // Only resume if:
-        // 1. We were previously running (indicated by paused state)
-        // 2. Blocking activity is gone
-        // 3. Feature is still enabled
-        if (store.backgroundHealingPaused && !isBlocked && enableAutoThumbnailHealing) {
+        if (store.backgroundHealingPaused && !isHardBlocked && enableAutoThumbnailHealing) {
             console.log('[ThumbnailQueue] Resuming after blocking activity...');
             setBackgroundHealingPaused(false);
 
-            // Delay before resuming to let things settle
             const resumeTimer = setTimeout(() => {
                 scheduleIdleCallback(() => {
                     runQueue();
@@ -409,18 +563,24 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
 
             return () => clearTimeout(resumeTimer);
         }
-    }, [isBlocked, runQueue, scheduleIdleCallback, setBackgroundHealingPaused, enableAutoThumbnailHealing, browserMockMode]);
+    }, [
+        browserMockMode,
+        enableAutoThumbnailHealing,
+        isHardBlocked,
+        resumeSignal,
+        runQueue,
+        scheduleIdleCallback,
+        setBackgroundHealingPaused
+    ]);
 
-    /**
-     * Cleanup on unmount.
-     */
     useEffect(() => {
         return () => {
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
+            if (isRunningRef.current) {
+                void commands.cancelThumbnailOptimizationJob().catch(console.error);
             }
             setBackgroundHealingActive(false);
             setBackgroundHealingProgress(null);
+            setBackgroundHealingDetails(null);
         };
-    }, [setBackgroundHealingActive, setBackgroundHealingProgress]);
+    }, [setBackgroundHealingActive, setBackgroundHealingDetails, setBackgroundHealingProgress]);
 }

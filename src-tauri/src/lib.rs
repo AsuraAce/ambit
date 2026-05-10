@@ -69,6 +69,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         scanner::show_in_folder,
         scanner::scan_directory_with_stats,
         scanner::scan_directory_since,
+        thumb::optimizer::start_thumbnail_optimization_job,
+        thumb::optimizer::cancel_thumbnail_optimization_job,
+        thumb::optimizer::set_thumbnail_optimization_throttled,
+        thumb::optimizer::get_thumbnail_optimization_failures,
+        thumb::optimizer::retry_failed_thumbnail_optimizations,
         // watcher commands
         watcher::start_native_folder_watcher,
         // metadata commands
@@ -97,6 +102,7 @@ pub fn run() {
 
     // Check for deferred purge request BEFORE initializing the database
     check_and_execute_deferred_purge();
+    repair_known_migration_metadata();
 
     let log_level = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "info".to_string())
@@ -124,6 +130,7 @@ pub fn run() {
         .manage(ModelDiscoveryState::default())
         .manage(ReparseState::default())
         .manage(FileHashBackfillState::default())
+        .manage(thumb::optimizer::ThumbnailOptimizationState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             app.handle()
@@ -245,6 +252,175 @@ fn check_and_execute_deferred_purge() {
             }
             if shm_path.exists() {
                 let _ = std::fs::remove_file(&shm_path);
+            }
+        }
+    }
+}
+
+/// Repair historical migration metadata for a known development/mainline collision.
+///
+/// Version 55 shipped as `add_manual_thumbnail_lookup_index` before this branch briefly
+/// reused 55 for thumbnail optimization metadata. SQLx validates migration checksums before
+/// applying new migrations, so databases with the already-applied manual lookup index must
+/// keep version 55 mapped to that same semantic migration. This only updates the checksum
+/// when the migration row and the index both prove that the manual lookup migration ran.
+#[cfg(not(test))]
+fn repair_known_migration_metadata() {
+    use sha2::{Digest, Sha384};
+
+    let mut paths_to_check = Vec::new();
+
+    if let Some(config_dir) = dirs::config_dir() {
+        paths_to_check.push(config_dir.join("com.ambit.app"));
+        paths_to_check.push(config_dir.join("com.ambit.dev"));
+        paths_to_check.push(config_dir.join("com.ambit.alpha"));
+        paths_to_check.push(config_dir.join("com.tauri.dev"));
+    }
+    if let Some(data_local_dir) = dirs::data_local_dir() {
+        paths_to_check.push(data_local_dir.join("com.ambit.app"));
+        paths_to_check.push(data_local_dir.join("com.ambit.dev"));
+        paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
+        paths_to_check.push(data_local_dir.join("com.tauri.dev"));
+    }
+
+    let migration55 = db::migrations::m55_manual_thumbnail_lookup_index::migration55();
+    let expected_m55_checksum = Sha384::digest(migration55.sql.as_bytes()).to_vec();
+    let migration56 = db::migrations::m56_thumbnail_optimization::migration56();
+    let expected_m56_checksum = Sha384::digest(migration56.sql.as_bytes()).to_vec();
+
+    for app_dir in paths_to_check {
+        let db_path = app_dir.join("images.db");
+        if !db_path.exists() {
+            continue;
+        }
+
+        let Ok(conn) = rusqlite::Connection::open(&db_path) else {
+            continue;
+        };
+
+        let has_migrations_table = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM sqlite_master
+                 WHERE type = 'table'
+                   AND name = '_sqlx_migrations'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+
+        if has_migrations_table == 0 {
+            continue;
+        }
+
+        let applied_55 = conn.query_row(
+            "SELECT description, checksum
+             FROM _sqlx_migrations
+             WHERE version = 55",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        );
+
+        if let Ok((description, checksum)) = applied_55 {
+            if description == "add_manual_thumbnail_lookup_index"
+                && checksum != expected_m55_checksum
+            {
+                let has_manual_index = conn
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM sqlite_master
+                         WHERE type = 'index'
+                           AND name = 'idx_images_thumbnail_path_lookup_v1'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap_or(0);
+
+                if has_manual_index > 0 {
+                    match conn.execute(
+                        "UPDATE _sqlx_migrations
+                         SET checksum = ?1
+                         WHERE version = 55
+                           AND description = 'add_manual_thumbnail_lookup_index'",
+                        rusqlite::params![&expected_m55_checksum],
+                    ) {
+                        Ok(updated) if updated > 0 => {
+                            println!(
+                                "[DB] Repaired checksum for migration 55 add_manual_thumbnail_lookup_index at {:?}",
+                                db_path
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            eprintln!(
+                                "[DB] Failed to repair migration 55 checksum at {:?}: {}",
+                                db_path, error
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        let applied_56 = conn.query_row(
+            "SELECT description, checksum
+             FROM _sqlx_migrations
+             WHERE version = 56",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        );
+
+        let Ok((description_56, checksum_56)) = applied_56 else {
+            continue;
+        };
+
+        if description_56 != "add_thumbnail_optimization_queue_metadata"
+            || checksum_56 == expected_m56_checksum
+        {
+            continue;
+        }
+
+        let required_columns = [
+            "thumbnail_version",
+            "thumbnail_failure_count",
+            "thumbnail_last_error",
+            "thumbnail_last_attempt_at",
+        ];
+        let has_thumbnail_columns = required_columns.iter().all(|column| {
+            conn.query_row(
+                "SELECT COUNT(*)
+                 FROM pragma_table_info('images')
+                 WHERE name = ?1",
+                [*column],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+                > 0
+        });
+
+        if !has_thumbnail_columns {
+            continue;
+        }
+
+        match conn.execute(
+            "UPDATE _sqlx_migrations
+             SET checksum = ?1
+             WHERE version = 56
+               AND description = 'add_thumbnail_optimization_queue_metadata'",
+            rusqlite::params![&expected_m56_checksum],
+        ) {
+            Ok(updated) if updated > 0 => {
+                println!(
+                    "[DB] Repaired checksum for migration 56 add_thumbnail_optimization_queue_metadata at {:?}",
+                    db_path
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!(
+                    "[DB] Failed to repair migration 56 checksum at {:?}: {}",
+                    db_path, error
+                );
             }
         }
     }
