@@ -113,7 +113,9 @@ describe('useAiSearchLogic', () => {
 
         mockGenerateFilters.mockResolvedValue({
             models: ['SDXL'],
-            searchQuery: 'sunset'
+            searchQuery: 'sunset',
+            dateFrom: '2026-04-01',
+            dateTo: '2026-04-30'
         });
 
         await act(async () => {
@@ -122,6 +124,14 @@ describe('useAiSearchLogic', () => {
 
         expect(mockGenerateFilters).toHaveBeenCalledWith('find sunsets', 'test-key', undefined);
         expect(mockSetFilters).toHaveBeenCalledTimes(2); // Local set + AI results set
+        const aiUpdate = mockSetFilters.mock.calls[1][0] as (prev: FilterState) => FilterState;
+        expect(aiUpdate(mockFilters)).toMatchObject({
+            searchQuery: 'sunset',
+            models: ['SDXL'],
+            dateRange: 'custom',
+            dateFrom: '2026-04-01',
+            dateTo: '2026-04-30'
+        });
         expect(mockAddToast).toHaveBeenCalledWith('Filters updated by AI', 'success');
     });
 

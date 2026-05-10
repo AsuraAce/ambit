@@ -370,6 +370,36 @@ async scanDirectorySince(path: string, since: number) : Promise<Result<FileEntry
     else return { status: "error", error: e  as any };
 }
 },
+async startThumbnailOptimizationJob(config: ThumbnailOptimizationConfig) : Promise<Result<ThumbnailOptimizationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_thumbnail_optimization_job", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelThumbnailOptimizationJob() : Promise<void> {
+    await TAURI_INVOKE("cancel_thumbnail_optimization_job");
+},
+async setThumbnailOptimizationThrottled(throttled: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_thumbnail_optimization_throttled", { throttled });
+},
+async getThumbnailOptimizationFailures(limit: number) : Promise<Result<ThumbnailOptimizationFailureList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_thumbnail_optimization_failures", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async retryFailedThumbnailOptimizations() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_failed_thumbnail_optimizations") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startNativeFolderWatcher(paths: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_native_folder_watcher", { paths }) };
@@ -536,6 +566,11 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
+export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile }
+export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }
+export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
+export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
+export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
 export type ThumbnailScanResult = { found: number; updated: number }
 /**
  * Valid facet names result - used for drill-down filtering

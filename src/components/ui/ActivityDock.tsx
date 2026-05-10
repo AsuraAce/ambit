@@ -3,6 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { commands } from '../../bindings';
+import {
+    THUMBNAIL_QUEUE_COMPLETE_FOOTER,
+    THUMBNAIL_QUEUE_FAILURE_FOOTER,
+    THUMBNAIL_QUEUE_RUNNING_FOOTER
+} from '../../hooks/thumbnailQueueProgress';
 
 export const ActivityDock: React.FC = () => {
     const {
@@ -91,8 +96,9 @@ export const ActivityDock: React.FC = () => {
         label = "Smart Fill";
     } else if (isBackgroundActive) {
         progress = backgroundHealingProgress;
-        label = "Auto-Optimizing";
+        label = "Smart Thumbnails";
         isLowPriority = true;
+        footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
         label = "Refreshing Metadata";
@@ -113,7 +119,14 @@ export const ActivityDock: React.FC = () => {
     const total = progress?.total || 0;
     const message = progress?.message || (isLiveWatchActive ? liveWatchSession.message || '' : '');
     const percent = isLiveWatchSummary ? 100 : total > 0 ? Math.round((current / total) * 100) : (active ? 0 : 0);
+    const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
+    const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
+    const visibleFooterMessage = smartThumbnailHasFailures
+        ? THUMBNAIL_QUEUE_FAILURE_FOOTER
+        : (smartThumbnailIsComplete ? THUMBNAIL_QUEUE_COMPLETE_FOOTER : footerMessage);
+    const progressCountLabel = total > 0 && !isLiveWatchActive && !isBackgroundActive ? `${current.toLocaleString()} / ${total.toLocaleString()}` : null;
     const showIndeterminateProgress = total === 0 && active && (!isLiveWatchActive || !isLiveWatchSummary);
+    const showPercent = !isLiveWatchActive && !isBackgroundActive && total > 0;
     const accentClasses = isLiveWatchTone || isLowPriority
         ? {
             iconText: 'text-violet-600 dark:text-violet-400',
@@ -178,7 +191,7 @@ export const ActivityDock: React.FC = () => {
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
                                         <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                             {label}
-                                            {total > 0 && !isLiveWatchActive && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
+                                            {progressCountLabel && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{progressCountLabel}</span>}
                                         </p>
                                     </motion.div>
                                 </div>
@@ -222,7 +235,7 @@ export const ActivityDock: React.FC = () => {
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
-                                    {!isLiveWatchActive && (
+                                    {showPercent && (
                                         <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
                                             {percent}%
                                         </span>
@@ -234,7 +247,7 @@ export const ActivityDock: React.FC = () => {
                             <motion.div layout="position" className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Info className="w-3 h-3 text-gray-400" />
-                                    <span className="text-[9px] text-gray-500 font-medium">{footerMessage}</span>
+                                    <span className="text-[9px] text-gray-500 font-medium">{visibleFooterMessage}</span>
                                 </div>
 
                                 {supportsCancel && (

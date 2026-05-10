@@ -6,6 +6,7 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockFacets, getBrowserMockStats, getBrowserMockValidFacetNames } from '../services/browserMockData';
+import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 
 
 interface UseLibraryStatsQueryProps {
@@ -14,6 +15,7 @@ interface UseLibraryStatsQueryProps {
     privacyEnabled: boolean;
     allCollections: Collection[];
     settingsLoaded?: boolean;
+    validFacetsEnabled?: boolean;
 }
 
 
@@ -57,6 +59,8 @@ export const shouldFetchValidFacets = (
         !!filters.collectionId ||
         filters.searchQuery.trim().length > 0 ||
         filters.dateRange !== 'all' ||
+        !!filters.dateFrom ||
+        !!filters.dateTo ||
         filters.favoritesOnly ||
         !!filters.pinnedOnly ||
         hasRangeFilter(filters.minSteps) ||
@@ -72,12 +76,14 @@ export const useLibraryStatsQuery = ({
     settings,
     privacyEnabled,
     allCollections,
-    settingsLoaded = true
+    settingsLoaded = true,
+    validFacetsEnabled = true
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
+    const sideQueryFilters = useDebouncedSideQueryFilters(filters);
 
     // Stable reference: only track the active collection's smart filter definition
-    const activeCollectionId = filters.collectionId;
+    const activeCollectionId = sideQueryFilters.collectionId;
     const activeCollection = useMemo(() =>
         allCollections.find(c => c.id === activeCollectionId),
         [allCollections, activeCollectionId]
@@ -93,28 +99,28 @@ export const useLibraryStatsQuery = ({
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
     const fetchValidFacets = useMemo(
-        () => shouldFetchValidFacets(filters, privacyEnabled, settings.maskingMode),
-        [filters, privacyEnabled, settings.maskingMode]
+        () => validFacetsEnabled && shouldFetchValidFacets(sideQueryFilters, privacyEnabled, settings.maskingMode),
+        [sideQueryFilters, privacyEnabled, settings.maskingMode, validFacetsEnabled]
     );
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
     return useQuery({
-        queryKey: ['libraryStats', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return {
-                    facets: getBrowserMockFacets(filters),
-                    stats: getBrowserMockStats(filters),
-                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(filters) : null
+                    facets: getBrowserMockFacets(sideQueryFilters),
+                    stats: getBrowserMockStats(sideQueryFilters),
+                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null
                 };
             }
 
             // 1. Base Query: Standard intersection of ALL filters
             // This gives us the correct Counts for everything (and Valid Names for ALL-mode categories)
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
-                filters,
+                sideQueryFilters,
                 privacyEnabled,
                 settings.maskingMode,
                 settings.maskedKeywords,
@@ -138,13 +144,13 @@ export const useLibraryStatsQuery = ({
             if (activeCollectionId) {
                 // Collections are single select, no disjunctive logic needed usually unless we allowed multi-collection
             }
-            if (filters.loras.length > 0 && filters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
-            if (filters.embeddings.length > 0 && filters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
-            if (filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
-            if (filters.tools.length > 0 && filters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
-            if (filters.models.length > 0 && filters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
-            if (filters.controlNets.length > 0 && filters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
-            if (filters.ipAdapters.length > 0 && filters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
+            if (sideQueryFilters.loras.length > 0 && sideQueryFilters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
+            if (sideQueryFilters.embeddings.length > 0 && sideQueryFilters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
+            if (sideQueryFilters.hypernetworks.length > 0 && sideQueryFilters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
+            if (sideQueryFilters.tools.length > 0 && sideQueryFilters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
+            if (sideQueryFilters.models.length > 0 && sideQueryFilters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
+            if (sideQueryFilters.controlNets.length > 0 && sideQueryFilters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
+            if (sideQueryFilters.ipAdapters.length > 0 && sideQueryFilters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
@@ -161,7 +167,7 @@ export const useLibraryStatsQuery = ({
 
                     // Build "Partial" Where Clause (Global - Self)
                     const partial = buildSqlWhereClause(
-                        filters,
+                        sideQueryFilters,
                         privacyEnabled,
                         settings.maskingMode,
                         settings.maskedKeywords,

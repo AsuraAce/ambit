@@ -35,6 +35,7 @@ const resetLibraryStore = () => {
         lastMissingScanResult: null,
         isBackgroundHealingActive: false,
         backgroundHealingProgress: null,
+        backgroundHealingDetails: null,
         backgroundHealingPaused: false,
         isRefreshingMetadata: false,
         refreshProgress: null,
@@ -96,6 +97,64 @@ describe('ActivityDock', () => {
         expect(screen.getByText('3 / 12')).toBeTruthy();
         expect(screen.getByText('Checking file paths for missing images...')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
+    });
+
+    it('renders running smart thumbnail progress without repeated checked counts', () => {
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: {
+                current: 340,
+                total: 0,
+                message: 'Optimized 340 thumbnails'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+        expect(screen.getByText('Optimized 340 thumbnails')).toBeTruthy();
+        expect(screen.getByText('Runs at low priority and throttles while you browse.')).toBeTruthy();
+        expect(screen.queryByText('340 checked')).toBeNull();
+        expect(screen.queryByText('340 / 340')).toBeNull();
+        expect(screen.queryByText('0%')).toBeNull();
+        expect(screen.queryByText('100%')).toBeNull();
+        expect(screen.queryByText('Cancel')).toBeNull();
+    });
+
+    it('renders completed smart thumbnail progress without generic count or percent chrome', () => {
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: {
+                current: 340,
+                total: 340,
+                message: 'Finished: 340 thumbnails optimized'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Smart Thumbnails')).toBeTruthy();
+        expect(screen.getByText('Finished: 340 thumbnails optimized')).toBeTruthy();
+        expect(screen.getByText('Library thumbnails are up to date.')).toBeTruthy();
+        expect(screen.queryByText('340 checked')).toBeNull();
+        expect(screen.queryByText('340 / 340')).toBeNull();
+        expect(screen.queryByText('100%')).toBeNull();
+    });
+
+    it('renders smart thumbnail failure footer when files need attention', () => {
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: {
+                current: 340,
+                total: 0,
+                message: 'Optimized 338 thumbnails; 2 need attention'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Optimized 338 thumbnails; 2 need attention')).toBeTruthy();
+        expect(screen.getByText('Some files may be corrupt or unavailable.')).toBeTruthy();
     });
 
     it('renders a unified Live Watch card without cancel controls during active live work', () => {

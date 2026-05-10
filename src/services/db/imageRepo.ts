@@ -1106,7 +1106,9 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         let retries = 3;
         while (retries > 0) {
             try {
-                const result = await db.execute('UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""');
+                const result = await db.execute(
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 return result.rowsAffected;
             } catch (e: unknown) {
@@ -1139,7 +1141,7 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
     await db.execute(
-        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ? WHERE id = ?',
+        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?',
         [normalizedThumb, 'ambit', normalizedId]
     );
 };
@@ -1172,13 +1174,31 @@ export const updateThumbnailPathsBatch = async (updates: {
     for (const { id, thumbnailPath, microThumbnail, thumbnailSource } of updates) {
         const normalizedId = normalizePath(id);
         const normalizedThumb = normalizePath(thumbnailPath);
+        const normalizedSource = thumbnailSource || null;
 
         let retries = 3;
         while (retries > 0) {
             try {
                 await db.execute(
-                    'UPDATE images SET thumbnail_path = ?, micro_thumbnail = COALESCE(?, micro_thumbnail), thumbnail_source = COALESCE(?, thumbnail_source) WHERE id = ?',
-                    [normalizedThumb, microThumbnail || null, thumbnailSource || null, normalizedId]
+                    `UPDATE images
+                     SET thumbnail_path = ?,
+                         micro_thumbnail = COALESCE(?, micro_thumbnail),
+                         thumbnail_source = COALESCE(?, thumbnail_source),
+                         thumbnail_version = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 1 ELSE thumbnail_version END,
+                         thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
+                         thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
+                         thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
+                     WHERE id = ?`,
+                    [
+                        normalizedThumb,
+                        microThumbnail || null,
+                        normalizedSource,
+                        normalizedSource,
+                        normalizedSource,
+                        normalizedSource,
+                        normalizedSource,
+                        normalizedId
+                    ]
                 );
                 break;
             } catch (e: unknown) {

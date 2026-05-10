@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Collection, FilterState } from '../../../types';
 import { X, Save, Trash2, Filter, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getDateFilterLabel } from '../../../utils/dateFilters';
 
 interface CollectionEditorModalProps {
     isOpen: boolean;
@@ -63,6 +64,8 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 (next[key] as any[]) = (next[key] as any[]).filter(item => item !== value);
             } else if (key === 'dateRange') {
                 next.dateRange = 'all';
+                next.dateFrom = undefined;
+                next.dateTo = undefined;
             } else if (key === 'favoritesOnly') {
                 next.favoritesOnly = false;
             } else if (key === 'searchQuery') {
@@ -95,11 +98,11 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             );
         }
 
-        // Date Range
-        if (draftFilters.dateRange && draftFilters.dateRange !== 'all') {
+        const dateFilterLabel = getDateFilterLabel(draftFilters);
+        if (dateFilterLabel) {
             chips.push(
                 <div key="date" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
-                    <span>{draftFilters.dateRange}</span>
+                    <span>{dateFilterLabel}</span>
                     <button onClick={() => removeFilter('dateRange', null)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
                 </div>
             );

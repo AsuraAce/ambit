@@ -1,7 +1,8 @@
 
-import { render, screen } from '../../test/testUtils';
-import { describe, it, expect, vi } from 'vitest';
+import { act, render, screen } from '../../test/testUtils';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 // Mock child components to verify layout structure
 vi.mock('../../features/collections/components/AppSidebar', () => ({
@@ -39,7 +40,19 @@ vi.mock('../../features/library/components/TimelineView', () => ({
     )
 }));
 vi.mock('../../features/library/components/VirtualGrid', () => ({
-    VirtualGrid: () => <div data-testid="virtual-grid" />
+    VirtualGrid: ({
+        transitionKey,
+        suspendResizeLayout
+    }: {
+        transitionKey?: string;
+        suspendResizeLayout?: boolean;
+    }) => (
+        <div
+            data-testid="virtual-grid"
+            data-transition-key={transitionKey ?? ''}
+            data-suspend-resize-layout={String(Boolean(suspendResizeLayout))}
+        />
+    )
 }));
 vi.mock('../../features/library/components/GridItem', () => ({
     GridItem: () => <div data-testid="grid-item" />
@@ -58,12 +71,18 @@ vi.mock('../../contexts/SearchContext', () => ({
 }));
 
 describe('AppLayout', () => {
+    afterEach(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
     const defaultProps: any = {
         collections: [],
         smartCollections: [],
         filters: {} as any,
         setFilters: vi.fn(),
         isFilterPanelOpen: false,
+        setIsFilterPanelOpen: vi.fn(),
         onRefreshCollections: vi.fn(),
         colOps: {} as any,
         setExportIds: vi.fn(),
@@ -120,6 +139,66 @@ describe('AppLayout', () => {
     it('renders VirtualGrid when viewMode is grid', () => {
         render(<AppLayout {...defaultProps} viewMode="grid" images={[{ id: '1' } as any]} />);
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+    });
+
+    it('passes a gallery transition key to VirtualGrid', () => {
+        const thumbnailSize = useSettingsStore.getState().settings.thumbnailSize;
+
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="grid"
+                layoutMode="justified"
+                sortOption="name_asc"
+                filters={{
+                    collectionId: 'collection-1',
+                    favoritesOnly: true,
+                    pinnedOnly: false,
+                    showGrids: true,
+                    showIntermediates: false
+                }}
+            />
+        );
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toBe(
+            `justified|${thumbnailSize}|name_asc|collection-1|favorites|unpinned-scope|show-grids|hide-intermediates`
+        );
+    });
+
+    it('does not suspend VirtualGrid resize layout on initial render', () => {
+        const closed = render(<AppLayout {...defaultProps} isFilterPanelOpen={false} />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+
+        closed.unmount();
+
+        render(<AppLayout {...defaultProps} isFilterPanelOpen />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+    });
+
+    it('suspends VirtualGrid resize layout while the filter panel is transitioning', () => {
+        vi.useFakeTimers();
+
+        const { rerender } = render(<AppLayout {...defaultProps} isFilterPanelOpen={false} />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+
+        rerender(<AppLayout {...defaultProps} isFilterPanelOpen />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('true');
+
+        act(() => {
+            vi.advanceTimersByTime(539);
+        });
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('true');
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
     });
 
     it('renders TimelineView when viewMode is timeline', () => {
