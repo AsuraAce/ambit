@@ -122,9 +122,13 @@ impl ComfyGraph {
                                                     link_source_map.get(&link_id)
                                                 {
                                                     // Handle multiple inputs with same name (like in Prompts Everywhere)
-                                                    let val = resolved.entry(name.to_string()).or_insert(Value::Array(Vec::new()));
+                                                    let val = resolved
+                                                        .entry(name.to_string())
+                                                        .or_insert(Value::Array(Vec::new()));
                                                     if let Some(arr) = val.as_array_mut() {
-                                                        arr.push(Value::String(source_node_id.clone()));
+                                                        arr.push(Value::String(
+                                                            source_node_id.clone(),
+                                                        ));
                                                     }
                                                 }
                                             }
@@ -187,7 +191,10 @@ impl ComfyGraph {
             }
         }
 
-        Self { nodes: nodes_map, broadcasters }
+        Self {
+            nodes: nodes_map,
+            broadcasters,
+        }
     }
 
     #[allow(dead_code)]
@@ -242,7 +249,9 @@ pub fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opt
             return Some(link);
         }
         // Wireless fallback
-        if let Some(wireless) = crate::metadata::comfyui::heuristics::find_wireless_node(graph, node, input_name) {
+        if let Some(wireless) =
+            crate::metadata::comfyui::heuristics::find_wireless_node(graph, node, input_name)
+        {
             // CRITICAL: Prevent self-reference loops
             if wireless != node_id {
                 return Some(wireless);
@@ -583,7 +592,8 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 for val in arr {
                     if let Some(s) = val.as_str() {
                         let lower = s.to_lowercase();
-                        let exclusions = ["undefined", "null", "none", "unknown", "negative prompt:"];
+                        let exclusions =
+                            ["undefined", "null", "none", "unknown", "negative prompt:"];
                         if s.len() > 5 && !exclusions.contains(&lower.as_str()) {
                             return Some(val);
                         }

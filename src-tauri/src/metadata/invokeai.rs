@@ -1,5 +1,7 @@
 use super::resources::{scan_for_resources, Resources};
-use super::utils::{extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt};
+use super::utils::{
+    extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
+};
 use super::ImageMetadata;
 
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
@@ -11,7 +13,8 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     let mut current_root = json;
     let mut temp_val: Option<serde_json::Value> = None;
 
-    if let Some(inner) = json.get("invokeai_metadata")
+    if let Some(inner) = json
+        .get("invokeai_metadata")
         .or_else(|| json.get("sd-metadata"))
         .or_else(|| json.get("dream_metadata"))
     {
@@ -90,7 +93,6 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     } else if let Some(neg) = root.get("negative_conditioning").and_then(|v| v.as_str()) {
         meta.negative_prompt = neg.trim().to_string();
     }
-
 
     if let Some(steps) = root.get("steps").and_then(|v| v.as_u64()) {
         meta.steps = steps as u32;
@@ -217,10 +219,11 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
 
     // Extract embedded workflow/graph if present
     // Check both the unwrapped root and the original input (for sibling chunks)
-    if let Some(wf) = root.get("workflow")
+    if let Some(wf) = root
+        .get("workflow")
         .or_else(|| root.get("graph"))
         .or_else(|| json.get("workflow"))
-        .or_else(|| json.get("graph")) 
+        .or_else(|| json.get("graph"))
     {
         meta.workflow_json = Some(if wf.is_string() {
             wf.as_str().unwrap().to_string()
@@ -248,7 +251,7 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     // 2. Check for the has_workflow field (which we inject into original_metadata_json during sync)
     // 3. Check for the has_workflow_data flag
     // 4. Fallback for "corrupted" camelCase files (hasWorkflowHint)
-    if meta.workflow_json.is_some() 
+    if meta.workflow_json.is_some()
         || root.get("has_workflow").map(is_true).unwrap_or(false)
         || json.get("has_workflow").map(is_true).unwrap_or(false)
         || root_ref.get("has_workflow").map(is_true).unwrap_or(false)
@@ -504,7 +507,9 @@ mod tests {
         assert_eq!(meta.hypernetworks.len(), 3);
         assert!(meta.hypernetworks.contains(&"style_v1 (0.80)".to_string()));
         assert!(meta.hypernetworks.contains(&"detailer".to_string()));
-        assert!(meta.hypernetworks.contains(&"a1_extra_600000 (0.15)".to_string()));
+        assert!(meta
+            .hypernetworks
+            .contains(&"a1_extra_600000 (0.15)".to_string()));
     }
     #[test]
     fn test_extract_invokeai_metadata_prompt_string() {
@@ -514,7 +519,10 @@ mod tests {
             "cfg_scale": 7.5
         });
         let meta = extract_invokeai_metadata(&payload);
-        assert_eq!(meta.positive_prompt, "a professional portrait, soft lighting");
+        assert_eq!(
+            meta.positive_prompt,
+            "a professional portrait, soft lighting"
+        );
         assert_eq!(meta.steps, 30);
     }
 

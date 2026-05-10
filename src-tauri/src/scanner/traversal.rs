@@ -214,18 +214,20 @@ pub fn collect_images_with_stats_since_recursive(
                         // Copied files often retain their original mtime but have new ctime
                         let (size, modified, created) = match entry.metadata() {
                             Ok(m) => {
-                                let mtime = m.modified()
+                                let mtime = m
+                                    .modified()
                                     .ok()
                                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                                     .map(|d| d.as_millis() as u64)
                                     .unwrap_or(0);
-                                let ctime = m.created()
+                                let ctime = m
+                                    .created()
                                     .ok()
                                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                                     .map(|d| d.as_millis() as u64)
                                     .unwrap_or(0);
                                 (m.len(), mtime, ctime)
-                            },
+                            }
                             Err(_) => (0, 0, 0),
                         };
 

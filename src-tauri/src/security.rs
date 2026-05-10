@@ -1,5 +1,5 @@
-use tauri::command;
 use keyring::Entry;
+use tauri::command;
 
 const SERVICE_NAME: &str = "Ambit";
 const ACCOUNT_NAME: &str = "gemini_api_key";

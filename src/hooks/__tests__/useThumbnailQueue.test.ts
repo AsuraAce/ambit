@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * - Defers startup by 30 seconds to avoid blocking app initialization
  * - Starts the backend-owned thumbnail optimization job
  * - Listens for backend progress and completion events
- * - Pauses when `isImporting`, `isRegeneratingThumbnails`, or `syncStatus === 'syncing'`
+ * - Pauses when high-priority import, scan, discovery, indexing, or metadata work is active
  * - Throttles instead of cancelling during ordinary image queries
  * - Resumes automatically when blocking activities complete
  * - Respects `enableAutoThumbnailHealing` settings flag
@@ -103,6 +103,12 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('isImporting');
         expect(content).toContain('isRegeneratingThumbnails');
         expect(content).toContain('syncStatus');
+        expect(content).toContain('isResolvingModels');
+        expect(content).toContain('isScanningDiscovery');
+        expect(content).toContain('isScanningDuplicates');
+        expect(content).toContain('isScanningMissingFiles');
+        expect(content).toContain('isPopulatingThumbnails');
+        expect(content).toContain('isRefreshingMetadata');
         expect(content).toContain('isHardBlocked');
         expect(content).toContain('setThumbnailOptimizationThrottled');
         expect(content).toContain('isImageQueryFetching');

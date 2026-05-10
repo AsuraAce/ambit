@@ -10,6 +10,10 @@ export interface SyncProgress {
     current: number;
     total: number;
     message?: string;
+    phase?: string;
+    mode?: 'determinate' | 'indeterminate' | 'complete';
+    detail?: string;
+    startedAt?: number;
 }
 
 export type ThumbnailOptimizationDetailProfile = 'quiet' | 'balanced' | 'fast';
@@ -385,7 +389,18 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setIsPopulatingThumbnails: (val) => set({ isPopulatingThumbnails: val, isActivityDockDismissed: val ? false : undefined }),
     setLastModelResolutionResult: (result) => set({ lastModelResolutionResult: result }),
     setIsScanningDiscovery: (val) => set({ isScanningDiscovery: val, isActivityDockDismissed: val ? false : undefined }),
-    setDiscoveryScanProgress: (progress) => set({ discoveryScanProgress: progress }),
+    setDiscoveryScanProgress: (progress) => set((state) => {
+        if (progress && progress.startedAt === undefined && state.discoveryScanProgress?.startedAt !== undefined) {
+            return {
+                discoveryScanProgress: {
+                    ...progress,
+                    startedAt: state.discoveryScanProgress.startedAt
+                }
+            };
+        }
+
+        return { discoveryScanProgress: progress };
+    }),
     cancelDiscoveryScan: () => {
         commands.cancelModelDiscovery().catch(console.error);
         set({ isScanningDiscovery: false, discoveryScanProgress: null });

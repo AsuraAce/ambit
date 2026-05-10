@@ -34,7 +34,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                     <FolderSearch className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Resource Discovery</strong>
-                        Add your Model/LoRA folders here. {APP_NAME} will scan them for thumbnails (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
+                        Add your model and resource folders here. {APP_NAME} will scan local assets and sidecar previews (<span className="font-mono text-xs">.jpg, .png, .webp</span>).
                     </div>
                 </div>
                 <div className="flex gap-2">

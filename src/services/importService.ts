@@ -2,7 +2,7 @@ import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { insertImage } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands } from '../bindings';
+import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -698,12 +698,12 @@ export const processTargetedFiles = async (
     return result;
 };
 
-export const scanResourceThumbnails = async (paths: string[]): Promise<{ found: number; updated: number }> => {
+export const scanResourceThumbnails = async (paths: string[]): Promise<ThumbnailScanResult> => {
     try {
         const result = await unwrap(commands.scanModelThumbnails(paths));
         return result;
     } catch (e) {
         console.error('Failed to scan resource thumbnails', e);
-        return { found: 0, updated: 0 };
+        throw e;
     }
 };

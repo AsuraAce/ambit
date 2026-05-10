@@ -1,13 +1,36 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
-import { useLibraryStore } from '../../stores/libraryStore';
+import { useLibraryStore, type SyncProgress } from '../../stores/libraryStore';
 import { commands } from '../../bindings';
 import {
     THUMBNAIL_QUEUE_COMPLETE_FOOTER,
     THUMBNAIL_QUEUE_FAILURE_FOOTER,
     THUMBNAIL_QUEUE_RUNNING_FOOTER
 } from '../../hooks/thumbnailQueueProgress';
+
+const ELAPSED_VISIBLE_AFTER_MS = 5000;
+
+const formatElapsed = (elapsedMs: number): string | null => {
+    if (elapsedMs < ELAPSED_VISIBLE_AFTER_MS) {
+        return null;
+    }
+
+    const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+    if (totalSeconds < 60) {
+        return `${totalSeconds}s elapsed`;
+    }
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds > 0 ? `${minutes}m ${seconds}s elapsed` : `${minutes}m elapsed`;
+};
+
+const splitDetailItems = (detail?: string): string[] => (
+    detail
+        ? detail.split('|').map(item => item.trim()).filter(Boolean)
+        : []
+);
 
 export const ActivityDock: React.FC = () => {
     const {
@@ -18,7 +41,6 @@ export const ActivityDock: React.FC = () => {
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
         isActivityDockMinimized, setIsActivityDockMinimized,
-        lastModelResolutionResult,
         isPopulatingThumbnails,
         isScanningDiscovery,
         discoveryScanProgress,
@@ -44,18 +66,15 @@ export const ActivityDock: React.FC = () => {
     const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isScanningDuplicates || isScanningMissingFiles || isPopulatingThumbnails;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
-    // Show refresh if active AND no high priority
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
-    // Show Live Watch if active and nothing else is overriding it
     const isLiveWatchActive = liveWatchSession.active && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
     const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
     const isLiveWatchTone = isLiveWatchActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
 
-    // Determine current task details
-    let progress = null;
+    let progress: SyncProgress | null = null;
     let label = "";
     let isLowPriority = false;
     let supportsCancel = false;
@@ -115,18 +134,44 @@ export const ActivityDock: React.FC = () => {
         footerMessage = 'Live Watch stays active in the background.';
     }
 
-    const current = progress?.current || 0;
-    const total = progress?.total || 0;
-    const message = progress?.message || (isLiveWatchActive ? liveWatchSession.message || '' : '');
-    const percent = isLiveWatchSummary ? 100 : total > 0 ? Math.round((current / total) * 100) : (active ? 0 : 0);
+    if (progress?.mode === 'complete') {
+        supportsCancel = false;
+    }
+
+    const current = progress?.current ?? 0;
+    const total = progress?.total ?? 0;
+    const mode = progress?.mode;
+    const isCompleteProgress = mode === 'complete';
+    const showIndeterminateProgress = mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && (!isLiveWatchActive || !isLiveWatchSummary));
+
+    const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
+
+    React.useEffect(() => {
+        if (!active || !progress?.startedAt || !showIndeterminateProgress) {
+            return;
+        }
+
+        setElapsedNow(Date.now());
+        const interval = window.setInterval(() => setElapsedNow(Date.now()), 1000);
+        return () => window.clearInterval(interval);
+    }, [active, progress?.startedAt, showIndeterminateProgress]);
+
+    const message = progress?.message || progress?.phase || (isLiveWatchActive ? liveWatchSession.message || '' : '');
+    const percent = isLiveWatchSummary || isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
+    const showCounts = total > 0 && !isLiveWatchActive && !isBackgroundActive && !showIndeterminateProgress && !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
         ? THUMBNAIL_QUEUE_FAILURE_FOOTER
         : (smartThumbnailIsComplete ? THUMBNAIL_QUEUE_COMPLETE_FOOTER : footerMessage);
-    const progressCountLabel = total > 0 && !isLiveWatchActive && !isBackgroundActive ? `${current.toLocaleString()} / ${total.toLocaleString()}` : null;
-    const showIndeterminateProgress = total === 0 && active && (!isLiveWatchActive || !isLiveWatchSummary);
-    const showPercent = !isLiveWatchActive && !isBackgroundActive && total > 0;
+    const elapsedLabel = progress?.startedAt && active && showIndeterminateProgress && !isCompleteProgress
+        ? formatElapsed(elapsedNow - progress.startedAt)
+        : null;
+    const secondaryDetails = [
+        ...splitDetailItems(progress?.detail),
+        elapsedLabel
+    ].filter((item): item is string => Boolean(item));
+    const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
     const accentClasses = isLiveWatchTone || isLowPriority
         ? {
             iconText: 'text-violet-600 dark:text-violet-400',
@@ -143,7 +188,6 @@ export const ActivityDock: React.FC = () => {
             percentText: 'text-sage-600 dark:text-sage-400'
         };
 
-    // Should we show the dock? Active AND not dismissed.
     const shouldShow = active && !isActivityDockDismissed;
 
     return (
@@ -158,7 +202,6 @@ export const ActivityDock: React.FC = () => {
                     className="fixed bottom-8 right-8 z-[100]"
                 >
                     {isActivityDockMinimized ? (
-                        // Minimized Pill View
                         <motion.div
                             layoutId="dock-content"
                             onClick={() => setIsActivityDockMinimized(false)}
@@ -176,12 +219,10 @@ export const ActivityDock: React.FC = () => {
                             </motion.div>
                         </motion.div>
                     ) : (
-                        // Maximized Card View
                         <motion.div
                             layoutId="dock-content"
-                            className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/20 dark:border-white/10 p-4 rounded-2xl shadow-2xl flex flex-col w-[min(360px,calc(100vw-2rem))] gap-3 group"
+                            className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/20 dark:border-white/10 p-4 rounded-2xl shadow-2xl flex flex-col w-[min(400px,calc(100vw-2rem))] gap-3 group"
                         >
-                            {/* Header */}
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
@@ -191,7 +232,7 @@ export const ActivityDock: React.FC = () => {
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
                                         <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                             {label}
-                                            {progressCountLabel && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{progressCountLabel}</span>}
+                                            {showCounts && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
                                         </p>
                                     </motion.div>
                                 </div>
@@ -213,7 +254,6 @@ export const ActivityDock: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Progress Bar */}
                             <motion.div layout="position" className="space-y-1.5">
                                 <div className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative">
                                     <motion.div
@@ -235,15 +275,32 @@ export const ActivityDock: React.FC = () => {
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
-                                    {showPercent && (
+                                    {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isCompleteProgress && (
                                         <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
                                             {percent}%
                                         </span>
                                     )}
                                 </div>
+                                {secondaryDetails.length > 0 && hasMultipleSecondaryDetails && (
+                                    <div className="flex flex-wrap gap-1.5 px-0.5">
+                                        {secondaryDetails.map((detail, index) => (
+                                            <span
+                                                key={`${detail}-${index}`}
+                                                className="min-w-0 max-w-full truncate rounded-md bg-black/[0.03] px-2 py-1 text-[10px] font-medium leading-4 text-gray-500 dark:bg-white/[0.04] dark:text-gray-400"
+                                                title={detail}
+                                            >
+                                                {detail}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                {secondaryDetails.length === 1 && (
+                                    <p className="text-[10px] font-medium text-gray-400 dark:text-gray-500 truncate px-0.5 leading-4">
+                                        {secondaryDetails[0]}
+                                    </p>
+                                )}
                             </motion.div>
 
-                            {/* Subtle Footer with CANCEL button */}
                             <motion.div layout="position" className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Info className="w-3 h-3 text-gray-400" />

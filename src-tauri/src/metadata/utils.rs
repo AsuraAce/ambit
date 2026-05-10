@@ -1,13 +1,13 @@
+use crate::metadata::guidance::GuidanceClassifier;
 use regex::Regex;
 use std::sync::OnceLock;
-use crate::metadata::guidance::GuidanceClassifier;
 
 static EMBEDDING_RE: OnceLock<Regex> = OnceLock::new();
 static LORA_RE: OnceLock<Regex> = OnceLock::new();
 static HYPERNET_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Extracts embeddings from prompt text across different tools.
-/// 
+///
 /// Supported formats:
 /// - ComfyUI/A1111: (embedding:name:1.2), embedding:name, <embedding:name>
 /// - InvokeAI: <name>
@@ -17,12 +17,16 @@ pub fn extract_embeddings_from_prompt(text: &str) -> Vec<String> {
         // 1. embedding:name
         // 2. <embedding:name...>
         // 3. <name> (InvokeAI) - must have closing >
-        Regex::new(r"(?i)(embedding:|<embedding:|<)([a-zA-Z0-9_\-\.]+)([:>])?").expect("Regex compile failed")
+        Regex::new(r"(?i)(embedding:|<embedding:|<)([a-zA-Z0-9_\-\.]+)([:>])?")
+            .expect("Regex compile failed")
     });
 
     let mut embeddings = Vec::new();
     for cap in re.captures_iter(text) {
-        let prefix = cap.get(1).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
+        let prefix = cap
+            .get(1)
+            .map(|m| m.as_str().to_lowercase())
+            .unwrap_or_default();
         let name = cap.get(2).map(|m| m.as_str()).unwrap_or_default();
         let closing = cap.get(3).map(|m| m.as_str()).unwrap_or_default();
 
@@ -33,13 +37,17 @@ pub fn extract_embeddings_from_prompt(text: &str) -> Vec<String> {
                 continue;
             }
             let name_lower = name.to_lowercase();
-            if name_lower == "lora" || name_lower == "hypernet" || name_lower.starts_with("lora:") || name_lower.starts_with("hypernet:") {
+            if name_lower == "lora"
+                || name_lower == "hypernet"
+                || name_lower.starts_with("lora:")
+                || name_lower.starts_with("hypernet:")
+            {
                 continue;
             }
         }
 
         let name_str = name.to_string();
-        
+
         // Skip common false positives or very short strings
         if name_str.len() < 2 {
             continue;

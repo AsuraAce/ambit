@@ -160,6 +160,7 @@ export interface FilterState {
   showGrids?: boolean;
   sortOption?: SortOption;
   matchModes?: Record<string, 'any' | 'all'>; // Key: filter key (e.g. 'loras'), Value: 'any' (OR) | 'all' (AND)
+  assetFilterAliases?: Partial<Record<'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters', Record<string, string[]>>>;
 }
 
 
@@ -192,6 +193,8 @@ export interface SmartCollection extends Collection {
 export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc' | 'size_asc';
 
 export type MetadataRefreshScope = 'full' | 'images-only';
+
+export type AssetScope = 'used' | 'local' | 'all';
 
 export type FacetSortOption =
   | 'count_desc' | 'count_asc'

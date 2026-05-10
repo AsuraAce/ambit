@@ -1,5 +1,7 @@
+use super::utils::{
+    extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
+};
 use super::ImageMetadata;
-use super::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
 
 fn split_a1111_params(s: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -73,7 +75,10 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
         if line.starts_with("Negative prompt: ") {
             state = 1;
             let content = line[17..].trim();
-            if content.starts_with("Model: ") || content.starts_with("Seed: ") || content.starts_with("Steps: ") {
+            if content.starts_with("Model: ")
+                || content.starts_with("Seed: ")
+                || content.starts_with("Steps: ")
+            {
                 state = 2;
                 if !content.is_empty() {
                     params_lines.push(content.to_string());
@@ -112,7 +117,7 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     if pos_final != "undefined" {
         meta.positive_prompt = pos_final;
     }
-    
+
     let neg_final = negative_prompt.trim().to_string();
     if neg_final != "undefined" {
         meta.negative_prompt = neg_final;
@@ -159,7 +164,10 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         }
                     }
                     "Scheduler" => {
-                        if meta.sampler.is_empty() || meta.sampler == "Unknown" || meta.sampler == "_" {
+                        if meta.sampler.is_empty()
+                            || meta.sampler == "Unknown"
+                            || meta.sampler == "_"
+                        {
                             meta.sampler = format!("Unknown ({})", val);
                         } else if !meta.sampler.to_lowercase().contains(&val.to_lowercase()) {
                             meta.sampler = format!("{}_{}", meta.sampler, val);
@@ -192,7 +200,9 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     "Hires steps" => meta.hires_steps = val.parse().ok(),
                     "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
                     "Model hash" => {
-                        if meta.model_hash.is_none() || val.len() > meta.model_hash.as_ref().map(|s| s.len()).unwrap_or(0) {
+                        if meta.model_hash.is_none()
+                            || val.len() > meta.model_hash.as_ref().map(|s| s.len()).unwrap_or(0)
+                        {
                             meta.model_hash = Some(val.to_string());
                         }
                     }
@@ -280,43 +290,53 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                                     .unwrap_or("")
                                     .trim()
                                     .trim_matches('"');
-                                
+
                                 if !full_model_str.is_empty() {
                                     // Check for hash in [abc1234] format at the end of the string
-                                    let (model_name, hash) = if let Some(h_start) = full_model_str.rfind('[') {
-                                        if let Some(h_end) = full_model_str.rfind(']') {
-                                            if h_end > h_start {
-                                                let name = full_model_str[..h_start].trim();
-                                                let h = &full_model_str[h_start+1..h_end];
-                                                (name, Some(h))
+                                    let (model_name, hash) =
+                                        if let Some(h_start) = full_model_str.rfind('[') {
+                                            if let Some(h_end) = full_model_str.rfind(']') {
+                                                if h_end > h_start {
+                                                    let name = full_model_str[..h_start].trim();
+                                                    let h = &full_model_str[h_start + 1..h_end];
+                                                    (name, Some(h))
+                                                } else {
+                                                    (full_model_str, None)
+                                                }
                                             } else {
                                                 (full_model_str, None)
                                             }
                                         } else {
                                             (full_model_str, None)
+                                        };
+
+                                    let model_name =
+                                        super::guidance::GuidanceClassifier::clean_name(model_name);
+
+                                    let (cat, _subtype) =
+                                        super::guidance::GuidanceClassifier::classify(
+                                            &model_name,
+                                            hash,
+                                        )
+                                        .unwrap_or((
+                                            super::guidance::GuidanceCategory::ControlNet,
+                                            "other".to_string(),
+                                        ));
+
+                                    match cat {
+                                        super::guidance::GuidanceCategory::IPAdapter => {
+                                            if !meta.ip_adapters.contains(&model_name.to_string()) {
+                                                meta.ip_adapters.push(model_name.to_string());
+                                            }
                                         }
-                                    } else {
-                                        (full_model_str, None)
-                                    };
-
-                                     let model_name = super::guidance::GuidanceClassifier::clean_name(model_name);
-
-                                    let (cat, _subtype) = super::guidance::GuidanceClassifier::classify(&model_name, hash)
-                                        .unwrap_or((super::guidance::GuidanceCategory::ControlNet, "other".to_string()));
-                                     
-                                     match cat {
-                                         super::guidance::GuidanceCategory::IPAdapter => {
-                                             if !meta.ip_adapters.contains(&model_name.to_string()) {
-                                                 meta.ip_adapters.push(model_name.to_string());
-                                             }
-                                         },
-                                         _ => {
-                                             if !meta.control_nets.contains(&model_name.to_string()) {
-                                                 meta.control_nets.push(model_name.to_string());
-                                             }
-                                         }
-                                     }
-                                 }
+                                        _ => {
+                                            if !meta.control_nets.contains(&model_name.to_string())
+                                            {
+                                                meta.control_nets.push(model_name.to_string());
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else if key.starts_with("AddNet Model") {
                             let name = val.split('(').next().unwrap_or("").trim().trim_matches('"');
@@ -348,7 +368,7 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
 
     // --- Unified Prompt Extraction (Embeddings, LoRAs, Hypernetworks) ---
     // This catches everything in the prompts and merges with params
-    
+
     // Extract Embeddings
     for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
         if !meta.embeddings.contains(&emb) {
@@ -467,9 +487,11 @@ mod tests {
         assert_eq!(meta.model, "realcartoonSpecial_sp1");
         assert_eq!(meta.seed, 83289333);
         assert_eq!(meta.steps, 48);
-        
+
         // Should be moved to IP-Adapter by the classifier
-        assert!(meta.ip_adapters.contains(&"ip_adapter_sd15_light".to_string()));
+        assert!(meta
+            .ip_adapters
+            .contains(&"ip_adapter_sd15_light".to_string()));
         assert!(meta.control_nets.is_empty());
     }
 
@@ -518,8 +540,16 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         // - model should be Osaka[REV3].fp16
         // - sampler should be dpmpp_2m (or dpmpp_2m_karras)
 
-        assert!(meta.positive_prompt.is_empty() || meta.positive_prompt.contains("Extra info"), "Positive prompt should be empty or only contain Extra info, got: {}", meta.positive_prompt);
-        assert!(meta.negative_prompt.is_empty(), "Negative prompt should be empty, got: {}", meta.negative_prompt);
+        assert!(
+            meta.positive_prompt.is_empty() || meta.positive_prompt.contains("Extra info"),
+            "Positive prompt should be empty or only contain Extra info, got: {}",
+            meta.positive_prompt
+        );
+        assert!(
+            meta.negative_prompt.is_empty(),
+            "Negative prompt should be empty, got: {}",
+            meta.negative_prompt
+        );
         assert_eq!(meta.steps, 36);
         assert_eq!(meta.cfg, 6.0);
         assert_eq!(meta.seed, 819601553905272);
@@ -530,7 +560,7 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
     fn test_extract_comfyui_mock_sampler() {
         let raw = "Steps: 20, Sampler: _, CFG scale: 5, Seed: 1047146944135898, Size: 512x768, Model: , Version: ComfyUI";
         let meta = extract_a1111_metadata(raw, None);
-        
+
         // Sampler should be Unknown, not "_"
         assert_eq!(meta.sampler, "Unknown");
         assert_eq!(meta.steps, 20);

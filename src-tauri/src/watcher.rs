@@ -84,7 +84,12 @@ pub fn start_native_folder_watcher(
         let throttle_duration = tokio::time::Duration::from_millis(WATCHER_THROTTLE_MS);
 
         loop {
-            match tokio::time::timeout(tokio::time::Duration::from_millis(WATCHER_TIMEOUT_MS), rx.recv()).await {
+            match tokio::time::timeout(
+                tokio::time::Duration::from_millis(WATCHER_TIMEOUT_MS),
+                rx.recv(),
+            )
+            .await
+            {
                 Ok(Some(paths)) => {
                     buffer.extend(paths);
                     if first_event_time.is_none() {
@@ -108,7 +113,8 @@ pub fn start_native_folder_watcher(
                     }
                 }
                 Ok(None) => break, // Channel closed
-                Err(_) => { // Timeout elapsed
+                Err(_) => {
+                    // Timeout elapsed
                     if !buffer.is_empty() {
                         let batch_age_ms = first_event_time
                             .map(|started_at| started_at.elapsed().as_millis())
@@ -175,9 +181,11 @@ pub fn start_native_folder_watcher(
                         .filter_map(|p| {
                             let s = p.to_string_lossy().to_string();
                             let s_lower = s.to_lowercase();
-                            let is_target_file = ["png", "jpg", "jpeg", "webp", "db", "db-wal"].iter().any(|ext| s_lower.ends_with(ext));
+                            let is_target_file = ["png", "jpg", "jpeg", "webp", "db", "db-wal"]
+                                .iter()
+                                .any(|ext| s_lower.ends_with(ext));
                             let is_thumbnail = s_lower.ends_with("thumbnail.png");
-                            
+
                             if is_target_file && !is_thumbnail {
                                 Some(s)
                             } else {

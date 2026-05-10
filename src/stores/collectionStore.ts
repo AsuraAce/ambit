@@ -210,11 +210,14 @@ export const useCollectionStore = create<CollectionState>()(
                         const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection, ensureCollectionSchema } = await import('../services/db/collectionRepo');
 
                         // 0. Ensure schema is up to date (add updated_at if missing)
+                        const schemaStartedAt = performance.now();
                         await ensureCollectionSchema();
-                        console.info(`[Startup] Collection schema check completed in ${Math.round(performance.now() - startedAt)}ms`);
+                        console.info(`[Startup] Collection schema check completed in ${Math.round(performance.now() - schemaStartedAt)}ms`);
 
                         // 1. Try to load from SQLite
+                        const loadStartedAt = performance.now();
                         let dbCols = await getAllCollectionsWithStats({ includeThumbnails: false });
+                        console.info(`[Startup] collection load completed in ${Math.round(performance.now() - loadStartedAt)}ms`);
                         let needsReload = false;
 
                         // 2. Only migrate if DB is EMPTY - if it has any collections (invoke or ambit), skip migration

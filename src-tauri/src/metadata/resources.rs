@@ -67,10 +67,15 @@ pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
 
         if let Some(n) = name {
             let cleaned = crate::metadata::guidance::GuidanceClassifier::clean_name(n);
-            
+
             // Redirection check
-            let (category, _) = crate::metadata::guidance::GuidanceClassifier::classify(&cleaned, None)
-                .unwrap_or((crate::metadata::guidance::GuidanceCategory::ControlNet, "other".to_string()));
+            let (category, _) = crate::metadata::guidance::GuidanceClassifier::classify(
+                &cleaned, None,
+            )
+            .unwrap_or((
+                crate::metadata::guidance::GuidanceCategory::ControlNet,
+                "other".to_string(),
+            ));
 
             match category {
                 crate::metadata::guidance::GuidanceCategory::IPAdapter => {

@@ -70,6 +70,12 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const isImporting = useLibraryStore(s => s.isImporting);
     const isRegeneratingThumbnails = useLibraryStore(s => s.isRegeneratingThumbnails);
     const syncStatus = useLibraryStore(s => s.syncStatus);
+    const isResolvingModels = useLibraryStore(s => s.isResolvingModels);
+    const isScanningDiscovery = useLibraryStore(s => s.isScanningDiscovery);
+    const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
+    const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
+    const isPopulatingThumbnails = useLibraryStore(s => s.isPopulatingThumbnails);
+    const isRefreshingMetadata = useLibraryStore(s => s.isRefreshingMetadata);
     const thumbnailOptimizationRetrySignal = useLibraryStore(s => s.thumbnailOptimizationRetrySignal);
 
     const setBackgroundHealingActive = useLibraryStore(s => s.setBackgroundHealingActive);
@@ -84,7 +90,15 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
 
     const isImageQueryFetching = activeImageQueryCount > 0;
-    const isHardBlocked = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing';
+    const isHardBlocked = isImporting
+        || isRegeneratingThumbnails
+        || syncStatus === 'syncing'
+        || isResolvingModels
+        || isScanningDiscovery
+        || isScanningDuplicates
+        || isScanningMissingFiles
+        || isPopulatingThumbnails
+        || isRefreshingMetadata;
 
     useEffect(() => {
         isImageQueryFetchingRef.current = isImageQueryFetching;
@@ -94,7 +108,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         const store = useLibraryStore.getState();
         return store.isImporting
             || store.isRegeneratingThumbnails
-            || store.syncStatus === 'syncing';
+            || store.syncStatus === 'syncing'
+            || store.isResolvingModels
+            || store.isScanningDiscovery
+            || store.isScanningDuplicates
+            || store.isScanningMissingFiles
+            || store.isPopulatingThumbnails
+            || store.isRefreshingMetadata;
     }, []);
 
     const scheduleIdleCallback = useCallback((callback: () => void, delay: number = 0) => {

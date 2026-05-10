@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, FilterState, SortOption, FacetType, MetadataRefreshScope } from '../types';
+import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope } from '../types';
 import { useSettings } from './SettingsContext';
 import { useCollections } from './CollectionContext';
 import { useSearchStore } from '../stores/searchStore';
@@ -60,6 +60,8 @@ interface SearchContextType {
 
     /** Valid facet names for drill-down filtering. null = show all (no active filters) */
     validFacetNames: ValidFacetNames | null;
+    assetScope: AssetScope;
+    setAssetScope: React.Dispatch<React.SetStateAction<AssetScope>>;
     setFacetDrilldownActive: (active: boolean) => void;
 }
 
@@ -95,6 +97,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         && !isBrowserMockMode();
     const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
     const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
+    const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
     useEffect(() => {
@@ -107,14 +110,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setPrivacyMaskReady(false);
 
         void (async () => {
-            const startedAt = performance.now();
             try {
                 await getDb();
+                const refreshStartedAt = performance.now();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
 
                 setPrivacyMaskReady(true);
-                console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - startedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
+                console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
                     const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
@@ -204,13 +207,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const {
         data: statsData,
         isLoading: isStatsLoading,
-        isFetching: isStatsFetching
+        isFetching: isStatsFetching,
+        isFacetsFetching
     } = useLibraryStatsQuery({
         filters,
         settings,
         privacyEnabled,
         allCollections,
         settingsLoaded: databaseQueriesEnabled,
+        assetScope,
         validFacetsEnabled: facetDrilldownActive
     });
 
@@ -393,9 +398,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             togglePin: storeTogglePin,
             availableHiddenContent,
             refreshHiddenAvailability,
-            isFacetsLoading: isStatsFetching,
+            isFacetsLoading: isFacetsFetching,
             isLoadingMore: isFetchingNextPage,
             validFacetNames: activeValidNames,
+            assetScope,
+            setAssetScope,
             setFacetDrilldownActive,
 
         }}>

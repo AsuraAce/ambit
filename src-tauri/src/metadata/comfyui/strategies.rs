@@ -1,8 +1,8 @@
 use super::conditioning::evaluate_string_node;
 use super::graph::{get_node_param, get_node_title, get_node_type, ComfyGraph};
 use super::parse_helper::parse_a1111_parameters;
-use crate::metadata::ImageMetadata;
 use crate::metadata::guidance::GuidanceClassifier;
+use crate::metadata::ImageMetadata;
 use serde_json::Value;
 use std::collections::HashSet;
 

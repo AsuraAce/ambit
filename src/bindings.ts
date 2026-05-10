@@ -571,7 +571,7 @@ export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnail
 export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
 export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
-export type ThumbnailScanResult = { found: number; updated: number }
+export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
 /**
  * Valid facet names result - used for drill-down filtering
  */

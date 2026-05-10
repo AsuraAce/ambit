@@ -29,6 +29,7 @@ export const createDefaultFilters = (
     showGrids: false,
     sortOption: undefined,
     matchModes: undefined,
+    assetFilterAliases: undefined,
     ...overrides,
 });
 

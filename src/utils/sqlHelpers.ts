@@ -15,6 +15,48 @@ interface SearchCondition {
     isPositivePrompt: boolean;
 }
 
+type AssetAliasFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
+
+const uniqueValues = (values: string[]): string[] => {
+    const result: string[] = [];
+    const seen = new Set<string>();
+
+    for (const value of values) {
+        const trimmed = value.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(trimmed);
+    }
+
+    return result;
+};
+
+const getAssetAliasGroups = (
+    filters: FilterState,
+    filterKey: AssetAliasFilterKey,
+    selectedValues: string[]
+): string[][] => selectedValues.map(value => (
+    uniqueValues([value, ...(filters.assetFilterAliases?.[filterKey]?.[value] || [])])
+));
+
+const buildAliasGroupCondition = (
+    aliases: string[],
+    createCondition: (alias: string) => string,
+    params: SqlParam[]
+): string => {
+    const conditions = aliases.map(alias => {
+        const condition = createCondition(alias);
+        if (condition.includes('?')) {
+            params.push(alias);
+        }
+        return condition;
+    });
+
+    return conditions.length === 1 ? conditions[0] : `(${conditions.join(' OR ')})`;
+};
+
 const tokenizeSearchQuery = (query: string): SearchToken[] => {
     const termRegex = /(-|!)?("(?:[^"\\]|\\.)*"|\S+)/g;
     const tokens: SearchToken[] = [];
@@ -293,13 +335,14 @@ export const buildSqlWhereClause = (
     // 5. Models (Array)
     if (filters.models.length > 0 && !excludeCategories.includes('models')) {
         const matchMode = filters.matchModes?.models || 'any';
-        const modelConditions = filters.models.map(m => {
-            if (m === 'Unknown') {
-                return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
-            }
-            params.push(m);
-            return `resolved_model_name = ? COLLATE NOCASE`;
-        });
+        const modelConditions = getAssetAliasGroups(filters, 'models', filters.models).map(aliases => (
+            buildAliasGroupCondition(aliases, alias => {
+                if (alias === 'Unknown') {
+                    return `(resolved_model_name IS NULL OR resolved_model_name = '' OR resolved_model_name = 'Unknown')`;
+                }
+                return `resolved_model_name = ? COLLATE NOCASE`;
+            }, params)
+        ));
         conditions.push(`(${modelConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
@@ -320,13 +363,15 @@ export const buildSqlWhereClause = (
     // LoRAs
     const loraMode = filters.matchModes?.loras || 'any';
     if (!excludeCategories.includes('loras')) {
-        if (filters.loras.length === 1 && loraMode === 'any') {
+        const loraAliasGroups = getAssetAliasGroups(filters, 'loras', filters.loras);
+        if (filters.loras.length === 1 && loraMode === 'any' && loraAliasGroups[0]?.length === 1) {
             // Handled by searchRepo
         } else if (filters.loras.length > 0) {
-            const loraConditions = filters.loras.map(l => {
-                params.push(l);
-                return `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ? COLLATE NOCASE)`;
-            });
+            const loraConditions = loraAliasGroups.map(aliases => (
+                buildAliasGroupCondition(aliases, () => (
+                    `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ? COLLATE NOCASE)`
+                ), params)
+            ));
             conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
         }
     }
@@ -334,40 +379,44 @@ export const buildSqlWhereClause = (
     // Embeddings
     const embMode = filters.matchModes?.embeddings || 'any';
     if (filters.embeddings.length > 0 && !excludeCategories.includes('embeddings')) {
-        const embConditions = filters.embeddings.map(e => {
-            params.push(e);
-            return `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)`;
-        });
+        const embConditions = getAssetAliasGroups(filters, 'embeddings', filters.embeddings).map(aliases => (
+            buildAliasGroupCondition(aliases, () => (
+                `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)`
+            ), params)
+        ));
         conditions.push(`(${embConditions.join(embMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // Hypernetworks
     const hnMode = filters.matchModes?.hypernetworks || 'any';
     if (filters.hypernetworks.length > 0 && !excludeCategories.includes('hypernetworks')) {
-        const hnConditions = filters.hypernetworks.map(h => {
-            params.push(h);
-            return `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)`;
-        });
+        const hnConditions = getAssetAliasGroups(filters, 'hypernetworks', filters.hypernetworks).map(aliases => (
+            buildAliasGroupCondition(aliases, () => (
+                `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)`
+            ), params)
+        ));
         conditions.push(`(${hnConditions.join(hnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // ControlNets
     const cnMode = filters.matchModes?.controlNets || 'any';
     if (filters.controlNets && filters.controlNets.length > 0 && !excludeCategories.includes('controlNets')) {
-        const cnConditions = filters.controlNets.map(c => {
-            params.push(c);
-            return `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ? COLLATE NOCASE)`;
-        });
+        const cnConditions = getAssetAliasGroups(filters, 'controlNets', filters.controlNets).map(aliases => (
+            buildAliasGroupCondition(aliases, () => (
+                `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ? COLLATE NOCASE)`
+            ), params)
+        ));
         conditions.push(`(${cnConditions.join(cnMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
     // IP-Adapters
     const ipMode = filters.matchModes?.ipAdapters || 'any';
     if (filters.ipAdapters && filters.ipAdapters.length > 0 && !excludeCategories.includes('ipAdapters')) {
-        const ipConditions = filters.ipAdapters.map(i => {
-            params.push(i);
-            return `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ? COLLATE NOCASE)`;
-        });
+        const ipConditions = getAssetAliasGroups(filters, 'ipAdapters', filters.ipAdapters).map(aliases => (
+            buildAliasGroupCondition(aliases, () => (
+                `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ? COLLATE NOCASE)`
+            ), params)
+        ));
         conditions.push(`(${ipConditions.join(ipMode === 'all' ? ' AND ' : ' OR ')})`);
     }
 
@@ -430,7 +479,10 @@ export const buildSqlWhereClause = (
 
     const loraModeCheck = filters.matchModes?.loras || 'any';
     const loraExcluded = excludeCategories.includes('loras');
-    const singleLoraName = (!loraExcluded && filters.loras.length === 1 && loraModeCheck === 'any') ? filters.loras[0] : undefined;
+    const singleLoraAliasGroups = getAssetAliasGroups(filters, 'loras', filters.loras);
+    const singleLoraName = (!loraExcluded && filters.loras.length === 1 && loraModeCheck === 'any' && singleLoraAliasGroups[0]?.length === 1)
+        ? singleLoraAliasGroups[0][0]
+        : undefined;
 
     return {
         where,

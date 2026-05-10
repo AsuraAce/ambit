@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save } from 'lucide-react';
+import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
 import { AIImage, FilterState } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
@@ -8,7 +8,8 @@ import { CollectionsSection } from './CollectionsSection';
 import { ParameterSection } from './ParameterSection';
 import { GeneratorSection } from './GeneratorSection';
 import { ArchitectureSection } from './ArchitectureSection';
-import { ResourceSection } from './ResourceSection';
+import { ResourceSection, type AssetScope } from './ResourceSection';
+import type { FacetItem } from '../../../services/db/searchRepo';
 import { DateRangeSection } from './DateRangeSection';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
 import { GuidanceSection } from './GuidanceSection';
@@ -35,6 +36,7 @@ interface FilterPanelProps {
     onResetCollectionThumbnail?: (colId: string) => void;
     onEditCollection?: (colId: string) => void;
     onUpdateCollectionFilters?: (colId: string, filters: FilterState) => void;
+    onOpenResourceFolders?: () => void;
     isVisible?: boolean;
     className?: string;
 }
@@ -57,6 +59,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     onResetCollectionThumbnail,
     onEditCollection,
     onUpdateCollectionFilters,
+    onOpenResourceFolders,
     isVisible = true,
     className
 }) => {
@@ -69,6 +72,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         isFacetsLoading,
         clearAllFilters,
         validFacetNames,
+        assetScope,
+        setAssetScope,
         setFacetDrilldownActive
     } = useSearch();
 
@@ -101,10 +106,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         resources: true,
         embeddings: false,
         hypernetworks: false,
+        controlNets: false,
+        ipAdapters: false,
         guidance: true,
         date: true
     });
-
     const toggleSection = (section: string) => {
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
         // All facet data is loaded upfront, no lazy loading needed
@@ -222,7 +228,40 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Note: dateRange is NOT included in isOrganizeDirty because Date Range is a global section in the footer, not part of Organize tab
     const isOrganizeDirty = !!(filters.collectionId || filters.favoritesOnly || filters.pinnedOnly);
     const isGenerateDirty = !!(filters.tools.length > 0 || filters.minSteps || filters.maxSteps || filters.minCfg || filters.maxCfg || (filters.samplers && filters.samplers.length > 0) || (filters.generationTypes && filters.generationTypes.length > 0) || filters.controlNets.length > 0 || filters.ipAdapters.length > 0);
-    const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0));
+    const isResourcesDirty = !!(filters.models.length > 0 || filters.loras.length > 0 || (filters.embeddings && filters.embeddings.length > 0) || (filters.hypernetworks && filters.hypernetworks.length > 0) || filters.controlNets.length > 0 || filters.ipAdapters.length > 0);
+
+    const allResourceItems = React.useMemo(() => [
+        ...facets.checkpoints,
+        ...facets.loras,
+        ...facets.embeddings,
+        ...facets.hypernetworks,
+        ...facets.controlNets,
+        ...facets.ipAdapters
+    ], [facets]);
+
+    const hasLocalDiskAssets = React.useMemo(
+        () => allResourceItems.some(item => item.isLocalDisk),
+        [allResourceItems]
+    );
+
+    const hasScopedResourceItems = React.useCallback((items: FacetItem[]) => {
+        if (assetScope === 'used') return items.some(item => item.count > 0);
+        if (assetScope === 'local') return items.some(item => item.isLocalDisk);
+        return items.some(item => item.count > 0 || item.isLocalDisk);
+    }, [assetScope]);
+
+    const validNamesForScope = React.useCallback(
+        (names: string[] | undefined) => assetScope === 'used' ? names : null,
+        [assetScope]
+    );
+
+    const assetScopeOptions: { id: AssetScope; label: string; icon: LucideIcon }[] = [
+        { id: 'used', label: 'Used in Library', icon: Images },
+        { id: 'local', label: 'Local on Disk', icon: HardDrive },
+        { id: 'all', label: 'All Assets', icon: Layers3 }
+    ];
+    const showLocalEmptyState = assetScope === 'local' && !isFacetsLoading && !hasLocalDiskAssets;
+    const showResourceLists = assetScope !== 'local' || hasLocalDiskAssets || isFacetsLoading;
 
 
     return (
@@ -327,45 +366,123 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {/* RESOURCES TAB */}
                     {activeTab === 'resources' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
-                            <ResourceSection
-                                title="Checkpoints"
-                                type="checkpoints"
-                                filters={filters} setFilters={setFilters}
-                                data={facets.checkpoints}
-                                isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.checkpoints}
-                            />
-                            <ResourceSection
-                                title="Resources (LoRA)"
-                                type="loras"
-                                filters={filters} setFilters={setFilters}
-                                data={facets.loras}
-                                isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
-                                isLoading={isFacetsLoading}
-                                validNames={validFacetNames?.loras}
-                            />
-                            {facets.embeddings && facets.embeddings.length > 0 && (
-                                <ResourceSection
-                                    title="Resources (Embedding)"
-                                    type="embeddings"
-                                    filters={filters} setFilters={setFilters}
-                                    data={facets.embeddings}
-                                    isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
-                                    isLoading={isFacetsLoading}
-                                    validNames={validFacetNames?.embeddings}
-                                />
-                            )}
-                            {facets.hypernetworks && facets.hypernetworks.length > 0 && (
-                                <ResourceSection
-                                    title="Resources (Hypernet)"
-                                    type="hypernetworks"
-                                    filters={filters} setFilters={setFilters}
-                                    data={facets.hypernetworks}
-                                    isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
-                                    isLoading={isFacetsLoading}
-                                    validNames={validFacetNames?.hypernetworks}
-                                />
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100/60 dark:bg-black/20 p-1">
+                                    {assetScopeOptions.map(option => {
+                                        const ScopeIcon = option.icon;
+                                        const isSelected = assetScope === option.id;
+
+                                        return (
+                                            <button
+                                                key={option.id}
+                                                type="button"
+                                                onClick={() => setAssetScope(option.id)}
+                                                aria-label={option.label}
+                                                aria-pressed={isSelected}
+                                                title={option.label}
+                                                className={`flex h-9 items-center justify-center rounded-lg transition-all ${isSelected
+                                                    ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                                                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
+                                                    }`}
+                                            >
+                                                <ScopeIcon className="h-4 w-4" aria-hidden="true" />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {showLocalEmptyState && (
+                                    <div className="rounded-xl border border-dashed border-blue-200 dark:border-blue-500/30 bg-blue-50/70 dark:bg-blue-500/10 p-4 text-center">
+                                        <FolderSearch className="mx-auto mb-2 h-5 w-5 text-blue-600 dark:text-blue-300" />
+                                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">No local resource folders scanned yet.</p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-blue-700/80 dark:text-blue-200/80">
+                                            Add model, LoRA, embedding, ControlNet, or IP-Adapter folders to build a local asset inventory.
+                                        </p>
+                                        {onOpenResourceFolders && (
+                                            <button
+                                                type="button"
+                                                onClick={onOpenResourceFolders}
+                                                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-blue-500"
+                                            >
+                                                <FolderSearch className="h-3.5 w-3.5" />
+                                                Add Resource Folder
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {showResourceLists && (
+                                <>
+                                    <ResourceSection
+                                        title="Checkpoints"
+                                        type="checkpoints"
+                                        filters={filters} setFilters={setFilters}
+                                        data={facets.checkpoints}
+                                        isOpen={expanded.checkpoints} onToggle={() => toggleSection('checkpoints')}
+                                        isLoading={isFacetsLoading}
+                                        validNames={validNamesForScope(validFacetNames?.checkpoints)}
+                                        assetScope={assetScope}
+                                    />
+                                    <ResourceSection
+                                        title="Resources (LoRA)"
+                                        type="loras"
+                                        filters={filters} setFilters={setFilters}
+                                        data={facets.loras}
+                                        isOpen={expanded.resources} onToggle={() => toggleSection('resources')}
+                                        isLoading={isFacetsLoading}
+                                        validNames={validNamesForScope(validFacetNames?.loras)}
+                                        assetScope={assetScope}
+                                    />
+                                    {hasScopedResourceItems(facets.embeddings) && (
+                                        <ResourceSection
+                                            title="Resources (Embedding)"
+                                            type="embeddings"
+                                            filters={filters} setFilters={setFilters}
+                                            data={facets.embeddings}
+                                            isOpen={expanded.embeddings} onToggle={() => toggleSection('embeddings')}
+                                            isLoading={isFacetsLoading}
+                                            validNames={validNamesForScope(validFacetNames?.embeddings)}
+                                            assetScope={assetScope}
+                                        />
+                                    )}
+                                    {hasScopedResourceItems(facets.hypernetworks) && (
+                                        <ResourceSection
+                                            title="Resources (Hypernet)"
+                                            type="hypernetworks"
+                                            filters={filters} setFilters={setFilters}
+                                            data={facets.hypernetworks}
+                                            isOpen={expanded.hypernetworks} onToggle={() => toggleSection('hypernetworks')}
+                                            isLoading={isFacetsLoading}
+                                            validNames={validNamesForScope(validFacetNames?.hypernetworks)}
+                                            assetScope={assetScope}
+                                        />
+                                    )}
+                                    {hasScopedResourceItems(facets.controlNets) && (
+                                        <ResourceSection
+                                            title="Resources (ControlNet)"
+                                            type="controlNets"
+                                            filters={filters} setFilters={setFilters}
+                                            data={facets.controlNets}
+                                            isOpen={expanded.controlNets} onToggle={() => toggleSection('controlNets')}
+                                            isLoading={isFacetsLoading}
+                                            validNames={validNamesForScope(validFacetNames?.controlNets)}
+                                            assetScope={assetScope}
+                                        />
+                                    )}
+                                    {hasScopedResourceItems(facets.ipAdapters) && (
+                                        <ResourceSection
+                                            title="Resources (IP-Adapter)"
+                                            type="ipAdapters"
+                                            filters={filters} setFilters={setFilters}
+                                            data={facets.ipAdapters}
+                                            isOpen={expanded.ipAdapters} onToggle={() => toggleSection('ipAdapters')}
+                                            isLoading={isFacetsLoading}
+                                            validNames={validNamesForScope(validFacetNames?.ipAdapters)}
+                                            assetScope={assetScope}
+                                        />
+                                    )}
+                                </>
                             )}
                         </div>
                     )}

@@ -1,7 +1,8 @@
-import { AIImage, FacetType } from '../../types';
+import { AIImage, AssetScope, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
+import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
 
 export interface LibraryStats {
@@ -18,6 +19,7 @@ export interface FacetItem {
     count: number;
     lastUsedAt?: number;
     createdAt?: number;
+    localModifiedAt?: number;
     thumbnailPath?: string;
     previewUrl?: string;
     hash?: string;
@@ -28,6 +30,9 @@ export interface FacetItem {
     thumbnailImageId?: string;
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
+    isLocalDisk?: boolean;
+    assetMatchKey?: string;
+    filterAliases?: string[];
 }
 
 export interface Facets {
@@ -49,6 +54,227 @@ export interface ValidFacetNames {
     controlNets: string[];
     ipAdapters: string[];
 }
+
+interface FacetCacheRow {
+    facet_type: string;
+    resource_name: string | null;
+    resource_hash: string | null;
+    count: number | null;
+    thumbnail_path: string | null;
+    preview_url: string | null;
+    last_used_at: number | null;
+    created_at: number | null;
+    is_manual: number | null;
+    has_sidecar: number | null;
+    is_user_override: number | null;
+    safe_thumbnail_path: string | null;
+    thumbnail_image_id: string | null;
+    thumbnail_is_sensitive: number | null;
+    thumbnail_sensitivity_override: number | null;
+}
+
+interface DiskModelRow {
+    resource_type: string | null;
+    name: string | null;
+    hash: string | null;
+    local_modified_at: number | null;
+    scanned_at: number | null;
+}
+
+interface FacetMergeGroup {
+    item: FacetItem;
+    usedAliases: Set<string>;
+    displayCount: number;
+}
+
+export interface GetFacetsOptions {
+    assetScope?: AssetScope;
+}
+
+const maxOptionalNumber = (a: number | undefined, b: number | undefined): number | undefined => {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.max(a, b);
+};
+
+const UNIX_SECONDS_CUTOFF = 10_000_000_000;
+
+const normalizeUnixMillis = (value: number | null | undefined): number | undefined => {
+    if (value == null || value <= 0) return undefined;
+    return value < UNIX_SECONDS_CUTOFF ? value * 1000 : value;
+};
+
+const minOptionalNumber = (a: number | undefined, b: number | undefined): number | undefined => {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.min(a, b);
+};
+
+const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetItem => ({
+    ...target,
+    thumbnailPath: target.thumbnailPath || source.thumbnailPath,
+    previewUrl: target.previewUrl || source.previewUrl,
+    safeThumbnailPath: target.safeThumbnailPath || source.safeThumbnailPath,
+    thumbnailImageId: target.thumbnailImageId || source.thumbnailImageId,
+    thumbnailIsSensitive: target.thumbnailIsSensitive ?? source.thumbnailIsSensitive,
+    thumbnailSensitivityOverride: target.thumbnailSensitivityOverride ?? source.thumbnailSensitivityOverride,
+    isManual: Math.max(target.isManual ?? 0, source.isManual ?? 0),
+    hasSidecar: Math.max(target.hasSidecar ?? 0, source.hasSidecar ?? 0),
+    isUserOverride: Math.max(target.isUserOverride ?? 0, source.isUserOverride ?? 0),
+});
+
+const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
+    if (candidate.count > 0) {
+        group.usedAliases.add(candidate.name);
+    }
+
+    const totalCount = group.item.count + candidate.count;
+    const isLocalDisk = Boolean(group.item.isLocalDisk || candidate.isLocalDisk);
+    const lastUsedAt = maxOptionalNumber(group.item.lastUsedAt, candidate.lastUsedAt);
+    const createdAt = minOptionalNumber(group.item.createdAt, candidate.createdAt);
+    const localModifiedAt = maxOptionalNumber(group.item.localModifiedAt, candidate.localModifiedAt);
+
+    if (candidate.count > 0 && (group.displayCount === 0 || candidate.count > group.displayCount)) {
+        group.item = copyFallbackFacetFields(
+            {
+                ...candidate,
+                count: totalCount,
+                isLocalDisk,
+                lastUsedAt,
+                createdAt,
+                localModifiedAt,
+                assetMatchKey: group.item.assetMatchKey,
+            },
+            group.item
+        );
+        group.displayCount = candidate.count;
+        return;
+    }
+
+    group.item = copyFallbackFacetFields(
+        {
+            ...group.item,
+            count: totalCount,
+            isLocalDisk,
+            lastUsedAt,
+            createdAt,
+            localModifiedAt,
+        },
+        candidate
+    );
+};
+
+const sortFacetItems = (items: FacetItem[]): FacetItem[] => (
+    items.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+);
+
+const cacheTypeToDiskResourceType = (cacheType: string): string | null => {
+    if (cacheType === 'tools') return null;
+    return cacheType === 'checkpoints' ? 'checkpoint' : cacheType;
+};
+
+const diskResourceTypeToCacheType = (resourceType: string | null): string | null => {
+    if (!resourceType) return null;
+    if (resourceType === 'checkpoint') return 'checkpoints';
+    if (resourceType === 'loras') return 'loras';
+    if (resourceType === 'embeddings') return 'embeddings';
+    if (resourceType === 'hypernetworks') return 'hypernetworks';
+    if (resourceType === 'control_nets') return 'control_nets';
+    if (resourceType === 'ip_adapters') return 'ip_adapters';
+    return null;
+};
+
+const addSetValue = (map: Map<string, Set<string>>, key: string, value: string | null | undefined): void => {
+    if (!value) return;
+    const normalized = value.toLowerCase();
+    const values = map.get(key) ?? new Set<string>();
+    values.add(normalized);
+    map.set(key, values);
+};
+
+const addRawSetValue = (map: Map<string, Set<string>>, key: string, value: string | null | undefined): void => {
+    if (!value) return;
+    const values = map.get(key) ?? new Set<string>();
+    values.add(value);
+    map.set(key, values);
+};
+
+const addTimestampValue = (
+    map: Map<string, Map<string, number>>,
+    key: string,
+    value: string | null | undefined,
+    timestamp: number | null | undefined,
+    normalize: boolean = false
+): void => {
+    if (!value || timestamp == null || timestamp <= 0) return;
+    const lookupValue = normalize ? value.toLowerCase() : value;
+    const values = map.get(key) ?? new Map<string, number>();
+    values.set(lookupValue, Math.max(values.get(lookupValue) ?? 0, timestamp));
+    map.set(key, values);
+};
+
+const buildDiskModelLookups = (rows: DiskModelRow[]) => {
+    const namesByCacheType = new Map<string, Set<string>>();
+    const hashesByCacheType = new Map<string, Set<string>>();
+    const matchKeysByCacheType = new Map<string, Set<string>>();
+    const modifiedByNameByCacheType = new Map<string, Map<string, number>>();
+    const modifiedByHashByCacheType = new Map<string, Map<string, number>>();
+    const modifiedByMatchKeyByCacheType = new Map<string, Map<string, number>>();
+
+    for (const row of rows) {
+        const cacheType = diskResourceTypeToCacheType(row.resource_type);
+        if (!cacheType) continue;
+        const localModifiedAt = normalizeUnixMillis(row.local_modified_at ?? row.scanned_at);
+
+        addSetValue(namesByCacheType, cacheType, row.name);
+        addRawSetValue(hashesByCacheType, cacheType, row.hash);
+        addTimestampValue(modifiedByNameByCacheType, cacheType, row.name, localModifiedAt, true);
+        addTimestampValue(modifiedByHashByCacheType, cacheType, row.hash, localModifiedAt);
+
+        const name = row.name || '';
+        const matchKey = getAssetMatchKey(name) || name.toLowerCase();
+        addRawSetValue(matchKeysByCacheType, cacheType, matchKey);
+        addTimestampValue(modifiedByMatchKeyByCacheType, cacheType, matchKey, localModifiedAt);
+    }
+
+    return {
+        namesByCacheType,
+        hashesByCacheType,
+        matchKeysByCacheType,
+        modifiedByNameByCacheType,
+        modifiedByHashByCacheType,
+        modifiedByMatchKeyByCacheType
+    };
+};
+
+const isDiskBackedFacetRow = (
+    row: FacetCacheRow,
+    assetMatchKey: string,
+    diskLookups: ReturnType<typeof buildDiskModelLookups>
+): boolean => {
+    const cacheType = row.facet_type;
+    const name = row.resource_name || '';
+
+    return Boolean(row.resource_hash && diskLookups.hashesByCacheType.get(cacheType)?.has(row.resource_hash))
+        || Boolean(name && diskLookups.namesByCacheType.get(cacheType)?.has(name.toLowerCase()))
+        || Boolean(assetMatchKey && diskLookups.matchKeysByCacheType.get(cacheType)?.has(assetMatchKey));
+};
+
+const getDiskModifiedAtForFacetRow = (
+    row: FacetCacheRow,
+    assetMatchKey: string,
+    diskLookups: ReturnType<typeof buildDiskModelLookups>
+): number | undefined => {
+    const cacheType = row.facet_type;
+    const name = row.resource_name || '';
+    return maxOptionalNumber(
+        maxOptionalNumber(
+            row.resource_hash ? diskLookups.modifiedByHashByCacheType.get(cacheType)?.get(row.resource_hash) : undefined,
+            name ? diskLookups.modifiedByNameByCacheType.get(cacheType)?.get(name.toLowerCase()) : undefined
+        ),
+        assetMatchKey ? diskLookups.modifiedByMatchKeyByCacheType.get(cacheType)?.get(assetMatchKey) : undefined
+    );
+};
 
 const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
 
@@ -477,70 +703,140 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
 export const getFacets = async (
     _whereClause: string = '',
     _params: any[] = [],
-    types: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools']
+    types: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'],
+    options: GetFacetsOptions = {}
 ): Promise<Facets> => {
     const db = await getDb();
+    const assetScope = options.assetScope ?? 'used';
 
     const result: Facets = { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] };
 
     try {
-        // Map frontend type names to cache type names and create parameterized query
-        const cacheTypes = types;
+        const cacheTypeMap: Record<FacetType, string> = {
+            checkpoints: 'checkpoints',
+            loras: 'loras',
+            embeddings: 'embeddings',
+            hypernetworks: 'hypernetworks',
+            controlNets: 'control_nets',
+            ipAdapters: 'ip_adapters',
+            tools: 'tools'
+        };
+        const cacheTypes = Array.from(new Set(types.map(type => cacheTypeMap[type])));
+        if (cacheTypes.length === 0) return result;
+
         const placeholders = cacheTypes.map(() => '?').join(',');
+        const diskResourceTypes = Array.from(new Set(
+            cacheTypes
+                .map(cacheTypeToDiskResourceType)
+                .filter((type): type is string => type !== null)
+        ));
+        const diskPlaceholders = diskResourceTypes.map(() => '?').join(',');
+        const scopePredicate = assetScope === 'used'
+            ? 'AND fc.count > 0'
+            : '';
 
-        const cacheRows = await db.select<any[]>(`
+        const [cacheRows, diskRows] = await Promise.all([
+            db.select<FacetCacheRow[]>(`
             SELECT
-                facet_type, resource_name, resource_hash, count, thumbnail_path, preview_url,
-                last_used_at, created_at, is_manual, has_sidecar, is_user_override,
-                safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive, thumbnail_sensitivity_override
-            FROM facet_cache
-            WHERE facet_type IN(${placeholders})
-            ORDER BY count DESC, resource_name ASC
-            `, cacheTypes);
+                fc.facet_type, fc.resource_name, fc.resource_hash, fc.count, fc.thumbnail_path, fc.preview_url,
+                fc.last_used_at, fc.created_at, fc.is_manual, fc.has_sidecar, fc.is_user_override,
+                fc.safe_thumbnail_path, fc.thumbnail_image_id, fc.thumbnail_is_sensitive, fc.thumbnail_sensitivity_override
+            FROM facet_cache fc
+            WHERE fc.facet_type IN(${placeholders})
+            ${scopePredicate}
+            ORDER BY fc.count DESC, fc.resource_name ASC
+            `, cacheTypes),
+            diskResourceTypes.length > 0
+                ? db.select<DiskModelRow[]>(`
+                    SELECT
+                        m.resource_type,
+                        m.name,
+                        m.hash,
+                        COALESCE(sf.modified, m.scanned_at) AS local_modified_at,
+                        m.scanned_at
+                    FROM models m
+                    LEFT JOIN scanned_files sf ON sf.hash = m.hash
+                    WHERE m.lookup_source = 'disk_scan'
+                      AND m.resource_type IN(${diskPlaceholders})
+                `, diskResourceTypes)
+                : Promise.resolve([] as DiskModelRow[])
+        ]);
+        const diskLookups = buildDiskModelLookups(diskRows);
 
-        // Map cache rows to facet result
+        const mergedResources: Record<string, Map<string, FacetMergeGroup>> = {
+            checkpoints: new Map(),
+            loras: new Map(),
+            embeddings: new Map(),
+            hypernetworks: new Map(),
+            control_nets: new Map(),
+            ip_adapters: new Map()
+        };
+
         for (const row of cacheRows) {
+            if (row.facet_type === 'tools') {
+                result.tools.push(row.resource_name || 'Unknown');
+                continue;
+            }
+
+            const assetMatchKey = getAssetMatchKey(row.resource_name) || (row.resource_name || 'Unknown').toLowerCase();
+            const isLocalDisk = isDiskBackedFacetRow(row, assetMatchKey, diskLookups);
+            const localModifiedAt = isLocalDisk
+                ? getDiskModifiedAtForFacetRow(row, assetMatchKey, diskLookups)
+                : undefined;
             const item: FacetItem = {
                 name: row.resource_name || 'Unknown',
-                hash: row.resource_hash,
-                count: row.count || 0,
-                lastUsedAt: row.last_used_at,
-                createdAt: row.created_at,
-                thumbnailPath: row.thumbnail_path,
-                previewUrl: row.preview_url,
-                isManual: row.is_manual,
-                hasSidecar: row.has_sidecar,
-                isUserOverride: row.is_user_override,
-                safeThumbnailPath: row.safe_thumbnail_path,
-                thumbnailImageId: row.thumbnail_image_id,
-                thumbnailIsSensitive: row.thumbnail_is_sensitive,
-                thumbnailSensitivityOverride: row.thumbnail_sensitivity_override
+                hash: row.resource_hash ?? undefined,
+                count: row.count ?? 0,
+                lastUsedAt: row.last_used_at ?? undefined,
+                createdAt: row.created_at ?? localModifiedAt,
+                localModifiedAt,
+                thumbnailPath: row.thumbnail_path ?? undefined,
+                previewUrl: row.preview_url ?? undefined,
+                isManual: row.is_manual ?? undefined,
+                hasSidecar: row.has_sidecar ?? undefined,
+                isUserOverride: row.is_user_override ?? undefined,
+                safeThumbnailPath: row.safe_thumbnail_path ?? undefined,
+                thumbnailImageId: row.thumbnail_image_id ?? undefined,
+                thumbnailIsSensitive: row.thumbnail_is_sensitive ?? undefined,
+                thumbnailSensitivityOverride: row.thumbnail_sensitivity_override,
+                isLocalDisk,
+                assetMatchKey
             };
 
-            switch (row.facet_type) {
-                case 'checkpoints':
-                    result.checkpoints.push(item);
-                    break;
-                case 'loras':
-                    result.loras.push(item);
-                    break;
-                case 'embeddings':
-                    result.embeddings.push(item);
-                    break;
-                case 'hypernetworks':
-                    result.hypernetworks.push(item);
-                    break;
-                case 'control_nets':
-                    result.controlNets.push(item);
-                    break;
-                case 'ip_adapters':
-                    result.ipAdapters.push(item);
-                    break;
-                case 'tools':
-                    result.tools.push(row.resource_name);
-                    break;
+            const groupMap = mergedResources[row.facet_type];
+            if (!groupMap) continue;
+
+            const existing = groupMap.get(assetMatchKey);
+            if (existing) {
+                mergeFacetItem(existing, item);
+            } else {
+                groupMap.set(assetMatchKey, {
+                    item,
+                    usedAliases: new Set(item.count > 0 ? [item.name] : []),
+                    displayCount: item.count
+                });
             }
         }
+
+        const shouldIncludeFacetItem = (item: FacetItem): boolean => {
+            if (assetScope === 'used') return item.count > 0;
+            if (assetScope === 'local') return Boolean(item.isLocalDisk);
+            return item.count > 0 || Boolean(item.isLocalDisk);
+        };
+
+        const finalizeGroups = (facetType: keyof typeof mergedResources): FacetItem[] => sortFacetItems(
+            Array.from(mergedResources[facetType].values()).map(group => ({
+                ...group.item,
+                filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
+            })).filter(shouldIncludeFacetItem)
+        );
+
+        result.checkpoints = finalizeGroups('checkpoints');
+        result.loras = finalizeGroups('loras');
+        result.embeddings = finalizeGroups('embeddings');
+        result.hypernetworks = finalizeGroups('hypernetworks');
+        result.controlNets = finalizeGroups('control_nets');
+        result.ipAdapters = finalizeGroups('ip_adapters');
 
         return result;
 

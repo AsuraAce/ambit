@@ -300,6 +300,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 onResetCollectionThumbnail={colOps.resetCollectionThumbnail}
                 onEditCollection={onEditCollection}
                 onUpdateCollectionFilters={colOps.updateCollectionFilters}
+                onOpenResourceFolders={() => {
+                    modals.setInitialSettingsTab('folders');
+                    modals.openModal('settings');
+                }}
                 isVisible={isFilterPanelOpen}
             />
 

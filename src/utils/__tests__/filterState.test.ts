@@ -35,6 +35,11 @@ const activeFilters: FilterState = {
         loras: 'all',
         controlNets: 'all',
     },
+    assetFilterAliases: {
+        loras: {
+            'lora-a': ['lora-a', 'lora_a']
+        }
+    },
 };
 
 describe('filterState', () => {
@@ -64,6 +69,7 @@ describe('filterState', () => {
         expect(nextFilters.dateFrom).toBeUndefined();
         expect(nextFilters.dateTo).toBeUndefined();
         expect(nextFilters.matchModes).toBeUndefined();
+        expect(nextFilters.assetFilterAliases).toBeUndefined();
     });
 
     it('preserves view state and clears optional filters when merged by the store', () => {
@@ -80,6 +86,7 @@ describe('filterState', () => {
         expect(mergedFilters.dateFrom).toBeUndefined();
         expect(mergedFilters.dateTo).toBeUndefined();
         expect(mergedFilters.matchModes).toBeUndefined();
+        expect(mergedFilters.assetFilterAliases).toBeUndefined();
     });
 
     it('identifies default browsing as unfiltered for prefetching', () => {

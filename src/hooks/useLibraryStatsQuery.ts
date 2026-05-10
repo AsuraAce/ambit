@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FilterState, AppSettings, Collection, FacetType } from '../types';
+import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -8,16 +8,15 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockFacets, getBrowserMockStats, getBrowserMockValidFacetNames } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 
-
 interface UseLibraryStatsQueryProps {
     filters: FilterState;
     settings: AppSettings;
     privacyEnabled: boolean;
     allCollections: Collection[];
     settingsLoaded?: boolean;
+    assetScope?: AssetScope;
     validFacetsEnabled?: boolean;
 }
-
 
 const INITIAL_STATS = {
     totalImages: 0,
@@ -77,25 +76,24 @@ export const useLibraryStatsQuery = ({
     privacyEnabled,
     allCollections,
     settingsLoaded = true,
+    assetScope = 'used',
     validFacetsEnabled = true
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
 
-    // Stable reference: only track the active collection's smart filter definition
+    // Stable reference: only track the active collection's smart filter definition.
     const activeCollectionId = sideQueryFilters.collectionId;
     const activeCollection = useMemo(() =>
         allCollections.find(c => c.id === activeCollectionId),
         [allCollections, activeCollectionId]
     );
 
-    // Create stable fingerprint of smart collection filters (if any)
     const smartFilterHash = useMemo(() =>
         activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
         [activeCollection?.filters]
     );
 
-    // Always fetch all facet types - they're cheap from facet_cache
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
     const fetchValidFacets = useMemo(
@@ -103,46 +101,73 @@ export const useLibraryStatsQuery = ({
         [sideQueryFilters, privacyEnabled, settings.maskingMode, validFacetsEnabled]
     );
 
-    // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
+    // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch.
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
-    return useQuery({
-        queryKey: ['libraryStats', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
+    const queryInput = useMemo(() => {
+        if (useBrowserMocks || !settingsLoaded) return null;
+
+        return buildSqlWhereClause(
+            sideQueryFilters,
+            privacyEnabled,
+            settings.maskingMode,
+            settings.maskedKeywords,
+            allCollections
+        );
+    }, [
+        allCollections,
+        privacyEnabled,
+        settings.maskedKeywords,
+        settings.maskingMode,
+        settingsLoaded,
+        sideQueryFilters,
+        useBrowserMocks
+    ]);
+
+    const facetsQuery = useQuery({
+        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryFn: async () => {
+            if (useBrowserMocks) {
+                return getBrowserMockFacets(sideQueryFilters);
+            }
+
+            if (!queryInput) return INITIAL_FACETS;
+
+            return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, { assetScope });
+        },
+        placeholderData: (previousData) => previousData ?? INITIAL_FACETS,
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded
+    });
+
+    const summaryQuery = useQuery({
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return {
-                    facets: getBrowserMockFacets(sideQueryFilters),
                     stats: getBrowserMockStats(sideQueryFilters),
                     validNames: fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null
                 };
             }
 
-            // 1. Base Query: Standard intersection of ALL filters
-            // This gives us the correct Counts for everything (and Valid Names for ALL-mode categories)
-            const { where, params, collectionId, loraName } = buildSqlWhereClause(
-                sideQueryFilters,
-                privacyEnabled,
-                settings.maskingMode,
-                settings.maskedKeywords,
-                allCollections
-            );
+            if (!queryInput) {
+                return { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null };
+            }
 
-            // Fetch facets and stats in parallel
-            // Also fetch valid facet names if we have active filters (for drill-down)
-            const [facets, stats, baseValidNames] = await Promise.all([
-                getFacets(where, params, ALL_FACET_TYPES),
+            const { where, params, collectionId, loraName } = queryInput;
+
+            // Fetch stats and valid facet names in parallel. Facets are queried separately
+            // so asset-scope changes do not rerun expensive privacy-valid facet checks.
+            const [stats, baseValidNames] = await Promise.all([
                 getLibraryStats(where, params, collectionId, loraName),
                 fetchValidFacets
                     ? getValidFacetNames(where, params, collectionId, loraName)
                     : Promise.resolve(null)
             ]);
 
-            // 2. Disjunctive Queries: For categories in ANY mode with active selections
-            // We need to fetch their valid names WITHOUT their own filter applied
-
             const disjunctiveCategories: FacetType[] = [];
             if (activeCollectionId) {
-                // Collections are single select, no disjunctive logic needed usually unless we allowed multi-collection
+                // Collections are single select, no disjunctive logic needed currently.
             }
             if (sideQueryFilters.loras.length > 0 && sideQueryFilters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
             if (sideQueryFilters.embeddings.length > 0 && sideQueryFilters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
@@ -165,7 +190,6 @@ export const useLibraryStatsQuery = ({
                     if (cat === 'controlNets') excludeKey = 'controlNets';
                     if (cat === 'ipAdapters') excludeKey = 'ipAdapters';
 
-                    // Build "Partial" Where Clause (Global - Self)
                     const partial = buildSqlWhereClause(
                         sideQueryFilters,
                         privacyEnabled,
@@ -198,10 +222,22 @@ export const useLibraryStatsQuery = ({
                 }
             }
 
-            return { facets, stats, validNames: finalValidNames };
+            return { stats, validNames: finalValidNames };
         },
-        placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
-        staleTime: 1000 * 60 * 5, // 5 minutes
-        enabled: settingsLoaded, // Wait for settings to load before fetching
+        placeholderData: (previousData) => previousData ?? { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded
     });
+
+    return {
+        data: {
+            facets: facetsQuery.data ?? INITIAL_FACETS,
+            stats: summaryQuery.data?.stats ?? INITIAL_STATS,
+            validNames: summaryQuery.data?.validNames ?? null
+        },
+        isLoading: facetsQuery.isLoading || summaryQuery.isLoading,
+        isFetching: facetsQuery.isFetching || summaryQuery.isFetching,
+        isFacetsLoading: facetsQuery.isLoading,
+        isFacetsFetching: facetsQuery.isFetching
+    };
 };

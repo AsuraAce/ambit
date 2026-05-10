@@ -1,3 +1,4 @@
+use crate::db::facets::FacetResourceTouches;
 use crate::db::resolve_db_path;
 use crate::metadata::guidance::GuidanceClassifier;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -63,6 +64,10 @@ pub struct ProgressPayload {
 pub struct ThumbnailScanResult {
     pub found: usize,
     pub updated: usize,
+    pub cached_files: usize,
+    pub new_or_changed_files: usize,
+    pub registered_models: usize,
+    pub resources: FacetResourceTouches,
 }
 
 #[derive(Debug, Clone)]
@@ -174,11 +179,9 @@ fn best_resource_thumbnail(
         "embeddings" => {
             format_resource_thumbnail_query("image_embeddings", "embedding_name", safe_clause)
         }
-        "hypernetworks" => format_resource_thumbnail_query(
-            "image_hypernetworks",
-            "hypernetwork_name",
-            safe_clause,
-        ),
+        "hypernetworks" => {
+            format_resource_thumbnail_query("image_hypernetworks", "hypernetwork_name", safe_clause)
+        }
         "control_nets" => {
             format_resource_thumbnail_query("image_controlnets", "controlnet_name", safe_clause)
         }
@@ -444,24 +447,35 @@ pub async fn unset_model_thumbnail(
             "UPDATE models
              SET thumbnail_path = NULL, thumbnail_mode = NULL
              WHERE resource_type = ?1 AND (hash = ?2 OR name = ?3)",
-            params![resource_type.as_str(), model_hash, model_name.as_deref()]
-        ).map_err(|e| e.to_string())?;
+            params![resource_type.as_str(), model_hash, model_name.as_deref()],
+        )
+        .map_err(|e| e.to_string())?;
 
-        let (nm_opt, sidecar_path, sensitivity_override): (Option<String>, Option<String>, Option<i64>) = conn.query_row(
-            "SELECT name, sidecar_thumbnail_path, thumbnail_sensitivity_override
+        let (nm_opt, sidecar_path, sensitivity_override): (
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT name, sidecar_thumbnail_path, thumbnail_sensitivity_override
              FROM models
              WHERE resource_type = ?1 AND (hash = ?2 OR name = ?3)
              LIMIT 1",
-            params![resource_type.as_str(), model_hash, model_name.as_deref()],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        ).unwrap_or((model_name.clone(), None, None));
+                params![resource_type.as_str(), model_hash, model_name.as_deref()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap_or((model_name.clone(), None, None));
 
         let nm = nm_opt.or(model_name);
 
         if let Some(nm) = nm {
-            let has_sidecar = sidecar_path.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+            let has_sidecar = sidecar_path
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
             let safe_thumb = best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, true);
-            let dynamic_thumb = best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, false);
+            let dynamic_thumb =
+                best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, false);
             let fallback = if has_sidecar {
                 ThumbnailCandidate {
                     path: sidecar_path.unwrap_or_default(),
@@ -502,7 +516,8 @@ pub async fn unset_model_thumbnail(
                     facet_type,
                     nm
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             conn.execute(
                 "UPDATE facet_cache
                  SET thumbnail_path = ?1,
@@ -521,11 +536,14 @@ pub async fn unset_model_thumbnail(
                     facet_type,
                     model_hash
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
 
         Ok(())
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -565,7 +583,8 @@ pub async fn clear_all_thumbnails(
         let nm_opt = model_name.or(nm_opt);
 
         if let Some(nm) = nm_opt {
-            let dynamic_thumb = best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, false);
+            let dynamic_thumb =
+                best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, false);
             let safe_thumb = best_resource_thumbnail(&conn, &nm, &model_hash, &resource_type, true);
             let fallback = dynamic_thumb.unwrap_or_else(|| ThumbnailCandidate {
                 path: String::new(),
@@ -830,16 +849,12 @@ mod tests {
         )
         .unwrap();
 
-        let lora_thumb = best_resource_thumbnail(&conn, "Portrait", "lora_Portrait", "loras", false)
-            .expect("lora thumbnail");
-        let checkpoint_thumb = best_resource_thumbnail(
-            &conn,
-            "Portrait",
-            "checkpoint_hash",
-            "checkpoint",
-            false,
-        )
-        .expect("checkpoint thumbnail");
+        let lora_thumb =
+            best_resource_thumbnail(&conn, "Portrait", "lora_Portrait", "loras", false)
+                .expect("lora thumbnail");
+        let checkpoint_thumb =
+            best_resource_thumbnail(&conn, "Portrait", "checkpoint_hash", "checkpoint", false)
+                .expect("checkpoint thumbnail");
 
         assert_eq!(lora_thumb.path, "lora.webp");
         assert_eq!(lora_thumb.image_id.as_deref(), Some("lora-img"));

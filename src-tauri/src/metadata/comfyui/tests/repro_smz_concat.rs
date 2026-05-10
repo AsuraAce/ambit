@@ -130,7 +130,7 @@ fn test_repro_prompts_everywhere_multiple_inputs() {
     // If it correctly follows both links, it should have both.
     // However, prompts_everywhere broadcasts to any node that needs it.
     // Our find_wireless_node needs to handle it.
-    
+
     assert!(meta.positive_prompt.contains("Positive 1"));
     assert!(meta.positive_prompt.contains("Positive 2"));
 }
@@ -167,7 +167,10 @@ fn test_repro_junk_prompt_avoidance() {
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
     // Also include a junk parameters chunk
-    chunks.insert("parameters".to_string(), "Positive prompt: undefined\nNegative prompt: undefined\nSteps: 20".to_string());
+    chunks.insert(
+        "parameters".to_string(),
+        "Positive prompt: undefined\nNegative prompt: undefined\nSteps: 20".to_string(),
+    );
 
     let meta = extract_comfyui_metadata(&chunks);
 

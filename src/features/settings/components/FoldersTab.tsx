@@ -58,6 +58,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         handleAddFolder,
         removeFolder,
         handleBrowse,
+        handleBrowseResource,
         handleAddResourceFolder,
         handleRemoveResourceFolder,
         handleScanNow
@@ -185,31 +186,29 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                 </div>
             </div>
 
-            {/* 2. Resource Discovery Section - Hidden for V1 */}
-            {false && (
-                <>
-                    <ResourceDiscoverySection
-                        resourceFolders={settings.resourceFolders || []}
-                        isScanning={isScanningDiscovery}
-                        scanProgress={discoveryScanProgress}
-                        isPopulatingThumbnails={isPopulatingThumbnails}
-                        newResourcePath={newResourcePath}
-                        setNewResourcePath={setNewResourcePath}
-                        onBrowse={handleBrowse} // Shared or separate browse logic?
-                        onAdd={handleAddResourceFolder}
-                        onRemove={handleRemoveResourceFolder}
-                        onScanNow={handleScanNow}
-                    />
-                    <input
-                        type="file"
-                        ref={resourceInputRef}
-                        className="hidden"
-                        // @ts-ignore
-                        webkitdirectory=""
-                        directory=""
-                    />
-                </>
-            )}
+            {/* 2. Resource Discovery Section */}
+            <>
+                <ResourceDiscoverySection
+                    resourceFolders={settings.resourceFolders || []}
+                    isScanning={isScanningDiscovery}
+                    scanProgress={discoveryScanProgress}
+                    isPopulatingThumbnails={isPopulatingThumbnails}
+                    newResourcePath={newResourcePath}
+                    setNewResourcePath={setNewResourcePath}
+                    onBrowse={handleBrowseResource}
+                    onAdd={handleAddResourceFolder}
+                    onRemove={handleRemoveResourceFolder}
+                    onScanNow={handleScanNow}
+                />
+                <input
+                    type="file"
+                    ref={resourceInputRef}
+                    className="hidden"
+                    // @ts-ignore
+                    webkitdirectory=""
+                    directory=""
+                />
+            </>
 
             {/* 3. Model Hash Resolution */}
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">

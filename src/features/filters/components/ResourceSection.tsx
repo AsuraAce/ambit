@@ -1,20 +1,27 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw } from 'lucide-react';
-import { FilterState } from '../../../types';
+import { AssetScope, FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
 import { formatCountCompact, formatModelName } from '../../../utils/formatUtils';
 import { useQueryClient } from '@tanstack/react-query';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 import { commands } from '../../../bindings';
+import { uniqueAssetAliases } from '../../../utils/assetIdentity';
+
+export type { AssetScope };
+
+type ResourceSectionType = 'loras' | 'embeddings' | 'hypernetworks' | 'checkpoints' | 'controlNets' | 'ipAdapters';
+type ResourceFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
 
 interface ResourceItem {
     name: string;
     count: number;
     lastUsedAt?: number;
     createdAt?: number;
+    localModifiedAt?: number;
     thumbnailPath?: string;
     previewUrl?: string;
     hash?: string;
@@ -25,6 +32,9 @@ interface ResourceItem {
     thumbnailImageId?: string;
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
+    isLocalDisk?: boolean;
+    assetMatchKey?: string;
+    filterAliases?: string[];
 }
 
 interface ResourceSectionProps {
@@ -33,7 +43,7 @@ interface ResourceSectionProps {
      * Resource type for filtering. Note: 'checkpoints' maps to FilterState.models
      * for historical reasons, but aligns with Facets.checkpoints for consistency.
      */
-    type: 'loras' | 'embeddings' | 'hypernetworks' | 'checkpoints';
+    type: ResourceSectionType;
     filters: FilterState;
     setFilters: (update: (prev: FilterState) => FilterState) => void;
     data: ResourceItem[];
@@ -46,7 +56,14 @@ interface ResourceSectionProps {
      * - string[]: Only show items in this list (+ always show selected items)
      */
     validNames?: string[] | null;
+    assetScope?: AssetScope;
 }
+
+const compareByName = (a: ResourceItem, b: ResourceItem) => a.name.localeCompare(b.name);
+
+const compareWithNameTieBreak = (primary: number, a: ResourceItem, b: ResourceItem) => (
+    primary || compareByName(a, b)
+);
 
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
     title,
@@ -57,7 +74,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     isOpen,
     onToggle,
     isLoading,
-    validNames
+    validNames,
+    assetScope = 'used'
 }) => {
     const { settings, setSettings } = useSettings();
     const [searchQuery, setSearchQuery] = useState('');
@@ -92,58 +110,104 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     }, [type, setSettings]);
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
-    const filterKey = type === 'checkpoints' ? 'models' : type;
+    const filterKey: ResourceFilterKey = type === 'checkpoints' ? 'models' : type;
+    const selectedNames = useMemo(() => new Set((filters[filterKey] || []) as string[]), [filters, filterKey]);
+    const validNameSet = useMemo(() => validNames ? new Set(validNames) : null, [validNames]);
 
-    const toggleItem = (name: string) => {
+    const getItemAliases = useCallback((item: ResourceItem) => (
+        uniqueAssetAliases([item.name, ...(item.filterAliases || [])])
+    ), []);
+
+    const isItemSelected = useCallback((item: ResourceItem) => (
+        getItemAliases(item).some(alias => selectedNames.has(alias))
+    ), [getItemAliases, selectedNames]);
+
+    const toggleItem = (item: ResourceItem) => {
+        if (item.count === 0 && item.isLocalDisk) return;
         setFilters(prev => {
             const currentList = (prev[filterKey] as string[]) || [];
-            const newList = currentList.includes(name)
-                ? currentList.filter(l => l !== name)
-                : [...currentList, name];
-            return { ...prev, [filterKey]: newList };
+            const itemAliases = getItemAliases(item);
+            const itemAliasSet = new Set(itemAliases);
+            const selected = currentList.some(value => itemAliasSet.has(value));
+            const nextAliasGroups: NonNullable<FilterState['assetFilterAliases']> = {
+                ...(prev.assetFilterAliases || {})
+            };
+            const aliasGroup = { ...(prev.assetFilterAliases?.[filterKey] || {}) };
+            nextAliasGroups[filterKey] = aliasGroup;
+
+            if (selected) {
+                for (const alias of itemAliases) {
+                    delete aliasGroup[alias];
+                }
+                return {
+                    ...prev,
+                    [filterKey]: currentList.filter(value => !itemAliasSet.has(value)),
+                    assetFilterAliases: nextAliasGroups
+                };
+            }
+
+            aliasGroup[item.name] = itemAliases;
+            return {
+                ...prev,
+                [filterKey]: currentList.includes(item.name) ? currentList : [...currentList, item.name],
+                assetFilterAliases: nextAliasGroups
+            };
         });
     };
 
-    const filteredItems = (data || [])
-        .filter(l => {
-            // 1. Must match search query
-            if (!l.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    const getAddedSortValue = useCallback((item: ResourceItem) => {
+        if ((assetScope === 'local' || assetScope === 'all') && item.isLocalDisk) {
+            return item.localModifiedAt ?? item.createdAt ?? 0;
+        }
 
-            // 2. Must have count > 0 OR be currently selected
-            const isSelected = ((filters[filterKey] || []) as string[]).includes(l.name);
-            if (l.count === 0 && !isSelected) return false;
+        return item.createdAt ?? item.localModifiedAt ?? 0;
+    }, [assetScope]);
 
-            // 3. Drill-down filtering: hide items not in current filter context
-            // 
-            // With Disjunctive Faceting implemented in useLibraryStatsQuery:
-            // - validNames is ALREADY calculated correctly for each category
-            // - For ANY mode categories: validNames respects cross-filters but ignores self-filter
-            // - For ALL mode categories: validNames respects ALL filters
-            // 
-            // Therefore, we simply apply validNames. No special handling needed.
+    const filteredItems = useMemo(() => (data || [])
+        .filter(item => {
+            const aliases = getItemAliases(item);
+            const query = searchQuery.toLowerCase();
+            if (!aliases.some(alias => alias.toLowerCase().includes(query))) return false;
 
-            if (validNames !== null && validNames !== undefined) {
-                // Always show selected items, hide non-valid items
-                if (!isSelected && !validNames.includes(l.name)) return false;
+            const isSelected = aliases.some(alias => selectedNames.has(alias));
+            const isUnusedLocal = item.count === 0 && item.isLocalDisk;
+            const isUsed = item.count > 0 || isSelected;
+
+            if (assetScope === 'used' && !isUsed) return false;
+            if (assetScope === 'local' && !item.isLocalDisk) return false;
+            if (assetScope === 'all' && !isUsed && !item.isLocalDisk) return false;
+
+            if (assetScope === 'used' && validNameSet) {
+                if (!isSelected && !aliases.some(alias => validNameSet.has(alias))) return false;
             }
 
-            return true;
+            return assetScope !== 'used' || !isUnusedLocal;
         })
         .sort((a, b) => {
             switch (sortOption) {
-                case 'count_desc': return b.count - a.count;
-                case 'count_asc': return a.count - b.count;
+                case 'count_desc': return compareWithNameTieBreak(b.count - a.count, a, b);
+                case 'count_asc': return compareWithNameTieBreak(a.count - b.count, a, b);
                 case 'name_asc': return a.name.localeCompare(b.name);
                 case 'name_desc': return b.name.localeCompare(a.name);
-                case 'recent_desc': return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
-                case 'recent_asc': return (a.lastUsedAt || 0) - (b.lastUsedAt || 0);
-                case 'added_desc': return (b.createdAt || 0) - (a.createdAt || 0);
-                case 'added_asc': return (a.createdAt || 0) - (b.createdAt || 0);
-                default: return b.count - a.count;
+                case 'recent_desc': return compareWithNameTieBreak((b.lastUsedAt || 0) - (a.lastUsedAt || 0), a, b);
+                case 'recent_asc': return compareWithNameTieBreak((a.lastUsedAt || 0) - (b.lastUsedAt || 0), a, b);
+                case 'added_desc': return compareWithNameTieBreak(getAddedSortValue(b) - getAddedSortValue(a), a, b);
+                case 'added_asc': return compareWithNameTieBreak(getAddedSortValue(a) - getAddedSortValue(b), a, b);
+                default: return compareWithNameTieBreak(b.count - a.count, a, b);
             }
-        });
+        }), [assetScope, data, getAddedSortValue, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
 
-    const singularType = type === 'loras' ? 'LoRA' : type === 'embeddings' ? 'Embedding' : type === 'checkpoints' ? 'Checkpoint' : 'Hypernetwork';
+    const singularType = type === 'loras'
+        ? 'LoRA'
+        : type === 'embeddings'
+            ? 'Embedding'
+            : type === 'checkpoints'
+                ? 'Checkpoint'
+                : type === 'controlNets'
+                    ? 'ControlNet'
+                    : type === 'ipAdapters'
+                        ? 'IP-Adapter'
+                        : 'Hypernetwork';
 
     const visibleItems = filteredItems.slice(0, renderLimit);
     const hasMore = filteredItems.length > renderLimit;
@@ -159,7 +223,13 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     const queryClient = useQueryClient();
 
     const getBackendResourceType = useCallback(() => (
-        type === 'checkpoints' ? 'checkpoint' : type
+        type === 'checkpoints'
+            ? 'checkpoint'
+            : type === 'controlNets'
+                ? 'control_nets'
+                : type === 'ipAdapters'
+                    ? 'ip_adapters'
+                    : type
     ), [type]);
 
     const getFallbackHash = useCallback((item: ResourceItem) => {
@@ -173,9 +243,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 return `emb_${item.name}`;
             case 'hypernetworks':
                 return `hyper_${item.name}`;
-            case 'control_nets':
+            case 'controlNets':
                 return `cnet_${item.name}`;
-            case 'ip_adapters':
+            case 'ipAdapters':
                 return `ipad_${item.name}`;
             default:
                 return item.name;
@@ -240,16 +310,17 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const renderGridItem = (item: ResourceItem) => {
-        const isSelected = (filters[filterKey] || []).includes(item.name);
+        const isSelected = isItemSelected(item);
+        const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
 
         return (
             <div
                 key={`${item.name}-${item.hash || 'no-hash'}`}
-                onClick={() => toggleItem(item.name)}
+                onClick={() => toggleItem(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
-                title={item.name}
-                className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer border transition-all duration-300 ease-spring ${isSelected
+                title={isInventoryOnly ? `${item.name} has no images in the library yet` : item.name}
+                className={`group relative aspect-square rounded-xl overflow-hidden border transition-all duration-300 ease-spring ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected
                     ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
                     : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
                     }`}
@@ -290,10 +361,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
                 {/* Count Badge - Hover Only for ALL items, always Top Right */}
                 {!isSelected && (
-                    <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90 shadow-sm">
-                            {formatCountCompact(item.count)}
+                    <div className={`absolute top-1.5 right-1.5 transition-opacity z-10 ${isInventoryOnly ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <div className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-blue-500/80 text-white' : 'bg-black/40 text-white/90'}`}>
+                            {isInventoryOnly ? 'Unused' : formatCountCompact(item.count)}
                         </div>
+                    </div>
+                )}
+
+                {item.isLocalDisk && !isInventoryOnly && (
+                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-black/50 backdrop-blur-sm text-[9px] font-bold text-blue-700 dark:text-blue-200 shadow-sm">
+                        Local
                     </div>
                 )}
 
@@ -303,15 +380,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
 
     const renderListItem = (item: ResourceItem) => {
-        const isSelected = (filters[filterKey] || []).includes(item.name);
+        const isSelected = isItemSelected(item);
+        const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
 
         return (
             <div
                 key={`${item.name}-${item.hash || 'no-hash'}`}
-                onClick={() => toggleItem(item.name)}
+                onClick={() => toggleItem(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-all ease-spring border group relative overflow-hidden ${isSelected
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all ease-spring border group relative overflow-hidden ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected
                     ? 'bg-gradient-to-r from-sage-100 to-transparent dark:from-sage-600/20 dark:to-transparent border-sage-200 dark:border-sage-500/30 text-sage-800 dark:text-sage-300 font-medium'
                     : 'bg-transparent border-transparent text-gray-500 dark:text-zinc-400 hover:bg-white/40 dark:hover:bg-white/5'
                     }`}
@@ -344,11 +422,16 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <span
-                        className={`text-[10px] bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${validNames !== null ? 'opacity-30' : 'opacity-60'}`}
-                        title={`${item.count.toLocaleString()} total images`}
+                        className={`text-[10px] px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${isInventoryOnly ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 opacity-100' : `bg-gray-100 dark:bg-white/10 ${validNames != null ? 'opacity-30' : 'opacity-60'}`}`}
+                        title={isInventoryOnly ? 'Local asset with no matching images yet' : `${item.count.toLocaleString()} total images`}
                     >
-                        {formatCountCompact(item.count)}
+                        {isInventoryOnly ? 'Unused' : formatCountCompact(item.count)}
                     </span>
+                    {item.isLocalDisk && !isInventoryOnly && (
+                        <span className="text-[9px] bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wide">
+                            Local
+                        </span>
+                    )}
                 </div>
             </div>
         );

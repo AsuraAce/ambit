@@ -1,6 +1,6 @@
-use tauri::{AppHandle, Emitter};
 use super::run_blocking;
 use crate::metadata::CURRENT_PARSER_VERSION;
+use tauri::{AppHandle, Emitter};
 
 #[derive(serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
