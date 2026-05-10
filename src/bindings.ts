@@ -536,7 +536,7 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
-export type ThumbnailScanResult = { found: number; updated: number }
+export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
 /**
  * Valid facet names result - used for drill-down filtering
  */

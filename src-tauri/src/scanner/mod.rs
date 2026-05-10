@@ -90,14 +90,18 @@ pub async fn scan_images_bulk(
                         error: Some(e),
                     });
 
-                    let current = parsed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let current =
+                        parsed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                     if current % 10 == 0 || current == total {
                         use tauri::Emitter;
-                        let _ = app_clone.emit("import_progress", crate::db::ProgressPayload {
-                            current,
-                            total,
-                            message: "Extracting metadata...".to_string(),
-                        });
+                        let _ = app_clone.emit(
+                            "import_progress",
+                            crate::db::ProgressPayload {
+                                current,
+                                total,
+                                message: "Extracting metadata...".to_string(),
+                            },
+                        );
                     }
 
                     res

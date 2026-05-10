@@ -5,6 +5,60 @@ Last reviewed: 2026-05-03
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Collection and Smart Count Performance
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Startup/sidebar work can still issue expensive collection queries even when no image filter is active.
+- Smart collection counts can block SQLite on `positive_prompt LIKE '%term%'` scans.
+- Collection thumbnail hydration runs multiple correlated ordered subqueries per collection.
+
+### Suggested Future Direction
+- Handle this in a separate performance worktree from asset discovery.
+- Evaluate cached or materialized smart collection membership before changing prompt-search semantics.
+- Replace collection thumbnail hydration with a batched query shape that avoids repeated per-collection ordered subqueries.
+
+### Related Code
+- `src/services/db/collectionRepo.ts`
+- `src/stores/collectionStore.ts`
+- `src/utils/sqlHelpers.ts`
+
+## Privacy Hide Asset Facet Loading Performance
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Privacy masking mode `Hide` currently makes the Assets tab behave as if a user filter is active, even when no explicit filter is selected.
+- `useLibraryStatsQuery.shouldFetchValidFacets(...)` returns true for `privacyEnabled && maskingMode === 'hide'`, so the app calls `getValidFacetNames(...)` on normal Assets tab load.
+- `getValidFacetNames(...)` builds a seven-branch `UNION ALL` over checkpoints, LoRAs, embeddings, hypernetworks, tools, ControlNet, and IP-Adapter with `privacy_hidden = 0` applied to each branch.
+- On the 2026-05-10 dev DB, a read-only query-plan check showed roughly 87k visible non-hidden images, 175k LoRA junction rows, 14k ControlNet rows, and 4.7k IP-Adapter rows. SQLite uses the privacy image index, but it still repeats broad image-driven work per branch and joins `facet_cache` through normalized `LOWER(...)` expressions that cannot use exact resource-name lookup cleanly.
+- Asset catalog loading is now split from summary/valid-name loading, so switching asset scope should not repeat the expensive valid-facet query.
+
+### Current Pain Points
+- Asset facet catalog loading itself can be fast, but hide-mode privacy validation can dominate the perceived load time by minutes on large libraries.
+- The expensive query is invisible to the user as a privacy-validity pass; it looks like normal asset loading is broken.
+- The remaining performance risk is the hide-mode privacy-validity query itself, especially on initial `Used in Library` loads and after facet-cache changes.
+
+### Safe-Change Warning
+- Do not simply remove hide-mode valid-facet filtering without a product decision. If asset names used only by hidden images are considered private, `Used in Library` must not reveal them while privacy hide is enabled.
+- Keep thumbnail safety separate from asset-name visibility. Safe thumbnails do not by themselves answer whether a hidden-only resource name should appear.
+- Avoid broad `UNION ALL` scans and normalized string joins in startup or scope-switch paths; they scale with library size rather than with the cached asset catalog.
+
+### Suggested Future Direction
+- Preserve the split between cheap asset catalog loading and privacy-valid asset-name computation.
+- Keep `assetScope` changes from invalidating privacy-valid names when the selected scope does not consume them.
+- For `All`, decide whether hidden-only used assets should be shown; if yes, avoid valid-name work. If no, compute privacy-valid used aliases through a cached/materialized path rather than on every scope load.
+- For `Used in Library`, prefer a privacy-aware facet cache or materialized visible-resource membership keyed by resource type and canonical asset identity, refreshed when `privacy_hidden` changes.
+- If query-time validation remains necessary, add indexed normalized resource identity columns or lookup tables so facet matching does not rely on `LOWER(REPLACE(...))` joins against `facet_cache`.
+- Ensure future privacy-validity optimizations still refresh when `facet_cache` changes, because valid facet names depend on cached asset rows.
+
+### Related Code
+- `src/hooks/useLibraryStatsQuery.ts`
+- `src/features/filters/components/FilterPanel.tsx`
+- `src/features/filters/components/ResourceSection.tsx`
+- `src/services/db/searchRepo.ts`
+- `src-tauri/src/db/facets.rs`
+- `src-tauri/src/db/migrations/m50_privacy_index.rs`
+
 ## Live Watch Pending Completion State
 Status: Deferred
 

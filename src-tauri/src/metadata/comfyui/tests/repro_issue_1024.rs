@@ -4,7 +4,7 @@ use std::collections::HashMap;
 #[test]
 fn test_repro_undefined_prompts_and_bogus_steps() {
     let mut chunks = HashMap::new();
-    
+
     // The "parameters" chunk as seen in the screenshot/description
     let parameters = r#"undefined ,, Negative prompt: undefined Steps: 1024, Sampler: dpmpp_2m_karras, CFG scale: 7.0, Seed: 1300847582, Size: 1024x1536, Model: revAnimated_v122, Version: ComfyUI"#;
     chunks.insert("parameters".to_string(), parameters.to_string());
@@ -66,7 +66,7 @@ fn test_repro_undefined_prompts_and_bogus_steps() {
     assert_ne!(meta.negative_prompt, "undefined");
     assert!(meta.positive_prompt.contains("Asuka Langley Soryu"));
     // assert!(meta.negative_prompt.contains("low quality"));
-    
+
     // Should favor the KSampler steps (20) over the saver steps (1024)
     // or at least NOT pick 1024.
     assert_eq!(meta.steps, 20);

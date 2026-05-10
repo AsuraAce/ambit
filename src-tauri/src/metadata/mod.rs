@@ -1,14 +1,14 @@
 pub mod a1111;
-pub mod comfyui;
-pub mod invokeai;
-pub mod guidance;
-pub mod models;
 pub mod civitai;
-pub mod thumbs_scan;
+pub mod comfyui;
+pub mod guidance;
+pub mod invokeai;
+pub mod models;
 pub mod parsers;
-pub mod resources;
-pub mod utils;
 pub mod reparse;
+pub mod resources;
+pub mod thumbs_scan;
+pub mod utils;
 
 pub use a1111::extract_a1111_metadata;
 pub use comfyui::extract_comfyui_metadata;
@@ -79,10 +79,19 @@ impl ImageMetadata {
         // Considered incomplete if we are missing key generation data
         (self.model.is_empty() || self.model == "Unknown" || self.model == "None")
             || self.positive_prompt.trim().is_empty()
-            || self.positive_prompt.trim().eq_ignore_ascii_case("undefined")
+            || self
+                .positive_prompt
+                .trim()
+                .eq_ignore_ascii_case("undefined")
             || self.positive_prompt.trim().eq_ignore_ascii_case("null")
-            || self.positive_prompt.trim().eq_ignore_ascii_case("negative prompt:")
-            || self.negative_prompt.trim().eq_ignore_ascii_case("undefined")
+            || self
+                .positive_prompt
+                .trim()
+                .eq_ignore_ascii_case("negative prompt:")
+            || self
+                .negative_prompt
+                .trim()
+                .eq_ignore_ascii_case("undefined")
             || self.negative_prompt.trim().eq_ignore_ascii_case("null")
             || self.steps == 0
     }
@@ -118,9 +127,9 @@ impl ImageMetadata {
         {
             self.positive_prompt = other.positive_prompt;
         }
-        if self.negative_prompt.trim().is_empty() 
+        if self.negative_prompt.trim().is_empty()
             || self.negative_prompt.trim() == "undefined"
-            || self.negative_prompt.trim() == "null" 
+            || self.negative_prompt.trim() == "null"
         {
             self.negative_prompt = other.negative_prompt;
         }
@@ -226,7 +235,9 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         || base.sampler.is_empty()
         || base.sampler == "_"
         || base.sampler.starts_with("Unknown (")
-        || (secondary.tool == "ComfyUI" && !secondary.sampler.is_empty() && secondary.sampler != "Unknown")
+        || (secondary.tool == "ComfyUI"
+            && !secondary.sampler.is_empty()
+            && secondary.sampler != "Unknown")
     {
         base.sampler = secondary.sampler;
     }
@@ -242,9 +253,9 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.positive_prompt = secondary.positive_prompt;
     }
 
-    if base.negative_prompt.trim().is_empty() 
+    if base.negative_prompt.trim().is_empty()
         || base.negative_prompt.trim() == "undefined"
-        || base.negative_prompt.trim() == "null" 
+        || base.negative_prompt.trim() == "null"
     {
         base.negative_prompt = secondary.negative_prompt;
     }

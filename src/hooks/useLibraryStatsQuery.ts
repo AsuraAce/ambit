@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FilterState, AppSettings, Collection, FacetType } from '../types';
+import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -14,6 +14,7 @@ interface UseLibraryStatsQueryProps {
     privacyEnabled: boolean;
     allCollections: Collection[];
     settingsLoaded?: boolean;
+    assetScope?: AssetScope;
 }
 
 
@@ -72,7 +73,8 @@ export const useLibraryStatsQuery = ({
     settings,
     privacyEnabled,
     allCollections,
-    settingsLoaded = true
+    settingsLoaded = true,
+    assetScope = 'used'
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
 
@@ -100,31 +102,61 @@ export const useLibraryStatsQuery = ({
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
-    return useQuery({
-        queryKey: ['libraryStats', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+    const queryInput = useMemo(() => {
+        if (useBrowserMocks || !settingsLoaded) return null;
+
+        return buildSqlWhereClause(
+            filters,
+            privacyEnabled,
+            settings.maskingMode,
+            settings.maskedKeywords,
+            allCollections
+        );
+    }, [
+        allCollections,
+        filters,
+        privacyEnabled,
+        settings.maskedKeywords,
+        settings.maskingMode,
+        settingsLoaded,
+        useBrowserMocks
+    ]);
+
+    const facetsQuery = useQuery({
+        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryFn: async () => {
+            if (useBrowserMocks) {
+                return getBrowserMockFacets(filters);
+            }
+
+            if (!queryInput) return INITIAL_FACETS;
+
+            return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, { assetScope });
+        },
+        placeholderData: (previousData) => previousData ?? INITIAL_FACETS,
+        staleTime: 1000 * 60 * 5, // 5 minutes
+        enabled: settingsLoaded, // Wait for settings to load before fetching
+    });
+
+    const summaryQuery = useQuery({
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return {
-                    facets: getBrowserMockFacets(filters),
                     stats: getBrowserMockStats(filters),
                     validNames: fetchValidFacets ? getBrowserMockValidFacetNames(filters) : null
                 };
             }
 
-            // 1. Base Query: Standard intersection of ALL filters
-            // This gives us the correct Counts for everything (and Valid Names for ALL-mode categories)
-            const { where, params, collectionId, loraName } = buildSqlWhereClause(
-                filters,
-                privacyEnabled,
-                settings.maskingMode,
-                settings.maskedKeywords,
-                allCollections
-            );
+            if (!queryInput) {
+                return { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null };
+            }
 
-            // Fetch facets and stats in parallel
-            // Also fetch valid facet names if we have active filters (for drill-down)
-            const [facets, stats, baseValidNames] = await Promise.all([
-                getFacets(where, params, ALL_FACET_TYPES),
+            const { where, params, collectionId, loraName } = queryInput;
+
+            // Fetch stats and valid facet names in parallel. Facets are queried separately
+            // so asset-scope changes do not rerun expensive privacy-valid facet checks.
+            const [stats, baseValidNames] = await Promise.all([
                 getLibraryStats(where, params, collectionId, loraName),
                 fetchValidFacets
                     ? getValidFacetNames(where, params, collectionId, loraName)
@@ -192,10 +224,22 @@ export const useLibraryStatsQuery = ({
                 }
             }
 
-            return { facets, stats, validNames: finalValidNames };
+            return { stats, validNames: finalValidNames };
         },
-        placeholderData: (previousData) => previousData ?? { facets: INITIAL_FACETS, stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
+        placeholderData: (previousData) => previousData ?? { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
         staleTime: 1000 * 60 * 5, // 5 minutes
         enabled: settingsLoaded, // Wait for settings to load before fetching
     });
+
+    return {
+        data: {
+            facets: facetsQuery.data ?? INITIAL_FACETS,
+            stats: summaryQuery.data?.stats ?? INITIAL_STATS,
+            validNames: summaryQuery.data?.validNames ?? null
+        },
+        isLoading: facetsQuery.isLoading || summaryQuery.isLoading,
+        isFetching: facetsQuery.isFetching || summaryQuery.isFetching,
+        isFacetsLoading: facetsQuery.isLoading,
+        isFacetsFetching: facetsQuery.isFetching
+    };
 };

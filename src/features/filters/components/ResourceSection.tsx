@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw } from 'lucide-react';
-import { FilterState } from '../../../types';
+import { AssetScope, FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
 import { formatCountCompact, formatModelName } from '../../../utils/formatUtils';
@@ -11,7 +11,7 @@ import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbn
 import { commands } from '../../../bindings';
 import { uniqueAssetAliases } from '../../../utils/assetIdentity';
 
-export type AssetScope = 'used' | 'local' | 'all';
+export type { AssetScope };
 
 type ResourceSectionType = 'loras' | 'embeddings' | 'hypernetworks' | 'checkpoints' | 'controlNets' | 'ipAdapters';
 type ResourceFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
@@ -21,6 +21,7 @@ interface ResourceItem {
     count: number;
     lastUsedAt?: number;
     createdAt?: number;
+    localModifiedAt?: number;
     thumbnailPath?: string;
     previewUrl?: string;
     hash?: string;
@@ -57,6 +58,12 @@ interface ResourceSectionProps {
     validNames?: string[] | null;
     assetScope?: AssetScope;
 }
+
+const compareByName = (a: ResourceItem, b: ResourceItem) => a.name.localeCompare(b.name);
+
+const compareWithNameTieBreak = (primary: number, a: ResourceItem, b: ResourceItem) => (
+    primary || compareByName(a, b)
+);
 
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
     title,
@@ -148,6 +155,14 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         });
     };
 
+    const getAddedSortValue = useCallback((item: ResourceItem) => {
+        if ((assetScope === 'local' || assetScope === 'all') && item.isLocalDisk) {
+            return item.localModifiedAt ?? item.createdAt ?? 0;
+        }
+
+        return item.createdAt ?? item.localModifiedAt ?? 0;
+    }, [assetScope]);
+
     const filteredItems = useMemo(() => (data || [])
         .filter(item => {
             const aliases = getItemAliases(item);
@@ -170,17 +185,17 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         })
         .sort((a, b) => {
             switch (sortOption) {
-                case 'count_desc': return b.count - a.count;
-                case 'count_asc': return a.count - b.count;
+                case 'count_desc': return compareWithNameTieBreak(b.count - a.count, a, b);
+                case 'count_asc': return compareWithNameTieBreak(a.count - b.count, a, b);
                 case 'name_asc': return a.name.localeCompare(b.name);
                 case 'name_desc': return b.name.localeCompare(a.name);
-                case 'recent_desc': return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
-                case 'recent_asc': return (a.lastUsedAt || 0) - (b.lastUsedAt || 0);
-                case 'added_desc': return (b.createdAt || 0) - (a.createdAt || 0);
-                case 'added_asc': return (a.createdAt || 0) - (b.createdAt || 0);
-                default: return b.count - a.count;
+                case 'recent_desc': return compareWithNameTieBreak((b.lastUsedAt || 0) - (a.lastUsedAt || 0), a, b);
+                case 'recent_asc': return compareWithNameTieBreak((a.lastUsedAt || 0) - (b.lastUsedAt || 0), a, b);
+                case 'added_desc': return compareWithNameTieBreak(getAddedSortValue(b) - getAddedSortValue(a), a, b);
+                case 'added_asc': return compareWithNameTieBreak(getAddedSortValue(a) - getAddedSortValue(b), a, b);
+                default: return compareWithNameTieBreak(b.count - a.count, a, b);
             }
-        }), [assetScope, data, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
+        }), [assetScope, data, getAddedSortValue, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
 
     const singularType = type === 'loras'
         ? 'LoRA'

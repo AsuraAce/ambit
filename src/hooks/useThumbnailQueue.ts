@@ -37,6 +37,12 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
     const isImporting = useLibraryStore(s => s.isImporting);
     const isRegeneratingThumbnails = useLibraryStore(s => s.isRegeneratingThumbnails);
     const syncStatus = useLibraryStore(s => s.syncStatus);
+    const isResolvingModels = useLibraryStore(s => s.isResolvingModels);
+    const isScanningDiscovery = useLibraryStore(s => s.isScanningDiscovery);
+    const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
+    const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
+    const isPopulatingThumbnails = useLibraryStore(s => s.isPopulatingThumbnails);
+    const isRefreshingMetadata = useLibraryStore(s => s.isRefreshingMetadata);
 
     const setBackgroundHealingActive = useLibraryStore(s => s.setBackgroundHealingActive);
     const setBackgroundHealingProgress = useLibraryStore(s => s.setBackgroundHealingProgress);
@@ -50,7 +56,13 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
 
     // Check if any blocking activity is happening
     const isImageQueryFetching = activeImageQueryCount > 0;
-    const isBlocked = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing' || isImageQueryFetching;
+    const isResourceOrIndexWorkActive = isResolvingModels
+        || isScanningDiscovery
+        || isScanningDuplicates
+        || isScanningMissingFiles
+        || isPopulatingThumbnails
+        || isRefreshingMetadata;
+    const isBlocked = isImporting || isRegeneratingThumbnails || syncStatus === 'syncing' || isImageQueryFetching || isResourceOrIndexWorkActive;
 
     /**
      * Schedule a callback with low priority using requestIdleCallback.
@@ -102,6 +114,12 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
             return store.isImporting
                 || store.isRegeneratingThumbnails
                 || store.syncStatus === 'syncing'
+                || store.isResolvingModels
+                || store.isScanningDiscovery
+                || store.isScanningDuplicates
+                || store.isScanningMissingFiles
+                || store.isPopulatingThumbnails
+                || store.isRefreshingMetadata
                 || queryClient.isFetching({ queryKey: ['images'] }) > 0;
         };
 
@@ -343,6 +361,12 @@ export function useThumbnailQueue(addToast?: (message: string, type: 'success' |
                 const currentlyBlocked = store.isImporting
                     || store.isRegeneratingThumbnails
                     || store.syncStatus === 'syncing'
+                    || store.isResolvingModels
+                    || store.isScanningDiscovery
+                    || store.isScanningDuplicates
+                    || store.isScanningMissingFiles
+                    || store.isPopulatingThumbnails
+                    || store.isRefreshingMetadata
                     || store.backgroundHealingPaused
                     || queryClient.isFetching({ queryKey: ['images'] }) > 0;
 

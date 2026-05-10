@@ -129,12 +129,18 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
                 for (key, val) in resolved {
                     let input_lower = key.to_lowercase();
-                    let is_broadcaster = t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast");
-                    if is_broadcaster || relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
-                        if !is_broadcaster && input_name == "positive" && input_lower.contains("negative") {
+                    let is_broadcaster = t.contains("Everywhere")
+                        || t.contains("Wireless")
+                        || t.contains("Broadcast");
+                    if is_broadcaster || relevant_prefixes.iter().any(|&r| input_lower.contains(r))
+                    {
+                        if !is_broadcaster
+                            && input_name == "positive"
+                            && input_lower.contains("negative")
+                        {
                             continue;
                         }
-                        
+
                         // Handle both single string and array of strings (multiple inputs with same name)
                         if let Some(source_id) = val.as_str() {
                             queue.push_back(source_id.to_string());
@@ -217,21 +223,25 @@ pub fn find_connected_controlnets(
                 // Extract the ControlNet name
                 if let Some(cn_source) = get_source_id(graph, &current_id, "control_net") {
                     if let Some(cn_name) = trace_controlnet_name_valid(graph, &cn_source) {
-                         let (category, _) = crate::metadata::guidance::GuidanceClassifier::classify(&cn_name, None)
-                             .unwrap_or((crate::metadata::guidance::GuidanceCategory::ControlNet, "other".to_string()));
+                        let (category, _) =
+                            crate::metadata::guidance::GuidanceClassifier::classify(&cn_name, None)
+                                .unwrap_or((
+                                    crate::metadata::guidance::GuidanceCategory::ControlNet,
+                                    "other".to_string(),
+                                ));
 
-                         match category {
-                             crate::metadata::guidance::GuidanceCategory::IPAdapter => {
-                                 if !ip_adapters.contains(&cn_name) {
-                                     ip_adapters.push(cn_name);
-                                 }
-                             }
-                             _ => {
-                                 if !controlnets.contains(&cn_name) {
-                                     controlnets.push(cn_name);
-                                 }
-                             }
-                         }
+                        match category {
+                            crate::metadata::guidance::GuidanceCategory::IPAdapter => {
+                                if !ip_adapters.contains(&cn_name) {
+                                    ip_adapters.push(cn_name);
+                                }
+                            }
+                            _ => {
+                                if !controlnets.contains(&cn_name) {
+                                    controlnets.push(cn_name);
+                                }
+                            }
+                        }
                     }
                 }
                 // Continue upstream via conditioning
@@ -240,14 +250,14 @@ pub fn find_connected_controlnets(
                 } else if let Some(s) = get_source_id(graph, &current_id, "conditioning") {
                     queue.push_back(s);
                 }
-                 if let Some(s) = get_source_id(graph, &current_id, "negative") {
-                     queue.push_back(s);
-                 }
-                 continue;
+                if let Some(s) = get_source_id(graph, &current_id, "negative") {
+                    queue.push_back(s);
+                }
+                continue;
             }
 
             // combiners/splitters
-           if t == "ConditioningCombine" || t == "ConditioningAverage" {
+            if t == "ConditioningCombine" || t == "ConditioningAverage" {
                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_1") {
                     queue.push_back(s);
                 }
@@ -257,55 +267,49 @@ pub fn find_connected_controlnets(
                 continue;
             }
             if t == "ConditioningConcat" {
-                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") {
+                if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") {
                     queue.push_back(s);
                 }
-                 if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") {
+                if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") {
                     queue.push_back(s);
                 }
                 continue;
             }
 
             // General Pass-through
-             let relevant_prefixes = [
-                "conditioning",
-                "positive",
-                "cond",
-                "c",
-            ];
-             if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
-                 for (key, val) in resolved {
-                     let input_lower = key.to_lowercase();
-                     if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
-                         if input_name == "positive" && input_lower.contains("negative") {
-                             continue;
-                         }
-                         
-                         if let Some(source_id) = val.as_str() {
-                             queue.push_back(source_id.to_string());
-                         } else if let Some(arr) = val.as_array() {
-                             for item in arr {
-                                 if let Some(source_id) = item.as_str() {
-                                     queue.push_back(source_id.to_string());
-                                 }
-                             }
-                         }
-                     }
-                 }
-             }
-             else if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
-                 for (input_key, _input_val) in inputs_obj {
-                     let input_lower = input_key.to_lowercase();
-                      if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
-                          if input_name == "positive" && input_lower.contains("negative") {
-                             continue;
-                          }
-                          if let Some(s) = get_source_id(graph, &current_id, input_key) {
-                             queue.push_back(s);
-                          }
-                      }
-                 }
-             }
+            let relevant_prefixes = ["conditioning", "positive", "cond", "c"];
+            if let Some(resolved) = node.get("_resolved_inputs").and_then(|v| v.as_object()) {
+                for (key, val) in resolved {
+                    let input_lower = key.to_lowercase();
+                    if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                        if input_name == "positive" && input_lower.contains("negative") {
+                            continue;
+                        }
+
+                        if let Some(source_id) = val.as_str() {
+                            queue.push_back(source_id.to_string());
+                        } else if let Some(arr) = val.as_array() {
+                            for item in arr {
+                                if let Some(source_id) = item.as_str() {
+                                    queue.push_back(source_id.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if let Some(inputs_obj) = node.get("inputs").and_then(|v| v.as_object()) {
+                for (input_key, _input_val) in inputs_obj {
+                    let input_lower = input_key.to_lowercase();
+                    if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
+                        if input_name == "positive" && input_lower.contains("negative") {
+                            continue;
+                        }
+                        if let Some(s) = get_source_id(graph, &current_id, input_key) {
+                            queue.push_back(s);
+                        }
+                    }
+                }
+            }
         }
     }
     controlnets
@@ -316,26 +320,29 @@ fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<Stri
     for _ in 0..10 {
         if let Some(node) = graph.get_node(&current_id) {
             let t = get_node_type(node);
-             if t == "ControlNetLoader" || t.contains("ControlNet Loader") {
-                 if let Some(name) = get_node_param(node, "control_net_name").and_then(|v| v.as_str()) {
-                     return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(name));
-                 }
-                 if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
-                     if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                          return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(s));
-                     }
-                 }
-             }
-             if let Some(s) = get_node_input_link(node, "control_net") {
-                 current_id = s;
-                 continue;
-             }
+            if t == "ControlNetLoader" || t.contains("ControlNet Loader") {
+                if let Some(name) =
+                    get_node_param(node, "control_net_name").and_then(|v| v.as_str())
+                {
+                    return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
+                        name,
+                    ));
+                }
+                if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
+                    if let Some(s) = arr.first().and_then(|v| v.as_str()) {
+                        return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(s));
+                    }
+                }
+            }
+            if let Some(s) = get_node_input_link(node, "control_net") {
+                current_id = s;
+                continue;
+            }
         }
         break;
     }
     None
 }
-
 
 /// Extracts text from a node, executing simple string graph traversal if needed.
 fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
@@ -570,15 +577,18 @@ pub fn evaluate_string_node(
                 let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
                 if active {
                     if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
-                        let strength = lora.get("strength").and_then(|v| {
-                            if let Some(f) = v.as_f64() {
-                                Some(f)
-                            } else if let Some(s) = v.as_str() {
-                                s.parse::<f64>().ok()
-                            } else {
-                                None
-                            }
-                        }).unwrap_or(1.0);
+                        let strength = lora
+                            .get("strength")
+                            .and_then(|v| {
+                                if let Some(f) = v.as_f64() {
+                                    Some(f)
+                                } else if let Some(s) = v.as_str() {
+                                    s.parse::<f64>().ok()
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(1.0);
                         all_active_loras.push(format!("<lora:{}:{}>", name, strength));
                     }
                 }

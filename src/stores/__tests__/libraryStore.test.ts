@@ -216,4 +216,29 @@ describe('libraryStore live watch session', () => {
         expect(useLibraryStore.getState().isScanningMissingFiles).toBe(false);
         expect(useLibraryStore.getState().missingScanProgress).toBeNull();
     });
+
+    it('preserves discovery scan start time when later progress omits it', () => {
+        act(() => {
+            useLibraryStore.getState().setDiscoveryScanProgress({
+                current: 0,
+                total: 0,
+                message: 'Scanning resource folders...',
+                mode: 'indeterminate',
+                startedAt: 12345
+            });
+            useLibraryStore.getState().setDiscoveryScanProgress({
+                current: 12,
+                total: 100,
+                message: 'Updating local asset index...',
+                mode: 'determinate',
+                detail: '8 indexed'
+            });
+        });
+
+        expect(useLibraryStore.getState().discoveryScanProgress).toMatchObject({
+            current: 12,
+            total: 100,
+            startedAt: 12345
+        });
+    });
 });

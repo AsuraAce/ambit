@@ -1,7 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 /// Migration 43: Add parser_version column for metadata re-parsing tracking.
-/// When parser logic improves, we increment CURRENT_PARSER_VERSION and 
+/// When parser logic improves, we increment CURRENT_PARSER_VERSION and
 /// re-parse images with outdated versions from stored original_metadata_json.
 pub fn migration43() -> Migration {
     Migration {

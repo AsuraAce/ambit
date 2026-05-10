@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * The hook:
  * - Defers startup by 30 seconds to avoid blocking app initialization
  * - Fetches candidate entries before showing progress
- * - Pauses when `isImporting`, `isRegeneratingThumbnails`, or `syncStatus === 'syncing'`
+ * - Pauses when high-priority import, scan, discovery, indexing, or metadata work is active
  * - Resumes automatically when blocking activities complete
  * - Respects `enableAutoThumbnailHealing` settings flag
  * - Updates libraryStore progress state for ActivityDock visibility
@@ -70,7 +70,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('setBackgroundHealingPaused');
     });
 
-    it('should pause when import is active', async () => {
+    it('should pause when high-priority work is active', async () => {
         const fs = await import('fs/promises');
         const path = await import('path');
         const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
@@ -79,6 +79,12 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('isImporting');
         expect(content).toContain('isRegeneratingThumbnails');
         expect(content).toContain('syncStatus');
+        expect(content).toContain('isResolvingModels');
+        expect(content).toContain('isScanningDiscovery');
+        expect(content).toContain('isScanningDuplicates');
+        expect(content).toContain('isScanningMissingFiles');
+        expect(content).toContain('isPopulatingThumbnails');
+        expect(content).toContain('isRefreshingMetadata');
         expect(content).toContain("queryKey: ['images']");
     });
 });

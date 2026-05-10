@@ -107,7 +107,10 @@ pub fn find_wireless_node(
             }
 
             // 2. Broadcaster Nodes (Fallback)
-            if t == "Prompts Everywhere" || t.contains("Anything Everywhere") || t.contains("Everything Everywhere") {
+            if t == "Prompts Everywhere"
+                || t.contains("Anything Everywhere")
+                || t.contains("Everything Everywhere")
+            {
                 best_match = Some(id.clone());
             }
         }
@@ -117,7 +120,10 @@ pub fn find_wireless_node(
             for id in &graph.broadcasters {
                 if let Some(node) = graph.get_node(id) {
                     let t = get_node_type(node);
-                    if t == "Prompts Everywhere" || t.contains("Anything Everywhere") || t.contains("Everything Everywhere") {
+                    if t == "Prompts Everywhere"
+                        || t.contains("Anything Everywhere")
+                        || t.contains("Everything Everywhere")
+                    {
                         best_match = Some(id.clone());
                     }
                 }

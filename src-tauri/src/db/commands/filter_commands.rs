@@ -1,5 +1,5 @@
-use tauri::AppHandle;
 use super::run_blocking;
+use tauri::AppHandle;
 
 #[derive(serde::Serialize, specta::Type)]
 pub struct NumericRange {

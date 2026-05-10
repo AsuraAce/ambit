@@ -98,6 +98,132 @@ describe('ActivityDock', () => {
         expect(screen.getByText('Cancel')).toBeTruthy();
     });
 
+    it('renders indeterminate discovery progress without a misleading percentage', () => {
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 0,
+                total: 0,
+                message: 'Updating local asset index...',
+                mode: 'indeterminate',
+                detail: '718 model files found | 718 new/changed | 388 thumbnails linked',
+                startedAt: Date.now()
+            },
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: {
+                current: 25,
+                total: 100,
+                message: 'Optimizing thumbnails...'
+            }
+        });
+
+        const { container } = render(<ActivityDock />);
+
+        expect(screen.getByText('Discovery Scan')).toBeTruthy();
+        expect(screen.getByText('Updating local asset index...')).toBeTruthy();
+        expect(screen.getByText('718 model files found')).toBeTruthy();
+        expect(screen.getByText('718 new/changed')).toBeTruthy();
+        expect(screen.getByText('388 thumbnails linked')).toBeTruthy();
+        expect(screen.queryByText('718 model files found | 718 new/changed | 388 thumbnails linked')).toBeNull();
+        expect(screen.queryByText('Auto-Optimizing')).toBeNull();
+        expect(screen.queryByText('0 / 100')).toBeNull();
+        expect(screen.queryByText('0%')).toBeNull();
+        expect(screen.queryByText('100%')).toBeNull();
+        expect(screen.getByText('Cancel')).toBeTruthy();
+        expect(container.querySelector('.bg-gradient-to-r')).toBeTruthy();
+    });
+
+    it('renders determinate discovery progress with real counts', () => {
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 7,
+                total: 20,
+                message: 'Registering discovered assets...',
+                mode: 'determinate',
+                detail: 'model.safetensors'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Discovery Scan')).toBeTruthy();
+        expect(screen.getByText('7 / 20')).toBeTruthy();
+        expect(screen.getByText('35%')).toBeTruthy();
+        expect(screen.getByText('Registering discovered assets...')).toBeTruthy();
+        expect(screen.getByText('model.safetensors')).toBeTruthy();
+    });
+
+    it('hides elapsed time when discovery progress is determinate', () => {
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 120,
+                total: 718,
+                message: 'Updating local asset index...',
+                mode: 'determinate',
+                detail: '97 indexed',
+                startedAt: Date.now() - 6500
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Discovery Scan')).toBeTruthy();
+        expect(screen.getByText('120 / 718')).toBeTruthy();
+        expect(screen.getByText('17%')).toBeTruthy();
+        expect(screen.getByText('Updating local asset index...')).toBeTruthy();
+        expect(screen.getByText('97 indexed')).toBeTruthy();
+        expect(screen.queryByText(/\d+s elapsed/)).toBeNull();
+    });
+
+    it('renders elapsed time for long-running discovery work', () => {
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 37,
+                total: 0,
+                message: 'Scanning resource folders...',
+                mode: 'indeterminate',
+                detail: '37 model files found | 1842 files checked',
+                startedAt: Date.now() - 6500
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('37 model files found')).toBeTruthy();
+        expect(screen.getByText('1842 files checked')).toBeTruthy();
+        expect(screen.getByText(/\d+s elapsed/)).toBeTruthy();
+        expect(screen.queryByText(/37 model files found \| 1842 files checked/)).toBeNull();
+        expect(screen.queryByText('0%')).toBeNull();
+    });
+
+    it('renders discovery completion without cancel or percent noise', () => {
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 149,
+                total: 149,
+                message: 'Resource scan complete',
+                mode: 'complete',
+                detail: '149 model files found | 12 thumbnails linked',
+                startedAt: Date.now() - 2000
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Discovery Scan')).toBeTruthy();
+        expect(screen.getByText('Resource scan complete')).toBeTruthy();
+        expect(screen.getByText('149 model files found')).toBeTruthy();
+        expect(screen.getByText('12 thumbnails linked')).toBeTruthy();
+        expect(screen.queryByText('149 model files found | 12 thumbnails linked')).toBeNull();
+        expect(screen.queryByText('Cancel')).toBeNull();
+        expect(screen.queryByText('149 / 149')).toBeNull();
+        expect(screen.queryByText('100%')).toBeNull();
+    });
+
     it('renders a unified Live Watch card without cancel controls during active live work', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
@@ -114,7 +240,7 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('Syncing')).toBeNull();
         expect(screen.queryByText('Cancel')).toBeNull();
         expect(screen.queryByText('0 / 0')).toBeNull();
-        expect(card?.className).toContain('w-[min(360px,calc(100vw-2rem))]');
+        expect(card?.className).toContain('w-[min(400px,calc(100vw-2rem))]');
         expect(progressFill).toBeTruthy();
         expect(container.querySelector('.text-sage-600')).toBeNull();
     });

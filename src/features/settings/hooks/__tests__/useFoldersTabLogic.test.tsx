@@ -8,6 +8,7 @@ import { useFoldersTabLogic } from '../useFoldersTabLogic';
 const addToastMock = vi.hoisted(() => vi.fn());
 const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
 const rebuildFacetCacheIncrementalBatchMock = vi.hoisted(() => vi.fn());
+const refreshFacetCacheForResourcesStrictMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../hooks/useToast', () => ({
@@ -23,6 +24,7 @@ vi.mock('../../../../services/importService', () => ({
 
 vi.mock('../../../../services/db/imageRepo', () => ({
     rebuildFacetCacheIncrementalBatch: (...args: Parameters<typeof rebuildFacetCacheIncrementalBatchMock>) => rebuildFacetCacheIncrementalBatchMock(...args),
+    refreshFacetCacheForResourcesStrict: (...args: Parameters<typeof refreshFacetCacheForResourcesStrictMock>) => refreshFacetCacheForResourcesStrictMock(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -61,11 +63,33 @@ const renderFoldersHook = (settings: AppSettings = baseSettings) => {
     return { ...rendered, setSettings };
 };
 
+const emptyResources = {
+    checkpoints: [],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    controlNets: [],
+    ipAdapters: [],
+    tools: []
+};
+
 describe('useFoldersTabLogic resource discovery', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        scanResourceThumbnailsMock.mockResolvedValue({ found: 2, updated: 1 });
+        addToastMock.mockReset();
+        scanResourceThumbnailsMock.mockResolvedValue({
+            found: 2,
+            updated: 1,
+            cachedFiles: 1,
+            newOrChangedFiles: 1,
+            registeredModels: 1,
+            resources: {
+                ...emptyResources,
+                loras: ['CinematicDetail']
+            }
+        });
         rebuildFacetCacheIncrementalBatchMock.mockResolvedValue(2);
+        refreshFacetCacheForResourcesStrictMock.mockResolvedValue(2);
         useLibraryStore.setState({
             facetCacheVersion: 0,
             isScanningDiscovery: false,
@@ -84,8 +108,29 @@ describe('useFoldersTabLogic resource discovery', () => {
         expect(result.current.newResourcePath).toBe('D:/AI/Models');
     });
 
-    it('scans resources, rebuilds resource facets, and increments the facet cache version', async () => {
+    it('scans resources, refreshes touched resource facets, and increments the facet cache version', async () => {
         const { result, setSettings } = renderFoldersHook();
+        refreshFacetCacheForResourcesStrictMock.mockImplementation(async () => {
+            expect(useLibraryStore.getState().discoveryScanProgress).toMatchObject({
+                current: 2,
+                total: 0,
+                message: 'Updating LoRA index...',
+                mode: 'indeterminate',
+                detail: '2 LoRA files found | 1 new/changed | 1 unchanged | 1 thumbnails linked',
+            });
+            return 2;
+        });
+        addToastMock.mockImplementation((message: string) => {
+            if (message.startsWith('Resource scan complete')) {
+                expect(useLibraryStore.getState().discoveryScanProgress).toMatchObject({
+                    current: 2,
+                    total: 2,
+                    message: 'Resource scan complete',
+                    mode: 'complete',
+                    detail: '2 LoRA files found | 2 indexed | 1 new/changed | 1 unchanged | 1 thumbnails linked',
+                });
+            }
+        });
 
         act(() => {
             result.current.setNewResourcePath('D:\\AI\\Models');
@@ -100,17 +145,125 @@ describe('useFoldersTabLogic resource discovery', () => {
         const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
         expect(updateSettings(baseSettings).resourceFolders).toEqual(['D:/AI/Models']);
         expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AI/Models']);
-        expect(rebuildFacetCacheIncrementalBatchMock).toHaveBeenCalledWith([
-            'checkpoints',
-            'loras',
-            'embeddings',
-            'hypernetworks',
-            'controlNets',
-            'ipAdapters',
-        ]);
+        expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
+            ...emptyResources,
+            loras: ['CinematicDetail']
+        });
+        expect(rebuildFacetCacheIncrementalBatchMock).not.toHaveBeenCalled();
 
         await waitFor(() => {
             expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         });
+        expect(addToastMock).toHaveBeenCalledWith('Resource scan complete: 2 LoRA files found, 2 indexed', 'success');
+        expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
+        expect(useLibraryStore.getState().isScanningDiscovery).toBe(false);
+    });
+
+    it('scans only the newly added resource folder when existing resource folders are configured', async () => {
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/Existing'],
+        };
+        const { result, setSettings } = renderFoldersHook(settings);
+
+        act(() => {
+            result.current.setNewResourcePath('D:\\AI\\New');
+        });
+
+        await act(async () => {
+            await result.current.handleAddResourceFolder({
+                preventDefault: vi.fn(),
+            } as unknown as React.FormEvent);
+        });
+
+        const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
+        expect(updateSettings(settings).resourceFolders).toEqual(['D:/AI/Existing', 'D:/AI/New']);
+        expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AI/New']);
+    });
+
+    it('scan now scans all configured resource folders', async () => {
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/Checkpoints', 'D:/AI/Loras'],
+        };
+        const { result } = renderFoldersHook(settings);
+
+        await act(async () => {
+            await result.current.handleScanNow();
+        });
+
+        expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AI/Checkpoints', 'D:/AI/Loras']);
+        expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
+            ...emptyResources,
+            loras: ['CinematicDetail']
+        });
+        expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
+    });
+
+    it('skips broad rebuild and warns when scan returns files without touched resources', async () => {
+        scanResourceThumbnailsMock.mockResolvedValueOnce({
+            found: 2,
+            updated: 0,
+            cachedFiles: 0,
+            newOrChangedFiles: 2,
+            registeredModels: 0,
+            resources: emptyResources
+        });
+        const { result } = renderFoldersHook();
+
+        act(() => {
+            result.current.setNewResourcePath('D:\\AI\\Unknown');
+        });
+
+        await act(async () => {
+            await result.current.handleAddResourceFolder({
+                preventDefault: vi.fn(),
+            } as unknown as React.FormEvent);
+        });
+
+        expect(refreshFacetCacheForResourcesStrictMock).not.toHaveBeenCalled();
+        expect(rebuildFacetCacheIncrementalBatchMock).not.toHaveBeenCalled();
+        expect(addToastMock).toHaveBeenCalledWith(
+            'Resource scan found model files, but none could be classified for indexing',
+            'warning'
+        );
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+    });
+
+    it('clears discovery progress after resource scan failure', async () => {
+        scanResourceThumbnailsMock.mockRejectedValueOnce(new Error('scan failed'));
+        const { result } = renderFoldersHook();
+
+        act(() => {
+            result.current.setNewResourcePath('D:\\AI\\Broken');
+        });
+
+        await act(async () => {
+            await result.current.handleAddResourceFolder({
+                preventDefault: vi.fn(),
+            } as unknown as React.FormEvent);
+        });
+
+        expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
+        expect(useLibraryStore.getState().isScanningDiscovery).toBe(false);
+    });
+
+    it('shows a concise cancellation toast after resource scan cancellation', async () => {
+        scanResourceThumbnailsMock.mockRejectedValueOnce(new Error('Discovery scan cancelled by user'));
+        const { result } = renderFoldersHook();
+
+        act(() => {
+            result.current.setNewResourcePath('D:\\AI\\Cancelled');
+        });
+
+        await act(async () => {
+            await result.current.handleAddResourceFolder({
+                preventDefault: vi.fn(),
+            } as unknown as React.FormEvent);
+        });
+
+        expect(addToastMock).toHaveBeenCalledWith('Resource scan cancelled', 'info');
+        expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
+        expect(useLibraryStore.getState().isScanningDiscovery).toBe(false);
     });
 });

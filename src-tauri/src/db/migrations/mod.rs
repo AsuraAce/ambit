@@ -21,6 +21,8 @@ pub mod m51_file_hash;
 pub mod m52_thumbnail_privacy;
 pub mod m53_live_facet_indexes;
 pub mod m54_resource_junction_covering_indexes;
+pub mod m55_manual_thumbnail_lookup_index;
+pub mod m56_thumbnail_optimization;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -51,6 +53,8 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m52_thumbnail_privacy::migration52());
     migrations.push(m53_live_facet_indexes::migration53());
     migrations.push(m54_resource_junction_covering_indexes::migration54());
+    migrations.push(m55_manual_thumbnail_lookup_index::migration55());
+    migrations.push(m56_thumbnail_optimization::migration56());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -62,7 +66,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_49_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_and_resource_indexes_54(
+    fn migrations_include_mainline_49_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_thumbnail_lookup_55_and_thumbnail_optimization_56(
     ) {
         let versions: Vec<i64> = get_migrations()
             .iter()
@@ -75,6 +79,8 @@ mod tests {
         assert!(versions.contains(&52));
         assert!(versions.contains(&53));
         assert!(versions.contains(&54));
+        assert!(versions.contains(&55));
+        assert!(versions.contains(&56));
     }
 
     #[test]
@@ -100,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_and_resource_indexes_54_pending(
+    fn database_at_mainline_49_has_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_thumbnail_lookup_55_and_thumbnail_optimization_56_pending(
     ) {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
@@ -111,6 +117,6 @@ mod tests {
             .collect();
 
         assert!(has_49);
-        assert_eq!(pending_after_49, vec![50, 51, 52, 53, 54]);
+        assert_eq!(pending_after_49, vec![50, 51, 52, 53, 54, 55, 56]);
     }
 }

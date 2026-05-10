@@ -1,10 +1,12 @@
 import React, { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLibraryStatsQuery } from '../useLibraryStatsQuery';
 import { AppSettings, Collection } from '../../types';
+import type { AssetScope } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
+import { useLibraryStore } from '../../stores/libraryStore';
 import type { Facets, LibraryStats, ValidFacetNames } from '../../services/db/searchRepo';
 
 const searchRepoMocks = vi.hoisted(() => ({
@@ -57,7 +59,11 @@ const settings = {
     maskedKeywords: [],
 } as AppSettings;
 
-const renderStatsHook = (filters = createDefaultFilters(), allCollections: Collection[] = []) => {
+const renderStatsHook = (
+    filters = createDefaultFilters(),
+    allCollections: Collection[] = [],
+    assetScope: AssetScope = 'used'
+) => {
     const queryClient = new QueryClient({
         defaultOptions: {
             queries: {
@@ -78,14 +84,24 @@ const renderStatsHook = (filters = createDefaultFilters(), allCollections: Colle
             privacyEnabled: false,
             allCollections,
             settingsLoaded: true,
+            assetScope,
         }),
         { wrapper }
     );
 };
 
+const createDeferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((resolver) => {
+        resolve = resolver;
+    });
+    return { promise, resolve };
+};
+
 describe('useLibraryStatsQuery valid facets', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useLibraryStore.setState({ facetCacheVersion: 0 });
         searchRepoMocks.getFacets.mockResolvedValue(emptyFacets);
         searchRepoMocks.getLibraryStats.mockResolvedValue(emptyStats);
         searchRepoMocks.getValidFacetNames.mockResolvedValue(validNames);
@@ -149,6 +165,146 @@ describe('useLibraryStatsQuery valid facets', () => {
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalled());
 
         expect(searchRepoMocks.getValidFacetNames).not.toHaveBeenCalled();
+    });
+
+    it('requests facets for the active asset scope', async () => {
+        renderStatsHook(createDefaultFilters(), [], 'local');
+
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
+
+        const calls = searchRepoMocks.getFacets.mock.calls as Array<
+            [string, unknown[], unknown[], { assetScope: AssetScope }]
+        >;
+        expect(calls[0][3]).toEqual({ assetScope: 'local' });
+    });
+
+    it('does not refetch stats or valid facets when only the asset scope changes', async () => {
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    retry: false,
+                    gcTime: 0,
+                },
+            },
+        });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const filters = createDefaultFilters();
+        const hideSettings = { ...settings, maskingMode: 'hide' } as AppSettings;
+
+        const { rerender, result } = renderHook(
+            ({ assetScope }: { assetScope: AssetScope }) => useLibraryStatsQuery({
+                filters,
+                settings: hideSettings,
+                privacyEnabled: true,
+                allCollections: [],
+                settingsLoaded: true,
+                assetScope,
+            }),
+            {
+                wrapper,
+                initialProps: { assetScope: 'used' as AssetScope },
+            }
+        );
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(1));
+        expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(1);
+
+        rerender({ assetScope: 'local' });
+
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(2));
+        expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1);
+        expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(1);
+        expect(result.current.isFacetsFetching).toBe(false);
+    });
+
+    it('keeps facet loading false while only the summary query refetches', async () => {
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    retry: false,
+                    gcTime: 0,
+                },
+            },
+        });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+
+        const { result } = renderHook(
+            () => useLibraryStatsQuery({
+                filters: createDefaultFilters(),
+                settings,
+                privacyEnabled: false,
+                allCollections: [],
+                settingsLoaded: true,
+                assetScope: 'used',
+            }),
+            { wrapper }
+        );
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(result.current.isFetching).toBe(false));
+
+        const summaryRefetch = createDeferred<LibraryStats>();
+        searchRepoMocks.getLibraryStats.mockReturnValueOnce(summaryRefetch.promise);
+
+        act(() => {
+            void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'summary'] });
+        });
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(result.current.isFetching).toBe(true));
+
+        expect(result.current.isFacetsFetching).toBe(false);
+        expect(result.current.isFacetsLoading).toBe(false);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            summaryRefetch.resolve(emptyStats);
+        });
+        await waitFor(() => expect(result.current.isFetching).toBe(false));
+    });
+
+    it('refetches stats and valid facets when the facet cache version changes', async () => {
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    retry: false,
+                    gcTime: 0,
+                },
+            },
+        });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const hideSettings = { ...settings, maskingMode: 'hide' } as AppSettings;
+
+        renderHook(
+            () => useLibraryStatsQuery({
+                filters: createDefaultFilters(),
+                settings: hideSettings,
+                privacyEnabled: true,
+                allCollections: [],
+                settingsLoaded: true,
+                assetScope: 'used',
+            }),
+            { wrapper }
+        );
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(1));
+        expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            useLibraryStore.getState().incrementFacetCacheVersion();
+        });
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(2));
+        expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(2);
+        expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(2);
     });
 
     it('uses a self-excluded query plan for ANY-mode disjunctive facets', async () => {

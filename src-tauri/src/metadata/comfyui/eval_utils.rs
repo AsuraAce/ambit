@@ -6,7 +6,12 @@ pub fn get_source_id(graph: &ComfyGraph, node: &Value, input_name: &str) -> Opti
     super::graph::get_source_id(graph, &get_node_id(node), input_name)
 }
 
-pub fn evaluate_number(graph: &ComfyGraph, node: &Value, param: &str, max_limit: i64) -> Option<i64> {
+pub fn evaluate_number(
+    graph: &ComfyGraph,
+    node: &Value,
+    param: &str,
+    max_limit: i64,
+) -> Option<i64> {
     if let Some(val) = get_node_param(node, param) {
         if let Some(i) = val.as_i64() {
             if i < max_limit {
@@ -19,7 +24,7 @@ pub fn evaluate_number(graph: &ComfyGraph, node: &Value, param: &str, max_limit:
             }
         }
     }
-    
+
     if let Some(source_id) = get_source_id(graph, node, param) {
         let source = graph.get_node(&source_id)?;
         if let Some(v) = get_node_param(source, "value").and_then(|v| v.as_i64()) {
@@ -40,7 +45,12 @@ pub fn evaluate_number(graph: &ComfyGraph, node: &Value, param: &str, max_limit:
     None
 }
 
-pub fn evaluate_float(graph: &ComfyGraph, node: &Value, param: &str, max_limit: f64) -> Option<f64> {
+pub fn evaluate_float(
+    graph: &ComfyGraph,
+    node: &Value,
+    param: &str,
+    max_limit: f64,
+) -> Option<f64> {
     if let Some(val) = get_node_param(node, param) {
         if let Some(f) = val.as_f64() {
             if f < max_limit {

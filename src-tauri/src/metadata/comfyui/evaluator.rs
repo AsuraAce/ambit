@@ -37,7 +37,13 @@ impl<'a> ComfyEvaluator<'a> {
                     if let Some(root_node) = self.graph.get_node(&root_sampler_id) {
                         let mut loras = Vec::new();
                         let mut ip_adapters = Vec::new();
-                        let partial = super::eval_core::extract_from_sampler(self.graph, &root_sampler_id, root_node, &mut loras, &mut ip_adapters);
+                        let partial = super::eval_core::extract_from_sampler(
+                            self.graph,
+                            &root_sampler_id,
+                            root_node,
+                            &mut loras,
+                            &mut ip_adapters,
+                        );
                         meta.merge(partial);
                     }
                 }
@@ -58,7 +64,13 @@ impl<'a> ComfyEvaluator<'a> {
                 if !self.is_muted(node) {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
-                    let partial = super::eval_core::extract_from_sampler(self.graph, id, node, &mut loras, &mut ip_adapters);
+                    let partial = super::eval_core::extract_from_sampler(
+                        self.graph,
+                        id,
+                        node,
+                        &mut loras,
+                        &mut ip_adapters,
+                    );
                     if partial.steps > 0 || !partial.model.is_empty() {
                         meta.merge(partial);
                         if meta.steps > 0 && !meta.model.is_empty() {
@@ -95,7 +107,12 @@ impl<'a> ComfyEvaluator<'a> {
         false
     }
 
-    fn find_upstream_sampler(&self, start_id: &str, visited: &mut HashSet<String>, depth: u32) -> Option<String> {
+    fn find_upstream_sampler(
+        &self,
+        start_id: &str,
+        visited: &mut HashSet<String>,
+        depth: u32,
+    ) -> Option<String> {
         if depth > 50 || !visited.insert(start_id.to_string()) {
             return None;
         }

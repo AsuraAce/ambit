@@ -3,14 +3,14 @@
 //! Single-pass backend-driven re-parsing of image metadata.
 //! Replaces the inefficient two-phase approach (reset → process).
 
-use crate::db::resolve_db_path; 
+use crate::db::resolve_db_path;
 use crate::metadata::reparse::reparse_from_json;
 use crate::metadata::{ImageMetadata, CURRENT_PARSER_VERSION};
+use rayon::prelude::*;
 use rusqlite::params;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
-use rayon::prelude::*;
 
 /// State for tracking reparse job cancellation.
 pub struct ReparseState {
@@ -46,7 +46,7 @@ pub struct ReparseJobResult {
 }
 
 /// Start the single-pass metadata re-parsing job.
-/// 
+///
 /// This command:
 /// 1. Opens a dedicated database connection
 /// 2. Streams all images using Keyset Pagination (WHERE id > last_id)
@@ -64,7 +64,7 @@ pub async fn start_reparse_job(
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
     let is_cancelled = state.is_cancelled.clone();
-    
+
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
         log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}, Tool: {:?}", force_reparse, filter_root, filter_tool);
@@ -489,4 +489,3 @@ pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
     log::info!("[Refresh] Cancellation requested");
     state.is_cancelled.store(true, Ordering::SeqCst);
 }
-

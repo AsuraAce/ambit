@@ -82,15 +82,24 @@ fn test_repro_ip_adapter_lora() {
     println!("Full Metadata: {:?}", meta);
     println!("Extracted LoRAs: {:?}", meta.loras);
     println!("Extracted ControlNets: {:?}", meta.control_nets);
-    
+
     // IP Adapter check (Should be consolidated name without weight "(0.60)")
     println!("Extracted LoRAs: {:?}", meta.loras);
-    assert!(meta.loras.contains(&"ip_adapter_faceid_plusv2_sd15_lora".to_string()));
-    assert!(!meta.loras.iter().any(|l| l.contains("(")), "LoRA names should not contain weights");
-    
+    assert!(meta
+        .loras
+        .contains(&"ip_adapter_faceid_plusv2_sd15_lora".to_string()));
+    assert!(
+        !meta.loras.iter().any(|l| l.contains("(")),
+        "LoRA names should not contain weights"
+    );
+
     // ControlNet check
     println!("Extracted ControlNets: {:?}", meta.control_nets);
-    assert!(meta.control_nets.contains(&"control_v11p_sd15_openpose".to_string()));
-    assert!(!meta.control_nets.iter().any(|cn| cn.contains(".pth")), "ControlNet names should not contain extensions");
+    assert!(meta
+        .control_nets
+        .contains(&"control_v11p_sd15_openpose".to_string()));
+    assert!(
+        !meta.control_nets.iter().any(|cn| cn.contains(".pth")),
+        "ControlNet names should not contain extensions"
+    );
 }
-

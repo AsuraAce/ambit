@@ -192,6 +192,8 @@ export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | '
 
 export type MetadataRefreshScope = 'full' | 'images-only';
 
+export type AssetScope = 'used' | 'local' | 'all';
+
 export type FacetSortOption =
   | 'count_desc' | 'count_asc'
   | 'name_asc' | 'name_desc'

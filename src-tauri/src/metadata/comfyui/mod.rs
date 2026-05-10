@@ -2,9 +2,9 @@ use super::ImageMetadata;
 use std::collections::HashMap;
 
 mod conditioning;
-mod evaluator;
 mod eval_core;
 mod eval_utils;
+mod evaluator;
 mod graph;
 mod heuristics;
 mod parse_helper;

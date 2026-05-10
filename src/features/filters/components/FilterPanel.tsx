@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save, FolderSearch } from 'lucide-react';
+import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
 import { AIImage, FilterState } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
@@ -70,7 +70,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         facets,
         isFacetsLoading,
         clearAllFilters,
-        validFacetNames
+        validFacetNames,
+        assetScope,
+        setAssetScope
     } = useSearch();
 
     // Contexts
@@ -100,8 +102,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         guidance: true,
         date: true
     });
-    const [assetScope, setAssetScope] = React.useState<AssetScope>('used');
-
     const toggleSection = (section: string) => {
         setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
         // All facet data is loaded upfront, no lazy loading needed
@@ -240,12 +240,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         [assetScope]
     );
 
-    const assetScopeOptions: { id: AssetScope; label: string }[] = [
-        { id: 'used', label: 'Used in Library' },
-        { id: 'local', label: 'Local on Disk' },
-        { id: 'all', label: 'All' }
+    const assetScopeOptions: { id: AssetScope; label: string; icon: LucideIcon }[] = [
+        { id: 'used', label: 'Used in Library', icon: Images },
+        { id: 'local', label: 'Local on Disk', icon: HardDrive },
+        { id: 'all', label: 'All Assets', icon: Layers3 }
     ];
-    const showResourceLists = assetScope !== 'local' || hasLocalDiskAssets;
+    const showLocalEmptyState = assetScope === 'local' && !isFacetsLoading && !hasLocalDiskAssets;
+    const showResourceLists = assetScope !== 'local' || hasLocalDiskAssets || isFacetsLoading;
 
 
     return (
@@ -352,22 +353,30 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300 ease-spring">
                             <div className="space-y-3">
                                 <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100/60 dark:bg-black/20 p-1">
-                                    {assetScopeOptions.map(option => (
-                                        <button
-                                            key={option.id}
-                                            type="button"
-                                            onClick={() => setAssetScope(option.id)}
-                                            className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition-all ${assetScope === option.id
-                                                ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm'
-                                                : 'text-gray-500 dark:text-zinc-500 hover:text-gray-800 dark:hover:text-zinc-200'
-                                                }`}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    ))}
+                                    {assetScopeOptions.map(option => {
+                                        const ScopeIcon = option.icon;
+                                        const isSelected = assetScope === option.id;
+
+                                        return (
+                                            <button
+                                                key={option.id}
+                                                type="button"
+                                                onClick={() => setAssetScope(option.id)}
+                                                aria-label={option.label}
+                                                aria-pressed={isSelected}
+                                                title={option.label}
+                                                className={`flex h-9 items-center justify-center rounded-lg transition-all ${isSelected
+                                                    ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                                                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
+                                                    }`}
+                                            >
+                                                <ScopeIcon className="h-4 w-4" aria-hidden="true" />
+                                            </button>
+                                        );
+                                    })}
                                 </div>
 
-                                {assetScope === 'local' && !hasLocalDiskAssets && (
+                                {showLocalEmptyState && (
                                     <div className="rounded-xl border border-dashed border-blue-200 dark:border-blue-500/30 bg-blue-50/70 dark:bg-blue-500/10 p-4 text-center">
                                         <FolderSearch className="mx-auto mb-2 h-5 w-5 text-blue-600 dark:text-blue-300" />
                                         <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">No local resource folders scanned yet.</p>

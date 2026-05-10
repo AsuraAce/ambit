@@ -1,11 +1,19 @@
+use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
+use super::eval_utils::{evaluate_float, evaluate_number, evaluate_string, get_source_id};
 use super::graph::{get_node_param, get_node_type, ComfyGraph};
-use super::conditioning::{find_reachable_prompts, find_connected_controlnets};
-use super::eval_utils::{evaluate_number, evaluate_float, evaluate_string, get_source_id};
-use crate::metadata::utils::{extract_embeddings_from_prompt, extract_loras_from_prompt, extract_hypernets_from_prompt};
+use crate::metadata::utils::{
+    extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
+};
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
 
-pub fn extract_from_sampler(graph: &ComfyGraph, node_id: &str, node: &Value, loras: &mut Vec<String>, ip_adapters: &mut Vec<String>) -> ImageMetadata {
+pub fn extract_from_sampler(
+    graph: &ComfyGraph,
+    node_id: &str,
+    node: &Value,
+    loras: &mut Vec<String>,
+    ip_adapters: &mut Vec<String>,
+) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
 
     if let Some(v) = evaluate_number(graph, node, "steps", 500) {
@@ -62,7 +70,9 @@ pub fn extract_from_sampler(graph: &ComfyGraph, node_id: &str, node: &Value, lor
         meta.model = model_name;
     } else if let Some(guider_id) = get_source_id(graph, node, "guider") {
         if let Some(guider_node) = graph.get_node(&guider_id) {
-            if let Some(model_name) = trace_model_chain(graph, guider_node, "model", loras, ip_adapters) {
+            if let Some(model_name) =
+                trace_model_chain(graph, guider_node, "model", loras, ip_adapters)
+            {
                 meta.model = model_name;
             }
         }
@@ -125,7 +135,7 @@ pub fn extract_from_sampler(graph: &ComfyGraph, node_id: &str, node: &Value, lor
             }
         }
     }
-    
+
     let cnets = find_connected_controlnets(graph, node_id, "positive", ip_adapters);
     for cn in cnets {
         if !meta.control_nets.contains(&cn) {
@@ -137,7 +147,7 @@ pub fn extract_from_sampler(graph: &ComfyGraph, node_id: &str, node: &Value, lor
     meta.loras.dedup();
     meta.ip_adapters.extend(ip_adapters.clone());
     meta.ip_adapters.dedup();
-    
+
     meta
 }
 
@@ -183,13 +193,14 @@ pub fn trace_model_chain(
                 name = n.to_string();
             } else if let Some(n) = get_node_param(node, "unet_name").and_then(|v| v.as_str()) {
                 name = n.to_string();
-            } else if let Some(n) = get_node_param(node, "checkpoint").and_then(|v| v.as_str())
-            {
+            } else if let Some(n) = get_node_param(node, "checkpoint").and_then(|v| v.as_str()) {
                 name = n.to_string();
             }
 
             if !name.is_empty() && name != "None" {
-                return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(&name));
+                return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
+                    &name,
+                ));
             }
         } else if get_node_type(node) == "SDParameterGenerator" {
             if let Some(n) = get_node_param(node, "ckpt_name").and_then(|v| v.as_str()) {
@@ -200,23 +211,35 @@ pub fn trace_model_chain(
         }
 
         if get_node_type(node).contains("IPAdapterApply") {
-             if let Some(ip_source) = get_source_id(graph, node, "ipadapter") {
-                 if let Some(ip_node) = graph.get_node(&ip_source) {
-                     if get_node_type(ip_node).contains("IPAdapterModelLoader") {
-                         if let Some(name) = get_node_param(ip_node, "ipadapter_file").and_then(|v| v.as_str()) {
-                             let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
-                             if !ip_adapters.contains(&name) {
-                                 ip_adapters.push(name);
-                             }
-                         }
-                     }
-                 }
-             }
+            if let Some(ip_source) = get_source_id(graph, node, "ipadapter") {
+                if let Some(ip_node) = graph.get_node(&ip_source) {
+                    if get_node_type(ip_node).contains("IPAdapterModelLoader") {
+                        if let Some(name) =
+                            get_node_param(ip_node, "ipadapter_file").and_then(|v| v.as_str())
+                        {
+                            let name =
+                                crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+                            if !ip_adapters.contains(&name) {
+                                ip_adapters.push(name);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        let model_inputs = ["model", "ckpt", "base_model", "COMBO", "MODEL", "VAE", "CLIP"];
+        let model_inputs = [
+            "model",
+            "ckpt",
+            "base_model",
+            "COMBO",
+            "MODEL",
+            "VAE",
+            "CLIP",
+        ];
         let mut found_next = false;
-        let is_broadcaster = t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast");
+        let is_broadcaster =
+            t.contains("Everywhere") || t.contains("Wireless") || t.contains("Broadcast");
 
         if is_broadcaster {
             let mut next = None;
@@ -226,7 +249,9 @@ pub fn trace_model_chain(
                     break;
                 }
             }
-            if let Some(n) = next.or_else(|| super::evaluator::ComfyEvaluator::get_any_input_link(node)) {
+            if let Some(n) =
+                next.or_else(|| super::evaluator::ComfyEvaluator::get_any_input_link(node))
+            {
                 current_id = n;
                 found_next = true;
             }
@@ -266,7 +291,8 @@ fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) {
             if let Some(name) = lora.get("name").and_then(|v| v.as_str()) {
                 let active = lora.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
                 if active {
-                    let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+                    let cleaned_name =
+                        crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                     let strength = if let Some(s) = lora.get("strength") {
                         if let Some(f) = s.as_f64() {
                             Some(f)
