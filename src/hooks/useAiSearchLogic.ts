@@ -78,12 +78,17 @@ export const useAiSearchLogic = ({
       try {
         const { generateFiltersFromQuery } = await import('../services/geminiService');
         const aiFilters = await generateFiltersFromQuery(trimmed, apiKey!, settings.aiModel);
+        const aiDateRange = aiFilters.dateFrom || aiFilters.dateTo
+          ? 'custom'
+          : aiFilters.dateRange || 'all';
         setFilters(prev => ({
           ...prev,
           searchQuery: aiFilters.searchQuery || '',
           models: aiFilters.models || [],
           tools: aiFilters.tools || [],
-          dateRange: aiFilters.dateRange || 'all',
+          dateRange: aiDateRange,
+          dateFrom: aiFilters.dateFrom,
+          dateTo: aiFilters.dateTo,
           favoritesOnly: aiFilters.favoritesOnly || false,
         }));
         addToast("Filters updated by AI", "success");

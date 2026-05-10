@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { FilterState, GeneratorTool } from '../../types';
-import { createCollectionSelectionFilters } from '../filterState';
+import {
+    createCollectionSelectionFilters,
+    createDefaultFilters,
+    hasActiveResultFilters,
+    shouldPrefetchResultPages
+} from '../filterState';
 
 const activeFilters: FilterState = {
     searchQuery: 'portrait',
@@ -13,7 +18,9 @@ const activeFilters: FilterState = {
     ipAdapters: ['ipadapter-a'],
     samplers: ['sampler-a'],
     generationTypes: ['txt2img'],
-    dateRange: 'week',
+    dateRange: 'custom',
+    dateFrom: '2026-04-01',
+    dateTo: '2026-04-30',
     favoritesOnly: true,
     collectionId: null,
     minSteps: 10,
@@ -59,6 +66,8 @@ describe('filterState', () => {
         expect(nextFilters.maxSteps).toBeUndefined();
         expect(nextFilters.minCfg).toBeUndefined();
         expect(nextFilters.maxCfg).toBeUndefined();
+        expect(nextFilters.dateFrom).toBeUndefined();
+        expect(nextFilters.dateTo).toBeUndefined();
         expect(nextFilters.matchModes).toBeUndefined();
         expect(nextFilters.assetFilterAliases).toBeUndefined();
     });
@@ -74,7 +83,27 @@ describe('filterState', () => {
         expect(mergedFilters.maxSteps).toBeUndefined();
         expect(mergedFilters.minCfg).toBeUndefined();
         expect(mergedFilters.maxCfg).toBeUndefined();
+        expect(mergedFilters.dateFrom).toBeUndefined();
+        expect(mergedFilters.dateTo).toBeUndefined();
         expect(mergedFilters.matchModes).toBeUndefined();
         expect(mergedFilters.assetFilterAliases).toBeUndefined();
+    });
+
+    it('identifies default browsing as unfiltered for prefetching', () => {
+        expect(hasActiveResultFilters(createDefaultFilters())).toBe(false);
+    });
+
+    it('identifies result filters that should disable proactive prefetching', () => {
+        expect(hasActiveResultFilters(createDefaultFilters({ searchQuery: 'date:2026' }))).toBe(true);
+        expect(hasActiveResultFilters(createDefaultFilters({ models: ['model-a'] }))).toBe(true);
+        expect(hasActiveResultFilters(createDefaultFilters({ dateRange: 'today' }))).toBe(true);
+        expect(hasActiveResultFilters(createDefaultFilters({ showGrids: true }))).toBe(true);
+    });
+
+    it('prefetches only for unfiltered result browsing', () => {
+        expect(shouldPrefetchResultPages(createDefaultFilters(), true, false, 1)).toBe(true);
+        expect(shouldPrefetchResultPages(createDefaultFilters({ searchQuery: 'portrait' }), true, false, 1)).toBe(false);
+        expect(shouldPrefetchResultPages(createDefaultFilters(), true, false, 3)).toBe(false);
+        expect(shouldPrefetchResultPages(createDefaultFilters(), true, true, 1)).toBe(false);
     });
 });

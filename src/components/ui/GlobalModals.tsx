@@ -114,7 +114,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 }) => {
   const { settings, setSettings } = useSettings();
   const { collections, smartCollections } = useCollections();
-  const { images, toggleFavorite } = useSearch();
+  const { images, toggleFavorite, togglePin } = useSearch();
 
   // Individual tabs now handle their own toast notifications
   const close = (key: keyof typeof modals) => setModals((p: any) => ({ ...p, [key]: false }));
@@ -166,6 +166,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
           imageB={images.find(i => i.id === Array.from(selectedIds)[1])!}
           onClose={() => close('compare')}
           onToggleFavorite={toggleFavorite}
+          onTogglePin={(id, isPinned) => { void togglePin(id, isPinned); }}
         />
       )}
 

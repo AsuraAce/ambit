@@ -12,8 +12,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 
  * The hook:
  * - Defers startup by 30 seconds to avoid blocking app initialization
- * - Fetches candidate entries before showing progress
+ * - Starts the backend-owned thumbnail optimization job
+ * - Listens for backend progress and completion events
  * - Pauses when high-priority import, scan, discovery, indexing, or metadata work is active
+ * - Throttles instead of cancelling during ordinary image queries
  * - Resumes automatically when blocking activities complete
  * - Respects `enableAutoThumbnailHealing` settings flag
  * - Updates libraryStore progress state for ActivityDock visibility
@@ -38,13 +40,21 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).not.toContain('STARTUP_DELAY_MS = 5000');
     });
 
-    it('should fetch candidate entries before showing progress', async () => {
+    it('should start the backend job instead of using the generic scanner loop', async () => {
         const fs = await import('fs/promises');
         const path = await import('path');
         const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
         const content = await fs.readFile(hookPath, 'utf-8');
 
-        expect(content).toContain('getUnoptimizedImageEntries');
+        expect(content).toContain('startThumbnailOptimizationJob');
+        expect(content).toContain('thumbnail-optimization-progress');
+        expect(content).toContain('thumbnail-optimization-complete');
+        expect(content).toContain('thumbnailOptimizationProfile');
+        expect(content).not.toContain('scanImagesBulk');
+        expect(content).not.toContain('updateThumbnailPathsBatch');
+        expect(content).not.toContain('BATCH_SIZE');
+        expect(content).not.toContain('BATCH_DELAY_MS');
+        expect(content).not.toContain('getUnoptimizedImageEntries');
         expect(content).not.toContain('getUnoptimizedImagesCount');
         expect(content).toContain('total: 0');
     });
@@ -68,9 +78,23 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('setBackgroundHealingActive');
         expect(content).toContain('setBackgroundHealingProgress');
         expect(content).toContain('setBackgroundHealingPaused');
+        expect(content).toContain('setBackgroundHealingDetails');
     });
 
-    it('should pause when high-priority work is active', async () => {
+    it('should respond to explicit thumbnail optimization retry requests', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        expect(content).toContain('thumbnailOptimizationRetrySignal');
+        expect(content).toContain('retryAfterCurrentRunRef');
+        expect(content).toContain('postRunRetrySignal');
+        expect(content).toContain('scheduleIdleCallback(() => {');
+        expect(content).toContain('runQueue();');
+    });
+
+    it('should pause only for high-priority blocking work', async () => {
         const fs = await import('fs/promises');
         const path = await import('path');
         const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
@@ -85,6 +109,38 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('isScanningMissingFiles');
         expect(content).toContain('isPopulatingThumbnails');
         expect(content).toContain('isRefreshingMetadata');
+        expect(content).toContain('isHardBlocked');
+        expect(content).toContain('setThumbnailOptimizationThrottled');
+        expect(content).toContain('isImageQueryFetching');
+        expect(content).not.toContain("queryClient.isFetching({ queryKey: ['images'] }) > 0");
+    });
+
+    it('should keep image query throttling out of startup scheduling', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        const runQueueStart = content.indexOf('const runQueue = useCallback');
+        const runQueueEnd = content.indexOf('const [isStartupDelayComplete', runQueueStart);
+        const runQueueBlock = content.slice(runQueueStart, runQueueEnd);
+        const runQueueDependencies = runQueueBlock.slice(runQueueBlock.lastIndexOf('    }, ['));
+
+        expect(content).toContain('isImageQueryFetchingRef');
+        expect(runQueueBlock).toContain('isImageQueryFetchingRef.current');
+        expect(runQueueDependencies).not.toContain('isImageQueryFetching');
+        expect(content).toContain('setBackendThrottled(isImageQueryFetching)');
+    });
+
+    it('should restart once for profile or quality setting changes', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        expect(content).toContain('runningConfigRef');
+        expect(content).toContain('restartRequestedRef');
+        expect(content).toContain('Restarting backend job for Smart Thumbnail settings change');
         expect(content).toContain("queryKey: ['images']");
     });
 });

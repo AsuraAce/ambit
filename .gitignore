@@ -25,6 +25,7 @@ dist-ssr
 *.db
 
 .agent/
+.codex/
 .gemini/
 gha-creds-*.json
 .worktrees/

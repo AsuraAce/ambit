@@ -1,7 +1,8 @@
 
-import { render, screen } from '../../test/testUtils';
-import { describe, it, expect, vi } from 'vitest';
+import { act, render, screen } from '../../test/testUtils';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 // Mock child components to verify layout structure
 vi.mock('../../features/collections/components/AppSidebar', () => ({
@@ -29,10 +30,29 @@ vi.mock('../../features/library/components/PinnedShelf', () => ({
     PinnedShelf: () => <div data-testid="pinned-shelf" />
 }));
 vi.mock('../../features/library/components/TimelineView', () => ({
-    TimelineView: () => <div data-testid="timeline-view" />
+    TimelineView: (props: { hasMoreImages?: boolean; isLoadingMore?: boolean; onLoadMore?: () => void }) => (
+        <div
+            data-testid="timeline-view"
+            data-has-more-images={String(props.hasMoreImages)}
+            data-is-loading-more={String(props.isLoadingMore)}
+            data-has-load-more={String(typeof props.onLoadMore === 'function')}
+        />
+    )
 }));
 vi.mock('../../features/library/components/VirtualGrid', () => ({
-    VirtualGrid: () => <div data-testid="virtual-grid" />
+    VirtualGrid: ({
+        transitionKey,
+        suspendResizeLayout
+    }: {
+        transitionKey?: string;
+        suspendResizeLayout?: boolean;
+    }) => (
+        <div
+            data-testid="virtual-grid"
+            data-transition-key={transitionKey ?? ''}
+            data-suspend-resize-layout={String(Boolean(suspendResizeLayout))}
+        />
+    )
 }));
 vi.mock('../../features/library/components/GridItem', () => ({
     GridItem: () => <div data-testid="grid-item" />
@@ -41,16 +61,28 @@ vi.mock('../ui/ErrorBoundary', () => ({
     ErrorBoundary: ({ children }: any) => <div data-testid="error-boundary">{children}</div>
 }));
 vi.mock('../../contexts/SearchContext', () => ({
-    useSearch: () => ({ images: [{id: '1', filename: 'test.png', timestamp: 123}], filters: {} })
+    useSearch: () => ({
+        images: [{ id: '1', filename: 'test.png', timestamp: 123 }],
+        filters: {},
+        hasMoreImages: true,
+        isLoadingMore: false,
+        loadMoreImages: vi.fn()
+    })
 }));
 
 describe('AppLayout', () => {
+    afterEach(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
     const defaultProps: any = {
         collections: [],
         smartCollections: [],
         filters: {} as any,
         setFilters: vi.fn(),
         isFilterPanelOpen: false,
+        setIsFilterPanelOpen: vi.fn(),
         onRefreshCollections: vi.fn(),
         colOps: {} as any,
         setExportIds: vi.fn(),
@@ -109,9 +141,78 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();
     });
 
+    it('passes a gallery transition key to VirtualGrid', () => {
+        const thumbnailSize = useSettingsStore.getState().settings.thumbnailSize;
+
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="grid"
+                layoutMode="justified"
+                sortOption="name_asc"
+                filters={{
+                    collectionId: 'collection-1',
+                    favoritesOnly: true,
+                    pinnedOnly: false,
+                    showGrids: true,
+                    showIntermediates: false
+                }}
+            />
+        );
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toBe(
+            `justified|${thumbnailSize}|name_asc|collection-1|favorites|unpinned-scope|show-grids|hide-intermediates`
+        );
+    });
+
+    it('does not suspend VirtualGrid resize layout on initial render', () => {
+        const closed = render(<AppLayout {...defaultProps} isFilterPanelOpen={false} />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+
+        closed.unmount();
+
+        render(<AppLayout {...defaultProps} isFilterPanelOpen />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+    });
+
+    it('suspends VirtualGrid resize layout while the filter panel is transitioning', () => {
+        vi.useFakeTimers();
+
+        const { rerender } = render(<AppLayout {...defaultProps} isFilterPanelOpen={false} />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+
+        rerender(<AppLayout {...defaultProps} isFilterPanelOpen />);
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('true');
+
+        act(() => {
+            vi.advanceTimersByTime(539);
+        });
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('true');
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
+        expect(screen.getByTestId('virtual-grid').getAttribute('data-suspend-resize-layout')).toBe('false');
+    });
+
     it('renders TimelineView when viewMode is timeline', () => {
         render(<AppLayout {...defaultProps} viewMode="timeline" images={[{ id: '1' } as any]} />);
         expect(screen.getByTestId('timeline-view')).toBeTruthy();
+    });
+
+    it('passes pagination state to TimelineView', () => {
+        render(<AppLayout {...defaultProps} viewMode="timeline" />);
+
+        const timeline = screen.getByTestId('timeline-view');
+        expect(timeline.getAttribute('data-has-more-images')).toBe('true');
+        expect(timeline.getAttribute('data-is-loading-more')).toBe('false');
+        expect(timeline.getAttribute('data-has-load-more')).toBe('true');
     });
 
     it('renders MaintenanceView when viewMode is maintenance', async () => {

@@ -3,6 +3,16 @@ import * as React from 'react';
 import { useEffect, useState, useRef, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { LayoutMode } from '../../../types';
 import { calculateLayout, LayoutResult } from '../../../services/layoutEngine';
+import { useGalleryMotion } from '../hooks/useGalleryMotion';
+
+const SCROLL_MOTION_SUPPRESSION_MS = 120;
+
+interface VisibleGridItem<T> {
+  item: T;
+  index: number;
+  style: React.CSSProperties;
+  layout: { x: number, y: number, width: number, height: number };
+}
 
 interface VirtualGridProps<T> {
   items: T[];
@@ -17,7 +27,9 @@ interface VirtualGridProps<T> {
   onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
   onBackgroundClick?: () => void;
   onEndReached?: () => void;
-  className?: string; // Added for transitioning opacity
+  transitionKey?: string;
+  suspendResizeLayout?: boolean;
+  className?: string;
 }
 
 export interface VirtualGridHandle {
@@ -40,14 +52,18 @@ const VirtualGridInternal = <T extends { id: string }>(
     onRangeSelection,
     onBackgroundClick,
     onEndReached,
+    transitionKey,
+    suspendResizeLayout = false,
     className
   }: VirtualGridProps<T>,
   ref: React.Ref<VirtualGridHandle>
 ) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [resizeMotionVersion, setResizeMotionVersion] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [gridOffset, setGridOffset] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   // --- Visual State for Selection Box ---
   const [dragBox, setDragBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
@@ -61,6 +77,14 @@ const VirtualGridInternal = <T extends { id: string }>(
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const gridOffsetRef = useRef(0);
   const gridOffsetRafRef = useRef<number | null>(null);
+  const isScrollingRef = useRef(false);
+  const scrollMotionTimerRef = useRef<number | null>(null);
+  const containerWidthRef = useRef(0);
+  const pendingResizeWidthRef = useRef<number | null>(null);
+  const suspendResizeLayoutRef = useRef(suspendResizeLayout);
+  const wasResizeLayoutSuspendedRef = useRef(suspendResizeLayout);
+
+  suspendResizeLayoutRef.current = suspendResizeLayout;
 
   const measureGridOffset = useCallback(() => {
     if (!containerRef.current) return;
@@ -83,6 +107,43 @@ const VirtualGridInternal = <T extends { id: string }>(
     });
   }, [measureGridOffset]);
 
+  const commitContainerWidth = useCallback((newWidth: number, shouldAnimateLayout = false) => {
+    if (!Number.isFinite(newWidth)) {
+      return false;
+    }
+
+    if (Math.abs(containerWidthRef.current - newWidth) < 1) {
+      return false;
+    }
+
+    containerWidthRef.current = newWidth;
+    setContainerWidth(newWidth);
+    scheduleGridOffsetMeasure();
+
+    if (shouldAnimateLayout) {
+      setResizeMotionVersion(version => version + 1);
+    }
+
+    return true;
+  }, [scheduleGridOffsetMeasure]);
+
+  const markScrolling = useCallback(() => {
+    if (!isScrollingRef.current) {
+      isScrollingRef.current = true;
+      setIsScrolling(true);
+    }
+
+    if (scrollMotionTimerRef.current !== null) {
+      window.clearTimeout(scrollMotionTimerRef.current);
+    }
+
+    scrollMotionTimerRef.current = window.setTimeout(() => {
+      scrollMotionTimerRef.current = null;
+      isScrollingRef.current = false;
+      setIsScrolling(false);
+    }, SCROLL_MOTION_SUPPRESSION_MS);
+  }, []);
+
   useEffect(() => {
     onRangeSelectionRef.current = onRangeSelection;
     onBackgroundClickRef.current = onBackgroundClick;
@@ -93,7 +154,7 @@ const VirtualGridInternal = <T extends { id: string }>(
   useLayoutEffect(() => {
     if (!containerRef.current) return;
 
-    let rafId: number;
+    let rafId: number | null = null;
 
     // Throttling State
     let lastUpdate = 0;
@@ -103,6 +164,11 @@ const VirtualGridInternal = <T extends { id: string }>(
       if (entries[0]) {
         const newWidth = entries[0].contentRect.width;
 
+        if (suspendResizeLayoutRef.current) {
+          pendingResizeWidthRef.current = newWidth;
+          return;
+        }
+
         const now = Date.now();
         if (now - lastUpdate < THROTTLE_MS) {
           return;
@@ -110,14 +176,19 @@ const VirtualGridInternal = <T extends { id: string }>(
         lastUpdate = now;
 
         // Cancel any pending update
-        cancelAnimationFrame(rafId);
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
 
         rafId = requestAnimationFrame(() => {
-          setContainerWidth(prev => {
-            if (Math.abs(prev - newWidth) < 1) return prev;
-            return newWidth;
-          });
-          scheduleGridOffsetMeasure();
+          rafId = null;
+
+          if (suspendResizeLayoutRef.current) {
+            pendingResizeWidthRef.current = newWidth;
+            return;
+          }
+
+          commitContainerWidth(newWidth);
         });
       }
     });
@@ -125,9 +196,30 @@ const VirtualGridInternal = <T extends { id: string }>(
     observer.observe(containerRef.current);
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(rafId);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
     };
-  }, [scheduleGridOffsetMeasure]);
+  }, [commitContainerWidth]);
+
+  useEffect(() => {
+    const wasSuspended = wasResizeLayoutSuspendedRef.current;
+    wasResizeLayoutSuspendedRef.current = suspendResizeLayout;
+
+    if (suspendResizeLayout || !wasSuspended) {
+      return;
+    }
+
+    const pendingWidth = pendingResizeWidthRef.current;
+    pendingResizeWidthRef.current = null;
+
+    const fallbackWidth = containerRef.current?.getBoundingClientRect().width;
+    const finalWidth = pendingWidth ?? fallbackWidth;
+
+    if (typeof finalWidth === 'number') {
+      commitContainerWidth(finalWidth, true);
+    }
+  }, [suspendResizeLayout, commitContainerWidth]);
 
   // Track scroll position with requestAnimationFrame
   useEffect(() => {
@@ -137,9 +229,12 @@ const VirtualGridInternal = <T extends { id: string }>(
     let rafId: number;
     let lastCallTime = 0;
 
-    const handleScroll = () => {
+    const handleScroll = (suppressMotion = true) => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
+        if (suppressMotion) {
+          markScrolling();
+        }
         setScrollTop(scrollContainer.scrollTop);
         scheduleGridOffsetMeasure();
 
@@ -160,14 +255,16 @@ const VirtualGridInternal = <T extends { id: string }>(
     // We need a loop to track offsetTop during animations if the user is NOT scrolling.
     // The safest way is to read offsetTop during the RENDER PHASE or check it periodically?
 
-    handleScroll();
-    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    const handleScrollEvent = () => handleScroll(true);
+
+    handleScroll(false);
+    scrollContainer.addEventListener('scroll', handleScrollEvent, { passive: true });
 
     return () => {
-      scrollContainer.removeEventListener('scroll', handleScroll);
+      scrollContainer.removeEventListener('scroll', handleScrollEvent);
       cancelAnimationFrame(rafId);
     };
-  }, [scrollContainerRef, scheduleGridOffsetMeasure]);
+  }, [scrollContainerRef, scheduleGridOffsetMeasure, markScrolling]);
 
   // --- Layout Engine Integration ---
   const { positions, totalHeight, columns, rowHeight } = useMemo(() => {
@@ -204,6 +301,9 @@ const VirtualGridInternal = <T extends { id: string }>(
     return () => {
       if (gridOffsetRafRef.current !== null) {
         cancelAnimationFrame(gridOffsetRafRef.current);
+      }
+      if (scrollMotionTimerRef.current !== null) {
+        window.clearTimeout(scrollMotionTimerRef.current);
       }
     };
   }, []);
@@ -407,7 +507,7 @@ const VirtualGridInternal = <T extends { id: string }>(
   };
 
   // --- Virtualization Rendering ---
-  const visibleItems = [];
+  const visibleItemDescriptors: VisibleGridItem<T>[] = [];
 
 
   // Use container height if possible, fallback to window
@@ -473,17 +573,19 @@ const VirtualGridInternal = <T extends { id: string }>(
     // Fast bounds check
     // Overlap: pos.bottom > minVisible && pos.top < maxVisible
     if ((pos.top + pos.height) > minVisible && (pos.top) < maxVisible) {
-      visibleItems.push(
-        renderItem(items[i], {
+      visibleItemDescriptors.push({
+        item: items[i],
+        index: i,
+        style: {
           position: 'absolute',
           top: 0,
           left: 0,
           width: pos.width,
           height: pos.height,
-
           transform: `translate3d(${pos.left}px, ${pos.top}px, 0)`
-        }, i, { x: pos.left, y: pos.top, width: pos.width, height: pos.height })
-      );
+        },
+        layout: { x: pos.left, y: pos.top, width: pos.width, height: pos.height }
+      });
     }
 
     // Optimization break: If we are WAY past maxVisible, we can stop.
@@ -494,19 +596,42 @@ const VirtualGridInternal = <T extends { id: string }>(
     }
   }
 
-  // Debug Log (Throttled?)
+  const motionTransitionKey = resizeMotionVersion > 0
+    ? `${transitionKey ?? 'gallery'}|resize:${resizeMotionVersion}`
+    : transitionKey;
 
+  const galleryMotion = useGalleryMotion({
+    transitionKey: motionTransitionKey,
+    visibleItemCount: visibleItemDescriptors.length,
+    isScrolling
+  });
+
+  const visibleItems = visibleItemDescriptors.map(({ item, index, style, layout }) => {
+    const itemStyle: React.CSSProperties = galleryMotion.shouldAnimateLayout
+      ? {
+        ...style,
+        transition: galleryMotion.layoutTransition,
+        willChange: 'transform'
+      }
+      : style;
+
+    return renderItem(item, itemStyle, index, layout);
+  });
+
+  const containerStyle: React.CSSProperties = {
+    height: Math.max(100, totalHeight),
+    position: 'relative',
+    width: '100%',
+    minHeight: '100%'
+  };
+
+  const motionClassName = galleryMotion.shouldAnimateGrid ? 'gallery-grid-settle' : '';
 
   return (
     <div
       ref={containerRef}
-      style={{
-        height: Math.max(100, totalHeight),
-        position: 'relative',
-        width: '100%',
-        minHeight: '100%',
-      }}
-      className={`outline-none overflow-hidden ${className || ''}`}
+      style={containerStyle}
+      className={`outline-none overflow-hidden ${motionClassName} ${className || ''}`}
       onMouseDown={handleMouseDown}
     >
       {visibleItems}

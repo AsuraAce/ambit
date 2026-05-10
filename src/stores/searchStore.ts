@@ -44,6 +44,8 @@ const INITIAL_FILTERS: FilterState = {
     controlNets: [],
     ipAdapters: [],
     dateRange: 'all',
+    dateFrom: undefined,
+    dateTo: undefined,
     favoritesOnly: false,
     collectionId: null,
     showIntermediates: false,

@@ -1,4 +1,5 @@
 import { FilterState, AppSettings, Collection } from '../types';
+import { getDateFilterBounds, getSearchDateBounds } from './dateFilters';
 
 type SqlParam = string | number;
 
@@ -84,10 +85,35 @@ const parseSearchToken = (token: SearchToken): SearchCondition | null => {
     const lowerTerm = token.term.toLowerCase();
 
     if (lowerTerm.includes(':') && !lowerTerm.startsWith(':')) {
-        const [key, val] = lowerTerm.split(':');
+        const separatorIndex = lowerTerm.indexOf(':');
+        const key = lowerTerm.slice(0, separatorIndex);
+        const val = lowerTerm.slice(separatorIndex + 1);
 
         let sql = '';
         let param: SqlParam = val;
+
+        const dateBounds = getSearchDateBounds(key, val);
+        if (dateBounds) {
+            const dateConditions: string[] = [];
+            const dateParams: SqlParam[] = [];
+
+            if (dateBounds.start !== undefined) {
+                dateConditions.push('timestamp >= ?');
+                dateParams.push(dateBounds.start);
+            }
+            if (dateBounds.end !== undefined) {
+                dateConditions.push('timestamp < ?');
+                dateParams.push(dateBounds.end);
+            }
+
+            return {
+                sql: token.isNegative
+                    ? `NOT (${dateConditions.join(' AND ')})`
+                    : `(${dateConditions.join(' AND ')})`,
+                params: dateParams,
+                isPositivePrompt: false
+            };
+        }
 
         if (key === 'steps') {
             if (val.startsWith('>')) { sql = "steps > ?"; param = Number(val.slice(1)); }
@@ -260,8 +286,11 @@ export const buildSqlWhereClause = (
 
         if (col && col.filters) {
             const effectiveSmartFilters = { ...col.filters };
-            if (filters.dateRange !== 'all') {
+            const globalDateBounds = getDateFilterBounds(filters);
+            if (globalDateBounds.start !== undefined || globalDateBounds.end !== undefined) {
                 effectiveSmartFilters.dateRange = 'all';
+                effectiveSmartFilters.dateFrom = undefined;
+                effectiveSmartFilters.dateTo = undefined;
             }
 
             const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
@@ -433,21 +462,14 @@ export const buildSqlWhereClause = (
     }
 
     // 11. Date Range
-    if (filters.dateRange !== 'all') {
-        const midnight = new Date();
-        midnight.setHours(0, 0, 0, 0);
-        const todayStart = midnight.getTime();
-        const day = 24 * 60 * 60 * 1000;
-
-        let cutOff = 0;
-        if (filters.dateRange === 'today') cutOff = todayStart;
-        if (filters.dateRange === 'week') cutOff = todayStart - (7 * day);
-        if (filters.dateRange === 'month') cutOff = todayStart - (30 * day);
-
-        if (cutOff > 0) {
-            conditions.push('timestamp >= ?');
-            params.push(cutOff);
-        }
+    const dateBounds = getDateFilterBounds(filters);
+    if (dateBounds.start !== undefined) {
+        conditions.push('timestamp >= ?');
+        params.push(dateBounds.start);
+    }
+    if (dateBounds.end !== undefined) {
+        conditions.push('timestamp < ?');
+        params.push(dateBounds.end);
     }
 
     const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';

@@ -436,6 +436,7 @@ export const syncImages = async (
                     id: fullPath,
                     url: convertFileSrc(fullPath),
                     thumbnailUrl: thumbnailPath,
+                    thumbnailSource: 'invokeai',
                     filename: row.image_name,
                     fileSize: fileSize,
                     timestamp: timestamp || Date.now(),

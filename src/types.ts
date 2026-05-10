@@ -146,7 +146,9 @@ export interface FilterState {
   generationTypes: string[]; // Filter by generation type (txt2img, img2img, etc.)
   controlNets: string[];
   ipAdapters: string[];
-  dateRange: 'all' | 'today' | 'week' | 'month';
+  dateRange: 'all' | 'today' | 'week' | 'month' | 'custom';
+  dateFrom?: string;
+  dateTo?: string;
   favoritesOnly: boolean;
   collectionId: string | null;
   minSteps?: number;
@@ -270,6 +272,7 @@ export interface AppSettings {
   devMode?: boolean; // Toggle for experimental/dev features
   enableAutoThumbnailHealing?: boolean; // Auto-regenerate thumbnails in background
   enforceHighQualityThumbnails?: boolean; // Upgrade existing low-res thumbnails
+  thumbnailOptimizationProfile?: 'quiet' | 'balanced' | 'fast'; // Background thumbnail worker profile
   logLevel?: LogLevel; // Console log severity level
 }
 

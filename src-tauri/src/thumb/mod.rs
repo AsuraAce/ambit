@@ -5,6 +5,8 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+pub mod optimizer;
+
 #[derive(Debug, Clone)]
 pub struct ThumbnailResult {
     pub thumbnail_path: String,
@@ -12,6 +14,10 @@ pub struct ThumbnailResult {
     /// Original image dimensions (width, height).
     /// Only available when thumbnail was freshly generated (not cached).
     pub original_dimensions: Option<(u32, u32)>,
+    /// Whether the destination thumbnail file already existed.
+    pub was_cached: bool,
+    /// Time spent generating the thumbnail file. Cached hits report 0.
+    pub processing_ms: u128,
 }
 
 pub fn get_thumbnail_path(path: &str, thumbnail_dir: &str) -> PathBuf {
@@ -33,11 +39,17 @@ pub fn generate_thumbnail(path: &str, thumbnail_dir: &str) -> Result<ThumbnailRe
         }
     }
 
+    let mut was_cached = false;
+    let mut processing_ms = 0;
+
     let generated_thumbnail_path = if thumb_path.exists() {
         // Thumbnail cached - dimensions not available without reading original file
         // Scanner will handle this case with a separate dimension read
+        was_cached = true;
         thumb_path.to_string_lossy().to_string()
     } else {
+        let generation_started_at = std::time::Instant::now();
+
         // Need to generate - we'll capture dimensions from the decoded image
         let reader = Reader::open(path)
             .map_err(|e| format!("Failed to open image: {}", e))?
@@ -64,6 +76,8 @@ pub fn generate_thumbnail(path: &str, thumbnail_dir: &str) -> Result<ThumbnailRe
         fs::write(&thumb_path, &*webp_data)
             .map_err(|e| format!("Failed to save thumbnail: {}", e))?;
 
+        processing_ms = generation_started_at.elapsed().as_millis();
+
         thumb_path.to_string_lossy().to_string()
     };
 
@@ -75,5 +89,7 @@ pub fn generate_thumbnail(path: &str, thumbnail_dir: &str) -> Result<ThumbnailRe
         thumbnail_path: generated_thumbnail_path,
         micro_thumbnail: None, // Always returning None now
         original_dimensions,
+        was_cached,
+        processing_ms,
     })
 }

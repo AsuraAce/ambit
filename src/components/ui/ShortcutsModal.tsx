@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Keyboard, Command, Search, ChevronDown, ChevronRight, Monitor, Hash, Puzzle, Sliders } from 'lucide-react';
+import { X, Keyboard, Command, Search, ChevronDown, ChevronRight, Monitor, Hash, Puzzle, Sliders, Calendar } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
 
 interface ShortcutsModalProps {
@@ -113,6 +113,12 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         { op: 'cfg:<7', desc: 'CFG less than 7', icon: <Sliders className="w-3 h-3" /> },
         { op: 'seed:12345', desc: 'Filter by seed', icon: <Hash className="w-3 h-3" /> },
 
+        // Dates
+        { op: 'date:2025', desc: 'All images from 2025', icon: <Calendar className="w-3 h-3" /> },
+        { op: 'date:2026-04', desc: 'All images from Apr 2026', icon: <Calendar className="w-3 h-3" /> },
+        { op: 'after:2026-04', desc: 'From Apr 2026 onward', icon: <Calendar className="w-3 h-3" /> },
+        { op: 'before:2025', desc: 'Through 2025', icon: <Calendar className="w-3 h-3" /> },
+
         // Dimensions
         { op: 'w:>1024', desc: 'Width filter', icon: <Monitor className="w-3 h-3" /> },
         { op: 'h:<768', desc: 'Height filter', icon: <Monitor className="w-3 h-3" /> },
@@ -218,6 +224,39 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1">Date Syntax</h4>
+                                <div className="p-3 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 space-y-2">
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2025</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from a year</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from a month</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04-15</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Images from one day</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">date:2026-04..2026-06</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Inclusive date range</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">after:2026-04</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">From Apr 2026 onward</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-12 sm:gap-2">
+                                        <span className="sm:col-span-6 font-bold text-sage-600 dark:text-sage-400 font-mono break-all">before:2025</span>
+                                        <span className="sm:col-span-6 text-gray-600 dark:text-gray-300">Through 2025</span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-tight pt-1 border-t border-gray-200 dark:border-white/10">
+                                        Use ISO dates to avoid country-specific ambiguity. Dates use local calendar days and combine with other terms using AND.
+                                    </p>
                                 </div>
                             </div>
 

@@ -117,6 +117,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     validFacetNames: null,
     assetScope: 'local',
     setAssetScope: vi.fn() as Dispatch<SetStateAction<AssetScope>>,
+    setFacetDrilldownActive: vi.fn(),
     ...overrides
 });
 

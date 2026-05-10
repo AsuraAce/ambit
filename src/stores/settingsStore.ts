@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     hideImportModal: false,
     enableAutoThumbnailHealing: true,
     enforceHighQualityThumbnails: false,
+    thumbnailOptimizationProfile: 'balanced',
     logLevel: 'info'
 };
 

@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
+import { shouldPrefetchResultPages } from '../utils/filterState';
 
 interface LibraryStats {
     totalImages: number;
@@ -61,6 +62,7 @@ interface SearchContextType {
     validFacetNames: ValidFacetNames | null;
     assetScope: AssetScope;
     setAssetScope: React.Dispatch<React.SetStateAction<AssetScope>>;
+    setFacetDrilldownActive: (active: boolean) => void;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -96,6 +98,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
     const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
+    const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
     useEffect(() => {
         if (!shouldRefreshPrivacyMaskIndex) {
@@ -141,6 +144,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded
         && (!requiresPrivacyMaskIndex || privacyMaskReady);
+    const allCollections = React.useMemo(
+        () => [...collections, ...smartCollections],
+        [collections, smartCollections]
+    );
 
     // React Query
     const {
@@ -155,7 +162,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         sortOption,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections],
+        allCollections,
         settingsLoaded: databaseQueriesEnabled
     });
 
@@ -185,13 +192,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Only prefetch if we have less than 3 pages and user might scroll soon
     useEffect(() => {
         const currentPageCount = queryData?.pages.length ?? 0;
-        if (hasNextPage && !isFetchingNextPage && currentPageCount > 0 && currentPageCount < 3) {
+        if (shouldPrefetchResultPages(filters, hasNextPage, isFetchingNextPage, currentPageCount)) {
             const timer = setTimeout(() => {
                 fetchNextPage();
             }, 500); // Increased delay to reduce load during filter changes
             return () => clearTimeout(timer);
         }
-    }, [hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
+    }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
     const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
@@ -206,14 +213,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         filters,
         settings,
         privacyEnabled,
-        allCollections: [...collections, ...smartCollections],
+        allCollections,
         settingsLoaded: databaseQueriesEnabled,
-        assetScope
+        assetScope,
+        validFacetsEnabled: facetDrilldownActive
     });
 
     const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
     const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
-    const activeValidNames = statsData?.validNames || null;
+    const activeValidNames = facetDrilldownActive ? statsData?.validNames || null : null;
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -224,10 +232,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Track loaded facet types for lazy loading logic handled by facetTypes state above
 
     useEffect(() => {
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, [...collections, ...smartCollections]);
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections);
         setActiveSqlWhere(where);
         setActiveSqlParams(params);
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, collections, smartCollections]);
+    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
@@ -395,6 +403,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             validFacetNames: activeValidNames,
             assetScope,
             setAssetScope,
+            setFacetDrilldownActive,
 
         }}>
             {children}

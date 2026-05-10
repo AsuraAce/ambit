@@ -109,7 +109,7 @@ describe('sqlHelpers', () => {
             expect(params).toEqual([]);
         });
 
-        it('should handle date ranges', () => {
+        it('should handle preset date ranges', () => {
             // Today
             const today = buildSqlWhereClause({ ...defaultFilters, dateRange: 'today' }, false, 'blur', []);
             expect(today.where).toContain('timestamp >= ?');
@@ -118,6 +118,67 @@ describe('sqlHelpers', () => {
             // Week
             const week = buildSqlWhereClause({ ...defaultFilters, dateRange: 'week' }, false, 'blur', []);
             expect(week.where).toContain('timestamp >= ?');
+        });
+
+        it('should handle custom exact-day date ranges', () => {
+            const result = buildSqlWhereClause({
+                ...defaultFilters,
+                dateRange: 'custom',
+                dateFrom: '2026-04-15',
+                dateTo: '2026-04-15'
+            }, false, 'blur', []);
+
+            expect(result.where).toContain('timestamp >= ?');
+            expect(result.where).toContain('timestamp < ?');
+            expect(result.params).toEqual([
+                new Date(2026, 3, 15).getTime(),
+                new Date(2026, 3, 16).getTime()
+            ]);
+        });
+
+        it('should handle custom bounded and one-sided date ranges', () => {
+            const bounded = buildSqlWhereClause({
+                ...defaultFilters,
+                dateRange: 'custom',
+                dateFrom: '2026-04-01',
+                dateTo: '2026-04-30'
+            }, false, 'blur', []);
+            expect(bounded.params).toEqual([
+                new Date(2026, 3, 1).getTime(),
+                new Date(2026, 4, 1).getTime()
+            ]);
+
+            const fromOnly = buildSqlWhereClause({
+                ...defaultFilters,
+                dateRange: 'custom',
+                dateFrom: '2026-04-01'
+            }, false, 'blur', []);
+            expect(fromOnly.where).toContain('timestamp >= ?');
+            expect(fromOnly.where).not.toContain('timestamp < ?');
+            expect(fromOnly.params).toEqual([new Date(2026, 3, 1).getTime()]);
+
+            const toOnly = buildSqlWhereClause({
+                ...defaultFilters,
+                dateRange: 'custom',
+                dateTo: '2026-04-30'
+            }, false, 'blur', []);
+            expect(toOnly.where).not.toContain('timestamp >= ?');
+            expect(toOnly.where).toContain('timestamp < ?');
+            expect(toOnly.params).toEqual([new Date(2026, 4, 1).getTime()]);
+        });
+
+        it('should normalize inverted custom date ranges', () => {
+            const result = buildSqlWhereClause({
+                ...defaultFilters,
+                dateRange: 'custom',
+                dateFrom: '2026-04-30',
+                dateTo: '2026-04-01'
+            }, false, 'blur', []);
+
+            expect(result.params).toEqual([
+                new Date(2026, 3, 1).getTime(),
+                new Date(2026, 4, 1).getTime()
+            ]);
         });
 
         describe('Search Query Parsing', () => {
@@ -182,6 +243,81 @@ describe('sqlHelpers', () => {
                 expect(promptMatches).toHaveLength(1);
                 expect(params).toEqual(['%orc%']);
             });
+
+            it('should handle exact date search syntax', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-15' }, false, 'blur', []);
+                expect(where).toContain('(timestamp >= ? AND timestamp < ?)');
+                expect(params).toEqual([
+                    new Date(2026, 3, 15).getTime(),
+                    new Date(2026, 3, 16).getTime()
+                ]);
+            });
+
+            it('should handle date range search syntax', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-01..2026-04-30' }, false, 'blur', []);
+                expect(where).toContain('(timestamp >= ? AND timestamp < ?)');
+                expect(params).toEqual([
+                    new Date(2026, 3, 1).getTime(),
+                    new Date(2026, 4, 1).getTime()
+                ]);
+            });
+
+            it('should handle partial ISO date search syntax', () => {
+                const year = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025' }, false, 'blur', []);
+                expect(year.where).toContain('(timestamp >= ? AND timestamp < ?)');
+                expect(year.params).toEqual([
+                    new Date(2025, 0, 1).getTime(),
+                    new Date(2026, 0, 1).getTime()
+                ]);
+
+                const month = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04' }, false, 'blur', []);
+                expect(month.where).toContain('(timestamp >= ? AND timestamp < ?)');
+                expect(month.params).toEqual([
+                    new Date(2026, 3, 1).getTime(),
+                    new Date(2026, 4, 1).getTime()
+                ]);
+
+                const mixedRange = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025..2026-04' }, false, 'blur', []);
+                expect(mixedRange.where).toContain('(timestamp >= ? AND timestamp < ?)');
+                expect(mixedRange.params).toEqual([
+                    new Date(2025, 0, 1).getTime(),
+                    new Date(2026, 4, 1).getTime()
+                ]);
+            });
+
+            it('should reject malformed date range search syntax', () => {
+                const malformedRanges = [
+                    'date:2025..2026-13',
+                    'date:2026-13..2027',
+                    'date:2025..',
+                    'date:..2026'
+                ];
+
+                malformedRanges.forEach(searchQuery => {
+                    const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery }, false, 'blur', []);
+                    expect(where).not.toContain('timestamp >= ?');
+                    expect(where).not.toContain('timestamp < ?');
+                    expect(params).toEqual([]);
+                });
+            });
+
+            it('should handle after and before date search syntax', () => {
+                const after = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'after:2026-04-01' }, false, 'blur', []);
+                expect(after.where).toContain('(timestamp >= ?)');
+                expect(after.params).toEqual([new Date(2026, 3, 1).getTime()]);
+
+                const before = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'before:2026-04-30' }, false, 'blur', []);
+                expect(before.where).toContain('(timestamp < ?)');
+                expect(before.params).toEqual([new Date(2026, 4, 1).getTime()]);
+
+                const afterMonth = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'after:2026-04' }, false, 'blur', []);
+                expect(afterMonth.where).toContain('(timestamp >= ?)');
+                expect(afterMonth.params).toEqual([new Date(2026, 3, 1).getTime()]);
+
+                const beforeYear = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'before:2026' }, false, 'blur', []);
+                expect(beforeYear.where).toContain('(timestamp < ?)');
+                expect(beforeYear.params).toEqual([new Date(2027, 0, 1).getTime()]);
+            });
         });
 
         describe('Collection Logic', () => {
@@ -234,6 +370,38 @@ describe('sqlHelpers', () => {
                 // We shouldn't have two timestamp conditions from smart filter and global if logic works.
                 const count = (where.match(/timestamp >= \?/g) || []).length;
                 expect(count).toBe(1);
+            });
+
+            it('should pre-empt smart collection custom date if global custom date is set', () => {
+                const smartColWithDate: Collection = {
+                    id: 'col_custom_date',
+                    name: 'Custom Date Collection',
+                    imageIds: [],
+                    createdAt: Date.now(),
+                    filters: {
+                        ...defaultFilters,
+                        dateRange: 'custom',
+                        dateFrom: '2026-03-01',
+                        dateTo: '2026-03-31'
+                    },
+                };
+                const { where, params } = buildSqlWhereClause(
+                    {
+                        ...defaultFilters,
+                        collectionId: 'col_custom_date',
+                        dateRange: 'custom',
+                        dateFrom: '2026-04-01',
+                        dateTo: '2026-04-30'
+                    },
+                    false, 'blur', [], [smartColWithDate]
+                );
+
+                expect(where.match(/timestamp >= \?/g) ?? []).toHaveLength(1);
+                expect(where.match(/timestamp < \?/g) ?? []).toHaveLength(1);
+                expect(params).toEqual([
+                    new Date(2026, 3, 1).getTime(),
+                    new Date(2026, 4, 1).getTime()
+                ]);
             });
         });
 

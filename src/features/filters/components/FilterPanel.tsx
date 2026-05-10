@@ -11,6 +11,7 @@ import { ArchitectureSection } from './ArchitectureSection';
 import { ResourceSection, type AssetScope } from './ResourceSection';
 import type { FacetItem } from '../../../services/db/searchRepo';
 import { DateRangeSection } from './DateRangeSection';
+import { getDateFilterLabel } from '../../../utils/dateFilters';
 import { GuidanceSection } from './GuidanceSection';
 import { APP_NAME } from '../../../constants/app';
 import { REPOSITORY_URL } from '../../../constants/support';
@@ -72,7 +73,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         clearAllFilters,
         validFacetNames,
         assetScope,
-        setAssetScope
+        setAssetScope,
+        setFacetDrilldownActive
     } = useSearch();
 
     // Contexts
@@ -86,6 +88,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // const loadFacet = ... removed
 
     const [activeTab, setActiveTab] = React.useState<FilterTab>('organize');
+
+    React.useEffect(() => {
+        const needsDrilldownFacets = isVisible && (activeTab === 'resources' || activeTab === 'generate');
+        setFacetDrilldownActive(needsDrilldownFacets);
+
+        return () => setFacetDrilldownActive(false);
+    }, [activeTab, isVisible, setFacetDrilldownActive]);
 
     // Section expansion states (internal to tabs now)
     const [expanded, setExpanded] = React.useState<Record<string, boolean>>({
@@ -113,6 +122,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         filters.collectionId ? allCols.find(c => c.id === filters.collectionId && !!c.filters) : null,
         [filters.collectionId, allCols]
     );
+    const dateFilterLabel = getDateFilterLabel(filters);
 
     // Check for Manual Edits (ignoring the collection ID itself)
     const hasManualEdits = !!(
@@ -124,7 +134,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         filters.hypernetworks.length > 0 ||
         filters.favoritesOnly ||
         filters.pinnedOnly ||
-        filters.dateRange !== 'all' ||
+        !!dateFilterLabel ||
         filters.minSteps ||
         filters.maxSteps ||
         filters.minCfg ||
@@ -145,12 +155,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
             const saved = activeSmartCol.filters || ({} as any);
             const manual = filters;
+            const hasManualDateFilter = !!getDateFilterLabel(manual);
 
             const mergedFilters: FilterState = {
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
                 searchQuery: [(saved.searchQuery || ''), (manual.searchQuery || '')].filter(Boolean).join(' ').trim(),
-                dateRange: manual.dateRange !== 'all' ? manual.dateRange : saved.dateRange,
+                dateRange: hasManualDateFilter ? manual.dateRange : saved.dateRange,
+                dateFrom: hasManualDateFilter ? manual.dateFrom : saved.dateFrom,
+                dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
                 favoritesOnly: manual.favoritesOnly || !!saved.favoritesOnly,
                 pinnedOnly: manual.pinnedOnly || !!saved.pinnedOnly,
                 minSteps: manual.minSteps || saved.minSteps,
@@ -190,6 +203,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 embeddings: [],
                 hypernetworks: [],
                 dateRange: 'all',
+                dateFrom: undefined,
+                dateTo: undefined,
                 favoritesOnly: false,
                 pinnedOnly: false,
                 minSteps: undefined,

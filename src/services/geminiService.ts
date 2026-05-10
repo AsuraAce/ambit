@@ -12,6 +12,7 @@ import {
 } from "../utils/validation";
 
 import { DEFAULT_AI_MODEL } from "../constants/aiModels";
+import { formatDateInputValue } from "../utils/dateFilters";
 
 const getAIClient = (apiKey: string) => {
     const key = apiKey || process.env.API_KEY;
@@ -174,7 +175,9 @@ export const generateFiltersFromQuery = async (
         const ai = getAIClient(apiKey);
 
         const template = resolvePrompt('FILTERS', prompts);
-        const prompt = template.replace('{{query}}', query);
+        const prompt = template
+            .replace('{{query}}', query)
+            .replace('{{today}}', formatDateInputValue(new Date()));
 
         const response = await ai.models.generateContent({
             model: modelId,
@@ -188,7 +191,9 @@ export const generateFiltersFromQuery = async (
                         searchQuery: { type: Type.STRING },
                         models: { type: Type.ARRAY, items: { type: Type.STRING } },
                         tools: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        dateRange: { type: Type.STRING, enum: ['today', 'week', 'month', 'all'] },
+                        dateRange: { type: Type.STRING, enum: ['today', 'week', 'month', 'custom', 'all'] },
+                        dateFrom: { type: Type.STRING },
+                        dateTo: { type: Type.STRING },
                         favoritesOnly: { type: Type.BOOLEAN },
                         minSteps: { type: Type.NUMBER },
                         minCfg: { type: Type.NUMBER }

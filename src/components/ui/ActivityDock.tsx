@@ -3,6 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
 import { useLibraryStore, type SyncProgress } from '../../stores/libraryStore';
 import { commands } from '../../bindings';
+import {
+    THUMBNAIL_QUEUE_COMPLETE_FOOTER,
+    THUMBNAIL_QUEUE_FAILURE_FOOTER,
+    THUMBNAIL_QUEUE_RUNNING_FOOTER
+} from '../../hooks/thumbnailQueueProgress';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
 
@@ -36,7 +41,6 @@ export const ActivityDock: React.FC = () => {
         isResolvingModels, modelResolutionProgress,
         isActivityDockDismissed, setIsActivityDockDismissed,
         isActivityDockMinimized, setIsActivityDockMinimized,
-        lastModelResolutionResult,
         isPopulatingThumbnails,
         isScanningDiscovery,
         discoveryScanProgress,
@@ -62,17 +66,14 @@ export const ActivityDock: React.FC = () => {
     const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isScanningDuplicates || isScanningMissingFiles || isPopulatingThumbnails;
     const isBackgroundActive = isBackgroundHealingActive && !backgroundHealingPaused && !isHighPriorityActive;
 
-    // Show refresh if active AND no high priority
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
-    // Show Live Watch if active and nothing else is overriding it
     const isLiveWatchActive = liveWatchSession.active && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
     const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
     const isLiveWatchTone = isLiveWatchActive;
 
     const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
 
-    // Determine current task details
     let progress: SyncProgress | null = null;
     let label = "";
     let isLowPriority = false;
@@ -114,8 +115,9 @@ export const ActivityDock: React.FC = () => {
         label = "Smart Fill";
     } else if (isBackgroundActive) {
         progress = backgroundHealingProgress;
-        label = "Auto-Optimizing";
+        label = "Smart Thumbnails";
         isLowPriority = true;
+        footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
         label = "Refreshing Metadata";
@@ -156,7 +158,12 @@ export const ActivityDock: React.FC = () => {
 
     const message = progress?.message || progress?.phase || (isLiveWatchActive ? liveWatchSession.message || '' : '');
     const percent = isLiveWatchSummary || isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
-    const showCounts = total > 0 && !isLiveWatchActive && !showIndeterminateProgress && !isCompleteProgress;
+    const showCounts = total > 0 && !isLiveWatchActive && !isBackgroundActive && !showIndeterminateProgress && !isCompleteProgress;
+    const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
+    const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
+    const visibleFooterMessage = smartThumbnailHasFailures
+        ? THUMBNAIL_QUEUE_FAILURE_FOOTER
+        : (smartThumbnailIsComplete ? THUMBNAIL_QUEUE_COMPLETE_FOOTER : footerMessage);
     const elapsedLabel = progress?.startedAt && active && showIndeterminateProgress && !isCompleteProgress
         ? formatElapsed(elapsedNow - progress.startedAt)
         : null;
@@ -181,7 +188,6 @@ export const ActivityDock: React.FC = () => {
             percentText: 'text-sage-600 dark:text-sage-400'
         };
 
-    // Should we show the dock? Active AND not dismissed.
     const shouldShow = active && !isActivityDockDismissed;
 
     return (
@@ -196,7 +202,6 @@ export const ActivityDock: React.FC = () => {
                     className="fixed bottom-8 right-8 z-[100]"
                 >
                     {isActivityDockMinimized ? (
-                        // Minimized Pill View
                         <motion.div
                             layoutId="dock-content"
                             onClick={() => setIsActivityDockMinimized(false)}
@@ -214,12 +219,10 @@ export const ActivityDock: React.FC = () => {
                             </motion.div>
                         </motion.div>
                     ) : (
-                        // Maximized Card View
                         <motion.div
                             layoutId="dock-content"
                             className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-2xl border border-white/20 dark:border-white/10 p-4 rounded-2xl shadow-2xl flex flex-col w-[min(400px,calc(100vw-2rem))] gap-3 group"
                         >
-                            {/* Header */}
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
@@ -251,7 +254,6 @@ export const ActivityDock: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Progress Bar */}
                             <motion.div layout="position" className="space-y-1.5">
                                 <div className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative">
                                     <motion.div
@@ -273,7 +275,7 @@ export const ActivityDock: React.FC = () => {
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
-                                    {!showIndeterminateProgress && !isLiveWatchActive && !isCompleteProgress && (
+                                    {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isCompleteProgress && (
                                         <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
                                             {percent}%
                                         </span>
@@ -299,11 +301,10 @@ export const ActivityDock: React.FC = () => {
                                 )}
                             </motion.div>
 
-                            {/* Subtle Footer with CANCEL button */}
                             <motion.div layout="position" className="pt-2 border-t border-black/5 dark:border-white/5 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Info className="w-3 h-3 text-gray-400" />
-                                    <span className="text-[9px] text-gray-500 font-medium">{footerMessage}</span>
+                                    <span className="text-[9px] text-gray-500 font-medium">{visibleFooterMessage}</span>
                                 </div>
 
                                 {supportsCancel && (

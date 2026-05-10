@@ -66,7 +66,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_49_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_thumbnail_lookup_55_and_thumbnail_optimization_56(
+    fn migrations_include_mainline_49_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_manual_thumbnail_55_and_thumbnail_optimization_56(
     ) {
         let versions: Vec<i64> = get_migrations()
             .iter()
@@ -106,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_thumbnail_lookup_55_and_thumbnail_optimization_56_pending(
+    fn database_at_mainline_49_has_privacy_50_file_hash_51_thumbnail_privacy_52_live_facet_indexes_53_resource_indexes_54_manual_thumbnail_55_and_thumbnail_optimization_56_pending(
     ) {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);

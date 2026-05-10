@@ -6,7 +6,7 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockFacets, getBrowserMockStats, getBrowserMockValidFacetNames } from '../services/browserMockData';
-
+import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 
 interface UseLibraryStatsQueryProps {
     filters: FilterState;
@@ -15,8 +15,8 @@ interface UseLibraryStatsQueryProps {
     allCollections: Collection[];
     settingsLoaded?: boolean;
     assetScope?: AssetScope;
+    validFacetsEnabled?: boolean;
 }
-
 
 const INITIAL_STATS = {
     totalImages: 0,
@@ -58,6 +58,8 @@ export const shouldFetchValidFacets = (
         !!filters.collectionId ||
         filters.searchQuery.trim().length > 0 ||
         filters.dateRange !== 'all' ||
+        !!filters.dateFrom ||
+        !!filters.dateTo ||
         filters.favoritesOnly ||
         !!filters.pinnedOnly ||
         hasRangeFilter(filters.minSteps) ||
@@ -74,39 +76,39 @@ export const useLibraryStatsQuery = ({
     privacyEnabled,
     allCollections,
     settingsLoaded = true,
-    assetScope = 'used'
+    assetScope = 'used',
+    validFacetsEnabled = true
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
+    const sideQueryFilters = useDebouncedSideQueryFilters(filters);
 
-    // Stable reference: only track the active collection's smart filter definition
-    const activeCollectionId = filters.collectionId;
+    // Stable reference: only track the active collection's smart filter definition.
+    const activeCollectionId = sideQueryFilters.collectionId;
     const activeCollection = useMemo(() =>
         allCollections.find(c => c.id === activeCollectionId),
         [allCollections, activeCollectionId]
     );
 
-    // Create stable fingerprint of smart collection filters (if any)
     const smartFilterHash = useMemo(() =>
         activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
         [activeCollection?.filters]
     );
 
-    // Always fetch all facet types - they're cheap from facet_cache
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
 
     const fetchValidFacets = useMemo(
-        () => shouldFetchValidFacets(filters, privacyEnabled, settings.maskingMode),
-        [filters, privacyEnabled, settings.maskingMode]
+        () => validFacetsEnabled && shouldFetchValidFacets(sideQueryFilters, privacyEnabled, settings.maskingMode),
+        [sideQueryFilters, privacyEnabled, settings.maskingMode, validFacetsEnabled]
     );
 
-    // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch
+    // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch.
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
 
     const queryInput = useMemo(() => {
         if (useBrowserMocks || !settingsLoaded) return null;
 
         return buildSqlWhereClause(
-            filters,
+            sideQueryFilters,
             privacyEnabled,
             settings.maskingMode,
             settings.maskedKeywords,
@@ -114,19 +116,19 @@ export const useLibraryStatsQuery = ({
         );
     }, [
         allCollections,
-        filters,
         privacyEnabled,
         settings.maskedKeywords,
         settings.maskingMode,
         settingsLoaded,
+        sideQueryFilters,
         useBrowserMocks
     ]);
 
     const facetsQuery = useQuery({
-        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
             if (useBrowserMocks) {
-                return getBrowserMockFacets(filters);
+                return getBrowserMockFacets(sideQueryFilters);
             }
 
             if (!queryInput) return INITIAL_FACETS;
@@ -134,17 +136,17 @@ export const useLibraryStatsQuery = ({
             return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, { assetScope });
         },
         placeholderData: (previousData) => previousData ?? INITIAL_FACETS,
-        staleTime: 1000 * 60 * 5, // 5 minutes
-        enabled: settingsLoaded, // Wait for settings to load before fetching
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded
     });
 
     const summaryQuery = useQuery({
-        queryKey: ['libraryStats', 'summary', facetCacheVersion, filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return {
-                    stats: getBrowserMockStats(filters),
-                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(filters) : null
+                    stats: getBrowserMockStats(sideQueryFilters),
+                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null
                 };
             }
 
@@ -163,20 +165,17 @@ export const useLibraryStatsQuery = ({
                     : Promise.resolve(null)
             ]);
 
-            // 2. Disjunctive Queries: For categories in ANY mode with active selections
-            // We need to fetch their valid names WITHOUT their own filter applied
-
             const disjunctiveCategories: FacetType[] = [];
             if (activeCollectionId) {
-                // Collections are single select, no disjunctive logic needed usually unless we allowed multi-collection
+                // Collections are single select, no disjunctive logic needed currently.
             }
-            if (filters.loras.length > 0 && filters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
-            if (filters.embeddings.length > 0 && filters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
-            if (filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
-            if (filters.tools.length > 0 && filters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
-            if (filters.models.length > 0 && filters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
-            if (filters.controlNets.length > 0 && filters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
-            if (filters.ipAdapters.length > 0 && filters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
+            if (sideQueryFilters.loras.length > 0 && sideQueryFilters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
+            if (sideQueryFilters.embeddings.length > 0 && sideQueryFilters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
+            if (sideQueryFilters.hypernetworks.length > 0 && sideQueryFilters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
+            if (sideQueryFilters.tools.length > 0 && sideQueryFilters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
+            if (sideQueryFilters.models.length > 0 && sideQueryFilters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
+            if (sideQueryFilters.controlNets.length > 0 && sideQueryFilters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
+            if (sideQueryFilters.ipAdapters.length > 0 && sideQueryFilters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
 
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
@@ -191,9 +190,8 @@ export const useLibraryStatsQuery = ({
                     if (cat === 'controlNets') excludeKey = 'controlNets';
                     if (cat === 'ipAdapters') excludeKey = 'ipAdapters';
 
-                    // Build "Partial" Where Clause (Global - Self)
                     const partial = buildSqlWhereClause(
-                        filters,
+                        sideQueryFilters,
                         privacyEnabled,
                         settings.maskingMode,
                         settings.maskedKeywords,
@@ -227,8 +225,8 @@ export const useLibraryStatsQuery = ({
             return { stats, validNames: finalValidNames };
         },
         placeholderData: (previousData) => previousData ?? { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
-        staleTime: 1000 * 60 * 5, // 5 minutes
-        enabled: settingsLoaded, // Wait for settings to load before fetching
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded
     });
 
     return {

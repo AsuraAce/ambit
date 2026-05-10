@@ -2,20 +2,32 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
+import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
 
 let initPromise: Promise<void> | null = null;
 let smartCountRunId = 0;
+let thumbnailRefreshRunId = 0;
 
 const STARTUP_SMART_COUNT_DELAY_MS = 1500;
 const SMART_COUNT_YIELD_MS = 25;
+const COLLECTION_THUMBNAIL_CHUNK_SIZE = 48;
+const COLLECTION_THUMBNAIL_YIELD_MS = 25;
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const chunk = <T,>(items: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+};
 
 interface RefreshSmartCountsOptions {
     includeArchived?: boolean;
     collectionIds?: string[];
     delayMs?: number;
     includeThumbnails?: boolean;
+    includePromptSearch?: boolean;
 }
 
 type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
@@ -71,19 +83,27 @@ export const useCollectionStore = create<CollectionState>()(
 
             refreshCollectionThumbnails: async (debounced = false) => {
                 const run = async () => {
+                    const runId = ++thumbnailRefreshRunId;
                     try {
-                        const currentCollections = get().collections;
+                        const currentCollections = get().collections.filter(collection => !collection.filters);
                         if (currentCollections.length === 0) return;
 
                         const { getCollectionThumbnailSummaries } = await import('../services/db/collectionRepo');
-                        const summaries = await getCollectionThumbnailSummaries(currentCollections);
+                        for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
+                            if (runId !== thumbnailRefreshRunId) return;
 
-                        set((state) => ({
-                            collections: state.collections.map((collection) => {
-                                const summary = summaries[collection.id];
-                                return summary ? { ...collection, ...summary } : collection;
-                            })
-                        }));
+                            const summaries = await getCollectionThumbnailSummaries(collectionBatch);
+                            if (runId !== thumbnailRefreshRunId) return;
+
+                            set((state) => ({
+                                collections: state.collections.map((collection) => {
+                                    const summary = summaries[collection.id];
+                                    return summary ? { ...collection, ...summary } : collection;
+                                })
+                            }));
+
+                            await delay(COLLECTION_THUMBNAIL_YIELD_MS);
+                        }
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collection thumbnails', e);
                     }
@@ -91,6 +111,7 @@ export const useCollectionStore = create<CollectionState>()(
 
                 if (debounced) {
                     if (thumbnailDebounceTimer) clearTimeout(thumbnailDebounceTimer);
+                    thumbnailRefreshRunId += 1;
                     return new Promise((resolve) => {
                         thumbnailDebounceTimer = setTimeout(async () => {
                             await run();
@@ -113,7 +134,9 @@ export const useCollectionStore = create<CollectionState>()(
                     }
 
                     const collectionsSnapshot = Array.isArray(input) ? input : undefined;
-                    const options = Array.isArray(input) ? {} : input;
+                    const options: RefreshSmartCountsOptions = Array.isArray(input)
+                        ? { includePromptSearch: true }
+                        : input;
 
                     if (options.delayMs && options.delayMs > 0) {
                         await delay(options.delayMs);
@@ -127,6 +150,7 @@ export const useCollectionStore = create<CollectionState>()(
                         !!c.filters
                         && (!!collectionsSnapshot || options.includeArchived || !c.isArchived)
                         && (!allowedIds || allowedIds.has(c.id))
+                        && (options.includePromptSearch || shouldAutoRefreshSmartCollectionSummary(c))
                     );
 
                     if (smartCols.length === 0) return;

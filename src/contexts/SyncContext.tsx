@@ -7,7 +7,7 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
-import { FacetType, MetadataRefreshScope } from '../types';
+import { AppSettings, FacetType, MetadataRefreshScope } from '../types';
 import { isInvokeDbSnapshotCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
 import {
     debugLiveWatchPerf,
@@ -756,7 +756,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             const legacyState = await appRepository.load();
 
             // Define clean settings
-            const cleanSettings = {
+            const cleanSettings: AppSettings = {
                 ...legacyState.settings,
                 lastSyncedAt: null,
                 monitoredFolders: [],
@@ -766,6 +766,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 resourceFolders: [], // Clear added model/lora folders
                 importIntermediates: false,
                 enableAutoThumbnailHealing: true, // Reset to default (True) so next run is fresh
+                thumbnailOptimizationProfile: 'balanced',
                 hasCompletedOnboarding: false // Optional: Reset onboarding for factory reset feel
             };
 

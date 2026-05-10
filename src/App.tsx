@@ -515,6 +515,7 @@ export default function App() {
                 collections={collections}
                 smartCollections={smartCollections}
                 toggleFavorite={toggleFavorite}
+                togglePin={actions.handlePinImage}
                 settings={settings}
                 filters={filters}
                 collectionToEditId={modals.collectionToEditId}
