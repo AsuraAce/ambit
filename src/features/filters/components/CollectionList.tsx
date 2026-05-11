@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archive, ArrowUpDown, Search, Pin, Check, LayoutGrid, List as ListIcon, Calendar, Clock, ArrowDownWideNarrow, ArrowUpWideNarrow, SortDesc, SortAsc } from 'lucide-react';
-import { Collection, FilterState } from '../../../types';
+import type { Collection, CollectionSortOption, FilterState } from '../../../types';
 import { SearchInput, SortDropdown } from './FilterPrimitives';
 import { CollectionContextMenu } from '../../collections/components/CollectionContextMenu';
 import { CollectionItem } from './CollectionItem';
@@ -29,7 +29,20 @@ interface CollectionListProps<T extends Collection> {
     emptyMessage?: React.ReactNode;
 }
 
-export type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc' | 'recent_desc' | 'recent_asc';
+const collectionSortIds: CollectionSortOption[] = [
+    'name_asc',
+    'name_desc',
+    'count_asc',
+    'count_desc',
+    'date_asc',
+    'date_desc',
+    'recent_desc',
+    'recent_asc'
+];
+
+const isCollectionSort = (id: unknown): id is CollectionSortOption => (
+    typeof id === 'string' && collectionSortIds.includes(id as CollectionSortOption)
+);
 
 export function CollectionList<T extends Collection>({
     collections,
@@ -54,16 +67,21 @@ export function CollectionList<T extends Collection>({
     const [showArchived, setShowArchived] = useState(false);
     const { settings, setSettings } = useSettings();
     const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
-    const sort = (settings.resourceSortOptions?.['collections'] as CollectionSort) || 'recent_desc';
+    const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
+    const persistedSort = settings.resourceSortOptions?.collections;
+    const sort: CollectionSortOption = isCollectionSort(persistedSort) ? persistedSort : 'recent_desc';
 
-    const setSort = (newSort: CollectionSort) => {
+    const setSort = (newSort: CollectionSortOption) => {
         setSettings(prev => ({
             ...prev,
             resourceSortOptions: {
                 ...(prev.resourceSortOptions || {}),
-                collections: newSort as any
+                collections: newSort
             }
         }));
+    };
+    const handleSortSelect = (id: string) => {
+        if (isCollectionSort(id)) setSort(id);
     };
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -205,7 +223,7 @@ export function CollectionList<T extends Collection>({
                         { id: 'count_asc', label: 'Fewest Images', icon: SortAsc },
                     ]}
                     currentValue={sort}
-                    onSelect={(id) => setSort(id as any)}
+                    onSelect={handleSortSelect}
                     align="left"
                     triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                 />
@@ -288,6 +306,7 @@ export function CollectionList<T extends Collection>({
                                             onResetThumbnail={onResetCollectionThumbnail}
                                             onDelete={onDeleteCollection}
                                             viewMode={viewMode}
+                                            isThumbnailPending={!!thumbnailHydrationPendingIds[col.id]}
                                         />
                                     </motion.div>
                                 ))}
@@ -336,6 +355,7 @@ export function CollectionList<T extends Collection>({
                                     onResetThumbnail={onResetCollectionThumbnail}
                                     onDelete={onDeleteCollection}
                                     viewMode={viewMode}
+                                    isThumbnailPending={!!thumbnailHydrationPendingIds[col.id]}
                                 />
                             </motion.div>
                         ))}

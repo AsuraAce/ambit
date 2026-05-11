@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { ResourceSection, type AssetScope } from '../ResourceSection';
-import type { FacetSortOption, FilterState } from '../../../../types';
+import type { FilterState, SidebarSortOption } from '../../../../types';
 
 const commandMocks = vi.hoisted(() => ({
     setResourceThumbnailSensitivity: vi.fn(),
@@ -11,7 +11,7 @@ const commandMocks = vi.hoisted(() => ({
 }));
 
 const settingsContextMocks = vi.hoisted(() => ({
-    resourceSortOptions: {} as Record<string, FacetSortOption>,
+    resourceSortOptions: {} as Record<string, SidebarSortOption>,
     setSettings: vi.fn()
 }));
 
@@ -56,7 +56,7 @@ beforeEach(() => {
     settingsContextMocks.setSettings.mockClear();
 });
 
-const setResourceSort = (sort: FacetSortOption) => {
+const setResourceSort = (sort: SidebarSortOption) => {
     settingsContextMocks.resourceSortOptions = { loras: sort };
 };
 
@@ -435,5 +435,29 @@ describe('ResourceSection asset sorting', () => {
         });
 
         expectResourceOrder(['Alpha', 'Beta']);
+    });
+
+    it('falls back to count sorting when a resource section has a collection-only date sort persisted', () => {
+        setResourceSort('date_desc');
+
+        renderSortingSection({
+            assetScope: 'used',
+            data: [
+                {
+                    name: 'NewerLowUse',
+                    hash: 'lora_NewerLowUse',
+                    count: 1,
+                    createdAt: 900
+                },
+                {
+                    name: 'OlderHighUse',
+                    hash: 'lora_OlderHighUse',
+                    count: 5,
+                    createdAt: 100
+                }
+            ]
+        });
+
+        expectResourceOrder(['OlderHighUse', 'NewerLowUse']);
     });
 });

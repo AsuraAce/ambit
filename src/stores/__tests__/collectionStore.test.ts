@@ -300,6 +300,137 @@ describe('collectionStore smart count refresh', () => {
         }));
     });
 
+    it('marks thumbnail hydration pending ids while collection thumbnails are loading', async () => {
+        let resolveSummaries: ((value: Record<string, unknown>) => void) | undefined;
+        mockGetCollectionThumbnailSummaries.mockImplementationOnce(() => new Promise(resolve => {
+            resolveSummaries = resolve;
+        }));
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'static-1',
+                    name: 'Static One',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    count: 3,
+                    imageIds: []
+                }],
+                isLoaded: true
+            });
+        });
+
+        const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
+            'static-1': true
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+
+        resolveSummaries?.({
+            'static-1': {
+                thumbnail: 'asset://thumb.webp',
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+        await refreshPromise;
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({});
+    });
+
+    it('does not mark empty collections as thumbnail hydration pending', async () => {
+        let resolveSummaries: ((value: Record<string, unknown>) => void) | undefined;
+        mockGetCollectionThumbnailSummaries.mockImplementationOnce(() => new Promise(resolve => {
+            resolveSummaries = resolve;
+        }));
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    {
+                        id: 'empty-static',
+                        name: 'Empty Static',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: []
+                    },
+                    {
+                        id: 'filled-static',
+                        name: 'Filled Static',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 1,
+                        imageIds: []
+                    }
+                ],
+                isLoaded: true
+            });
+        });
+
+        const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
+            'filled-static': true
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+
+        resolveSummaries?.({});
+        await refreshPromise;
+    });
+
+    it('hydrates pinned and recent collection thumbnails first', async () => {
+        mockGetCollectionThumbnailSummaries.mockResolvedValue({});
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    {
+                        id: 'old-static',
+                        name: 'Old Static',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        count: 1,
+                        imageIds: []
+                    },
+                    {
+                        id: 'pinned-static',
+                        name: 'Pinned Static',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 1,
+                        imageIds: [],
+                        isPinned: true
+                    },
+                    {
+                        id: 'recent-static',
+                        name: 'Recent Static',
+                        createdAt: 3,
+                        updatedAt: 5,
+                        source: 'ambit',
+                        count: 1,
+                        imageIds: []
+                    }
+                ],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshCollectionThumbnails();
+
+        const [firstBatch] = mockGetCollectionThumbnailSummaries.mock.calls[0] as [Array<{ id: string }>];
+        expect(firstBatch.map(collection => collection.id)).toEqual([
+            'pinned-static',
+            'recent-static',
+            'old-static'
+        ]);
+    });
+
     it('chunks collection thumbnail refreshes and skips smart collections', async () => {
         mockGetCollectionThumbnailSummaries.mockImplementation(async (batch: Array<{ id: string }>) => Object.fromEntries(
             batch.map((collection: { id: string }) => [collection.id, {
@@ -389,5 +520,59 @@ describe('collectionStore smart count refresh', () => {
         expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
             thumbnail: 'asset://fresh.webp'
         }));
+    });
+
+    it('does not clear newer pending thumbnail state from stale refreshes', async () => {
+        let resolveFirst: ((value: Record<string, unknown>) => void) | undefined;
+        let resolveSecond: ((value: Record<string, unknown>) => void) | undefined;
+        mockGetCollectionThumbnailSummaries
+            .mockImplementationOnce(() => new Promise(resolve => {
+                resolveFirst = resolve;
+            }))
+            .mockImplementationOnce(() => new Promise(resolve => {
+                resolveSecond = resolve;
+            }));
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'static-1',
+                    name: 'Static One',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    count: 3,
+                    imageIds: []
+                }],
+                isLoaded: true
+            });
+        });
+
+        const staleRun = useCollectionStore.getState().refreshCollectionThumbnails();
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+        const freshRun = useCollectionStore.getState().refreshCollectionThumbnails();
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(2));
+
+        resolveFirst?.({
+            'static-1': {
+                thumbnail: 'asset://stale.webp',
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+        await staleRun;
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
+            'static-1': true
+        });
+
+        resolveSecond?.({
+            'static-1': {
+                thumbnail: 'asset://fresh.webp',
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+        await freshRun;
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({});
     });
 });

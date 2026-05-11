@@ -2,6 +2,7 @@ import * as React from 'react';
 import { FolderInput, Archive, Folder, Sparkles, Check } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
+import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { formatCountCompact } from '../../../utils/formatUtils';
 import { createCollectionSelectionFilters } from '../../../utils/filterState';
 
@@ -28,6 +29,7 @@ interface CollectionItemProps {
     onResetThumbnail?: (colId: string) => void;
     onDelete?: (colId: string) => void;
     viewMode?: 'grid' | 'list';
+    isThumbnailPending?: boolean;
 }
 
 const getColorClass = (colorName?: string) => {
@@ -59,10 +61,12 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     dropTargetId,
     onResetThumbnail,
     onDelete,
-    viewMode = 'list'
+    viewMode = 'list',
+    isThumbnailPending = false
 }) => {
     const isSelected = filters.collectionId === col.id;
     const thumbUrl = col.thumbnail || '';
+    const showThumbnailSkeleton = isThumbnailPending && !thumbUrl;
     return (
         <div
             key={col.id}
@@ -120,8 +124,10 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                                 imgClassName={`w-full h-full object-cover ${col.isArchived ? 'grayscale opacity-70' : ''}`}
                                 fallback={col.filters ? <Sparkles className="w-8 h-8 text-sage-500 opacity-20" /> : <Folder className="w-8 h-8 opacity-20" />}
                             />
+                        ) : showThumbnailSkeleton ? (
+                            <CollectionThumbnailSkeleton className="w-full h-full" />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center opacity-20">
+                            <div data-testid="collection-thumbnail-fallback" className="w-full h-full flex items-center justify-center opacity-20">
                                 {col.filters ? <Sparkles className="w-8 h-8 text-sage-500" /> : <Folder className="w-8 h-8" />}
                             </div>
                         )}
@@ -191,8 +197,13 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                                 />
                                 {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
                             </div>
+                        ) : showThumbnailSkeleton ? (
+                            <div className="relative w-8 h-8 flex-shrink-0">
+                                <CollectionThumbnailSkeleton className="w-full h-full rounded-lg" />
+                                {col.color && <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-800 ${getColorClass(col.color)}`} />}
+                            </div>
                         ) : (
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}>
+                            <div data-testid="collection-thumbnail-fallback" className={`w-8 h-8 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}>
                                 {col.isArchived ? (
                                     <Archive className="w-4 h-4 text-gray-400" />
                                 ) : col.filters ? (

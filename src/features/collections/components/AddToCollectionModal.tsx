@@ -5,6 +5,8 @@ import { Search, Folder, ArrowUpDown, Check, X, Plus, Archive, Sparkles } from '
 import { Collection } from '../../../types';
 import { SearchInput } from '../../filters/components/FilterPrimitives';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
+import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
+import { useCollectionStore } from '../../../stores/collectionStore';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -45,6 +47,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const [sort, setSort] = useState<CollectionSort>('date_desc');
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
+    const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
 
     const allCollections = [...collections, ...smartCollections];
 
@@ -66,7 +69,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
             }
         });
 
-    const sortOptions = [
+    const sortOptions: Array<{ id: CollectionSort; label: string }> = [
         { id: 'date_desc', label: 'Recently Created' },
         { id: 'date_asc', label: 'Oldest Created' },
         { id: 'name_asc', label: 'Name (A-Z)' },
@@ -147,7 +150,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                             <button
                                                 key={opt.id}
                                                 onClick={() => {
-                                                    setSort(opt.id as any);
+                                                    setSort(opt.id);
                                                     setShowSortMenu(false);
                                                 }}
                                                 className={`w-full text-left px-4 py-2 text-xs flex items-center justify-between hover:bg-gray-100 dark:hover:bg-white/5 transition-colors ${sort === opt.id ? 'text-sage-600 dark:text-sage-400 font-bold bg-sage-50/50 dark:bg-sage-900/10' : 'text-gray-600 dark:text-gray-400'}`}
@@ -167,59 +170,73 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                 <div className="max-h-[350px] overflow-y-auto custom-scrollbar p-2">
                     {filtered.length > 0 ? (
                         <div className="grid grid-cols-1 gap-1">
-                            {filtered.map(col => (
-                                <button
-                                    key={col.id}
-                                    onClick={() => onConfirm(selectedIds, col.id, mode, sourceCollectionId)}
-                                    className="w-full group text-left px-4 py-3 rounded-xl hover:bg-sage-50 dark:hover:bg-sage-900/10 flex items-center justify-between transition-all border border-transparent hover:border-sage-200/50 dark:hover:border-sage-500/20"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        {col.thumbnail ? (
-                                            <div className="w-10 h-10 flex-shrink-0 relative">
-                                                <PrivacyAwareThumbnail
-                                                    src={col.thumbnail}
-                                                    safeSrc={col.safeThumbnail}
-                                                    alt=""
-                                                    isSensitive={col.thumbnailIsSensitive}
-                                                    wrapperClassName="w-full h-full rounded-lg"
-                                                    imgClassName="w-full h-full object-cover shadow-sm border border-gray-200 dark:border-white/5"
-                                                    fallback={col.filters ? <Sparkles className="w-5 h-5 text-sage-500 opacity-20" /> : <Folder className="w-5 h-5 opacity-20" />}
-                                                />
-                                                {col.color && (
-                                                    <div
-                                                        className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                            {filtered.map(col => {
+                                const showThumbnailSkeleton = !!thumbnailHydrationPendingIds[col.id] && !col.thumbnail;
+
+                                return (
+                                    <button
+                                        key={col.id}
+                                        onClick={() => onConfirm(selectedIds, col.id, mode, sourceCollectionId)}
+                                        className="w-full group text-left px-4 py-3 rounded-xl hover:bg-sage-50 dark:hover:bg-sage-900/10 flex items-center justify-between transition-all border border-transparent hover:border-sage-200/50 dark:hover:border-sage-500/20"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            {col.thumbnail ? (
+                                                <div className="w-10 h-10 flex-shrink-0 relative">
+                                                    <PrivacyAwareThumbnail
+                                                        src={col.thumbnail}
+                                                        safeSrc={col.safeThumbnail}
+                                                        alt=""
+                                                        isSensitive={col.thumbnailIsSensitive}
+                                                        wrapperClassName="w-full h-full rounded-lg"
+                                                        imgClassName="w-full h-full object-cover shadow-sm border border-gray-200 dark:border-white/5"
+                                                        fallback={col.filters ? <Sparkles className="w-5 h-5 text-sage-500 opacity-20" /> : <Folder className="w-5 h-5 opacity-20" />}
                                                     />
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div
-                                                className={`w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}
-                                            >
-                                                {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : (col.filters ? <Sparkles className="w-5 h-5 text-sage-500" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />)}
-                                                {col.color && (
-                                                    <div
-                                                        className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
-                                                    />
-                                                )}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-sage-700 dark:group-hover:text-sage-300 transition-colors">
-                                                    {col.name}
+                                                    {col.color && (
+                                                        <div
+                                                            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                                                        />
+                                                    )}
                                                 </div>
-                                                {col.isArchived && (
-                                                    <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">Archived</span>
-                                                )}
+                                            ) : showThumbnailSkeleton ? (
+                                                <div className="w-10 h-10 flex-shrink-0 relative">
+                                                    <CollectionThumbnailSkeleton className="w-full h-full rounded-lg" />
+                                                    {col.color && (
+                                                        <div
+                                                            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                                                        />
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div
+                                                    data-testid="collection-thumbnail-fallback"
+                                                    className={`w-10 h-10 rounded-lg flex items-center justify-center border border-gray-200 dark:border-white/5 flex-shrink-0 relative ${col.isArchived ? 'bg-sage-100/50 dark:bg-zinc-800/50' : 'bg-gray-100 dark:bg-zinc-800'}`}
+                                                >
+                                                    {col.isArchived ? <Archive className="w-5 h-5 text-gray-400" /> : (col.filters ? <Sparkles className="w-5 h-5 text-sage-500" /> : <Folder className="w-5 h-5 text-gray-400 dark:text-zinc-500" />)}
+                                                    {col.color && (
+                                                        <div
+                                                            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow-sm ${getColorClass(col.color)}`}
+                                                        />
+                                                    )}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-sage-700 dark:group-hover:text-sage-300 transition-colors">
+                                                        {col.name}
+                                                    </div>
+                                                    {col.isArchived && (
+                                                        <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">Archived</span>
+                                                    )}
+                                                </div>
+                                                <div className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider">{col.count ?? col.imageIds.length} images</div>
                                             </div>
-                                            <div className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider">{col.count ?? col.imageIds.length} images</div>
                                         </div>
-                                    </div>
-                                    <div className="opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all text-sage-600">
-                                        <Plus className="w-4 h-4" />
-                                    </div>
-                                </button>
-                            ))}
+                                        <div className="opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all text-sage-600">
+                                            <Plus className="w-4 h-4" />
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     ) : (
                         <div className="py-12 flex flex-col items-center justify-center text-gray-400">
