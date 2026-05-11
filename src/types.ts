@@ -202,6 +202,14 @@ export type FacetSortOption =
   | 'recent_desc' | 'recent_asc'
   | 'added_desc' | 'added_asc';
 
+export type CollectionSortOption =
+  | 'name_asc' | 'name_desc'
+  | 'count_asc' | 'count_desc'
+  | 'date_asc' | 'date_desc'
+  | 'recent_desc' | 'recent_asc';
+
+export type SidebarSortOption = FacetSortOption | CollectionSortOption;
+
 export type FacetType = 'checkpoints' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters' | 'tools';
 
 
@@ -266,7 +274,7 @@ export interface AppSettings {
   libraryShowIntermediates?: boolean; // Persisted view preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
-  resourceSortOptions?: Record<string, FacetSortOption>; // Persisted sort option per resource section
+  resourceSortOptions?: Record<string, SidebarSortOption>; // Persisted sort option per sidebar resource or collection section
   hideImportModal?: boolean; // User dismissed the import education modal
   systemPrompts?: Record<string, string>; // Dev override for AI prompts
   devMode?: boolean; // Toggle for experimental/dev features

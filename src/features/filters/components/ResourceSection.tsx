@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw } from 'lucide-react';
-import { AssetScope, FilterState } from '../../../types';
+import type { AssetScope, FacetSortOption, FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
 import { formatCountCompact, formatModelName } from '../../../utils/formatUtils';
@@ -65,6 +65,21 @@ const compareWithNameTieBreak = (primary: number, a: ResourceItem, b: ResourceIt
     primary || compareByName(a, b)
 );
 
+const facetSortIds: FacetSortOption[] = [
+    'count_desc',
+    'count_asc',
+    'name_asc',
+    'name_desc',
+    'recent_desc',
+    'recent_asc',
+    'added_desc',
+    'added_asc'
+];
+
+const isFacetSortOption = (id: unknown): id is FacetSortOption => (
+    typeof id === 'string' && facetSortIds.includes(id as FacetSortOption)
+);
+
 export const ResourceSection: React.FC<ResourceSectionProps> = ({
     title,
     type,
@@ -85,7 +100,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     // Get view mode from settings, default to 'list'
     const viewMode = settings.resourceViewModes?.[type] || 'list';
     // Get sort option from settings, default to 'count_desc'
-    const sortOption = settings.resourceSortOptions?.[type] || 'count_desc';
+    const persistedSortOption = settings.resourceSortOptions?.[type];
+    const sortOption: FacetSortOption = isFacetSortOption(persistedSortOption) ? persistedSortOption : 'count_desc';
 
     const toggleViewMode = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -99,7 +115,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         }));
     }, [type, viewMode, setSettings]);
 
-    const setSortOption = useCallback((option: typeof sortOption) => {
+    const setSortOption = useCallback((option: FacetSortOption) => {
         setSettings(prev => ({
             ...prev,
             resourceSortOptions: {
@@ -108,6 +124,10 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             }
         }));
     }, [type, setSettings]);
+
+    const handleSortSelect = useCallback((id: string) => {
+        if (isFacetSortOption(id)) setSortOption(id);
+    }, [setSortOption]);
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
     const filterKey: ResourceFilterKey = type === 'checkpoints' ? 'models' : type;
@@ -462,7 +482,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                 { id: 'added_desc', label: 'Newest Added', icon: Calendar },
                             ]}
                             currentValue={sortOption}
-                            onSelect={(id) => setSortOption(id as any)}
+                            onSelect={handleSortSelect}
                             align="left"
                             triggerClassName={(isOpen) => `transition-colors p-1.5 rounded-lg border ${isOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                         />
