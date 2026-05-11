@@ -370,6 +370,14 @@ async scanDirectorySince(path: string, since: number) : Promise<Result<FileEntry
     else return { status: "error", error: e  as any };
 }
 },
+async discoverA1111Folders(rootPath: string) : Promise<Result<A1111DiscoveryResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discover_a1111_folders", { rootPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startThumbnailOptimizationJob(config: ThumbnailOptimizationConfig) : Promise<Result<ThumbnailOptimizationResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_thumbnail_optimization_job", { config }) };
@@ -522,6 +530,8 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 
 /** user-defined types **/
 
+export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
+export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
