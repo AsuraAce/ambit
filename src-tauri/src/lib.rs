@@ -69,6 +69,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         scanner::show_in_folder,
         scanner::scan_directory_with_stats,
         scanner::scan_directory_since,
+        scanner::a1111::discover_a1111_folders,
         thumb::optimizer::start_thumbnail_optimization_job,
         thumb::optimizer::cancel_thumbnail_optimization_job,
         thumb::optimizer::set_thumbnail_optimization_throttled,

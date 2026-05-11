@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen, RefreshCw, X } from 'lucide-react';
-import { AppSettings, GeneratorTool } from '../../../types';
+import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen } from 'lucide-react';
+import { GeneratorTool, type AppSettings, type MonitoredFolder } from '../../../types';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSearch } from '../../../contexts/SearchContext'; // Added
-import { A1111FolderType, DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
+import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 
@@ -14,18 +14,30 @@ interface TabProps {
     onClose?: () => void;
 }
 
-export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings, onClose }) => {
+const variantToGeneratorTool = (variant?: WebUIVariant): GeneratorTool | undefined => {
+    switch (variant) {
+        case WebUIVariant.FORGE:
+            return GeneratorTool.FORGE;
+        case WebUIVariant.SDNEXT:
+            return GeneratorTool.SDNEXT;
+        case WebUIVariant.ANAPNOE:
+            return GeneratorTool.ANAPNOE;
+        case WebUIVariant.A1111:
+            return GeneratorTool.AUTOMATIC1111;
+        default:
+            return undefined;
+    }
+};
+
+const variantToImportTool = (variant?: WebUIVariant): GeneratorTool =>
+    variantToGeneratorTool(variant) ?? GeneratorTool.UNKNOWN;
+
+export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const {
         setIsImporting,
         setImportProgress,
-        refreshCollections,
-        isResolvingModels: isResolving,
-        setIsResolvingModels: setIsResolving,
-        modelResolutionProgress: resolutionProgress,
-        setModelResolutionProgress: setResolutionProgress,
-        lastModelResolutionResult: resolutionResult,
-        setLastModelResolutionResult: setResolutionResult
-    } = useLibraryContext() as any;
+        refreshCollections
+    } = useLibraryContext();
     const { refreshMetadata } = useSearch(); // Added hook usage
     const { addToast } = useToast();
     const [localTestResult, setLocalTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -52,36 +64,35 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         if (!settings.a1111Path) return;
         setIsDiscovering(true);
         setLocalTestResult(null);
+        setScanLogs([]);
         try {
-            const { discoverA1111Candidates } = await import('../../../services/a1111/config');
+            const { discoverA1111Candidates, getUnlinkedPriorityCandidatePaths } = await import('../../../services/a1111/config');
             const existing = new Set(settings.monitoredFolders.map(f => f.path.replace(/\\/g, '/').toLowerCase()));
-            const { candidates: results, logs } = await discoverA1111Candidates(settings.a1111Path, existing);
-
-            // Apply Manual Override if selected
-            if (forceVariant !== 'Auto') {
-                results.forEach(c => {
-                    c.variant = forceVariant;
-                });
-                logs.push(`[Info] Manual Override applied: Forced all candidates to ${forceVariant}`);
-            }
+            const { candidates: results, logs, warnings } = await discoverA1111Candidates(settings.a1111Path, existing, forceVariant);
 
             setCandidates(results);
             setScanLogs(logs);
 
             // Auto-select priority folders that aren't linked yet
-            const priorityUnlinked = results.filter(c => c.isPriority && !c.isAlreadyLinked);
-            setSelectedPaths(new Set(priorityUnlinked.map(c => c.path)));
+            setSelectedPaths(new Set(getUnlinkedPriorityCandidatePaths(results)));
 
-            // If NO priority folders AT ALL, auto-show all
-            if (results.filter(c => c.isPriority).length === 0 && results.length > 0) {
-                setShowAllFolders(true);
-            }
+            const priorityCount = results.filter(c => c.isPriority).length;
+            setShowAllFolders(priorityCount === 0 && results.length > 0);
 
-            if (results.length === 0) {
+            if (warnings.length > 0) {
+                const warningLabel = warnings.length === 1 ? 'warning' : 'warnings';
+                const message = results.length === 0
+                    ? `Discovery completed with ${warnings.length} ${warningLabel} and no importable folders. Review scan debug log.`
+                    : `Discovery completed with ${warnings.length} ${warningLabel}. Review scan debug log.`;
+                setLocalTestResult({ success: false, message });
+            } else if (results.length === 0) {
                 setLocalTestResult({ success: false, message: "No potential folders containing images found." });
             }
         } catch (e) {
             console.error(e);
+            setCandidates([]);
+            setSelectedPaths(new Set());
+            setShowAllFolders(false);
             setLocalTestResult({ success: false, message: "Discovery failed. Check path permissions." });
         } finally {
             setIsDiscovering(false);
@@ -101,33 +112,25 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
         setIsDiscovering(true);
         setIsImporting(true); // Ref-counting: +1
+        let newFolderIds = new Set<string>();
 
         try {
             const { processFoldersUnified } = await import('../../../services/importService');
-            const { GeneratorTool } = await import('../../../types');
-            const { WebUIVariant } = await import('../../../services/a1111/types');
 
-            // 1. Prepare New Folders (with lastScanned set to NOW to bypass auto-monitor)
+            // 1. Prepare New Folders. Keep lastScanned empty until import succeeds.
             const brandNew = toLink.filter(c => !c.isAlreadyLinked);
             const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
 
             const now = Date.now();
-            const newFolderObjects = brandNew.map(c => {
-                let variant: GeneratorTool | undefined = undefined;
-                if (c.variant === WebUIVariant.FORGE) variant = GeneratorTool.FORGE;
-                else if (c.variant === WebUIVariant.SDNEXT) variant = GeneratorTool.SDNEXT;
-                else if (c.variant === WebUIVariant.ANAPNOE) variant = GeneratorTool.ANAPNOE;
-                else if (c.variant === WebUIVariant.A1111) variant = GeneratorTool.AUTOMATIC1111;
-
-                return {
-                    id: `a1111_${c.inferredType}_${now}_${Math.random().toString(36).substr(2, 5)}`,
-                    path: c.path,
-                    isActive: true,
-                    imageCount: c.imageCount,
-                    variant: variant,
-                    lastScanned: now // CRITICAL: Prevents useFolderMonitor from scanning this again immediately
-                };
-            });
+            const newFolderObjects: MonitoredFolder[] = brandNew.map(c => ({
+                id: `a1111_${c.inferredType}_${now}_${Math.random().toString(36).substr(2, 5)}`,
+                path: c.path,
+                isActive: true,
+                imageCount: c.imageCount,
+                variant: variantToGeneratorTool(c.variant),
+                initialScanPending: true
+            }));
+            newFolderIds = new Set(newFolderObjects.map(folder => folder.id));
 
             // 2. Update Settings (UI will show them immediately)
             if (newFolderObjects.length > 0) {
@@ -139,37 +142,71 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
             // 3. Build Unified Task List
             const foldersToSync = [
-                ...alreadyLinked.map(c => {
-                    let variant = GeneratorTool.UNKNOWN;
-                    if (c.variant === WebUIVariant.FORGE) variant = GeneratorTool.FORGE;
-                    else if (c.variant === WebUIVariant.SDNEXT) variant = GeneratorTool.SDNEXT;
-                    else if (c.variant === WebUIVariant.ANAPNOE) variant = GeneratorTool.ANAPNOE;
-                    else if (c.variant === WebUIVariant.A1111) variant = GeneratorTool.AUTOMATIC1111;
-                    return { path: c.path, variant };
-                }),
+                ...alreadyLinked.map(c => ({ path: c.path, variant: variantToImportTool(c.variant) })),
                 ...newFolderObjects.map(f => ({ path: f.path, variant: f.variant }))
             ];
 
             // 4. Run Unified Import
             if (foldersToSync.length > 0) {
-                await processFoldersUnified(foldersToSync, {
+                const result = await processFoldersUnified(foldersToSync, {
                     onProgress: (current, total, message) => {
                         setImportProgress({ current, total, message });
                     },
                     forceRescan: false
                 });
+                const completedAt = Date.now();
+                const importCompleted = result.failedPaths.length === 0;
 
-                if (refreshCollections) refreshCollections();
-                if (refreshMetadata) await refreshMetadata(); // Force full gallery refresh
+                if (newFolderIds.size > 0) {
+                    setSettings(prev => ({
+                        ...prev,
+                        monitoredFolders: prev.monitoredFolders.map(folder =>
+                            newFolderIds.has(folder.id)
+                                ? {
+                                    ...folder,
+                                    lastScanned: importCompleted ? completedAt : undefined,
+                                    initialScanPending: false
+                                }
+                                : folder
+                        )
+                    }));
+                }
+
+                let refreshFailed = false;
+                try {
+                    if (refreshCollections) await refreshCollections();
+                    if (refreshMetadata) await refreshMetadata(); // Force full gallery refresh
+                } catch (refreshError) {
+                    refreshFailed = true;
+                    console.error("Post-import refresh failed", refreshError);
+                }
 
                 const totalCount = foldersToSync.length;
-                const msg = `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
-                setLocalTestResult({ success: true, message: msg });
-                addToast(msg, 'success');
+                if (importCompleted) {
+                    const msg = refreshFailed
+                        ? `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned), but refresh failed.`
+                        : `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
+                    setLocalTestResult({ success: !refreshFailed, message: msg });
+                    addToast(msg, refreshFailed ? 'warning' : 'success');
+                } else {
+                    const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Folder cursor was not advanced.`;
+                    setLocalTestResult({ success: false, message: msg });
+                    addToast(msg, 'warning');
+                }
             }
 
         } catch (e) {
             console.error("Link/Import failed", e);
+            if (newFolderIds.size > 0) {
+                setSettings(prev => ({
+                    ...prev,
+                    monitoredFolders: prev.monitoredFolders.map(folder =>
+                        newFolderIds.has(folder.id)
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            : folder
+                    )
+                }));
+            }
             setLocalTestResult({ success: false, message: "Use Check Console for details" });
             addToast("Import failed", "error");
         } finally {
@@ -284,6 +321,20 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         </button>
 
                     </div>
+
+                    {localTestResult && (
+                        <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${localTestResult.success
+                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            : 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                            }`}>
+                            {localTestResult.success ? (
+                                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            ) : (
+                                <XCircle className="h-4 w-4 shrink-0" />
+                            )}
+                            <span>{localTestResult.message}</span>
+                        </div>
+                    )}
 
                     {candidates.length > 0 && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -411,19 +462,20 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 </button>
                             </div>
 
-                            {settings.devMode && scanLogs.length > 0 && (
-                                <div className="mt-4 mb-4">
-                                    <details className="group">
-                                        <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">
-                                            <span className="group-open:rotate-90 transition-transform">▸</span>
-                                            View Scan Debug Log ({scanLogs.length} entries)
-                                        </summary>
-                                        <div className="mt-2 p-3 bg-black/90 text-green-400 font-mono text-[10px] rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/10 shadow-inner">
-                                            {scanLogs.join('\n')}
-                                        </div>
-                                    </details>
+                        </div>
+                    )}
+
+                    {settings.devMode && scanLogs.length > 0 && (
+                        <div className="mt-4 mb-4">
+                            <details className="group">
+                                <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">
+                                    <span className="group-open:rotate-90 transition-transform">▸</span>
+                                    View Scan Debug Log ({scanLogs.length} entries)
+                                </summary>
+                                <div className="mt-2 p-3 bg-black/90 text-green-400 font-mono text-[10px] rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/10 shadow-inner">
+                                    {scanLogs.join('\n')}
                                 </div>
-                            )}
+                            </details>
                         </div>
                     )}
                 </div>

@@ -33,3 +33,10 @@ export interface DiscoveryCandidate {
     isPriority: boolean;
     variant?: WebUIVariant;
 }
+
+export interface DiscoveryResult {
+    detectedVariant: WebUIVariant;
+    candidates: DiscoveryCandidate[];
+    logs: string[];
+    warnings: string[];
+}
