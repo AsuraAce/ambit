@@ -37,6 +37,14 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install
 
+      - name: install cargo-audit
+        run: cargo install cargo-audit --version 0.22.1 --locked
+
+      # RUSTSEC-2023-0071 is ignored by the audit wrapper because it is pulled
+      # through optional sqlx-mysql while Ambit only enables the SQLite beta path.
+      - name: run rust dependency advisory audit
+        run: pnpm run audit:rust
+
       - name: verify version consistency
         run: pnpm check:versions
 
