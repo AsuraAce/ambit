@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
+const MAX_PNG_METADATA_CHUNK_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_PNG_DECOMPRESSED_TEXT_BYTES: u64 = 10 * 1024 * 1024;
+
 pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 2];
@@ -56,6 +59,25 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
     Ok(chunks)
 }
 
+fn skip_chunk_data_and_crc<R: Seek>(reader: &mut R, length: u64) -> Result<(), String> {
+    reader
+        .seek(SeekFrom::Current((length + 4) as i64))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn read_limited_zlib_text(data: &[u8]) -> Option<String> {
+    let decoder = ZlibDecoder::new(data);
+    let mut limited = decoder.take(MAX_PNG_DECOMPRESSED_TEXT_BYTES + 1);
+    let mut s = String::new();
+
+    if limited.read_to_string(&mut s).is_ok() && s.len() as u64 <= MAX_PNG_DECOMPRESSED_TEXT_BYTES {
+        Some(s)
+    } else {
+        None
+    }
+}
+
 /// Extracts metadata chunks from a PNG file.
 ///
 /// **IMPORTANT**: This function expects the reader to be positioned at the **beginning** of the file
@@ -99,6 +121,11 @@ pub fn extract_png_chunks<R: Read + Seek>(
             || chunk_type == "zTXt"
             || chunk_type == "eXIf"
         {
+            if length > MAX_PNG_METADATA_CHUNK_BYTES {
+                skip_chunk_data_and_crc(reader, length)?;
+                continue;
+            }
+
             let mut chunk_data = vec![0; length as usize];
             if reader.read_exact(&mut chunk_data).is_err() {
                 break;
@@ -121,9 +148,7 @@ pub fn extract_png_chunks<R: Read + Seek>(
                 if chunk_type == "zTXt" {
                     if pos + 2 < chunk_data.len() && chunk_data[pos + 1] == 0 {
                         let compressed = &chunk_data[pos + 2..];
-                        let mut decoder = ZlibDecoder::new(compressed);
-                        let mut s = String::new();
-                        if decoder.read_to_string(&mut s).is_ok() {
+                        if let Some(s) = read_limited_zlib_text(compressed) {
                             chunks.insert(key, s);
                         }
                     }
@@ -153,9 +178,7 @@ pub fn extract_png_chunks<R: Read + Seek>(
                         if curr < chunk_data.len() {
                             let data_slice = &chunk_data[curr..];
                             if is_compressed {
-                                let mut decoder = ZlibDecoder::new(data_slice);
-                                let mut s = String::new();
-                                if decoder.read_to_string(&mut s).is_ok() {
+                                if let Some(s) = read_limited_zlib_text(data_slice) {
                                     chunks.insert(key, s);
                                 }
                             } else {
@@ -173,10 +196,7 @@ pub fn extract_png_chunks<R: Read + Seek>(
             break;
         } else {
             // Efficiently skip data + CRC O(1) without thrashing OS disk I/O
-            let skip_len = length + 4;
-            reader
-                .seek(SeekFrom::Current(skip_len as i64))
-                .map_err(|e| e.to_string())?;
+            skip_chunk_data_and_crc(reader, length)?;
         }
     }
 
@@ -431,6 +451,64 @@ mod tests {
         let mut cursor = Cursor::new(png);
         let chunks = extract_png_chunks(&mut cursor).unwrap();
         assert_eq!(chunks.get("Software").map(|s| s.as_str()), Some("Ambit"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_skips_oversized_metadata_chunk() {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let oversized_len = MAX_PNG_METADATA_CHUNK_BYTES + 1;
+
+        png.extend_from_slice(&(oversized_len as u32).to_be_bytes());
+        png.extend_from_slice(b"tEXt");
+        png.extend(std::iter::repeat(0u8).take(oversized_len as usize));
+        png.extend_from_slice(&[0; 4]);
+
+        png.extend_from_slice(&14u32.to_be_bytes());
+        png.extend_from_slice(b"tEXt");
+        png.extend_from_slice(b"Software\0Ambit");
+        png.extend_from_slice(&[0; 4]);
+
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0; 4]);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert!(!chunks.contains_key(""));
+        assert_eq!(chunks.get("Software").map(|s| s.as_str()), Some("Ambit"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_rejects_compressed_text_bomb() {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let expanded = vec![b'a'; (MAX_PNG_DECOMPRESSED_TEXT_BYTES + 1) as usize];
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&expanded).unwrap();
+        let compressed_text = encoder.finish().unwrap();
+
+        let mut data = Vec::new();
+        data.extend_from_slice(b"Comment");
+        data.push(0);
+        data.push(0);
+        data.extend_from_slice(&compressed_text);
+
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        png.extend_from_slice(b"zTXt");
+        png.extend_from_slice(&data);
+        png.extend_from_slice(&[0; 4]);
+
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0; 4]);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+        assert!(!chunks.contains_key("Comment"));
     }
 
     #[test]

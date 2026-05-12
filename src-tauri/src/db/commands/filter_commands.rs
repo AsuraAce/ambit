@@ -1,4 +1,5 @@
 use super::run_blocking;
+use rusqlite::types::Value;
 use tauri::AppHandle;
 
 #[derive(serde::Serialize, specta::Type)]
@@ -20,6 +21,29 @@ pub struct ParameterRanges {
     pub guidance_subtypes: std::collections::HashMap<String, String>,
 }
 
+fn build_parameter_scope_from_clause(
+    collection_id: Option<&str>,
+    lora_name: Option<&str>,
+) -> (String, Vec<Value>) {
+    let mut from_clause = "FROM images".to_string();
+    let mut join_params = Vec::new();
+
+    if let Some(col_id) = collection_id {
+        from_clause.push_str(
+            " JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = ?",
+        );
+        join_params.push(Value::Text(col_id.to_string()));
+    }
+
+    if let Some(lora) = lora_name {
+        from_clause
+            .push_str(" JOIN image_loras il ON il.image_id = images.id AND il.lora_name = ?");
+        join_params.push(Value::Text(lora.to_string()));
+    }
+
+    (from_clause, join_params)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn get_parameter_ranges(
@@ -36,22 +60,22 @@ pub async fn get_parameter_ranges(
             Vec::new()
         };
 
-        let sql_params: Vec<rusqlite::types::Value> = params.iter().map(|p| match p {
-            serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
+        let sql_params: Vec<Value> = params.iter().map(|p| match p {
+            serde_json::Value::String(s) => Value::Text(s.clone()),
             serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() { rusqlite::types::Value::Integer(i) }
-                else if let Some(f) = n.as_f64() { rusqlite::types::Value::Real(f) }
-                else { rusqlite::types::Value::Null }
+                if let Some(i) = n.as_i64() { Value::Integer(i) }
+                else if let Some(f) = n.as_f64() { Value::Real(f) }
+                else { Value::Null }
             }
-            serde_json::Value::Bool(b) => rusqlite::types::Value::Integer(if *b { 1 } else { 0 }),
-            serde_json::Value::Null => rusqlite::types::Value::Null,
-            _ => rusqlite::types::Value::Text(p.to_string()),
+            serde_json::Value::Bool(b) => Value::Integer(if *b { 1 } else { 0 }),
+            serde_json::Value::Null => Value::Null,
+            _ => Value::Text(p.to_string()),
         }).collect();
-        
+
         let reactive_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
-        let mut from_clause = "FROM images".to_string();
-        if let Some(col_id) = collection_id { from_clause.push_str(&format!(" JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '{}'", col_id)); }
-        if let Some(lora) = lora_name { from_clause.push_str(&format!(" JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '{}'", lora)); }
+        let (from_clause, mut query_params) =
+            build_parameter_scope_from_clause(collection_id.as_deref(), lora_name.as_deref());
+        query_params.extend(sql_params);
 
         // Ranges
         let steps = conn.query_row("SELECT MIN(steps), MAX(steps) FROM images WHERE is_deleted = 0 AND steps > 0", [], |row| {
@@ -73,7 +97,7 @@ pub async fn get_parameter_ranges(
         let get_distinct = |conn: &rusqlite::Connection, field: &str| -> Result<Vec<String>, String> {
             let sql = format!("SELECT DISTINCT {} {} {} AND {} IS NOT NULL AND {} != '' AND {} != 'unknown' ORDER BY 1", field, from_clause, reactive_where, field, field, field);
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-            let items = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get(0))
+            let items = stmt.query_map(rusqlite::params_from_iter(query_params.iter()), |row| row.get(0))
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<String>, _>>()
                 .map_err(|e| e.to_string())?;
@@ -86,7 +110,7 @@ pub async fn get_parameter_ranges(
         let get_junction_distinct = |conn: &rusqlite::Connection, table: &str, field: &str| -> Result<Vec<String>, String> {
             let sql = format!("SELECT DISTINCT {}.{} {} JOIN {} ON {}.image_id = images.id {} ORDER BY 1", table, field, from_clause, table, table, reactive_where);
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-            let items = stmt.query_map(rusqlite::params_from_iter(sql_params.iter()), |row| row.get(0))
+            let items = stmt.query_map(rusqlite::params_from_iter(query_params.iter()), |row| row.get(0))
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<String>, _>>()
                 .map_err(|e| e.to_string())?;
@@ -102,13 +126,39 @@ pub async fn get_parameter_ranges(
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<(String, String)>, _>>()
             .map_err(|e| e.to_string())?;
-        
+
         for (name, subtype) in rows {
             guidance_subtypes.insert(name, subtype);
         }
-        
+
         Ok(ParameterRanges { steps, cfg, denoising_strength, samplers, generation_types, control_nets, ip_adapters, guidance_subtypes })
     }).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parameter_scope_uses_bound_values_for_collection_and_lora() {
+        let collection_id = "col' OR 1=1 --";
+        let lora_name = "lora' OR 1=1 --";
+
+        let (from_clause, params) =
+            build_parameter_scope_from_clause(Some(collection_id), Some(lora_name));
+
+        assert!(from_clause.contains("ci.collection_id = ?"));
+        assert!(from_clause.contains("il.lora_name = ?"));
+        assert!(!from_clause.contains(collection_id));
+        assert!(!from_clause.contains(lora_name));
+        assert_eq!(
+            params,
+            vec![
+                Value::Text(collection_id.to_string()),
+                Value::Text(lora_name.to_string())
+            ]
+        );
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
