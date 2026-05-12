@@ -394,3 +394,44 @@ describe('searchRepo getFacets', () => {
         });
     });
 });
+
+describe('searchRepo scoped stats queries', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('binds collection and lora values instead of interpolating them into stats SQL', async () => {
+        const collectionId = "col' OR 1=1 --";
+        const loraName = "lora' OR 1=1 --";
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+                if (normalizedSql.includes('count(*) as total')) {
+                    return [{ total: 0 }];
+                }
+                return [];
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { clearLibraryStatsCache, getLibraryStats } = await import('../searchRepo');
+        clearLibraryStatsCache();
+
+        await getLibraryStats('WHERE is_deleted = ?', [0], collectionId, loraName);
+
+        const [statsSql, statsParams] = db.select.mock.calls[0] as unknown as [string, unknown[]];
+        const [keywordSql, keywordParams] = db.select.mock.calls[2] as unknown as [string, unknown[]];
+
+        expect(statsSql).toContain('ci.collection_id = ?');
+        expect(statsSql).toContain('il.lora_name = ?');
+        expect(statsSql).not.toContain(collectionId);
+        expect(statsSql).not.toContain(loraName);
+        expect(statsParams).toEqual([collectionId, loraName, 0]);
+
+        expect(keywordSql).toContain('ci.collection_id = ?');
+        expect(keywordSql).toContain('il.lora_name = ?');
+        expect(keywordSql).not.toContain(collectionId);
+        expect(keywordSql).not.toContain(loraName);
+        expect(keywordParams).toEqual([collectionId, loraName, 0]);
+    });
+});
