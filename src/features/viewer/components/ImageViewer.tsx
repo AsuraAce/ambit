@@ -15,6 +15,7 @@ import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
+import { isOsOpenUnavailable, openFileInDefaultApp } from '../../../services/osOpen';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -224,8 +225,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     };
 
     const handleOpenExternal = async () => {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('open_file', { path: displayImage.id });
+        const result = await openFileInDefaultApp(displayImage.id);
+        if (result.status === 'error') {
+            addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
+        }
     };
 
     const handleShare = () => {

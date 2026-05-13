@@ -8,6 +8,7 @@ import { useSearchStore } from '../../stores/searchStore';
 import { AIImage, ContextMenuState } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
+import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
@@ -167,26 +168,25 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 onClose();
             }}
             onShowInFolder={async () => {
-                if (browserMockMode) {
-                    addToast('Unavailable in browser mock mode.', 'info');
-                    onClose();
-                    return;
-                }
                 const id = contextMenu.imageId;
-                const { invoke } = await import('@tauri-apps/api/core');
-                await invoke('show_in_folder', { path: id });
-                addToast('Opening folder...', 'info');
+                if (id) {
+                    const result = await showPathInFolder(id);
+                    if (result.status === 'ok') {
+                        addToast('Opening folder...', 'info');
+                    } else {
+                        addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
+                    }
+                }
                 onClose();
             }}
             onOpenInDefaultApp={async () => {
-                if (browserMockMode) {
-                    addToast('Unavailable in browser mock mode.', 'info');
-                    onClose();
-                    return;
-                }
                 const id = contextMenu.imageId;
-                const { invoke } = await import('@tauri-apps/api/core');
-                await invoke('open_file', { path: id });
+                if (id) {
+                    const result = await openFileInDefaultApp(id);
+                    if (result.status === 'error') {
+                        addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
+                    }
+                }
                 onClose();
             }}
             onSetThumbnail={filters.collectionId && activeImage ? async () => {
