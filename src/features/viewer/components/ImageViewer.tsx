@@ -2,7 +2,6 @@ import * as React from 'react';
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { X, Share2, Minimize2, Maximize2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Wand2, Shuffle, Layers, ArrowRight, Layout, ExternalLink } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { AIImage, GeneratorTool } from '../../../types';
 import { useZoomPan } from '../../../hooks/useZoomPan';
 import { ImageCanvas } from './ImageCanvas';

@@ -56,6 +56,19 @@ const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] =
     return chunks;
 };
 
+export const shouldTrashThumbnail = (
+    imagePath: string | null | undefined,
+    thumbnailPath: string | null | undefined
+): boolean => {
+    if (!thumbnailPath) return false;
+    if (!imagePath) return true;
+
+    const normalizedImagePath = normalizePath(urlToPath(imagePath) || imagePath);
+    const normalizedThumbnailPath = normalizePath(urlToPath(thumbnailPath) || thumbnailPath);
+
+    return normalizedImagePath.toLowerCase() !== normalizedThumbnailPath.toLowerCase();
+};
+
 const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => ({
     id: normalizePath(image.id),
     path: normalizePath(image.id),
@@ -861,7 +874,7 @@ export const deleteImageFromDisk = async (id: string, path: string, thumbnailPat
     }
 
     // 2. Trash Thumbnail
-    if (thumbnailPath) {
+    if (shouldTrashThumbnail(path, thumbnailPath)) {
         try {
             await unwrap(commands.deleteThumbnail(thumbnailPath));
         } catch (e) {
@@ -915,7 +928,7 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
                 }
             }
 
-            if (row.thumbnail_path) {
+            if (shouldTrashThumbnail(row.path, row.thumbnail_path)) {
                 try {
                     await unwrap(commands.deleteThumbnail(row.thumbnail_path));
                 } catch (e) {

@@ -5,7 +5,7 @@ import { useToast } from '../../../hooks/useToast';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import { openExternalUrl } from '../../../utils/externalLinks';
+import { GOOGLE_AI_STUDIO_API_KEY_URL, openExternalUrl } from '../../../utils/externalLinks';
 
 interface TabProps {
     settings: AppSettings;
@@ -170,7 +170,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                 Your key is stored locally. Get one at{' '}
                                 <button
                                     type="button"
-                                    onClick={() => openExternalUrl('https://aistudio.google.com/app/apikey')}
+                                    onClick={() => openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL)}
                                     className="text-sage-600 hover:underline"
                                 >
                                     Google AI Studio
