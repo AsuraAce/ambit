@@ -1,15 +1,19 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppSettings } from '../../../../types';
+import { AppSettings, GeneratorTool } from '../../../../types';
 import { useLibraryStore } from '../../../../stores/libraryStore';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useFoldersTabLogic } from '../useFoldersTabLogic';
+import { commands } from '../../../../bindings';
+import { processNativePaths } from '../../../../services/importService';
 
 const addToastMock = vi.hoisted(() => vi.fn());
 const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
 const rebuildFacetCacheIncrementalBatchMock = vi.hoisted(() => vi.fn());
 const refreshFacetCacheForResourcesStrictMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
+const getThumbnailDirMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../hooks/useToast', () => ({
     useToast: () => ({
@@ -25,6 +29,10 @@ vi.mock('../../../../services/importService', () => ({
 vi.mock('../../../../services/db/imageRepo', () => ({
     rebuildFacetCacheIncrementalBatch: (...args: Parameters<typeof rebuildFacetCacheIncrementalBatchMock>) => rebuildFacetCacheIncrementalBatchMock(...args),
     refreshFacetCacheForResourcesStrict: (...args: Parameters<typeof refreshFacetCacheForResourcesStrictMock>) => refreshFacetCacheForResourcesStrictMock(...args),
+}));
+
+vi.mock('../../../../services/thumbnailService', () => ({
+    getThumbnailDir: (...args: Parameters<typeof getThumbnailDirMock>) => getThumbnailDirMock(...args),
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -90,10 +98,14 @@ describe('useFoldersTabLogic resource discovery', () => {
         });
         rebuildFacetCacheIncrementalBatchMock.mockResolvedValue(2);
         refreshFacetCacheForResourcesStrictMock.mockResolvedValue(2);
+        getThumbnailDirMock.mockResolvedValue('C:/thumbs');
         useLibraryStore.setState({
             facetCacheVersion: 0,
             isScanningDiscovery: false,
             discoveryScanProgress: null,
+            isImporting: false,
+            importProgress: null,
+            importAbortController: null,
         });
     });
 
@@ -265,5 +277,64 @@ describe('useFoldersTabLogic resource discovery', () => {
         expect(addToastMock).toHaveBeenCalledWith('Resource scan cancelled', 'info');
         expect(useLibraryStore.getState().discoveryScanProgress).toBeNull();
         expect(useLibraryStore.getState().isScanningDiscovery).toBe(false);
+    });
+
+    it('does not advance a monitored folder cursor when incremental import is cancelled', async () => {
+        const updateLastScannedMock = vi.fn();
+        useLibraryStore.setState({ importAbortController: null });
+        const updateFolderLastScannedSpy = vi
+            .spyOn(useSettingsStore.getState(), 'updateFolderLastScanned')
+            .mockImplementation(updateLastScannedMock);
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'D:/AI/Comfy/output/new.png', modified: 100, size: 10 }]
+        });
+        vi.mocked(processNativePaths).mockResolvedValueOnce({
+            images: [],
+            stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
+            handledPaths: [],
+            failedPaths: [],
+            touchedFacetTypes: [],
+            touchedFacetResources: emptyResources,
+            wasCancelled: true
+        });
+        const settings = {
+            ...baseSettings,
+            monitoredFolders: [
+                {
+                    id: 'folder-1',
+                    path: 'D:/AI/Comfy/output',
+                    isActive: true,
+                    imageCount: 0,
+                    variant: GeneratorTool.COMFYUI,
+                    lastScanned: 10
+                }
+            ]
+        };
+        const { result } = renderHook(() => useFoldersTabLogic({
+            settings,
+            setSettings: vi.fn(),
+            onScanFolder: vi.fn()
+        }));
+
+        await act(async () => {
+            await result.current.handleRescan('folder-1', 'D:/AI/Comfy/output', GeneratorTool.COMFYUI, false);
+        });
+
+        expect(processNativePaths).toHaveBeenCalledWith(
+            ['D:/AI/Comfy/output/new.png'],
+            expect.any(String),
+            expect.any(Function),
+            GeneratorTool.COMFYUI,
+            expect.any(AbortSignal),
+            false,
+            true,
+            true
+        );
+        expect(updateLastScannedMock).not.toHaveBeenCalled();
+        expect(addToastMock).toHaveBeenCalledWith('Import cancelled', 'info');
+        expect(useLibraryStore.getState().importAbortController).toBeNull();
+
+        updateFolderLastScannedSpy.mockRestore();
     });
 });

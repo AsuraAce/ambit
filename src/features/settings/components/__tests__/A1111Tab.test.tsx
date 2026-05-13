@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
-import type { AppSettings } from '../../../../types';
+import { GeneratorTool, type AppSettings } from '../../../../types';
 import { WebUIVariant } from '../../../../services/a1111/types';
 import { A1111Tab } from '../A1111Tab';
 
@@ -83,5 +83,105 @@ describe('A1111Tab discovery warnings', () => {
                 'Auto'
             );
         });
+    });
+
+    it('routes Link & Import through the provided cancellable scan callback', async () => {
+        const onScanFolder = vi.fn().mockResolvedValue({
+            images: [],
+            stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
+            handledPaths: ['D:/SD/outputs/txt2img-images/image.png'],
+            failedPaths: [],
+            touchedFacetTypes: [],
+            touchedFacetResources: {
+                checkpoints: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: []
+            },
+            wasCancelled: false
+        });
+        mocks.discoverA1111Candidates.mockResolvedValue({
+            detectedVariant: WebUIVariant.A1111,
+            candidates: [
+                {
+                    path: 'D:/SD/outputs/txt2img-images',
+                    name: 'txt2img-images',
+                    imageCount: 1,
+                    inferredType: 'txt2img',
+                    isPriority: true,
+                    isAlreadyLinked: false,
+                    variant: WebUIVariant.A1111
+                }
+            ],
+            logs: [],
+            warnings: []
+        });
+        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
+
+        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={onScanFolder} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
+
+        await waitFor(() => {
+            expect(onScanFolder).toHaveBeenCalledWith([
+                {
+                    path: 'D:/SD/outputs/txt2img-images',
+                    variant: GeneratorTool.AUTOMATIC1111
+                }
+            ]);
+        });
+        expect(await screen.findByText('Processed 1 folders (1 new, 0 rescanned)')).toBeTruthy();
+        expect(mocks.addToast).not.toHaveBeenCalled();
+        expect(mocks.setIsImporting).not.toHaveBeenCalled();
+        expect(mocks.setImportProgress).not.toHaveBeenCalled();
+    });
+
+    it('shows partial failure inline without emitting a duplicate completion toast', async () => {
+        const onScanFolder = vi.fn().mockResolvedValue({
+            images: [],
+            stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
+            handledPaths: [],
+            failedPaths: ['D:/SD/outputs/txt2img-images/bad.png'],
+            touchedFacetTypes: [],
+            touchedFacetResources: {
+                checkpoints: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: []
+            },
+            wasCancelled: false
+        });
+        mocks.discoverA1111Candidates.mockResolvedValue({
+            detectedVariant: WebUIVariant.A1111,
+            candidates: [
+                {
+                    path: 'D:/SD/outputs/txt2img-images',
+                    name: 'txt2img-images',
+                    imageCount: 1,
+                    inferredType: 'txt2img',
+                    isPriority: true,
+                    isAlreadyLinked: false,
+                    variant: WebUIVariant.A1111
+                }
+            ],
+            logs: [],
+            warnings: []
+        });
+        mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue(['D:/SD/outputs/txt2img-images']);
+
+        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} onScanFolder={onScanFolder} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /link & import 1 folders/i }));
+
+        expect(await screen.findByText('Processed 1 folders with 1 failed file(s). Folder cursor was not advanced.')).toBeTruthy();
+        expect(mocks.addToast).not.toHaveBeenCalled();
     });
 });

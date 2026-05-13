@@ -26,6 +26,8 @@ export type LayoutMode = 'grid' | 'masonry' | 'justified';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
 
+export type ImportMode = 'manual' | 'startup' | 'background';
+
 export type RecoveryStyle = 'generic' | 'midjourney' | 'sdxl' | 'danbooru';
 
 export interface ImageMetadata {

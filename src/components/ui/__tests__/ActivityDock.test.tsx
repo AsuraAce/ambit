@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { act, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
@@ -19,6 +19,7 @@ const resetLibraryStore = () => {
         syncProgress: { current: 0, total: 0, message: '' },
         isImporting: false,
         importProgress: null,
+        importAbortController: null,
         isRegeneratingThumbnails: false,
         thumbnailProgress: null,
         isResolvingModels: false,
@@ -97,6 +98,46 @@ describe('ActivityDock', () => {
         expect(screen.getByText('3 / 12')).toBeTruthy();
         expect(screen.getByText('Checking file paths for missing images...')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
+    });
+
+    it('renders import progress without cancel when no abort controller is registered', () => {
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: {
+                current: 1,
+                total: 5,
+                message: 'Importing images...'
+            },
+            importAbortController: null
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Importing')).toBeTruthy();
+        expect(screen.getByText('Importing images...')).toBeTruthy();
+        expect(screen.queryByText('Cancel')).toBeNull();
+    });
+
+    it('aborts an import when cancel is clicked and a controller is registered', () => {
+        const abortController = new AbortController();
+        const abortSpy = vi.spyOn(abortController, 'abort');
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: {
+                current: 1,
+                total: 5,
+                message: 'Importing images...'
+            },
+            importAbortController: abortController
+        });
+
+        render(<ActivityDock />);
+        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+        expect(abortSpy).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+        expect(useLibraryStore.getState().importAbortController).toBeNull();
     });
 
     it('renders running smart thumbnail progress without repeated checked counts', () => {

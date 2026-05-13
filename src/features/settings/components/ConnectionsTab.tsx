@@ -79,6 +79,7 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                         settings={settings}
                         setSettings={setSettings}
                         onClose={onClose || (() => { })}
+                        onScanFolder={onScanFolder}
                     />
                 )}
                 {activeTab === 'comfyui' && (
