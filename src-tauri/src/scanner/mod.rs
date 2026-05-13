@@ -193,14 +193,18 @@ pub async fn scan_directory_recursive(path: String) -> Result<Vec<String>, Strin
 
 #[tauri::command]
 #[specta::specta]
-pub async fn open_file(path: String) -> Result<(), String> {
-    utils::open_file_impl(path)
+pub async fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || utils::open_file_impl(&app, path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn show_in_folder(path: String) -> Result<(), String> {
-    utils::show_in_folder_impl(path)
+pub async fn show_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || utils::show_in_folder_impl(&app, path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
