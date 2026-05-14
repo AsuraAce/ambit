@@ -22,15 +22,15 @@ jobs:
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 20
 
       - name: install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v6.0.8
         with:
           version: 9
 
@@ -82,7 +82,7 @@ jobs:
           fi
           rm -f .tmp/updater-signing-smoke-test.txt .tmp/updater-signing-smoke-test.txt.sig
 
-      - uses: tauri-apps/tauri-action@v0.6.0
+      - uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
