@@ -6,6 +6,10 @@ on:
       - "v*"
       - "ambit-v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish-tauri:
     permissions:
@@ -16,6 +20,7 @@ jobs:
         platform: [windows-latest]
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +40,10 @@ jobs:
           targets: ${{ matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || '' }}
 
       - name: install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: run production dependency audit
+        run: pnpm run audit:prod
 
       - name: install cargo-audit
         run: cargo install cargo-audit --version 0.22.1 --locked
@@ -45,8 +53,8 @@ jobs:
       - name: run rust dependency advisory audit
         run: pnpm run audit:rust
 
-      - name: verify version consistency
-        run: pnpm check:versions
+      - name: verify release gate
+        run: pnpm run verify:release
 
       - name: verify updater signing configuration
         shell: bash
