@@ -6,10 +6,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: updater-signing-preflight
+  cancel-in-progress: false
+
 jobs:
   verify-updater-signing:
     name: Verify updater signing secret
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +30,7 @@ jobs:
           version: 9
 
       - name: install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: verify updater signing secret
         shell: bash

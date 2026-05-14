@@ -6,6 +6,13 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend-checks:
     name: frontend-checks
@@ -30,6 +37,9 @@ jobs:
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: run production dependency audit
+        run: pnpm run audit:prod
 
       - name: typecheck
         run: pnpm exec tsc --noEmit

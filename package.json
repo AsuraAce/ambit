@@ -18,6 +18,7 @@
     "check:versions": "node ./scripts/check-version-consistency.mjs",
     "typecheck": "tsc --noEmit",
     "verify:release": "pnpm run check:versions && pnpm run bindings:check && pnpm run typecheck && pnpm run test:run && pnpm run test:rust",
+    "audit:prod": "pnpm audit --prod",
     "audit:rust": "node ./scripts/audit-rust.mjs",
     "test": "vitest",
     "test:run": "vitest run",
