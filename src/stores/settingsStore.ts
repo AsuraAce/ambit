@@ -146,7 +146,9 @@ export const useSettingsStore = create<SettingsState>()(
             updateFolderLastScanned: (id: string, timestamp: number) => {
                 get().setSettings((prev) => ({
                     monitoredFolders: prev.monitoredFolders.map(f =>
-                        f.id === id ? { ...f, lastScanned: timestamp } : f
+                        f.id === id
+                            ? { ...f, lastScanned: timestamp, initialScanPending: false, initialScanCancelled: false }
+                            : f
                     )
                 }));
             },

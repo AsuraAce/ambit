@@ -163,7 +163,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                 ? {
                                     ...folder,
                                     lastScanned: importCompleted ? completedAt : undefined,
-                                    initialScanPending: false
+                                    initialScanPending: false,
+                                    initialScanCancelled: importCancelled
                                 }
                                 : folder
                         )
@@ -171,7 +172,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                 }
 
                 if (importCancelled) {
-                    setLocalTestResult({ success: false, message: "Import cancelled. Folder cursor was not advanced." });
+                    setLocalTestResult({ success: false, message: "Import cancelled. Imported images were kept, and folder cursor was not advanced. Rescan to continue." });
                     return;
                 }
 
@@ -208,7 +209,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                     ...prev,
                     monitoredFolders: prev.monitoredFolders.map(folder =>
                         newFolderIds.has(folder.id)
-                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                             : folder
                     )
                 }));

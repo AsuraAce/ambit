@@ -24,6 +24,8 @@ interface CommitImportOptions {
     toastMode?: CommitToastMode;
 }
 
+const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
+
 interface UseImportOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
@@ -111,7 +113,7 @@ export const useImportOps = ({
                     setImportProgress({ current, total, message });
                 }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
-                    addToast('Import cancelled', 'info');
+                    addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                     return;
                 }
                 await commitImportResult(result);
@@ -144,7 +146,7 @@ export const useImportOps = ({
                     setImportProgress({ current, total, message });
                 }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
-                    addToast('Import cancelled', 'info');
+                    addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                     return;
                 }
                 await commitImportResult(result);
@@ -206,7 +208,7 @@ export const useImportOps = ({
                 deferFacetCacheRefresh
             );
             if (result.wasCancelled) {
-                if (isManual) addToast('Import cancelled', 'info');
+                if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                 return result;
             }
             await commitImportResult(result, { toastMode: isManual ? 'detailed' : 'none' });
@@ -214,7 +216,7 @@ export const useImportOps = ({
         } catch (error) {
             console.error("Import error", error);
             if (isManual) {
-                addToast(abortSignal?.aborted ? 'Import cancelled' : 'Import failed or cancelled', abortSignal?.aborted ? 'info' : 'error');
+                addToast(abortSignal?.aborted ? MANUAL_IMPORT_CANCELLED_MESSAGE : 'Import failed or cancelled', abortSignal?.aborted ? 'info' : 'error');
             }
         } finally {
             if (!skipStateManagement) {
@@ -229,9 +231,13 @@ export const useImportOps = ({
         const mode = options.mode ?? 'manual';
         const isStartup = mode === 'startup';
         const isManual = mode === 'manual';
+        const isMultiFolderImport = folders.length > 1;
         setIsImporting(true);
         const abortCtrl = new AbortController();
         setImportAbortController(abortCtrl);
+        if (isMultiFolderImport) {
+            setImportProgress({ current: 0, total: 0, message: `Scanning ${folders.length} folders...` });
+        }
 
         try {
             const typedFolders = folders.map(f => ({
@@ -241,7 +247,10 @@ export const useImportOps = ({
 
             const result = await processFoldersUnified(typedFolders, {
                 onProgress: (current, total, message) => {
-                    setImportProgress({ current, total, message });
+                    const progressMessage = isMultiFolderImport
+                        ? (total > 0 ? `Importing images from ${folders.length} folders...` : `Scanning ${folders.length} folders...`)
+                        : message;
+                    setImportProgress({ current, total, message: progressMessage });
                 },
                 abortSignal: abortCtrl.signal,
                 isStartup,
@@ -249,7 +258,7 @@ export const useImportOps = ({
             });
 
             if (result.wasCancelled) {
-                if (isManual) addToast('Import cancelled', 'info');
+                if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                 return result;
             }
 

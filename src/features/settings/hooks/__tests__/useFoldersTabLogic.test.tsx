@@ -6,7 +6,7 @@ import { useLibraryStore } from '../../../../stores/libraryStore';
 import { useSettingsStore } from '../../../../stores/settingsStore';
 import { useFoldersTabLogic } from '../useFoldersTabLogic';
 import { commands } from '../../../../bindings';
-import { processNativePaths } from '../../../../services/importService';
+import { processNativePaths, type ImportResult } from '../../../../services/importService';
 
 const addToastMock = vi.hoisted(() => vi.fn());
 const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
@@ -61,11 +61,15 @@ const baseSettings: AppSettings = {
     enableAI: false,
 };
 
-const renderFoldersHook = (settings: AppSettings = baseSettings) => {
+const renderFoldersHook = (
+    settings: AppSettings = baseSettings,
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>
+) => {
     const setSettings = vi.fn();
     const rendered = renderHook(() => useFoldersTabLogic({
         settings,
         setSettings,
+        onScanFolder,
     }));
 
     return { ...rendered, setSettings };
@@ -81,7 +85,30 @@ const emptyResources = {
     tools: []
 };
 
+const emptyImportResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
+    const base: ImportResult = {
+        images: [],
+        stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
+        handledPaths: [],
+        failedPaths: [],
+        touchedFacetTypes: [],
+        touchedFacetResources: emptyResources,
+        wasCancelled: false
+    };
+
+    return {
+        ...base,
+        ...overrides,
+        stats: {
+            ...base.stats,
+            ...overrides.stats
+        }
+    };
+};
+
 describe('useFoldersTabLogic resource discovery', () => {
+    const manualCancellationMessage = 'Import cancelled. Imported images were kept; rescan to continue.';
+
     beforeEach(() => {
         vi.clearAllMocks();
         addToastMock.mockReset();
@@ -99,6 +126,11 @@ describe('useFoldersTabLogic resource discovery', () => {
         rebuildFacetCacheIncrementalBatchMock.mockResolvedValue(2);
         refreshFacetCacheForResourcesStrictMock.mockResolvedValue(2);
         getThumbnailDirMock.mockResolvedValue('C:/thumbs');
+        vi.mocked(commands.getImageCountForPathPrefix).mockResolvedValue({
+            status: 'ok',
+            data: 0
+        });
+        useSettingsStore.setState({ settings: baseSettings });
         useLibraryStore.setState({
             facetCacheVersion: 0,
             isScanningDiscovery: false,
@@ -332,9 +364,115 @@ describe('useFoldersTabLogic resource discovery', () => {
             true
         );
         expect(updateLastScannedMock).not.toHaveBeenCalled();
-        expect(addToastMock).toHaveBeenCalledWith('Import cancelled', 'info');
+        expect(addToastMock).toHaveBeenCalledWith(manualCancellationMessage, 'info');
         expect(useLibraryStore.getState().importAbortController).toBeNull();
 
         updateFolderLastScannedSpy.mockRestore();
+    });
+
+    it('marks a cancelled added-folder initial import as cancelled', async () => {
+        vi.useFakeTimers();
+        try {
+            const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({ wasCancelled: true }));
+            const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
+
+            act(() => {
+                result.current.setNewFolderPath('D:\\AI\\Cancelled');
+            });
+
+            act(() => {
+                result.current.handleAddFolder({
+                    preventDefault: vi.fn(),
+                } as unknown as React.FormEvent);
+            });
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(500);
+            });
+
+            expect(onScanFolder).toHaveBeenCalledWith([{ path: 'D:/AI/Cancelled', variant: GeneratorTool.UNKNOWN }]);
+            const addUpdate = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
+            const addedSettings = addUpdate(baseSettings);
+            const finalizeUpdate = setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings;
+            const finalSettings = finalizeUpdate(addedSettings);
+
+            expect(finalSettings.monitoredFolders[0]).toMatchObject({
+                path: 'D:/AI/Cancelled',
+                initialScanPending: false,
+                initialScanCancelled: true
+            });
+            expect(finalSettings.monitoredFolders[0].lastScanned).toBeUndefined();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps added-folder partial failures retryable without marking cancellation', async () => {
+        vi.useFakeTimers();
+        try {
+            const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
+                stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
+                failedPaths: ['D:/AI/Partial/bad.png']
+            }));
+            const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
+
+            act(() => {
+                result.current.setNewFolderPath('D:\\AI\\Partial');
+            });
+
+            act(() => {
+                result.current.handleAddFolder({
+                    preventDefault: vi.fn(),
+                } as unknown as React.FormEvent);
+            });
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(500);
+            });
+
+            const addUpdate = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
+            const addedSettings = addUpdate(baseSettings);
+            const finalizeUpdate = setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings;
+            const finalSettings = finalizeUpdate(addedSettings);
+
+            expect(finalSettings.monitoredFolders[0]).toMatchObject({
+                path: 'D:/AI/Partial',
+                initialScanPending: false,
+                initialScanCancelled: false
+            });
+            expect(finalSettings.monitoredFolders[0].lastScanned).toBeUndefined();
+            expect(addToastMock).toHaveBeenCalledWith('Folder scan completed with import errors', 'warning');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('clears initial cancellation after a successful manual rescan', async () => {
+        const folder = {
+            id: 'folder-1',
+            path: 'D:/AI/Cancelled',
+            isActive: true,
+            imageCount: 0,
+            variant: GeneratorTool.COMFYUI,
+            initialScanCancelled: true
+        };
+        const settings = {
+            ...baseSettings,
+            monitoredFolders: [folder]
+        };
+        useSettingsStore.setState({ settings });
+        const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
+            stats: { processed: 1, imported: 1, skipped: 0, errors: 0 }
+        }));
+        const { result } = renderFoldersHook(settings, onScanFolder);
+
+        await act(async () => {
+            await result.current.handleRescan('folder-1', 'D:/AI/Cancelled', GeneratorTool.COMFYUI, false);
+        });
+
+        const updatedFolder = useSettingsStore.getState().settings.monitoredFolders[0];
+        expect(updatedFolder.lastScanned).toEqual(expect.any(Number));
+        expect(updatedFolder.initialScanPending).toBe(false);
+        expect(updatedFolder.initialScanCancelled).toBe(false);
     });
 });

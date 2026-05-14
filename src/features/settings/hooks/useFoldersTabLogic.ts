@@ -101,6 +101,8 @@ const getErrorMessage = (error: unknown): string =>
 const isCancellationError = (error: unknown): boolean =>
     getErrorMessage(error).toLowerCase().includes('cancel');
 
+const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
+
 // Helper to detect generator from path
 const detectGeneratorVariant = (path: string): GeneratorTool => {
     const lower = path.toLowerCase();
@@ -290,7 +292,7 @@ export const useFoldersTabLogic = ({
                                 true
                             );
                             if (result.wasCancelled) {
-                                addToast('Import cancelled', 'info');
+                                addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                             } else {
                                 addToast(`Synced ${result.images.length} new files`, 'success');
                             }
@@ -334,7 +336,7 @@ export const useFoldersTabLogic = ({
                                 repairFailedCount = result.failedPaths.length;
                                 repairWasCancelled = result.wasCancelled;
                                 if (result.wasCancelled) {
-                                    addToast('Import cancelled', 'info');
+                                    addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                                 } else {
                                     addToast(
                                         result.images.length > 0
@@ -365,6 +367,14 @@ export const useFoldersTabLogic = ({
                         addToast(`Rescan complete`, 'success');
                     } else if (result && result.wasCancelled) {
                         console.info(`[Resync] Keeping cursor unchanged for ${path}; import was cancelled.`);
+                        setSettings(prev => ({
+                            ...prev,
+                            monitoredFolders: prev.monitoredFolders.map(folder =>
+                                folder.id === id
+                                    ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
+                                    : folder
+                            )
+                        }));
                     } else {
                         console.warn(`[Resync] Keeping cursor unchanged for ${path}; full scan did not fully complete.`);
                         addToast(`Rescan completed with import errors`, 'warning');
@@ -429,7 +439,7 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: completedAt, initialScanPending: false }
+                                ? { ...folder, lastScanned: completedAt, initialScanPending: false, initialScanCancelled: false }
                             : folder
                         )
                     }));
@@ -438,7 +448,7 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
                                 : folder
                         )
                     }));
@@ -447,7 +457,7 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                                 : folder
                         )
                     }));
@@ -460,7 +470,7 @@ export const useFoldersTabLogic = ({
                     ...prev,
                     monitoredFolders: prev.monitoredFolders.map(folder =>
                         foldersToScan.some(pending => pending.id === folder.id)
-                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                             : folder
                     )
                 }));

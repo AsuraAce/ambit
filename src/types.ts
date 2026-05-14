@@ -229,6 +229,7 @@ export interface MonitoredFolder {
   lastScanned?: number; // Timestamp of last successful full/partial scan
   variant?: GeneratorTool; // Store the detected/assigned variant
   initialScanPending?: boolean; // Suppress duplicate auto-scan until the first queued scan completes
+  initialScanCancelled?: boolean; // User cancelled initial import; do not auto-retry until manual rescan
 }
 
 export interface InvokeDbSnapshotFile {

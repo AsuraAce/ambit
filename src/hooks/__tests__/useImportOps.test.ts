@@ -92,6 +92,7 @@ const importResult = (overrides: Partial<ImportResult> = {}): ImportResult => {
 const importedImage = (id: string): AIImage => ({ id } as AIImage);
 
 describe('useImportOps', () => {
+    const manualCancellationMessage = 'Import cancelled. Imported images were kept; rescan to continue.';
     const settings = {
         theme: 'dark',
         thumbnailSize: 200,
@@ -134,7 +135,7 @@ describe('useImportOps', () => {
             await result.current.handleImportPaths(['C:/watch/new.png']);
         });
 
-        expect(mocks.addToast).toHaveBeenCalledWith('Import cancelled', 'info');
+        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
     });
 
     it('keeps background path cancellation quiet', async () => {
@@ -191,6 +192,51 @@ describe('useImportOps', () => {
         });
 
         expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images from 1 folder(s)', 'success');
+    });
+
+    it('uses aggregate Activity Dock messages for multi-folder imports', async () => {
+        const messages: Array<string | undefined> = [];
+        mocks.processFoldersUnified.mockImplementationOnce(async (_folders, options) => {
+            options.onProgress(0, 0, 'Scanning C:/watch-a');
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            options.onProgress(5, 10, 'Processing C:/watch-a/new.png');
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            return emptyImportResult();
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportFolders([
+                { path: 'C:/watch-a' },
+                { path: 'C:/watch-b' }
+            ]);
+        });
+
+        expect(messages).toEqual([
+            'Scanning 2 folders...',
+            'Importing images from 2 folders...'
+        ]);
+    });
+
+    it('keeps detailed Activity Dock messages for single-folder imports', async () => {
+        const messages: Array<string | undefined> = [];
+        mocks.processFoldersUnified.mockImplementationOnce(async (_folders, options) => {
+            options.onProgress(0, 0, 'Scanning C:/watch-a');
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            options.onProgress(5, 10, 'Processing C:/watch-a/new.png');
+            messages.push(useLibraryStore.getState().importProgress?.message);
+            return emptyImportResult();
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportFolders([{ path: 'C:/watch-a' }]);
+        });
+
+        expect(messages).toEqual([
+            'Scanning C:/watch-a',
+            'Processing C:/watch-a/new.png'
+        ]);
     });
 
     it('does not advance folder cursor when incremental resync is cancelled before a zero-file scan result', async () => {

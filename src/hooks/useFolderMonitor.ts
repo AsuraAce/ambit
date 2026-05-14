@@ -40,14 +40,25 @@ interface UseFolderMonitorProps {
     startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<void>;
 }
 
+const isCompleteImport = (result: ImportResult | void): boolean =>
+    !!result && !result.wasCancelled && result.failedPaths.length === 0;
+
+const markInitialScanCancelled = (folderIds: string[]) => {
+    const idSet = new Set(folderIds);
+    useSettingsStore.getState().setSettings((prev) => ({
+        monitoredFolders: prev.monitoredFolders.map(folder =>
+            idSet.has(folder.id)
+                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
+                : folder
+        )
+    }));
+};
+
 export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImportPaths, addToast, refreshMetadata, invokeAiPath, startInvokeSync }: UseFolderMonitorProps) {
     const prevFoldersRef = useRef(monitoredFolders);
     const hasScannedOnStartup = useRef(false);
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
     const browserMockMode = isBrowserMockMode();
-
-    const isCompleteImport = (result: ImportResult | void): boolean =>
-        !!result && !result.wasCancelled && result.failedPaths.length === 0;
 
     const warnCursorHeld = (source: string, folderId: string, result: ImportResult | void) => {
         const failedCount = result ? result.failedPaths.length : null;
@@ -69,7 +80,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const hasStartups = monitoredFolders.length > 0 || !!invokeAiPath;
         if (hasStartups && !hasScannedOnStartup.current) {
             hasScannedOnStartup.current = true;
-            const activeFolders = monitoredFolders.filter(f => f.isActive);
+            const activeFolders = monitoredFolders.filter(f => f.isActive && !f.initialScanCancelled);
 
             console.log('[FolderMonitor] Startup Check:', {
                 allFolders: monitoredFolders.length,
@@ -114,6 +125,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         } else if (!result || !result.wasCancelled) {
                             warnCursorHeld('Startup full scan', folder.id, result);
                         } else {
+                            markInitialScanCancelled([folder.id]);
                             startupScanWasCancelled = true;
                             break;
                         }
@@ -247,7 +259,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         const newFolders = currentFolders.filter(f => !prevFolders.find(pf => pf.id === f.id));
 
         if (newFolders.length > 0) {
-            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned && !f.initialScanPending);
+            const activeNew = newFolders.filter(f => f.isActive && !f.lastScanned && !f.initialScanPending && !f.initialScanCancelled);
 
             if (activeNew.length > 0) {
                 void (async () => {
@@ -265,6 +277,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         activeNew.forEach(f => updateFolderLastScanned(f.id, completedAt));
                     } else if (!result || !result.wasCancelled) {
                         activeNew.forEach(f => warnCursorHeld('New folder scan', f.id, result));
+                    } else {
+                        markInitialScanCancelled(activeNew.map(f => f.id));
                     }
                 })();
             }
@@ -281,8 +295,11 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
     useEffect(() => {
         if (browserMockMode) return;
 
-        const activeFolders = monitoredFolders.filter(f => f.isActive);
-        if (activeFolders.length === 0) return;
+        const activeFolders = monitoredFolders.filter(f => f.isActive && !f.initialScanCancelled);
+        if (activeFolders.length === 0) {
+            hasLiveWatchStartedRef.current = isLiveWatching;
+            return;
+        }
 
         // CRITICAL: If an import is already running (e.g. manual re-scan), DO NOT start another scan.
         // This prevents lock contention on the database (Read lock vs Write lock).
@@ -328,6 +345,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     } else if (!result || !result.wasCancelled) {
                         warnCursorHeld(`${source} full scan`, folder.id, result);
                     } else {
+                        markInitialScanCancelled([folder.id]);
                         scanWasCancelled = true;
                         break;
                     }
