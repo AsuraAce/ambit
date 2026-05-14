@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
@@ -7,6 +7,8 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { commands, type ThumbnailScanResult } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
+import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
+import { formatStableImportProgress } from '../../../utils/importProgress';
 import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
 import {
     createEmptyTouchedFacetResources,
@@ -202,30 +204,47 @@ export const useFoldersTabLogic = ({
         if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
 
         let hasUpdates = false;
-        const updatedFolders = await Promise.all(settings.monitoredFolders.map(async (folder) => {
+        const updatesById = new Map<string, Partial<Pick<MonitoredFolder, 'imageCount' | 'variant'>>>();
+        await Promise.all(settings.monitoredFolders.map(async (folder) => {
             try {
                 let variant = folder.variant;
                 if (!variant || variant === GeneratorTool.UNKNOWN) {
                     variant = detectGeneratorVariant(folder.path);
-                    if (variant !== folder.variant) hasUpdates = true;
+                    if (variant !== folder.variant) {
+                        hasUpdates = true;
+                        updatesById.set(folder.id, { ...(updatesById.get(folder.id) ?? {}), variant });
+                    }
                 }
 
                 const res = await commands.getImageCountForPathPrefix(folder.path);
                 if (res.status === 'ok' && res.data !== folder.imageCount) {
                     hasUpdates = true;
-                    return { ...folder, imageCount: res.data, variant };
-                }
-                if (variant !== folder.variant) {
-                    return { ...folder, variant };
+                    updatesById.set(folder.id, { ...(updatesById.get(folder.id) ?? {}), imageCount: res.data });
                 }
             } catch (e) {
                 console.error('Failed to get count for', folder.path, e);
             }
-            return folder;
         }));
 
         if (hasUpdates) {
-            setSettings(prev => ({ ...prev, monitoredFolders: updatedFolders }));
+            setSettings(prev => {
+                let didApplyUpdates = false;
+                const monitoredFolders = prev.monitoredFolders.map(folder => {
+                    const update = updatesById.get(folder.id);
+                    if (!update) return folder;
+
+                    const nextFolder = {
+                        ...folder,
+                        ...update
+                    };
+                    didApplyUpdates = didApplyUpdates
+                        || nextFolder.imageCount !== folder.imageCount
+                        || nextFolder.variant !== folder.variant;
+                    return nextFolder;
+                });
+
+                return didApplyUpdates ? { ...prev, monitoredFolders } : prev;
+            });
         }
     }, [settings.monitoredFolders, settings.invokeAiPath, setSettings]);
 
@@ -270,11 +289,23 @@ export const useFoldersTabLogic = ({
 
                     if (newFiles.length > 0) {
                         const changedPaths = newFiles.map(f => f.path);
-                        const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
+                        const { beginImportRun, setImportProgressForRun, finishImportRun } = useLibraryStore.getState();
                         const abortCtrl = new AbortController();
-                        setIsImporting(true);
-                        setImportAbortController(abortCtrl);
-                        setImportProgress({ current: 0, total: changedPaths.length, message: 'Syncing changed files...' });
+                        const importRunId = beginImportRun({
+                            owner: 'folder-incremental-rescan',
+                            abortController: abortCtrl,
+                            progress: formatStableImportProgress({
+                                current: 0,
+                                total: changedPaths.length,
+                                sourceCount: 1,
+                                phase: 'importing',
+                                sourcePath: path
+                            })
+                        });
+                        if (!importRunId) {
+                            addToast('Import already in progress', 'info');
+                            return;
+                        }
 
                         try {
                             const { getThumbnailDir } = await import('../../../services/thumbnailService');
@@ -282,8 +313,14 @@ export const useFoldersTabLogic = ({
                             const result = await processNativePaths(
                                 changedPaths,
                                 thumbDir,
-                                (current, total, message) => {
-                                    setImportProgress({ current, total, message });
+                                (current, total, _message) => {
+                                    setImportProgressForRun(importRunId, formatStableImportProgress({
+                                        current,
+                                        total,
+                                        sourceCount: 1,
+                                        phase: 'importing',
+                                        sourcePath: path
+                                    }));
                                 },
                                 variant as GeneratorTool | undefined,
                                 abortCtrl.signal,
@@ -302,9 +339,7 @@ export const useFoldersTabLogic = ({
                                 console.warn(`[Resync] Keeping cursor unchanged for ${path}; ${result.failedPaths.length} file(s) failed.`);
                             }
                         } finally {
-                            setIsImporting(false);
-                            setImportProgress(null);
-                            setImportAbortController(null);
+                            finishImportRun(importRunId);
                         }
                     } else {
                         const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
@@ -312,13 +347,25 @@ export const useFoldersTabLogic = ({
 
                         if (allFiles.length > knownCount) {
                             const repairPaths = allFiles.map(f => f.path);
-                            const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
+                            const { beginImportRun, setImportProgressForRun, finishImportRun } = useLibraryStore.getState();
                             const abortCtrl = new AbortController();
                             let repairFailedCount = 0;
                             let repairWasCancelled = false;
-                            setIsImporting(true);
-                            setImportAbortController(abortCtrl);
-                            setImportProgress({ current: 0, total: repairPaths.length, message: 'Repairing incomplete import...' });
+                            const importRunId = beginImportRun({
+                                owner: 'folder-repair-rescan',
+                                abortController: abortCtrl,
+                                progress: formatStableImportProgress({
+                                    current: 0,
+                                    total: repairPaths.length,
+                                    sourceCount: 1,
+                                    phase: 'importing',
+                                    sourcePath: path
+                                })
+                            });
+                            if (!importRunId) {
+                                addToast('Import already in progress', 'info');
+                                return;
+                            }
 
                             try {
                                 const { getThumbnailDir } = await import('../../../services/thumbnailService');
@@ -326,8 +373,14 @@ export const useFoldersTabLogic = ({
                                 const result = await processNativePaths(
                                     repairPaths,
                                     thumbDir,
-                                    (current, total, message) => {
-                                        setImportProgress({ current, total, message });
+                                    (current, total, _message) => {
+                                        setImportProgressForRun(importRunId, formatStableImportProgress({
+                                            current,
+                                            total,
+                                            sourceCount: 1,
+                                            phase: 'importing',
+                                            sourcePath: path
+                                        }));
                                     },
                                     variant as GeneratorTool | undefined,
                                     abortCtrl.signal,
@@ -346,9 +399,7 @@ export const useFoldersTabLogic = ({
                                     );
                                 }
                             } finally {
-                                setIsImporting(false);
-                                setImportProgress(null);
-                                setImportAbortController(null);
+                                finishImportRun(importRunId);
                             }
                             if (!repairWasCancelled && repairFailedCount === 0) {
                                 updateFolderLastScanned(id, Date.now());
@@ -362,7 +413,7 @@ export const useFoldersTabLogic = ({
                     }
                 } else {
                     const result = await onScanFolder([{ path, variant }]);
-                    if (isCompleteImport(result)) {
+                    if (isImportSourceCompleted(result, path)) {
                         updateFolderLastScanned(id, Date.now());
                         addToast(`Rescan complete`, 'success');
                     } else if (result && result.wasCancelled) {
@@ -375,8 +426,19 @@ export const useFoldersTabLogic = ({
                                     : folder
                             )
                         }));
+                    } else if (!result) {
+                        console.warn(`[Resync] Keeping cursor unchanged for ${path}; full scan did not start.`);
+                        addToast(`Rescan completed with import errors`, 'warning');
                     } else {
                         console.warn(`[Resync] Keeping cursor unchanged for ${path}; full scan did not fully complete.`);
+                        setSettings(prev => ({
+                            ...prev,
+                            monitoredFolders: prev.monitoredFolders.map(folder =>
+                                folder.id === id
+                                    ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
+                                    : folder
+                            )
+                        }));
                         addToast(`Rescan completed with import errors`, 'warning');
                     }
                 }
@@ -439,25 +501,42 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: completedAt, initialScanPending: false, initialScanCancelled: false }
+                                ? {
+                                    ...folder,
+                                    lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
+                                    initialScanPending: false,
+                                    initialScanCancelled: isImportSourceCancelled(result, folder.path)
+                                }
                             : folder
                         )
                     }));
                 } else if (result && result.wasCancelled) {
+                    const completedAt = Date.now();
                     setSettings(prev => ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
+                                ? {
+                                    ...folder,
+                                    lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
+                                    initialScanPending: false,
+                                    initialScanCancelled: isImportSourceCancelled(result, folder.path)
+                                }
                                 : folder
                         )
                     }));
                 } else {
+                    const completedAt = Date.now();
                     setSettings(prev => ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
+                                ? {
+                                    ...folder,
+                                    lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
+                                    initialScanPending: false,
+                                    initialScanCancelled: false
+                                }
                                 : folder
                         )
                     }));

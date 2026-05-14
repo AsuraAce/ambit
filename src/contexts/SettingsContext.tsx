@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
-import { AppSettings } from '../types';
+import { AppSettings, AppSettingsUpdate } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 
 interface SettingsContextType {
     settings: AppSettings;
-    setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
+    setSettings: (settings: AppSettingsUpdate) => void;
     settingsRef: React.MutableRefObject<AppSettings>;
     privacyEnabled: boolean;
     setPrivacyEnabled: (enabled: boolean) => void;

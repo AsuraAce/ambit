@@ -1,4 +1,4 @@
-
+﻿
 import { renderHook, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFolderMonitor } from '../useFolderMonitor';
@@ -59,7 +59,9 @@ describe('useFolderMonitor', () => {
             ipAdapters: [],
             tools: []
         },
-        wasCancelled: true
+        wasCancelled: true,
+        completedSourcePaths: [],
+        cancelledSourcePaths: []
     };
 
     beforeEach(() => {
@@ -70,7 +72,9 @@ describe('useFolderMonitor', () => {
             isLiveWatching: false,
             isImporting: false,
             importProgress: null,
-            importAbortController: null
+            importAbortController: null,
+            importRunId: null,
+            importRunOwner: null
         });
         mocks.scanDirectorySince.mockResolvedValue({ status: 'ok', data: [] });
         mocks.refreshStartupFacetCache.mockResolvedValue({
@@ -286,7 +290,9 @@ describe('useFolderMonitor', () => {
                 ipAdapters: [],
                 tools: []
             },
-            wasCancelled: false
+            wasCancelled: false,
+            completedSourcePaths: [],
+            cancelledSourcePaths: []
         });
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
         mocks.scanDirectorySince.mockResolvedValueOnce({
@@ -356,7 +362,9 @@ describe('useFolderMonitor', () => {
                     ipAdapters: [],
                     tools: []
                 },
-                wasCancelled: true
+                wasCancelled: true,
+                completedSourcePaths: [],
+                cancelledSourcePaths: []
             };
         });
         const refreshMetadata = vi.fn().mockResolvedValue(undefined);
@@ -411,6 +419,88 @@ describe('useFolderMonitor', () => {
         );
         expect(mocks.refreshStartupFacetCache).not.toHaveBeenCalled();
         expect(refreshMetadata).not.toHaveBeenCalled();
+    });
+
+    it('uses stable startup progress for aggregated imports', async () => {
+        const progressMessages: Array<{ message?: string; detail?: string }> = [];
+        const unsubscribe = useLibraryStore.subscribe(state => {
+            if (state.importProgress) {
+                progressMessages.push({
+                    message: state.importProgress.message,
+                    detail: state.importProgress.detail
+                });
+            }
+        });
+        const handleImportPaths = vi.fn().mockImplementation(async (_paths, _variant, options) => {
+            options.onProgress(1, 1, 'Extracting Metadata');
+            return {
+                images: [],
+                stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
+                handledPaths: ['C:/watch/new.png'],
+                failedPaths: [],
+                touchedFacetTypes: [],
+                touchedFacetResources: {
+                    checkpoints: [],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: []
+                },
+                wasCancelled: false,
+                completedSourcePaths: [],
+                cancelledSourcePaths: []
+            };
+        });
+        mocks.scanDirectorySince
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }]
+            });
+
+        try {
+            renderHook(() => useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [
+                    {
+                        id: 'watch-1',
+                        path: 'C:/watch-a',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10
+                    },
+                    {
+                        id: 'watch-2',
+                        path: 'C:/watch-b',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 20
+                    }
+                ],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths,
+                refreshMetadata: vi.fn()
+            }));
+
+            await waitFor(() => {
+                expect(handleImportPaths).toHaveBeenCalledTimes(2);
+            });
+
+            expect(progressMessages).toEqual(expect.arrayContaining([
+                { message: 'Startup: Importing images from 2 folders...', detail: undefined },
+                { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
+                { message: 'Startup: Importing images from 2 folders...', detail: 'Folder 2 of 2' }
+            ]));
+            expect(progressMessages.some(progress => progress.message === 'Extracting Metadata')).toBe(false);
+        } finally {
+            unsubscribe();
+        }
     });
 
     it('stops startup full scans after a cancelled folder import', async () => {
@@ -535,6 +625,104 @@ describe('useFolderMonitor', () => {
 
         expect(handleImportPaths).not.toHaveBeenCalled();
         expect(refreshMetadata).not.toHaveBeenCalled();
+    });
+
+    it('uses stable catch-up progress for aggregated imports', async () => {
+        const progressMessages: Array<{ message?: string; detail?: string }> = [];
+        const unsubscribe = useLibraryStore.subscribe(state => {
+            if (state.importProgress) {
+                progressMessages.push({
+                    message: state.importProgress.message,
+                    detail: state.importProgress.detail
+                });
+            }
+        });
+        const handleImportPaths = vi.fn().mockImplementation(async (_paths, _variant, options) => {
+            options.onProgress(1, 1, 'Extracting Metadata');
+            return {
+                images: [],
+                stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
+                handledPaths: ['C:/watch/new.png'],
+                failedPaths: [],
+                touchedFacetTypes: [],
+                touchedFacetResources: {
+                    checkpoints: [],
+                    loras: [],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: []
+                },
+                wasCancelled: false,
+                completedSourcePaths: [],
+                cancelledSourcePaths: []
+            };
+        });
+        const refreshMetadata = vi.fn().mockResolvedValue(undefined);
+        const initialProps = {
+            folders: [] as MonitoredFolder[],
+            invokeAiPath: 'C:/invokeai'
+        };
+
+        const { rerender } = renderHook(({ folders, invokeAiPath }) => useFolderMonitor({
+            isLoaded: true,
+            monitoredFolders: folders,
+            onScan: mockOnScan,
+            addToast: mockAddToast,
+            handleImportPaths,
+            refreshMetadata,
+            invokeAiPath
+        }), { initialProps });
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+        vi.clearAllMocks();
+        mocks.scanDirectorySince
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/watch-a/new.png', modified: 100, size: 10 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/watch-b/new.png', modified: 100, size: 10 }]
+            });
+
+        try {
+            rerender({
+                folders: [
+                    {
+                        id: 'watch-1',
+                        path: 'C:/watch-a',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 10
+                    },
+                    {
+                        id: 'watch-2',
+                        path: 'C:/watch-b',
+                        isActive: true,
+                        imageCount: 0,
+                        lastScanned: 20
+                    }
+                ],
+                invokeAiPath: 'C:/invokeai'
+            });
+
+            useLibraryStore.setState({ isLiveWatching: true });
+
+            await waitFor(() => {
+                expect(handleImportPaths).toHaveBeenCalledTimes(2);
+            });
+
+            expect(progressMessages).toEqual(expect.arrayContaining([
+                { message: 'Catch-up: Importing images from 2 folders...', detail: undefined },
+                { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 1 of 2' },
+                { message: 'Catch-up: Importing images from 2 folders...', detail: 'Folder 2 of 2' }
+            ]));
+            expect(progressMessages.some(progress => progress.message === 'Extracting Metadata')).toBe(false);
+        } finally {
+            unsubscribe();
+        }
     });
 
     it('passes background mode through queued catch-up incremental imports', async () => {

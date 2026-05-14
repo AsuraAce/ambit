@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useState } from 'react';
 import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen } from 'lucide-react';
 import { GeneratorTool, type AppSettings, type MonitoredFolder } from '../../../types';
@@ -8,6 +8,7 @@ import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../../..
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import type { ImportResult } from '../../../services/importService';
+import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 
 interface TabProps {
     settings: AppSettings;
@@ -154,6 +155,17 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                 const completedAt = Date.now();
                 const importCancelled = !!result && result.wasCancelled;
                 const importCompleted = !!result && !result.wasCancelled && result.failedPaths.length === 0;
+                const completedNewFolderCount = newFolderObjects.filter(folder =>
+                    isImportSourceCompleted(result, folder.path)
+                ).length;
+                const cancelledNewFolderCount = newFolderObjects.filter(folder =>
+                    isImportSourceCancelled(result, folder.path)
+                ).length;
+                const retryableNewFolderCount = Math.max(
+                    0,
+                    newFolderObjects.length - completedNewFolderCount - cancelledNewFolderCount
+                );
+                const unfinishedNewFolderCount = cancelledNewFolderCount + retryableNewFolderCount;
 
                 if (newFolderIds.size > 0) {
                     setSettings(prev => ({
@@ -162,9 +174,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                             newFolderIds.has(folder.id)
                                 ? {
                                     ...folder,
-                                    lastScanned: importCompleted ? completedAt : undefined,
+                                    lastScanned: isImportSourceCompleted(result, folder.path) ? completedAt : undefined,
                                     initialScanPending: false,
-                                    initialScanCancelled: importCancelled
+                                    initialScanCancelled: isImportSourceCancelled(result, folder.path)
                                 }
                                 : folder
                         )
@@ -172,7 +184,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                 }
 
                 if (importCancelled) {
-                    setLocalTestResult({ success: false, message: "Import cancelled. Imported images were kept, and folder cursor was not advanced. Rescan to continue." });
+                    const msg = completedNewFolderCount > 0
+                        ? `Import cancelled. ${completedNewFolderCount} folder(s) completed; ${unfinishedNewFolderCount} unfinished folder(s) were paused. Imported images were kept; rescan unfinished folders to continue.`
+                        : "Import cancelled. Imported images were kept; unfinished folders were paused. Rescan to continue.";
+                    setLocalTestResult({ success: false, message: msg });
                     return;
                 }
 
@@ -197,7 +212,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         : `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
                     setLocalTestResult({ success: !refreshFailed, message: msg });
                 } else {
-                    const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Folder cursor was not advanced.`;
+                    const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Completed folders were marked scanned; folders with failures were left retryable.`;
                     setLocalTestResult({ success: false, message: msg });
                 }
             }
@@ -474,7 +489,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         <div className="mt-4 mb-4">
                             <details className="group">
                                 <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">
-                                    <span className="group-open:rotate-90 transition-transform">▸</span>
+                                    <span className="group-open:rotate-90 transition-transform">â–¸</span>
                                     View Scan Debug Log ({scanLogs.length} entries)
                                 </summary>
                                 <div className="mt-2 p-3 bg-black/90 text-green-400 font-mono text-[10px] rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/10 shadow-inner">

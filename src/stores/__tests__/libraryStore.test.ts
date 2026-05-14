@@ -241,4 +241,95 @@ describe('libraryStore live watch session', () => {
             startedAt: 12345
         });
     });
+
+    it('updates import progress only for the active import run', () => {
+        let runId: string | null = null;
+
+        act(() => {
+            runId = useLibraryStore.getState().beginImportRun({
+                owner: 'test-import'
+            });
+            useLibraryStore.getState().setImportProgressForRun('stale-run', {
+                current: 9,
+                total: 10,
+                message: 'Stale progress'
+            });
+        });
+
+        expect(runId).toBeTruthy();
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+
+        act(() => {
+            useLibraryStore.getState().setImportProgressForRun(runId!, {
+                current: 1,
+                total: 10,
+                message: 'Active progress'
+            });
+        });
+
+        expect(useLibraryStore.getState().importProgress).toMatchObject({
+            current: 1,
+            total: 10,
+            message: 'Active progress'
+        });
+    });
+
+    it('does not let stale import cleanup clear a newer run', () => {
+        let runId: string | null = null;
+
+        act(() => {
+            runId = useLibraryStore.getState().beginImportRun({
+                owner: 'test-import',
+                progress: { current: 1, total: 3, message: 'Running' }
+            });
+            useLibraryStore.getState().finishImportRun('stale-run');
+        });
+
+        expect(useLibraryStore.getState().isImporting).toBe(true);
+        expect(useLibraryStore.getState().importRunId).toBe(runId);
+        expect(useLibraryStore.getState().importProgress?.message).toBe('Running');
+
+        act(() => {
+            useLibraryStore.getState().finishImportRun(runId!);
+        });
+
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importRunId).toBeNull();
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+    });
+
+    it('rejects a second independent import run while one is active', () => {
+        let firstRunId: string | null = null;
+        let secondRunId: string | null = null;
+
+        act(() => {
+            firstRunId = useLibraryStore.getState().beginImportRun({ owner: 'first-import' });
+            secondRunId = useLibraryStore.getState().beginImportRun({ owner: 'second-import' });
+        });
+
+        expect(firstRunId).toBeTruthy();
+        expect(secondRunId).toBeNull();
+        expect(useLibraryStore.getState().importRunId).toBe(firstRunId);
+        expect(useLibraryStore.getState().importRunOwner).toBe('first-import');
+    });
+
+    it('cancels the active import controller and clears the active run', () => {
+        const abortController = new AbortController();
+        const abortSpy = vi.spyOn(abortController, 'abort');
+
+        act(() => {
+            useLibraryStore.getState().beginImportRun({
+                owner: 'test-import',
+                abortController,
+                progress: { current: 1, total: 2, message: 'Running' }
+            });
+            useLibraryStore.getState().cancelImport();
+        });
+
+        expect(abortSpy).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        expect(useLibraryStore.getState().importRunId).toBeNull();
+        expect(useLibraryStore.getState().importProgress).toBeNull();
+        expect(useLibraryStore.getState().importAbortController).toBeNull();
+    });
 });

@@ -1,17 +1,18 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useCallback } from 'react';
 import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearch } from '../contexts/SearchContext';
-import { processWebFiles, processNativePaths, processFoldersUnified, ImportResult } from '../services/importService';
+import { processWebFiles, processNativePaths, processFoldersUnified, ImportResult, type ImportProgressCallback } from '../services/importService';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
+import { formatStableImportProgress } from '../utils/importProgress';
 
 interface ImportOptions {
     mode?: ImportMode;
     skipStateManagement?: boolean;
-    onProgress?: (current: number, total: number, message?: string) => void;
+    onProgress?: ImportProgressCallback;
     forceRescan?: boolean;
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
@@ -41,8 +42,9 @@ export const useImportOps = ({
 }: UseImportOpsProps) => {
     const { addToast } = useToast();
     const {
-        setIsImporting, setImportProgress,
-        setImportAbortController
+        beginImportRun,
+        setImportProgressForRun,
+        finishImportRun
     } = useLibraryStore();
     const { refreshHiddenAvailability, refreshMetadata } = useSearch();
 
@@ -99,18 +101,27 @@ export const useImportOps = ({
 
     const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
-        setIsImporting(true);
-        try {
-            const files = Array.from(e.target.files);
-            const nativePaths = extractNativePaths(files);
+        const files = Array.from(e.target.files);
+        const nativePaths = extractNativePaths(files);
+        const abortCtrl = nativePaths.length === files.length && nativePaths.length > 0
+            ? new AbortController()
+            : null;
+        const importRunId = beginImportRun({
+            owner: 'file-picker-import',
+            abortController: abortCtrl
+        });
+        if (!importRunId) {
+            addToast('Import already in progress', 'info');
+            if (e.target) e.target.value = "";
+            return;
+        }
 
+        try {
             if (nativePaths.length === files.length && nativePaths.length > 0) {
-                const abortCtrl = new AbortController();
-                setImportAbortController(abortCtrl);
                 const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
-                    setImportProgress({ current, total, message });
+                    setImportProgressForRun(importRunId, { current, total, message });
                 }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
                     addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
@@ -125,25 +136,31 @@ export const useImportOps = ({
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
             if (e.target) e.target.value = "";
         }
-    }, [setIsImporting, setImportProgress, setImportAbortController, extractNativePaths, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, extractNativePaths, commitImportResult, addToast]);
 
     const handleWebFiles = useCallback(async (files: File[]) => {
-        setIsImporting(true);
-        try {
-            const nativePaths = extractNativePaths(files);
+        const nativePaths = extractNativePaths(files);
+        const abortCtrl = nativePaths.length === files.length && nativePaths.length > 0
+            ? new AbortController()
+            : null;
+        const importRunId = beginImportRun({
+            owner: 'web-file-import',
+            abortController: abortCtrl
+        });
+        if (!importRunId) {
+            addToast('Import already in progress', 'info');
+            return;
+        }
 
+        try {
             if (nativePaths.length === files.length && nativePaths.length > 0) {
-                const abortCtrl = new AbortController();
-                setImportAbortController(abortCtrl);
                 const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
-                    setImportProgress({ current, total, message });
+                    setImportProgressForRun(importRunId, { current, total, message });
                 }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
                     addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
@@ -158,11 +175,9 @@ export const useImportOps = ({
         } catch (error) {
             addToast("Import failed", "error");
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
         }
-    }, [setIsImporting, setImportProgress, setImportAbortController, extractNativePaths, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, extractNativePaths, commitImportResult, addToast]);
 
     const handleImportPaths = useCallback(async (paths: string[], defaultTool?: GeneratorTool, options: ImportOptions = {}) => {
         const {
@@ -180,19 +195,28 @@ export const useImportOps = ({
 
         if (paths.length === 0 && isStartup) return;
 
-        if (!skipStateManagement) setIsImporting(true);
         const localAbortCtrl = externalAbortSignal ? null : new AbortController();
         const abortSignal = externalAbortSignal ?? localAbortCtrl?.signal;
-        if (!skipStateManagement && localAbortCtrl) setImportAbortController(localAbortCtrl);
+        const importRunId = skipStateManagement
+            ? null
+            : beginImportRun({
+                owner: 'path-import',
+                abortController: localAbortCtrl
+            });
+        if (!skipStateManagement && !importRunId) {
+            if (isManual) addToast('Import already in progress', 'info');
+            return;
+        }
+
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
 
-            const onProgress = (current: number, total: number, message?: string) => {
+            const onProgress: ImportProgressCallback = (current, total, message, meta) => {
                 if (externalOnProgress) {
-                    externalOnProgress(current, total, message);
-                } else {
-                    setImportProgress({ current, total, message });
+                    externalOnProgress(current, total, message, meta);
+                } else if (importRunId) {
+                    setImportProgressForRun(importRunId, { current, total, message });
                 }
             };
 
@@ -219,24 +243,32 @@ export const useImportOps = ({
                 addToast(abortSignal?.aborted ? MANUAL_IMPORT_CANCELLED_MESSAGE : 'Import failed or cancelled', abortSignal?.aborted ? 'info' : 'error');
             }
         } finally {
-            if (!skipStateManagement) {
-                setIsImporting(false);
-                setImportProgress(null);
-                setImportAbortController(null);
+            if (importRunId) {
+                finishImportRun(importRunId);
             }
         }
-    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
 
     const handleImportFolders = useCallback(async (folders: { path: string, variant?: string }[], options: { mode?: ImportMode } = {}) => {
         const mode = options.mode ?? 'manual';
         const isStartup = mode === 'startup';
         const isManual = mode === 'manual';
-        const isMultiFolderImport = folders.length > 1;
-        setIsImporting(true);
         const abortCtrl = new AbortController();
-        setImportAbortController(abortCtrl);
-        if (isMultiFolderImport) {
-            setImportProgress({ current: 0, total: 0, message: `Scanning ${folders.length} folders...` });
+        const initialProgress = formatStableImportProgress({
+            current: 0,
+            total: 0,
+            sourceCount: folders.length,
+            phase: 'scanning',
+            sourcePath: folders[0]?.path
+        });
+        const importRunId = beginImportRun({
+            owner: 'folder-import',
+            abortController: abortCtrl,
+            progress: initialProgress
+        });
+        if (!importRunId) {
+            if (isManual) addToast('Import already in progress', 'info');
+            return;
         }
 
         try {
@@ -246,24 +278,40 @@ export const useImportOps = ({
             }));
 
             const result = await processFoldersUnified(typedFolders, {
-                onProgress: (current, total, message) => {
-                    const progressMessage = isMultiFolderImport
-                        ? (total > 0 ? `Importing images from ${folders.length} folders...` : `Scanning ${folders.length} folders...`)
-                        : message;
-                    setImportProgress({ current, total, message: progressMessage });
+                onProgress: (current, total, _message, meta) => {
+                    setImportProgressForRun(importRunId, formatStableImportProgress({
+                        current,
+                        total,
+                        sourceCount: folders.length,
+                        phase: meta?.phase === 'scanning' ? 'scanning' : (total > 0 ? 'importing' : 'scanning'),
+                        sourceIndex: meta?.sourceIndex,
+                        sourcePath: meta?.sourcePath ?? folders[0]?.path
+                    }));
                 },
                 abortSignal: abortCtrl.signal,
                 isStartup,
                 forceRescan: false
             });
 
+            if (result.images.length > 0) {
+                setImportProgressForRun(importRunId, formatStableImportProgress({
+                    current: result.stats.processed,
+                    total: result.stats.processed,
+                    sourceCount: folders.length,
+                    phase: 'finalizing',
+                    sourcePath: folders[0]?.path
+                }));
+                await commitImportResult(result, { toastMode: 'none' });
+                if (result.wasCancelled) {
+                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
+                    await rebuildFacetCache();
+                    useLibraryStore.getState().incrementFacetCacheVersion();
+                }
+            }
+
             if (result.wasCancelled) {
                 if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                 return result;
-            }
-
-            if (result.images.length > 0) {
-                await commitImportResult(result, { toastMode: 'none' });
             }
 
             if (isManual) {
@@ -285,21 +333,26 @@ export const useImportOps = ({
             console.error('[ImportFolders] Error:', error);
             if (isManual) addToast('Import failed', 'error');
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
         }
-    }, [setIsImporting, setImportProgress, setImportAbortController, addToast, commitImportResult]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, addToast, commitImportResult]);
 
     const scanDirectory = useCallback(async (dirPath: string) => {
-        setIsImporting(true);
         const abortCtrl = new AbortController();
-        setImportAbortController(abortCtrl);
+        const importRunId = beginImportRun({
+            owner: 'directory-scan',
+            abortController: abortCtrl
+        });
+        if (!importRunId) {
+            addToast('Import already in progress', 'info');
+            return;
+        }
+
         try {
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
-                setImportProgress({ current, total, message });
+                setImportProgressForRun(importRunId, { current, total, message });
             }, undefined, abortCtrl.signal, false);
             if (!result.wasCancelled && result.images.length > 0) {
                 await commitImportResult(result, { toastMode: 'compact' });
@@ -307,11 +360,9 @@ export const useImportOps = ({
         } catch (e) {
             console.error(`Failed to scan directory ${dirPath}`, e);
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
         }
-    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
 
     const handleInvokeSync = useCallback(async () => {
         if (!settings.invokeAiPath) {
@@ -319,9 +370,15 @@ export const useImportOps = ({
             return;
         }
 
-        setIsImporting(true);
         const abortCtrl = new AbortController();
-        setImportAbortController(abortCtrl);
+        const importRunId = beginImportRun({
+            owner: 'invoke-sync',
+            abortController: abortCtrl
+        });
+        if (!importRunId) {
+            addToast('Import already in progress', 'info');
+            return;
+        }
 
         try {
             const { syncImages } = await import('../services/invoke/syncService');
@@ -330,7 +387,7 @@ export const useImportOps = ({
             const result = await syncImages(
                 settings.invokeAiPath,
                 (current, total, message) => {
-                    setImportProgress({ current, total, message });
+                    setImportProgressForRun(importRunId, { current, total, message });
                 },
                 abortCtrl.signal,
                 {
@@ -356,11 +413,9 @@ export const useImportOps = ({
             console.error('InvokeAI sync failed', e);
             addToast(abortCtrl.signal.aborted ? 'Import cancelled' : 'InvokeAI sync failed', abortCtrl.signal.aborted ? 'info' : 'error');
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
         }
-    }, [settings.invokeAiPath, settings.importIntermediates, addToast, setIsImporting, setImportProgress, setImportAbortController, refreshCollections]);
+    }, [settings.invokeAiPath, settings.importIntermediates, addToast, beginImportRun, setImportProgressForRun, finishImportRun, refreshCollections]);
 
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,
@@ -368,9 +423,15 @@ export const useImportOps = ({
     ): Promise<{ newFiles: number; totalScanned: number }> => {
         const { path, variant, lastScanned, id } = folder;
 
-        setIsImporting(true);
         const abortCtrl = new AbortController();
-        setImportAbortController(abortCtrl);
+        const importRunId = beginImportRun({
+            owner: 'folder-resync',
+            abortController: abortCtrl
+        });
+        if (!importRunId) {
+            addToast('Import already in progress', 'info');
+            return { newFiles: 0, totalScanned: 0 };
+        }
 
         try {
             let filesToScan: string[] = [];
@@ -394,13 +455,13 @@ export const useImportOps = ({
             }
 
             if (filesToScan.length === 0) {
-                setImportProgress({ current: 0, total: 0, message: 'No changes detected' });
+                setImportProgressForRun(importRunId, { current: 0, total: 0, message: 'No changes detected' });
                 updateLastScanned(id, Date.now());
                 return { newFiles: 0, totalScanned: 0 };
             }
 
             const scanTypeMsg = isIncremental ? 'Syncing new files' : 'Full scan';
-            setImportProgress({ current: 0, total: filesToScan.length, message: `${scanTypeMsg}...` });
+            setImportProgressForRun(importRunId, { current: 0, total: filesToScan.length, message: `${scanTypeMsg}...` });
 
             const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
@@ -409,7 +470,7 @@ export const useImportOps = ({
                 filesToScan,
                 thumbDir,
                 (current, total, message) => {
-                    setImportProgress({ current, total, message });
+                    setImportProgressForRun(importRunId, { current, total, message });
                 },
                 variant as GeneratorTool | undefined,
                 abortCtrl.signal,
@@ -430,11 +491,9 @@ export const useImportOps = ({
             console.error(`[Resync] Failed for ${path}`, e);
             throw e;
         } finally {
-            setIsImporting(false);
-            setImportProgress(null);
-            setImportAbortController(null);
+            finishImportRun(importRunId);
         }
-    }, [setIsImporting, setImportAbortController, setImportProgress, commitImportResult]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
 
     return {
         importImages,

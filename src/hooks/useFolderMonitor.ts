@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import { MonitoredFolder, GeneratorTool, FacetType, ImportMode } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { commands } from '../bindings';
@@ -9,16 +9,18 @@ import {
     mergeTouchedFacetResources,
     orderFacetTypes
 } from '../utils/touchedFacetTypes';
+import { formatStableImportProgress } from '../utils/importProgress';
+import { isImportSourceCancelled, isImportSourceCompleted } from '../utils/importSourceStatus';
 
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
-import type { ImportResult } from '../services/importService';
+import type { ImportProgressCallback, ImportResult } from '../services/importService';
 
 interface ImportOptions {
     mode?: ImportMode;
     skipStateManagement?: boolean;
-    onProgress?: (current: number, total: number, message?: string) => void;
+    onProgress?: ImportProgressCallback;
     forceRescan?: boolean;
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
@@ -91,7 +93,6 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
             const performStartupScan = async () => {
                 const startupStartedAt = Date.now();
                 const folderScanStartedAt = Date.now();
-                const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
                 const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
                 let totalFilesFound = 0;
                 let startupScanWasCancelled = false;
@@ -120,14 +121,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         // Full scan usage (rare on startup if already configured)
                         console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
                         const result = await onScan([{ path: folder.path, variant: folder.variant }], { mode: 'startup' });
-                        if (isCompleteImport(result)) {
+                        if (isImportSourceCompleted(result, folder.path)) {
                             updateFolderLastScanned(folder.id, scanTime);
-                        } else if (!result || !result.wasCancelled) {
-                            warnCursorHeld('Startup full scan', folder.id, result);
-                        } else {
+                        } else if (isImportSourceCancelled(result, folder.path)) {
                             markInitialScanCancelled([folder.id]);
                             startupScanWasCancelled = true;
                             break;
+                        } else {
+                            warnCursorHeld('Startup full scan', folder.id, result);
                         }
                     }
                 }
@@ -142,9 +143,30 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     const importStartedAt = Date.now();
                     const abortCtrl = new AbortController();
                     console.log(`[FolderMonitor] Starting aggregated import for ${totalFilesFound} files`);
-                    setIsImporting(true);
-                    setImportAbortController(abortCtrl);
-                    setImportProgress({ current: 0, total: totalFilesFound, message: 'Starting aggregated import...' });
+                    const importRunId = useLibraryStore.getState().beginImportRun({
+                        owner: 'startup-folder-catchup',
+                        abortController: abortCtrl,
+                        progress: formatStableImportProgress({
+                            current: 0,
+                            total: totalFilesFound,
+                            sourceCount: tasks.length,
+                            phase: 'importing',
+                            prefix: 'Startup'
+                        })
+                    });
+                    if (!importRunId) {
+                        console.info('[FolderMonitor] Startup import skipped because another import is active.');
+                        return;
+                    }
+                    const setProgressForRun = useLibraryStore.getState().setImportProgressForRun;
+                    const finishRun = useLibraryStore.getState().finishImportRun;
+                    setProgressForRun(importRunId, formatStableImportProgress({
+                        current: 0,
+                        total: totalFilesFound,
+                        sourceCount: tasks.length,
+                        phase: 'importing',
+                        prefix: 'Startup'
+                    }));
 
                     let globalCurrent = 0;
                     let totalImported = 0;
@@ -153,7 +175,8 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     let wasCancelled = false;
 
                     try {
-                        for (const task of tasks) {
+                        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                            const task = tasks[taskIndex];
                             if (abortCtrl.signal.aborted) {
                                 wasCancelled = true;
                                 break;
@@ -166,14 +189,17 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                                 waitForStableFiles: true,
                                 deferFacetCacheRefresh: true,
                                 abortSignal: abortCtrl.signal,
-                                onProgress: (current, total, message) => {
+                                onProgress: (current) => {
                                     // Add accumulated count from previous batches
                                     const actualCurrent = globalCurrent + current;
-                                    setImportProgress({
+                                    setProgressForRun(importRunId, formatStableImportProgress({
                                         current: actualCurrent,
                                         total: totalFilesFound,
-                                        message: message
-                                    });
+                                        sourceCount: tasks.length,
+                                        phase: 'importing',
+                                        prefix: 'Startup',
+                                        sourceIndex: taskIndex + 1
+                                    }));
                                 }
                             });
                             if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
@@ -203,7 +229,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         }
 
                         if (!wasCancelled) {
-                            setImportProgress({ current: totalFilesFound, total: totalFilesFound, message: 'Updating startup filters...' });
+                            setProgressForRun(importRunId, { current: totalFilesFound, total: totalFilesFound, message: 'Updating startup filters...' });
                             await refreshStartupFacetCache({
                                 source: 'folder',
                                 totalProcessed: totalImported,
@@ -215,9 +241,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     } catch (error) {
                         console.error('[Startup Catch-up] Folder incremental facet refresh failed.', error);
                     } finally {
-                        setIsImporting(false);
-                        setImportProgress(null);
-                        setImportAbortController(null);
+                        finishRun(importRunId);
                     }
 
                     // Force UI Refresh
@@ -271,14 +295,21 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                     const scanData = activeNew.map(f => ({ path: f.path, variant: f.variant }));
                     const result = await onScan(scanData);
+                    const completedAt = Date.now();
+                    const cancelledFolderIds: string[] = [];
 
-                    if (isCompleteImport(result)) {
-                        const completedAt = Date.now();
-                        activeNew.forEach(f => updateFolderLastScanned(f.id, completedAt));
-                    } else if (!result || !result.wasCancelled) {
-                        activeNew.forEach(f => warnCursorHeld('New folder scan', f.id, result));
-                    } else {
-                        markInitialScanCancelled(activeNew.map(f => f.id));
+                    activeNew.forEach(folder => {
+                        if (isImportSourceCompleted(result, folder.path)) {
+                            updateFolderLastScanned(folder.id, completedAt);
+                        } else if (isImportSourceCancelled(result, folder.path)) {
+                            cancelledFolderIds.push(folder.id);
+                        } else {
+                            warnCursorHeld('New folder scan', folder.id, result);
+                        }
+                    });
+
+                    if (cancelledFolderIds.length > 0) {
+                        markInitialScanCancelled(cancelledFolderIds);
                     }
                 })();
             }
@@ -321,7 +352,6 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
     // Reusable Scan Logic (Extracted from previous effect)
     const performUnifiedScan = async (folders: MonitoredFolder[], source: string) => {
-        const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
         let totalFilesFound = 0;
         let scanWasCancelled = false;
         const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
@@ -340,14 +370,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                 } else {
                     console.log(`[FolderMonitor] ${source}: Full scan needed for ${folder.path}`);
                     const result = await onScan([{ path: folder.path, variant: folder.variant }], { mode: 'background' });
-                    if (isCompleteImport(result)) {
+                    if (isImportSourceCompleted(result, folder.path)) {
                         updateFolderLastScanned(folder.id, scanTime);
-                    } else if (!result || !result.wasCancelled) {
-                        warnCursorHeld(`${source} full scan`, folder.id, result);
-                    } else {
+                    } else if (isImportSourceCancelled(result, folder.path)) {
                         markInitialScanCancelled([folder.id]);
                         scanWasCancelled = true;
                         break;
+                    } else {
+                        warnCursorHeld(`${source} full scan`, folder.id, result);
                     }
                 }
             } catch (e) {
@@ -359,13 +389,28 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
         if (totalFilesFound > 0) {
             const abortCtrl = new AbortController();
-            setIsImporting(true);
-            setImportAbortController(abortCtrl);
-            setImportProgress({ current: 0, total: totalFilesFound, message: `${source}: Importing images...` });
+            const importRunId = useLibraryStore.getState().beginImportRun({
+                owner: `${source.toLowerCase()}-folder-catchup`,
+                abortController: abortCtrl,
+                progress: formatStableImportProgress({
+                    current: 0,
+                    total: totalFilesFound,
+                    sourceCount: tasks.length,
+                    phase: 'importing',
+                    prefix: source
+                })
+            });
+            if (!importRunId) {
+                console.info(`[FolderMonitor] ${source}: import skipped because another import is active.`);
+                return;
+            }
+            const setProgressForRun = useLibraryStore.getState().setImportProgressForRun;
+            const finishRun = useLibraryStore.getState().finishImportRun;
             let currentCount = 0;
             let wasCancelled = false;
             try {
-                for (const task of tasks) {
+                for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                    const task = tasks[taskIndex];
                     if (abortCtrl.signal.aborted) {
                         wasCancelled = true;
                         break;
@@ -376,11 +421,14 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         forceRescan: true,
                         waitForStableFiles: true,
                         abortSignal: abortCtrl.signal,
-                        onProgress: (c, t, m) => setImportProgress({
+                        onProgress: (c) => setProgressForRun(importRunId, formatStableImportProgress({
                             current: currentCount + c,
                             total: totalFilesFound,
-                            message: m ? `${source}: ${m}` : `${source}: Importing images...`
-                        })
+                            sourceCount: tasks.length,
+                            phase: 'importing',
+                            prefix: source,
+                            sourceIndex: taskIndex + 1
+                        }))
                     });
                     if ((result && result.wasCancelled) || abortCtrl.signal.aborted) {
                         wasCancelled = true;
@@ -394,9 +442,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     if (wasCancelled) break;
                 }
             } finally {
-                setIsImporting(false);
-                setImportProgress(null);
-                setImportAbortController(null);
+                finishRun(importRunId);
             }
 
             // Force UI Refresh
