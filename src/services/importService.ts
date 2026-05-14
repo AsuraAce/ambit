@@ -1,4 +1,4 @@
-import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
+﻿import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { insertImage } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';

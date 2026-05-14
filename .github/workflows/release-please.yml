@@ -10,9 +10,14 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Verify release automation prerequisites
         env:
@@ -27,11 +32,10 @@ jobs:
 
       - name: Create release PR or GitHub Release
         id: release
-        uses: google-github-actions/release-please-action@v4
+        uses: googleapis/release-please-action@v5.0.0
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
           # Using GITHUB_TOKEN for now. If user wants to trigger other workflows, 
           # they should provide a PAT as RELEASE_PLEASE_TOKEN or use a GitHub App token.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-

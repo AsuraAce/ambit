@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.4.0"
+version = "0.5.0"
 default-run = "app"
 description = "A Tauri App"
 authors = ["you"]
@@ -32,7 +32,7 @@ base64 = "0.21"
 rayon = "1.8"
 flate2 = "1.1.5"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 notify = { version = "8.2.0", features = ["serde"] }
 regex = "1.12.2"
 tokio = { version = "1", features = ["sync", "time"] }

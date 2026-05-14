@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { GeneratorTool, type AppSettings } from '../../../../types';

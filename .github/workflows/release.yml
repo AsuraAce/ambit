@@ -6,6 +6,10 @@ on:
       - "v*"
       - "ambit-v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish-tauri:
     permissions:
@@ -16,16 +20,17 @@ jobs:
         platform: [windows-latest]
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 20
 
       - name: install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v6.0.8
         with:
           version: 9
 
@@ -35,10 +40,21 @@ jobs:
           targets: ${{ matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || '' }}
 
       - name: install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: verify version consistency
-        run: pnpm check:versions
+      - name: run production dependency audit
+        run: pnpm run audit:prod
+
+      - name: install cargo-audit
+        run: cargo install cargo-audit --version 0.22.1 --locked
+
+      # RUSTSEC-2023-0071 is ignored by the audit wrapper because it is pulled
+      # through optional sqlx-mysql while Ambit only enables the SQLite beta path.
+      - name: run rust dependency advisory audit
+        run: pnpm run audit:rust
+
+      - name: verify release gate
+        run: pnpm run verify:release
 
       - name: verify updater signing configuration
         shell: bash
@@ -66,7 +82,7 @@ jobs:
           fi
           rm -f .tmp/updater-signing-smoke-test.txt .tmp/updater-signing-smoke-test.txt.sig
 
-      - uses: tauri-apps/tauri-action@v0.6.0
+      - uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

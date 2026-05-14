@@ -130,10 +130,22 @@
       "identifier": "shell:allow-open",
       "allow": [
         {
-          "href": "https?://**"
+          "href": "https://github.com/AsuraAce/ambit"
         },
         {
-          "href": "mailto:**"
+          "href": "https://github.com/AsuraAce/ambit/issues"
+        },
+        {
+          "href": "https://github.com/AsuraAce/ambit/releases"
+        },
+        {
+          "href": "https://github.com/sponsors/AsuraAce"
+        },
+        {
+          "href": "https://ko-fi.com/astraoriondev"
+        },
+        {
+          "href": "https://aistudio.google.com/app/apikey"
         }
       ]
     }

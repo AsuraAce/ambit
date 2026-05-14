@@ -511,6 +511,26 @@ export const clearLibraryStatsCache = () => {
     globalStatsCache = null;
 };
 
+const buildScopedImageJoins = (collectionId?: string, loraName?: string): { joinClause: string; joinParams: unknown[] } => {
+    const joins: string[] = [];
+    const joinParams: unknown[] = [];
+
+    if (collectionId) {
+        joins.push('JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = ?');
+        joinParams.push(collectionId);
+    }
+
+    if (loraName) {
+        joins.push('JOIN image_loras il ON il.image_id = images.id AND il.lora_name = ?');
+        joinParams.push(loraName);
+    }
+
+    return {
+        joinClause: joins.join('\n'),
+        joinParams
+    };
+};
+
 export const getLibraryStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
     // Return cached result instantly for unfiltered dashboard loads
     if (!whereClause && !collectionId && !loraName && globalStatsCache) {
@@ -520,6 +540,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
+    const { joinClause, joinParams } = buildScopedImageJoins(collectionId, loraName);
 
     try {
         const statsQuery = `
@@ -527,12 +548,11 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
                 count(*) as total
 
             FROM images 
-            ${collectionId ? `JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'` : ''}
-            ${loraName ? `JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'` : ''}
+            ${joinClause}
             ${finalWhere}
         `;
 
-        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<any[]>(statsQuery, params));
+        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<any[]>(statsQuery, [...joinParams, ...params]));
         
         const total = basicStats[0]?.total || 0;
         const avgSteps = 0; // Temporarily disabled for performance
@@ -632,27 +652,11 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
          * But since we have a LIMIT, SQLite can sometimes optimize.
          * For a word cloud, we need a diverse sample.
          */
-        let joinClause = "JOIN images_fts ON images_fts.rowid = images.rowid";
-
-        // Prioritize Collection/LoRA filtering with INNER JOIN if present
-        // Prioritize Collection/LoRA filtering with INNER JOIN if present
-        if (collectionId && loraName) {
-            joinClause = `
-                JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
-                JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
-                JOIN images_fts ON images_fts.rowid = images.rowid
-            `;
-        } else if (collectionId) {
-            joinClause = `
-                JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = '${collectionId}'
-                JOIN images_fts ON images_fts.rowid = images.rowid
-            `;
-        } else if (loraName) {
-            joinClause = `
-                JOIN image_loras il ON il.image_id = images.id AND il.lora_name = '${loraName}'
-                JOIN images_fts ON images_fts.rowid = images.rowid
-            `;
-        }
+        const { joinClause: scopedJoinClause, joinParams } = buildScopedImageJoins(collectionId, loraName);
+        const joinClause = `
+            ${scopedJoinClause}
+            JOIN images_fts ON images_fts.rowid = images.rowid
+        `;
 
         const promptQuery = `
             SELECT images_fts.positive_prompt 
@@ -663,7 +667,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         `;
         
         const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
-        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<any[]>(promptQuery, params));
+        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<any[]>(promptQuery, [...joinParams, ...params]));
         
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
         const counts: Record<string, number> = {};

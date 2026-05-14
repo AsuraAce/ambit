@@ -4,6 +4,8 @@ This document outlines the required configuration for the automated release work
 
 ## Automated Release (release-please)
 The `release-please` workflow automates application versioning and `CHANGELOG.md` generation.
+It remains the release automation source of truth for version bumps, changelog updates, release PRs, tags, and GitHub Releases.
+Codex can assist by reviewing release PRs, rerunning workflows, and verifying published assets, but it should not replace this auditable release flow.
 
 ### Required Secrets
 *   **RELEASE_PLEASE_TOKEN (Optional but Recommended):**
@@ -69,6 +71,7 @@ Ambit now uses Tauri's updater plugin with GitHub Releases as the public update 
 ## Repository Settings To Verify
 *   **Branch protection:** `main` should require pull requests and the `frontend-checks` plus `rust-tests` status checks.
 *   **Actions permissions:** Under **Settings > Actions > General**, enable **Allow GitHub Actions to create and approve pull requests**.
+*   **Actions policy:** Keep external Actions restricted to the selected-action allowlist used by the workflows. Do not switch back to local-only, which prevents workflow startup, or unrestricted marketplace actions, which broadens supply-chain exposure.
 *   **Release token:** If `RELEASE_PLEASE_TOKEN` is missing, `release-please` still works with `GITHUB_TOKEN`, but downstream workflows triggered from release PRs or release tags will not run automatically.
 *   **Updater signing:** `TAURI_SIGNING_PRIVATE_KEY` must be present before any release tag is built. If the key has a non-empty passphrase, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must also be present.
 

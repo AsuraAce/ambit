@@ -7,6 +7,7 @@ import { APP_NAME } from '../../constants/app';
 import { useToast } from '../../hooks/useToast';
 import { ApiKeyInput } from './ApiKeyInput';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { GOOGLE_AI_STUDIO_API_KEY_URL, openExternalUrl } from '../../utils/externalLinks';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
@@ -282,9 +283,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         >
                                             <div className="flex justify-between items-end">
                                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Gemini API Key</label>
-                                                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-sage-500 hover:text-sage-400 font-bold flex items-center gap-1 transition-colors">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL)}
+                                                    className="text-xs text-sage-500 hover:text-sage-400 font-bold flex items-center gap-1 transition-colors"
+                                                >
                                                     Get Free Key <ChevronRight className="w-3 h-3" />
-                                                </a>
+                                                </button>
                                             </div>
 
                                             <ApiKeyInput

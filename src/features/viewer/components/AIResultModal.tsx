@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { X, Wand2, Shuffle, Copy, Check, Sparkles, LayoutPanelLeft, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../../utils/cn';
 
@@ -159,12 +159,7 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                             <div className="bg-gray-50 dark:bg-white/[0.02] rounded-xl border border-gray-100 dark:border-white/5 p-5">
                                                 <div className="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300 leading-relaxed">
                                                     <ReactMarkdown
-                                                        components={{
-                                                            h3: () => null,
-                                                            p: ({ node, ...props }) => <p {...props} className="mb-3 last:mb-0 text-sm" />,
-                                                            strong: ({ node, ...props }) => <strong {...props} className="text-gray-800 dark:text-white font-semibold" />,
-                                                            em: ({ node, ...props }) => <em {...props} className="text-amethyst-600 dark:text-amethyst-400 not-italic font-medium" />
-                                                        }}
+                                                        components={safeMarkdownComponents}
                                                     >
                                                         {analysisText}
                                                     </ReactMarkdown>
@@ -264,6 +259,15 @@ const MasteredPromptCard: React.FC<{ prompt: string; onCopy: (text: string) => v
             </p>
         </div>
     );
+};
+
+const safeMarkdownComponents: Components = {
+    h3: () => null,
+    p: ({ children }) => <p className="mb-3 last:mb-0 text-sm">{children}</p>,
+    strong: ({ children }) => <strong className="text-gray-800 dark:text-white font-semibold">{children}</strong>,
+    em: ({ children }) => <em className="text-amethyst-600 dark:text-amethyst-400 not-italic font-medium">{children}</em>,
+    a: ({ children }) => <span>{children}</span>,
+    img: () => null,
 };
 
 /* Variation Display Component (for tabbed view) */

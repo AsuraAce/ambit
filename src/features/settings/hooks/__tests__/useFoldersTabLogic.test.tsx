@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { act, renderHook, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppSettings, GeneratorTool } from '../../../../types';

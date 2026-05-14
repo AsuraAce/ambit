@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import { MonitoredFolder, GeneratorTool, FacetType, ImportMode } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { commands } from '../bindings';

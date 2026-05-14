@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';

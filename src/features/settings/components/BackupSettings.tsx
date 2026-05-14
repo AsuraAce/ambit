@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Database, FolderOpen, RefreshCw, FileClock, AlertCircle } from 'lucide-react';
 import { commands, BackupInfo } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
+import { isOsOpenUnavailable, showPathInFolder } from '../../../services/osOpen';
 
 export const BackupSettings: React.FC = () => {
     const [backups, setBackups] = React.useState<BackupInfo[]>([]);
@@ -40,7 +41,12 @@ export const BackupSettings: React.FC = () => {
 
     const handleOpenFolder = async () => {
         if (backups.length > 0) {
-            await commands.showInFolder(backups[0].path);
+            const result = await showPathInFolder(backups[0].path);
+            if (result.status === 'ok') {
+                addToast('Opening backup folder...', 'info');
+            } else {
+                addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
+            }
         } else {
             addToast('No backups exist yet to show folder', 'info');
         }

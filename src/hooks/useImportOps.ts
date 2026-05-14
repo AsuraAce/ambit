@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useCallback } from 'react';
 import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder } from '../types';
 import { useToast } from './useToast';
@@ -122,7 +122,7 @@ export const useImportOps = ({
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
                     setImportProgressForRun(importRunId, { current, total, message });
-                }, undefined, abortCtrl?.signal);
+                }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
                     addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                     return;
@@ -161,7 +161,7 @@ export const useImportOps = ({
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
                     setImportProgressForRun(importRunId, { current, total, message });
-                }, undefined, abortCtrl?.signal);
+                }, undefined, abortCtrl.signal);
                 if (result.wasCancelled) {
                     addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                     return;

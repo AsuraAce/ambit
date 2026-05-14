@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processFoldersUnified, processNativePaths, processTargetedFiles } from '../importService';
 import { GeneratorTool } from '../../types';
 

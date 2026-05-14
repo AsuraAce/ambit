@@ -2,7 +2,6 @@ import * as React from 'react';
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { X, Share2, Minimize2, Maximize2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Wand2, Shuffle, Layers, ArrowRight, Layout, ExternalLink } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { AIImage, GeneratorTool } from '../../../types';
 import { useZoomPan } from '../../../hooks/useZoomPan';
 import { ImageCanvas } from './ImageCanvas';
@@ -16,6 +15,7 @@ import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
+import { isOsOpenUnavailable, openFileInDefaultApp } from '../../../services/osOpen';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -225,8 +225,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     };
 
     const handleOpenExternal = async () => {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('open_file', { path: displayImage.id });
+        const result = await openFileInDefaultApp(displayImage.id);
+        if (result.status === 'error') {
+            addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
+        }
     };
 
     const handleShare = () => {

@@ -1,4 +1,4 @@
-
+﻿
 import { renderHook, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useFolderMonitor } from '../useFolderMonitor';

@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';

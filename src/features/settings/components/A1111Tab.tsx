@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useState } from 'react';
 import { Palette, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, ChevronDown, FolderOpen } from 'lucide-react';
 import { GeneratorTool, type AppSettings, type MonitoredFolder } from '../../../types';
@@ -489,7 +489,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         <div className="mt-4 mb-4">
                             <details className="group">
                                 <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">
-                                    <span className="group-open:rotate-90 transition-transform">▸</span>
+                                    <span className="group-open:rotate-90 transition-transform">â–¸</span>
                                     View Scan Debug Log ({scanLogs.length} entries)
                                 </summary>
                                 <div className="mt-2 p-3 bg-black/90 text-green-400 font-mono text-[10px] rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/10 shadow-inner">

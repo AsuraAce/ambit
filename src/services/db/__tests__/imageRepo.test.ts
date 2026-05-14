@@ -271,4 +271,27 @@ describe('imageRepo batch removal', () => {
         expect(Math.max(...allExecuteParamCounts)).toBeLessThanOrEqual(900);
         expect(removedRows.get(ids[0])?.collectionIdsJson).toBe(JSON.stringify(['collection-a']));
     });
+
+    it('skips thumbnail trashing when the thumbnail path is the source image path', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.moveToTrash).mockResolvedValue({ status: 'ok', data: null });
+        vi.mocked(commands.deleteThumbnail).mockResolvedValue({ status: 'ok', data: null });
+
+        const { deleteImageFromDisk, shouldTrashThumbnail } = await import('../imageRepo');
+
+        expect(shouldTrashThumbnail('C:/images/source.png', 'C:\\images\\source.png')).toBe(false);
+        expect(shouldTrashThumbnail('C:/images/source.png', 'C:/thumbs/source.webp')).toBe(true);
+
+        await deleteImageFromDisk('C:/images/source.png', 'C:/images/source.png', 'C:\\images\\source.png');
+
+        expect(commands.moveToTrash).toHaveBeenCalledWith('C:/images/source.png');
+        expect(commands.deleteThumbnail).not.toHaveBeenCalled();
+        expect(db.execute).toHaveBeenCalledWith('DELETE FROM images WHERE id = $1', ['C:/images/source.png']);
+    });
 });
