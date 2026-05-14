@@ -113,4 +113,52 @@ describe('useAppUpdater', () => {
         expect(result.current.errorMessage).toBe('Network down');
         expect(mockAddToast).toHaveBeenCalledWith('Failed to check for updates: Network down', 'error');
     });
+
+    it('explains private or unreachable release feeds without treating latest-version checks as failures', async () => {
+        vi.mocked(check).mockRejectedValue(new Error('404 Not Found'));
+
+        const { result } = renderHook(() => useAppUpdater({
+            addToast: mockAddToast,
+            autoCheckEnabled: false,
+            isSettingsLoaded: true,
+            isDevBuild: false,
+        }));
+
+        await act(async () => {
+            await result.current.checkForUpdates({ manual: true });
+        });
+
+        expect(result.current.status).toBe('error');
+        expect(result.current.errorMessage).toContain('release assets to be publicly reachable');
+        expect(result.current.errorMessage).toContain('already up to date');
+        expect(mockAddToast).toHaveBeenCalledWith(
+            expect.stringContaining('release assets to be publicly reachable'),
+            'error'
+        );
+    });
+
+    it('preserves raw install errors when package download or installation fails', async () => {
+        const mockUpdate = createMockUpdate();
+        vi.mocked(mockUpdate.downloadAndInstall).mockRejectedValue(new Error('404 Not Found'));
+        vi.mocked(check).mockResolvedValue(mockUpdate);
+
+        const { result } = renderHook(() => useAppUpdater({
+            addToast: mockAddToast,
+            autoCheckEnabled: false,
+            isSettingsLoaded: true,
+            isDevBuild: false,
+        }));
+
+        await act(async () => {
+            await result.current.checkForUpdates({ manual: true });
+        });
+
+        await act(async () => {
+            await result.current.installUpdate();
+        });
+
+        expect(result.current.status).toBe('error');
+        expect(result.current.errorMessage).toBe('404 Not Found');
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to install update: 404 Not Found', 'error');
+    });
 });

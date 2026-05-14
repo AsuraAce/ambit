@@ -93,3 +93,5 @@ jobs:
           releaseBody: "See the assets below to download the latest version of Ambit."
           releaseDraft: false
           prerelease: false
+          args: --bundles nsis msi
+          updaterJsonPreferNsis: true
