@@ -36,9 +36,20 @@ Codex can assist by reviewing release PRs, rerunning workflows, and verifying pu
 Ambit now uses Tauri's updater plugin with GitHub Releases as the public update feed.
 
 ### Current behavior
-*   Release builds publish updater artifacts and a `latest.json` manifest alongside the normal desktop installers.
+*   Release builds publish updater artifacts and a `latest.json` manifest alongside the Windows NSIS installer.
 *   The desktop app checks GitHub Releases for updates and can download/apply them after the user confirms the update prompt.
 *   Version consistency is enforced by `pnpm check:versions`, which runs in CI and release packaging before builds continue.
+
+## Pull Request CI & Dependency Security
+Ambit uses a tiered workflow setup for public open-source development:
+
+*   `pr-ci` is the required fast feedback workflow for normal PR commits.
+    *   `frontend-checks` runs version consistency, TypeScript, Vitest, and the frontend production build.
+    *   `rust-tests` runs version consistency, dependency installation, generated binding drift checks, Rust cache restore/save, and Rust tests on Windows.
+*   `dependency-security` runs GitHub dependency review on pull requests once the repository is public. While the repository is private, set `ENABLE_PRIVATE_DEPENDENCY_REVIEW=true` as a repository variable only if dependency review is available for the repo.
+*   Full `pnpm audit --prod` and `cargo audit` checks run from `dependency-security` on dependency-file changes, weekly schedule, and manual dispatch.
+*   PR workflows use `pull_request` with read-only default permissions so untrusted external contributions do not receive release secrets.
+*   Dependabot tracks npm/pnpm, Cargo, and GitHub Actions dependencies weekly.
 
 ### Manual signing preflight
 *   Use **Actions > updater-signing-preflight > Run workflow** to verify that GitHub can use `TAURI_SIGNING_PRIVATE_KEY` non-interactively.
@@ -55,13 +66,14 @@ Ambit now uses Tauri's updater plugin with GitHub Releases as the public update 
 1.  Work on a feature branch.
 2.  Push the branch and open a Pull Request.
 3.  Ensure the PR title follows **Conventional Commits** (for example, `feat: something new` or `fix: resolve bug`).
-4.  PRs into `main` must pass the `frontend-checks` and `rust-tests` GitHub Actions jobs.
+4.  PRs into `main` must pass the `frontend-checks`, `rust-tests`, and `dependency-review` GitHub Actions jobs.
 5.  **Squash and merge** the PR into `main` so the squashed commit title is the Conventional Commit that lands on the release branch.
 6.  `release-please` will automatically open or refresh a release PR.
-7.  Merge the release PR to trigger the `release.yml` workflow, which currently publishes the Windows release artifacts only.
+7.  Merge the release PR to trigger the `release.yml` workflow, which currently publishes Windows NSIS release artifacts only.
 
 ## Current Platform Support
 *   Official release builds are temporarily **Windows-only** while Linux and macOS go through explicit validation.
+*   NSIS is the intended Windows installer target for public releases. MSI is not currently published by CI.
 *   Cross-platform code paths remain in the repository, but Linux and macOS installers are not currently published from CI.
 
 ## Release Tag Notes
@@ -69,7 +81,7 @@ Ambit now uses Tauri's updater plugin with GitHub Releases as the public update 
 *   During the current transition, the publish workflow accepts both `v*` and legacy `ambit-v*` tags and publishes against the actual tag that triggered the workflow.
 
 ## Repository Settings To Verify
-*   **Branch protection:** `main` should require pull requests and the `frontend-checks` plus `rust-tests` status checks.
+*   **Branch protection:** `main` should require pull requests and the `frontend-checks`, `rust-tests`, and `dependency-review` status checks once the repository is public. Before public launch, require `dependency-review` only if the job is enabled and reporting.
 *   **Actions permissions:** Under **Settings > Actions > General**, enable **Allow GitHub Actions to create and approve pull requests**.
 *   **Actions policy:** Keep external Actions restricted to the selected-action allowlist used by the workflows. Do not switch back to local-only, which prevents workflow startup, or unrestricted marketplace actions, which broadens supply-chain exposure.
 *   **Release token:** If `RELEASE_PLEASE_TOKEN` is missing, `release-please` still works with `GITHUB_TOKEN`, but downstream workflows triggered from release PRs or release tags will not run automatically.
