@@ -101,6 +101,8 @@ const getErrorMessage = (error: unknown): string =>
 const isCancellationError = (error: unknown): boolean =>
     getErrorMessage(error).toLowerCase().includes('cancel');
 
+const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
+
 // Helper to detect generator from path
 const detectGeneratorVariant = (path: string): GeneratorTool => {
     const lower = path.toLowerCase();
@@ -193,8 +195,8 @@ export const useFoldersTabLogic = ({
         return { result, indexedRows };
     }, [refreshResourceFacetCache]);
 
-    const isCompleteImport = (result: ImportResult | void): result is ImportResult =>
-        !!result && result.failedPaths.length === 0;
+    const isCompleteImport = (result: ImportResult | void): boolean =>
+        !!result && !result.wasCancelled && result.failedPaths.length === 0;
 
     const fetchCounts = useCallback(async () => {
         if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
@@ -268,8 +270,10 @@ export const useFoldersTabLogic = ({
 
                     if (newFiles.length > 0) {
                         const changedPaths = newFiles.map(f => f.path);
-                        const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                        const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
+                        const abortCtrl = new AbortController();
                         setIsImporting(true);
+                        setImportAbortController(abortCtrl);
                         setImportProgress({ current: 0, total: changedPaths.length, message: 'Syncing changed files...' });
 
                         try {
@@ -282,20 +286,25 @@ export const useFoldersTabLogic = ({
                                     setImportProgress({ current, total, message });
                                 },
                                 variant as GeneratorTool | undefined,
-                                undefined,
+                                abortCtrl.signal,
                                 false,
                                 true,
                                 true
                             );
-                            addToast(`Synced ${result.images.length} new files`, 'success');
-                            if (result.failedPaths.length === 0) {
-                                updateFolderLastScanned(id, Date.now());
+                            if (result.wasCancelled) {
+                                addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                             } else {
+                                addToast(`Synced ${result.images.length} new files`, 'success');
+                            }
+                            if (isCompleteImport(result)) {
+                                updateFolderLastScanned(id, Date.now());
+                            } else if (!result.wasCancelled) {
                                 console.warn(`[Resync] Keeping cursor unchanged for ${path}; ${result.failedPaths.length} file(s) failed.`);
                             }
                         } finally {
                             setIsImporting(false);
                             setImportProgress(null);
+                            setImportAbortController(null);
                         }
                     } else {
                         const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
@@ -303,9 +312,12 @@ export const useFoldersTabLogic = ({
 
                         if (allFiles.length > knownCount) {
                             const repairPaths = allFiles.map(f => f.path);
-                            const { setIsImporting, setImportProgress } = useLibraryStore.getState();
+                            const { setIsImporting, setImportProgress, setImportAbortController } = useLibraryStore.getState();
+                            const abortCtrl = new AbortController();
                             let repairFailedCount = 0;
+                            let repairWasCancelled = false;
                             setIsImporting(true);
+                            setImportAbortController(abortCtrl);
                             setImportProgress({ current: 0, total: repairPaths.length, message: 'Repairing incomplete import...' });
 
                             try {
@@ -318,23 +330,29 @@ export const useFoldersTabLogic = ({
                                         setImportProgress({ current, total, message });
                                     },
                                     variant as GeneratorTool | undefined,
-                                    undefined,
+                                    abortCtrl.signal,
                                     false
                                 );
                                 repairFailedCount = result.failedPaths.length;
-                                addToast(
-                                    result.images.length > 0
-                                        ? `Repair scan imported ${result.images.length} missing files`
-                                        : 'Repair scan found no additional importable files',
-                                    result.images.length > 0 ? 'success' : 'info'
-                                );
+                                repairWasCancelled = result.wasCancelled;
+                                if (result.wasCancelled) {
+                                    addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
+                                } else {
+                                    addToast(
+                                        result.images.length > 0
+                                            ? `Repair scan imported ${result.images.length} missing files`
+                                            : 'Repair scan found no additional importable files',
+                                        result.images.length > 0 ? 'success' : 'info'
+                                    );
+                                }
                             } finally {
                                 setIsImporting(false);
                                 setImportProgress(null);
+                                setImportAbortController(null);
                             }
-                            if (repairFailedCount === 0) {
+                            if (!repairWasCancelled && repairFailedCount === 0) {
                                 updateFolderLastScanned(id, Date.now());
-                            } else {
+                            } else if (!repairWasCancelled) {
                                 console.warn(`[Resync] Keeping cursor unchanged for ${path}; ${repairFailedCount} repair file(s) failed.`);
                             }
                         } else {
@@ -347,6 +365,16 @@ export const useFoldersTabLogic = ({
                     if (isCompleteImport(result)) {
                         updateFolderLastScanned(id, Date.now());
                         addToast(`Rescan complete`, 'success');
+                    } else if (result && result.wasCancelled) {
+                        console.info(`[Resync] Keeping cursor unchanged for ${path}; import was cancelled.`);
+                        setSettings(prev => ({
+                            ...prev,
+                            monitoredFolders: prev.monitoredFolders.map(folder =>
+                                folder.id === id
+                                    ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
+                                    : folder
+                            )
+                        }));
                     } else {
                         console.warn(`[Resync] Keeping cursor unchanged for ${path}; full scan did not fully complete.`);
                         addToast(`Rescan completed with import errors`, 'warning');
@@ -411,7 +439,16 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: completedAt, initialScanPending: false }
+                                ? { ...folder, lastScanned: completedAt, initialScanPending: false, initialScanCancelled: false }
+                            : folder
+                        )
+                    }));
+                } else if (result && result.wasCancelled) {
+                    setSettings(prev => ({
+                        ...prev,
+                        monitoredFolders: prev.monitoredFolders.map(folder =>
+                            foldersToScan.some(pending => pending.id === folder.id)
+                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: true }
                                 : folder
                         )
                     }));
@@ -420,7 +457,7 @@ export const useFoldersTabLogic = ({
                         ...prev,
                         monitoredFolders: prev.monitoredFolders.map(folder =>
                             foldersToScan.some(pending => pending.id === folder.id)
-                                ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                                ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                                 : folder
                         )
                     }));
@@ -433,7 +470,7 @@ export const useFoldersTabLogic = ({
                     ...prev,
                     monitoredFolders: prev.monitoredFolders.map(folder =>
                         foldersToScan.some(pending => pending.id === folder.id)
-                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                             : folder
                     )
                 }));

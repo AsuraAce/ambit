@@ -95,6 +95,46 @@ Status: Deferred
 - `src/services/invoke/syncService.ts`
 - `src/utils/liveWatchPerf.ts`
 
+## Rust-Side Cancellation For Integration Imports
+Status: Deferred
+Priority: P2
+
+### Why Cleanup Is Needed
+- Frontend-managed integration imports now use cooperative `AbortController` cancellation and return explicit `wasCancelled` state, so cancelled imports should not advance folder cursors.
+- The remaining cancellation gap is inside active Rust IPC work. Once a frontend import has entered a backend command such as directory traversal or bulk metadata extraction, the current call can continue until it returns.
+- This is mostly a responsiveness and resource-use issue after the frontend cancellation fix, but it can still make very large folder imports feel slow to stop.
+
+### Current Pain Points
+- `scanDirectoryWithStats` can keep walking a large directory after the user clicks Cancel.
+- Bulk metadata scan work can continue through the current native batch before the frontend observes cancellation.
+- The Activity Dock can hide cancelled import state promptly, but backend CPU/disk work may still be active briefly or for a long scan.
+
+### Safe-Change Warning
+- Do not mix this with the frontend cooperative cancellation pass. Backend cancellation likely needs Tauri command contract changes, shared cancellation state, and Rust tests.
+- If command signatures change, regenerate Specta bindings instead of editing `src/bindings.ts` manually.
+- Preserve path-scope checks and local-first filesystem safety while threading cancellation through recursive traversal.
+- Cancellation should be best-effort and explicit: partial imports must remain distinguishable from complete imports, and folder cursors must not advance after cancellation.
+
+### Suggested Future Direction
+- Add a backend import or scan session id that the frontend can associate with its `AbortController`.
+- Store cancellation tokens in Rust for active import/session work and expose a Tauri cancel command for that session.
+- Check the token inside directory traversal loops, bulk metadata extraction loops, and between filesystem/database batches.
+- Keep existing frontend `wasCancelled` handling as the UI and cursor-safety contract, and bridge it to Rust cancellation for faster stop behavior.
+- Add Rust tests or command-level integration tests for cancelled traversal and cancelled bulk metadata scanning.
+
+### Not Part of the Current Task
+- Do not block the current cooperative frontend cancellation fix on Rust interruption support.
+- Do not treat this as a data-correctness blocker unless a new path is found that still advances cursors after cancellation.
+
+### Related Code
+- `src/services/importService.ts`
+- `src/hooks/useImportOps.ts`
+- `src/hooks/useFolderMonitor.ts`
+- `src/features/settings/hooks/useFoldersTabLogic.ts`
+- `src-tauri/src/lib.rs`
+- `src-tauri/src/scanner/`
+- `src-tauri/src/metadata/`
+
 ## Evaluate FTS-Backed Search
 Status: Deferred
 

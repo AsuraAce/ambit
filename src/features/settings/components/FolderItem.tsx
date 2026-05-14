@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Folder, Monitor, RefreshCw, Trash2, FileJson } from 'lucide-react';
+import { Folder, Info, Monitor, RefreshCw, Trash2, FileJson } from 'lucide-react';
 import { GeneratorTool } from '../../../types';
 
 interface FolderItemProps {
@@ -49,7 +49,9 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                         {path}
                     </span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
-                        {folder.isManaged ? (
+                        {folder.initialScanCancelled ? (
+                            <><Info className="w-3 h-3 text-amber-500" /> Import cancelled. Rescan to continue.</>
+                        ) : folder.isManaged ? (
                             <><Monitor className="w-3 h-3" /> Managed Integration</>
                         ) : (
                             <><Folder className="w-3 h-3" /> Monitored Folder</>

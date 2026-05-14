@@ -34,7 +34,7 @@ const splitDetailItems = (detail?: string): string[] => (
 
 export const ActivityDock: React.FC = () => {
     const {
-        isImporting, importProgress,
+        isImporting, importProgress, importAbortController,
         syncStatus, syncProgress,
         liveWatchSession,
         isRegeneratingThumbnails, thumbnailProgress,
@@ -83,7 +83,7 @@ export const ActivityDock: React.FC = () => {
     if (isImporting) {
         progress = importProgress;
         label = "Importing";
-        supportsCancel = true;
+        supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = syncProgress;
         label = "Syncing";

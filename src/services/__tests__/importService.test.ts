@@ -117,6 +117,7 @@ describe('processTargetedFiles', () => {
         );
 
         expect(result.stats.imported).toBe(2);
+        expect(result.wasCancelled).toBe(false);
         expect(result.failedPaths).toEqual([]);
         expect(result.handledPaths).toEqual([
             'C:/library/updated-image.png',
@@ -178,6 +179,7 @@ describe('processTargetedFiles', () => {
         );
 
         expect(result.stats.imported).toBe(1);
+        expect(result.wasCancelled).toBe(false);
         expect(result.touchedFacetTypes).toEqual([
             'checkpoints',
             'loras',
@@ -192,6 +194,62 @@ describe('processTargetedFiles', () => {
             ipAdapters: [],
             tools: ['ComfyUI']
         });
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+    });
+
+    it('returns a cancelled result and skips work when aborted before discovery', async () => {
+        const abortCtrl = new AbortController();
+        abortCtrl.abort();
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library' }],
+            {
+                abortSignal: abortCtrl.signal
+            }
+        );
+
+        expect(result.wasCancelled).toBe(true);
+        expect(result.failedPaths).toEqual([]);
+        expect(mocks.scanDirectoryWithStats).not.toHaveBeenCalled();
+        expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
+        expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
+        expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+    });
+
+    it('returns a cancelled result and skips facet cleanup when aborted after metadata scan', async () => {
+        const abortCtrl = new AbortController();
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanImagesBulk.mockImplementationOnce(async () => {
+            abortCtrl.abort();
+            return [
+                {
+                    metadata: {
+                        tool: 'ComfyUI',
+                        model: 'Cancelled Model'
+                    },
+                    timestamp: 3000,
+                    width: 768,
+                    height: 768,
+                    fileSize: 333,
+                    thumbnail: 'C:/thumbs/cancelled.webp',
+                    thumbnailSource: 'ambit',
+                    microThumbnail: 'mini-cancelled',
+                    originalChunks: {}
+                }
+            ];
+        });
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library' }],
+            {
+                forceRescan: true,
+                abortSignal: abortCtrl.signal
+            }
+        );
+
+        expect(result.wasCancelled).toBe(true);
+        expect(result.failedPaths).toEqual([]);
+        expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
     });
 });

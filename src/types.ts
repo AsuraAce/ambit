@@ -26,6 +26,8 @@ export type LayoutMode = 'grid' | 'masonry' | 'justified';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
 
+export type ImportMode = 'manual' | 'startup' | 'background';
+
 export type RecoveryStyle = 'generic' | 'midjourney' | 'sdxl' | 'danbooru';
 
 export interface ImageMetadata {
@@ -227,6 +229,7 @@ export interface MonitoredFolder {
   lastScanned?: number; // Timestamp of last successful full/partial scan
   variant?: GeneratorTool; // Store the detected/assigned variant
   initialScanPending?: boolean; // Suppress duplicate auto-scan until the first queued scan completes
+  initialScanCancelled?: boolean; // User cancelled initial import; do not auto-retry until manual rescan
 }
 
 export interface InvokeDbSnapshotFile {

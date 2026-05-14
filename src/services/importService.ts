@@ -68,6 +68,7 @@ export interface ImportResult {
     failedPaths: string[];
     touchedFacetTypes: FacetType[];
     touchedFacetResources: TouchedFacetResources;
+    wasCancelled: boolean;
 }
 
 export interface ImportOptions {
@@ -95,19 +96,22 @@ const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 
 async function waitForStableFileSizes(
     paths: string[],
-    onProgress?: (current: number, total: number, message?: string) => void
-) {
-    if (paths.length === 0) return;
+    onProgress?: (current: number, total: number, message?: string) => void,
+    abortSignal?: AbortSignal
+): Promise<boolean> {
+    if (paths.length === 0) return true;
 
     const states = new Map<string, { size: number; stablePolls: number }>();
     let pendingPaths = [...paths];
 
     for (let poll = 0; poll < FILE_STABILITY_MAX_POLLS && pendingPaths.length > 0; poll++) {
+        if (abortSignal?.aborted) return false;
         onProgress?.(0, paths.length, `Waiting for ${pendingPaths.length} file(s) to finish writing...`);
 
         let sizes: number[] = [];
         try {
             sizes = await unwrap(commands.getFileSizesBulk(pendingPaths));
+            if (abortSignal?.aborted) return false;
         } catch (error) {
             console.warn('[Import] File stability probe failed; retrying before import.', error);
             await delay(FILE_STABILITY_POLL_MS);
@@ -133,6 +137,8 @@ async function waitForStableFileSizes(
     if (pendingPaths.length > 0) {
         console.warn(`[Import] ${pendingPaths.length} file(s) did not stabilize before import; continuing.`);
     }
+
+    return !abortSignal?.aborted;
 }
 
 const mapMetadata = (meta: any) => ({
@@ -154,7 +160,7 @@ async function processFileEntries(
     stats: ImportStats,
     options: ImportOptions = {},
     defaultTool?: GeneratorTool
-): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources }> {
+): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean }> {
     const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
     const newImages: AIImage[] = [];
     const handledPaths: string[] = [];
@@ -163,19 +169,26 @@ async function processFileEntries(
     const cycleId = perfContext?.cycleId ?? createLiveWatchPerfId('import');
     const touchedFacetTypes = new Set<FacetType>();
     let touchedFacetResources = createEmptyTouchedFacetResources();
+    let wasCancelled = false;
 
     // Sort by Modified Date (Newest First)
     entries.sort((a, b) => b.modified - a.modified);
 
     const allPaths = entries.map(e => e.path);
+    if (abortSignal?.aborted) {
+        wasCancelled = true;
+    }
 
     // Filter duplicates
     let pathsToProcess = allPaths;
-    if (!forceRescan) {
+    if (!wasCancelled && !forceRescan) {
         if (onProgress) onProgress(0, allPaths.length, 'Checking for duplicates...');
 
         const existingLookupStartedAt = liveWatchNow();
         const existingPaths = await getExistingPaths(allPaths);
+        if (abortSignal?.aborted) {
+            wasCancelled = true;
+        }
         pathsToProcess = allPaths.filter(p => !existingPaths.has(normalizePath(p)));
         stats.skipped += (allPaths.length - pathsToProcess.length);
         debugLiveWatchPerf('Import duplicate check complete', {
@@ -187,7 +200,7 @@ async function processFileEntries(
         });
     }
 
-    if (pathsToProcess.length === 0) {
+    if (wasCancelled || pathsToProcess.length === 0) {
         infoLiveWatchPerf('Import processing complete', {
             cycleId,
             source: perfContext?.source,
@@ -200,19 +213,30 @@ async function processFileEntries(
             failedPathCount: failedPaths.length,
             totalMs: elapsedMs(importStartedAt)
         });
-        return { images: [], handledPaths, failedPaths, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return {
+            images: [],
+            handledPaths,
+            failedPaths,
+            touchedFacetTypes: [],
+            touchedFacetResources: createEmptyTouchedFacetResources(),
+            wasCancelled
+        };
     }
 
     if (waitForStableFiles) {
-        await waitForStableFileSizes(pathsToProcess, onProgress);
+        const stable = await waitForStableFileSizes(pathsToProcess, onProgress, abortSignal);
+        if (!stable) {
+            wasCancelled = true;
+        }
     }
 
     const BATCH_SIZE = 300;
     const totalToProcess = pathsToProcess.length;
 
-    for (let i = 0; i < totalToProcess; i += BATCH_SIZE) {
+    for (let i = 0; i < totalToProcess && !wasCancelled; i += BATCH_SIZE) {
         if (abortSignal?.aborted) {
             console.log('Import cancelled by user');
+            wasCancelled = true;
             break;
         }
 
@@ -235,6 +259,10 @@ async function processFileEntries(
             const scanStartedAt = liveWatchNow();
             const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool);
             const scanMs = elapsedMs(scanStartedAt);
+            if (abortSignal?.aborted) {
+                wasCancelled = true;
+                break;
+            }
 
 
             const batchImages: AIImage[] = [];
@@ -281,8 +309,16 @@ async function processFileEntries(
                 const ids = batchImages.map(img => img.id);
                 const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
                 const existingMetaStartedAt = liveWatchNow();
+                if (abortSignal?.aborted) {
+                    wasCancelled = true;
+                    break;
+                }
                 const existingMeta = await getExistingMetadata(ids);
                 const existingMetadataMs = elapsedMs(existingMetaStartedAt);
+                if (abortSignal?.aborted) {
+                    wasCancelled = true;
+                    break;
+                }
 
                 batchImages.forEach(img => {
                     const existing = existingMeta.get(img.id);
@@ -332,9 +368,16 @@ async function processFileEntries(
 
                 let upsertMs = 0;
                 if (imagesToUpdate.length > 0) {
+                    if (abortSignal?.aborted) {
+                        wasCancelled = true;
+                        break;
+                    }
                     const upsertStartedAt = liveWatchNow();
                     await insertImagesBatch(imagesToUpdate);
                     upsertMs = elapsedMs(upsertStartedAt);
+                    if (abortSignal?.aborted) {
+                        wasCancelled = true;
+                    }
                     stats.imported += imagesToUpdate.length;
                 }
                 debugLiveWatchPerf('Import batch stage timings', {
@@ -374,6 +417,10 @@ async function processFileEntries(
             }
 
         } catch (e) {
+            if (abortSignal?.aborted) {
+                wasCancelled = true;
+                break;
+            }
             console.error('Import batch error:', e);
             stats.errors += chunk.length;
             failedPaths.push(...chunk.map(path => normalizePath(path)));
@@ -395,7 +442,14 @@ async function processFileEntries(
         totalMs: elapsedMs(importStartedAt)
     });
 
-    return { images: newImages, handledPaths, failedPaths, touchedFacetTypes: orderFacetTypes(touchedFacetTypes), touchedFacetResources };
+    return {
+        images: newImages,
+        handledPaths,
+        failedPaths,
+        touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
+        touchedFacetResources,
+        wasCancelled: wasCancelled || !!abortSignal?.aborted
+    };
 }
 
 // --- Unified Folder Import ---
@@ -414,7 +468,8 @@ export async function processFoldersUnified(
         handledPaths: [],
         failedPaths: [],
         touchedFacetTypes: [],
-        touchedFacetResources: createEmptyTouchedFacetResources()
+        touchedFacetResources: createEmptyTouchedFacetResources(),
+        wasCancelled: false
     };
 
     const { onProgress, abortSignal, deferFacetCacheRefresh = false } = options;
@@ -440,16 +495,27 @@ export async function processFoldersUnified(
 
     // B. Execute Scans
     for (const [variant, folderPaths] of byVariant.entries()) {
-        if (abortSignal?.aborted) break;
+        if (abortSignal?.aborted) {
+            result.wasCancelled = true;
+            break;
+        }
 
         const filesForVariant: FileEntry[] = [];
         for (const folderPath of folderPaths) {
+            if (abortSignal?.aborted) {
+                result.wasCancelled = true;
+                break;
+            }
             try {
                 if (onProgress) onProgress(0, 0, `Scanning ${normalizePath(folderPath)}...`);
 
                 // Attempt to scan as directory first
                 // Note: scanDirectoryWithStats should be recursive on backend
                 const files = await unwrap(commands.scanDirectoryWithStats(folderPath));
+                if (abortSignal?.aborted) {
+                    result.wasCancelled = true;
+                    break;
+                }
 
                 if (files && files.length > 0) {
                     filesForVariant.push(...files);
@@ -469,11 +535,17 @@ export async function processFoldersUnified(
                     }
                 }
             } catch (e) {
+                if (abortSignal?.aborted) {
+                    result.wasCancelled = true;
+                    break;
+                }
                 console.warn(`[ImportUnified] Failed to scan ${folderPath} as directory. Treating as file?`, e);
                 // Fallback for single files passed to this function
                 filesForVariant.push({ path: folderPath, modified: Date.now(), size: 0 });
             }
         }
+
+        if (result.wasCancelled) break;
 
         if (filesForVariant.length > 0) {
             tasks.push({ variant, files: filesForVariant });
@@ -482,6 +554,10 @@ export async function processFoldersUnified(
     }
 
     console.log(`[ImportUnified] Discovery Complete. Total files to process: ${grandTotalFiles}`);
+
+    if (result.wasCancelled) {
+        return result;
+    }
 
     // If grandTotal is 0, we should probably still return, but let's notify
     if (grandTotalFiles === 0) {
@@ -493,7 +569,10 @@ export async function processFoldersUnified(
     let globalProcessed = 0;
 
     for (const task of tasks) {
-        if (abortSignal?.aborted) break;
+        if (abortSignal?.aborted) {
+            result.wasCancelled = true;
+            break;
+        }
 
         // Adapter maps "Current Task Progress" -> "Global Progress"
         const progressAdapter = (current: number, total: number, message?: string) => {
@@ -516,6 +595,10 @@ export async function processFoldersUnified(
             task.variant
         );
 
+        if (imported.wasCancelled) {
+            result.wasCancelled = true;
+        }
+
         result.images.push(...imported.images);
         result.handledPaths.push(...imported.handledPaths);
         result.failedPaths.push(...imported.failedPaths);
@@ -530,18 +613,19 @@ export async function processFoldersUnified(
 
         // precise increment
         globalProcessed += task.files.length;
+        if (result.wasCancelled) break;
     }
 
     // 3. Post-Import Cleanup
     // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images.
     // Startup smart scans can defer this so useFolderMonitor can run one bounded incremental refresh.
-    if (!deferFacetCacheRefresh) {
+    if (!deferFacetCacheRefresh && !result.wasCancelled) {
         import('./db/imageRepo').then(({ rebuildFacetCache }) => {
             rebuildFacetCache()
                 .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
                 .catch(e => console.error('[Import] Failed cleanup', e));
         });
-    } else {
+    } else if (deferFacetCacheRefresh) {
         console.info('[ImportUnified] Deferred facet cache refresh to startup catch-up coordinator.', {
             processed: result.stats.processed,
             imported: result.stats.imported,
@@ -604,7 +688,8 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         handledPaths: [],
         failedPaths: [],
         touchedFacetTypes: [],
-        touchedFacetResources: createEmptyTouchedFacetResources()
+        touchedFacetResources: createEmptyTouchedFacetResources(),
+        wasCancelled: false
     };
 };
 
@@ -664,7 +749,8 @@ export const processTargetedFiles = async (
         handledPaths: [],
         failedPaths: [],
         touchedFacetTypes: [],
-        touchedFacetResources: createEmptyTouchedFacetResources()
+        touchedFacetResources: createEmptyTouchedFacetResources(),
+        wasCancelled: false
     };
 
     if (paths.length === 0) return result;
@@ -683,6 +769,7 @@ export const processTargetedFiles = async (
     result.failedPaths = imported.failedPaths;
     result.touchedFacetTypes = imported.touchedFacetTypes;
     result.touchedFacetResources = imported.touchedFacetResources;
+    result.wasCancelled = imported.wasCancelled;
 
     // Live Watch keeps the grid responsive here and lets SyncContext queue the
     // targeted incremental facet refresh immediately after the import settles.

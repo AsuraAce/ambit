@@ -7,11 +7,13 @@ import { useSearch } from '../../../contexts/SearchContext'; // Added
 import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import type { ImportResult } from '../../../services/importService';
 
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
     onClose?: () => void;
+    onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
 }
 
 const variantToGeneratorTool = (variant?: WebUIVariant): GeneratorTool | undefined => {
@@ -32,10 +34,8 @@ const variantToGeneratorTool = (variant?: WebUIVariant): GeneratorTool | undefin
 const variantToImportTool = (variant?: WebUIVariant): GeneratorTool =>
     variantToGeneratorTool(variant) ?? GeneratorTool.UNKNOWN;
 
-export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings, onScanFolder }) => {
     const {
-        setIsImporting,
-        setImportProgress,
         refreshCollections
     } = useLibraryContext();
     const { refreshMetadata } = useSearch(); // Added hook usage
@@ -109,14 +109,16 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
     const handleLinkSelected = async () => {
         const toLink = candidates.filter(c => selectedPaths.has(c.path));
         if (toLink.length === 0) return;
+        if (!onScanFolder) {
+            setLocalTestResult({ success: false, message: "Import service is unavailable." });
+            addToast("Import service is unavailable", "error");
+            return;
+        }
 
         setIsDiscovering(true);
-        setIsImporting(true); // Ref-counting: +1
         let newFolderIds = new Set<string>();
 
         try {
-            const { processFoldersUnified } = await import('../../../services/importService');
-
             // 1. Prepare New Folders. Keep lastScanned empty until import succeeds.
             const brandNew = toLink.filter(c => !c.isAlreadyLinked);
             const alreadyLinked = toLink.filter(c => c.isAlreadyLinked);
@@ -148,14 +150,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
 
             // 4. Run Unified Import
             if (foldersToSync.length > 0) {
-                const result = await processFoldersUnified(foldersToSync, {
-                    onProgress: (current, total, message) => {
-                        setImportProgress({ current, total, message });
-                    },
-                    forceRescan: false
-                });
+                const result = await onScanFolder(foldersToSync);
                 const completedAt = Date.now();
-                const importCompleted = result.failedPaths.length === 0;
+                const importCancelled = !!result && result.wasCancelled;
+                const importCompleted = !!result && !result.wasCancelled && result.failedPaths.length === 0;
 
                 if (newFolderIds.size > 0) {
                     setSettings(prev => ({
@@ -165,11 +163,22 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                                 ? {
                                     ...folder,
                                     lastScanned: importCompleted ? completedAt : undefined,
-                                    initialScanPending: false
+                                    initialScanPending: false,
+                                    initialScanCancelled: importCancelled
                                 }
                                 : folder
                         )
                     }));
+                }
+
+                if (importCancelled) {
+                    setLocalTestResult({ success: false, message: "Import cancelled. Imported images were kept, and folder cursor was not advanced. Rescan to continue." });
+                    return;
+                }
+
+                if (!result) {
+                    setLocalTestResult({ success: false, message: "Import did not complete. Folder cursor was not advanced." });
+                    return;
                 }
 
                 let refreshFailed = false;
@@ -187,11 +196,9 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                         ? `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned), but refresh failed.`
                         : `Processed ${totalCount} folders (${brandNew.length} new, ${alreadyLinked.length} rescanned)`;
                     setLocalTestResult({ success: !refreshFailed, message: msg });
-                    addToast(msg, refreshFailed ? 'warning' : 'success');
                 } else {
                     const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Folder cursor was not advanced.`;
                     setLocalTestResult({ success: false, message: msg });
-                    addToast(msg, 'warning');
                 }
             }
 
@@ -202,7 +209,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
                     ...prev,
                     monitoredFolders: prev.monitoredFolders.map(folder =>
                         newFolderIds.has(folder.id)
-                            ? { ...folder, lastScanned: undefined, initialScanPending: false }
+                            ? { ...folder, lastScanned: undefined, initialScanPending: false, initialScanCancelled: false }
                             : folder
                     )
                 }));
@@ -211,8 +218,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings 
             addToast("Import failed", "error");
         } finally {
             setIsDiscovering(false);
-            setIsImporting(false); // Ref-counting: -1
-            setImportProgress(null);
             setCandidates([]); // Clear selection
         }
     };
