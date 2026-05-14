@@ -168,11 +168,25 @@ export const scanImageNative = async (path: string, thumbnailDir?: string, skipT
     }
 };
 
-export const scanImagesBulk = async (paths: string[], thumbnailDir?: string, skipThumbnail: boolean = false, extractWorkflow: boolean = true, defaultTool?: GeneratorTool): Promise<ParseResult[]> => {
+export const scanImagesBulk = async (
+    paths: string[],
+    thumbnailDir?: string,
+    skipThumbnail: boolean = false,
+    extractWorkflow: boolean = true,
+    defaultTool?: GeneratorTool,
+    progressRunId?: string
+): Promise<ParseResult[]> => {
     try {
         const bulkScanStartedAt = liveWatchNow();
         const nativeScanStartedAt = liveWatchNow();
-        const results = await unwrap(commands.scanImagesBulk(paths, thumbnailDir || null, skipThumbnail, extractWorkflow, defaultTool || null));
+        const results = await unwrap(commands.scanImagesBulk(
+            paths,
+            thumbnailDir || null,
+            skipThumbnail,
+            extractWorkflow,
+            defaultTool || null,
+            progressRunId || null
+        ));
         const nativeScanMs = elapsedMs(nativeScanStartedAt);
 
         const tasks = results.map((info, index) => {

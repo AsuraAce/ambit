@@ -274,9 +274,9 @@ async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolea
     else return { status: "error", error: e  as any };
 }
 },
-async scanImagesBulk(paths: string[], thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult[], string>> {
+async scanImagesBulk(paths: string[], thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null, progressRunId: string | null) : Promise<Result<ScanResult[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("scan_images_bulk", { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
+    return { status: "ok", data: await TAURI_INVOKE("scan_images_bulk", { paths, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool, progressRunId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

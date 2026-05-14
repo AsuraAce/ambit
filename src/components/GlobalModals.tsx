@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { AIImage, AppSettings } from '../types';
+import { AIImage, AppSettings, AppSettingsUpdate } from '../types';
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 import type { ImportResult } from '../services/importService';
 
@@ -21,7 +21,7 @@ interface GlobalModalsProps {
     selectedIds: Set<string>;
     filteredImages: AIImage[];
     canCheckForUpdates: boolean;
-    onSettingsSave: (settings: AppSettings) => void;
+    onSettingsSave: (settings: AppSettingsUpdate) => void;
     onExportConfirm: (name: string, folder: string) => void;
     onDeleteConfirm: () => void;
     onDeleteCollectionConfirm: () => void;

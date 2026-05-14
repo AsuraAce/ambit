@@ -69,16 +69,34 @@ export interface ImportResult {
     touchedFacetTypes: FacetType[];
     touchedFacetResources: TouchedFacetResources;
     wasCancelled: boolean;
+    completedSourcePaths: string[];
+    cancelledSourcePaths: string[];
 }
 
+export interface ImportProgressMeta {
+    phase?: 'scanning' | 'importing' | 'finalizing';
+    sourceIndex?: number;
+    sourceCount?: number;
+    sourcePath?: string;
+    rawMessage?: string;
+}
+
+export type ImportProgressCallback = (
+    current: number,
+    total: number,
+    message?: string,
+    meta?: ImportProgressMeta
+) => void;
+
 export interface ImportOptions {
-    onProgress?: (current: number, total: number, message?: string) => void;
+    onProgress?: ImportProgressCallback;
     abortSignal?: AbortSignal;
     isStartup?: boolean;
     forceRescan?: boolean;
     skipThumbnail?: boolean;
     waitForStableFiles?: boolean;
     deferFacetCacheRefresh?: boolean;
+    preserveSourceBoundaries?: boolean;
     perfContext?: TargetedLiveSyncPerfContext;
 }
 
@@ -88,6 +106,31 @@ interface FileEntry {
     size: number;
 }
 
+interface NativeImportProgressPayload {
+    current: number;
+    total: number;
+    message: string;
+    progressRunId?: string;
+}
+
+const pushUniquePath = (paths: string[], path: string) => {
+    const normalized = normalizePath(path);
+    if (!paths.includes(normalized)) {
+        paths.push(normalized);
+    }
+};
+
+const pushUniquePaths = (paths: string[], nextPaths: string[]) => {
+    nextPaths.forEach(path => pushUniquePath(paths, path));
+};
+
+let nativeProgressRunCounter = 0;
+
+const createNativeProgressRunId = (): string => {
+    nativeProgressRunCounter += 1;
+    return `native-import-${Date.now()}-${nativeProgressRunCounter}`;
+};
+
 const FILE_STABILITY_POLL_MS = 500;
 const FILE_STABILITY_MAX_POLLS = 12;
 const FILE_STABILITY_REQUIRED_POLLS = 2;
@@ -96,7 +139,7 @@ const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 
 async function waitForStableFileSizes(
     paths: string[],
-    onProgress?: (current: number, total: number, message?: string) => void,
+    onProgress?: ImportProgressCallback,
     abortSignal?: AbortSignal
 ): Promise<boolean> {
     if (paths.length === 0) return true;
@@ -246,9 +289,14 @@ async function processFileEntries(
         let unlisten: (() => void) | null = null;
         try {
             const batchStartedAt = liveWatchNow();
+            const nativeProgressRunId = createNativeProgressRunId();
             // Setup listener for native progress stream for silky smooth UI loading bars
             const { listen } = await import('@tauri-apps/api/event');
-            unlisten = await listen<{current: number, total: number, message: string}>('import_progress', (e) => {
+            unlisten = await listen<NativeImportProgressPayload>('import_progress', (e) => {
+                if (e.payload.progressRunId !== nativeProgressRunId) {
+                    return;
+                }
+
                 if (onProgress) {
                     const absCurrent = Math.min(i + e.payload.current, totalToProcess);
                     onProgress(absCurrent, totalToProcess, e.payload.message);
@@ -257,7 +305,7 @@ async function processFileEntries(
 
             // true for extractWorkflow (always want full metadata)
             const scanStartedAt = liveWatchNow();
-            const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool);
+            const results = await scanImagesBulk(chunk, '', skipThumbnail, true, defaultTool, nativeProgressRunId);
             const scanMs = elapsedMs(scanStartedAt);
             if (abortSignal?.aborted) {
                 wasCancelled = true;
@@ -452,16 +500,13 @@ async function processFileEntries(
     };
 }
 
-// --- Unified Folder Import ---
-// Scans folders EFFICIENTLY (single IPC call per folder) then imports
-// --- Unified Folder Import ---
-// Scans folders EFFICIENTLY (single IPC call per folder) then imports
 // Unified Folder Import
 // Scans folders EFFICIENTLY (single IPC call per folder) then imports
 export async function processFoldersUnified(
     folders: { path: string; variant?: GeneratorTool }[],
     options: ImportOptions = {}
 ): Promise<ImportResult> {
+    const sourcePaths = folders.map(folder => normalizePath(folder.path));
     const result: ImportResult = {
         images: [],
         stats: { processed: 0, imported: 0, skipped: 0, errors: 0 },
@@ -469,119 +514,148 @@ export async function processFoldersUnified(
         failedPaths: [],
         touchedFacetTypes: [],
         touchedFacetResources: createEmptyTouchedFacetResources(),
-        wasCancelled: false
+        wasCancelled: false,
+        completedSourcePaths: [],
+        cancelledSourcePaths: []
     };
 
-    const { onProgress, abortSignal, deferFacetCacheRefresh = false } = options;
+    const { onProgress, abortSignal, deferFacetCacheRefresh = false, preserveSourceBoundaries = true } = options;
 
     console.log(`[ImportUnified] Starting for ${folders.length} folders/items`);
 
     // 1. DISCOVERY PHASE: Scan all folders first to get specific file counts
-    if (onProgress) onProgress(0, 0, `Analyzing ${folders.length} sources...`);
+    if (onProgress) {
+        onProgress(0, 0, `Analyzing ${folders.length} sources...`, {
+            phase: 'scanning',
+            sourceCount: folders.length
+        });
+    }
 
     interface ImportTask {
+        sourcePaths: string[];
         variant: GeneratorTool | undefined;
         files: FileEntry[];
     }
     const tasks: ImportTask[] = [];
     let grandTotalFiles = 0;
 
-    const byVariant = new Map<GeneratorTool | undefined, string[]>();
-    for (const f of folders) {
-        const v = f.variant;
-        if (!byVariant.has(v)) byVariant.set(v, []);
-        byVariant.get(v)?.push(f.path);
-    }
-
-    // B. Execute Scans
-    for (const [variant, folderPaths] of byVariant.entries()) {
+    for (let folderIndex = 0; folderIndex < folders.length; folderIndex++) {
+        const folder = folders[folderIndex];
+        const sourcePath = normalizePath(folder.path);
         if (abortSignal?.aborted) {
             result.wasCancelled = true;
             break;
         }
 
-        const filesForVariant: FileEntry[] = [];
-        for (const folderPath of folderPaths) {
+        const filesForSource: FileEntry[] = [];
+        try {
+            if (onProgress) {
+                onProgress(0, 0, `Scanning ${sourcePath}...`, {
+                    phase: 'scanning',
+                    sourceIndex: folderIndex + 1,
+                    sourceCount: folders.length,
+                    sourcePath
+                });
+            }
+
+            // Attempt to scan as directory first.
+            // Note: scanDirectoryWithStats should be recursive on backend.
+            const files = await unwrap(commands.scanDirectoryWithStats(folder.path));
             if (abortSignal?.aborted) {
                 result.wasCancelled = true;
                 break;
             }
-            try {
-                if (onProgress) onProgress(0, 0, `Scanning ${normalizePath(folderPath)}...`);
 
-                // Attempt to scan as directory first
-                // Note: scanDirectoryWithStats should be recursive on backend
-                const files = await unwrap(commands.scanDirectoryWithStats(folderPath));
-                if (abortSignal?.aborted) {
-                    result.wasCancelled = true;
-                    break;
-                }
+            if (files && files.length > 0) {
+                filesForSource.push(...files);
+                console.log(`[ImportUnified] Discovered ${files.length} files in ${folder.path}`);
+            } else {
+                console.log(`[ImportUnified] No files found in folder ${folder.path} (or path is file)`);
 
-                if (files && files.length > 0) {
-                    filesForVariant.push(...files);
-                    console.log(`[ImportUnified] Discovered ${files.length} files in ${folderPath}`);
-                } else {
-                    // If it returns empty, it might be a single file
-                    // But scanDirectoryWithStats usually fails for files?
-                    // Let's assume if it fails or returns 0, we treat it as a file if it's not a directory?
-                    // For safety, we can check extension or try to add it as a single file entry if it exists.
-                    // But for "Folders" mode, we assume folders.
-                    console.log(`[ImportUnified] No files found in folder ${folderPath} (or path is file)`);
-
-                    // Fallback: If it's a file path manually passed (Drag & Drop single file)
-                    // We can check if it looks like an image.
-                    if (folderPath.match(/\.(png|jpg|jpeg|webp)$/i)) {
-                        filesForVariant.push({ path: folderPath, modified: Date.now(), size: 0 });
-                    }
+                if (folder.path.match(/\.(png|jpg|jpeg|webp)$/i)) {
+                    filesForSource.push({ path: folder.path, modified: Date.now(), size: 0 });
                 }
-            } catch (e) {
-                if (abortSignal?.aborted) {
-                    result.wasCancelled = true;
-                    break;
-                }
-                console.warn(`[ImportUnified] Failed to scan ${folderPath} as directory. Treating as file?`, e);
-                // Fallback for single files passed to this function
-                filesForVariant.push({ path: folderPath, modified: Date.now(), size: 0 });
             }
+        } catch (e) {
+            if (abortSignal?.aborted) {
+                result.wasCancelled = true;
+                break;
+            }
+            console.warn(`[ImportUnified] Failed to scan ${folder.path} as directory. Treating as file?`, e);
+            filesForSource.push({ path: folder.path, modified: Date.now(), size: 0 });
         }
 
-        if (result.wasCancelled) break;
-
-        if (filesForVariant.length > 0) {
-            tasks.push({ variant, files: filesForVariant });
-            grandTotalFiles += filesForVariant.length;
+        if (filesForSource.length > 0) {
+            tasks.push({ sourcePaths: [sourcePath], variant: folder.variant, files: filesForSource });
+            grandTotalFiles += filesForSource.length;
+        } else {
+            pushUniquePath(result.completedSourcePaths, sourcePath);
         }
     }
 
     console.log(`[ImportUnified] Discovery Complete. Total files to process: ${grandTotalFiles}`);
 
     if (result.wasCancelled) {
+        pushUniquePaths(
+            result.cancelledSourcePaths,
+            sourcePaths.filter(sourcePath => !result.completedSourcePaths.includes(sourcePath))
+        );
         return result;
     }
 
     // If grandTotal is 0, we should probably still return, but let's notify
     if (grandTotalFiles === 0) {
-        if (onProgress) onProgress(0, 0, 'No valid images found.');
+        if (onProgress) {
+            onProgress(0, 0, 'No valid images found.', {
+                phase: 'scanning',
+                sourceCount: folders.length
+            });
+        }
         return result;
     }
 
     // 2. PROCESSING PHASE: Import files with Global Progress
+    const processingTasks = preserveSourceBoundaries
+        ? tasks
+        : Array.from(tasks.reduce((byVariant, task) => {
+            const existing = byVariant.get(task.variant);
+            if (existing) {
+                existing.sourcePaths.push(...task.sourcePaths);
+                existing.files.push(...task.files);
+            } else {
+                byVariant.set(task.variant, {
+                    sourcePaths: [...task.sourcePaths],
+                    variant: task.variant,
+                    files: [...task.files]
+                });
+            }
+            return byVariant;
+        }, new Map<GeneratorTool | undefined, ImportTask>()).values());
+
     let globalProcessed = 0;
 
-    for (const task of tasks) {
+    for (let taskIndex = 0; taskIndex < processingTasks.length; taskIndex++) {
+        const task = processingTasks[taskIndex];
         if (abortSignal?.aborted) {
             result.wasCancelled = true;
+            pushUniquePaths(result.cancelledSourcePaths, processingTasks.slice(taskIndex).flatMap(t => t.sourcePaths));
             break;
         }
 
         // Adapter maps "Current Task Progress" -> "Global Progress"
-        const progressAdapter = (current: number, total: number, message?: string) => {
+        const progressAdapter = (current: number, _total: number, message?: string) => {
             if (onProgress) {
                 // current in batch + previously processed
                 const actualCurrent = globalProcessed + current;
                 // Ensure we don't exceed 100% due to math oddities
                 const safeCurrent = Math.min(actualCurrent, grandTotalFiles);
-                onProgress(safeCurrent, grandTotalFiles, message || `Importing images...`);
+                onProgress(safeCurrent, grandTotalFiles, message || `Importing images...`, {
+                    phase: 'importing',
+                    sourceIndex: taskIndex + 1,
+                    sourceCount: processingTasks.length,
+                    sourcePath: task.sourcePaths[0],
+                    rawMessage: message
+                });
             }
         };
 
@@ -597,6 +671,7 @@ export async function processFoldersUnified(
 
         if (imported.wasCancelled) {
             result.wasCancelled = true;
+            pushUniquePaths(result.cancelledSourcePaths, processingTasks.slice(taskIndex).flatMap(t => t.sourcePaths));
         }
 
         result.images.push(...imported.images);
@@ -613,6 +688,9 @@ export async function processFoldersUnified(
 
         // precise increment
         globalProcessed += task.files.length;
+        if (!imported.wasCancelled && imported.failedPaths.length === 0) {
+            pushUniquePaths(result.completedSourcePaths, task.sourcePaths);
+        }
         if (result.wasCancelled) break;
     }
 
@@ -689,7 +767,9 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         failedPaths: [],
         touchedFacetTypes: [],
         touchedFacetResources: createEmptyTouchedFacetResources(),
-        wasCancelled: false
+        wasCancelled: false,
+        completedSourcePaths: [],
+        cancelledSourcePaths: []
     };
 };
 
@@ -712,7 +792,7 @@ function canonicalStringify(obj: any): string {
 export const processNativePaths = async (
     paths: string[],
     thumbDir?: string, // Ignored, handled internally
-    onProgress?: (current: number, total: number, message?: string) => void,
+    onProgress?: ImportProgressCallback,
     defaultTool?: GeneratorTool,
     abortSignal?: AbortSignal,
     isStartup: boolean = false,
@@ -734,7 +814,8 @@ export const processNativePaths = async (
         forceRescan,
         waitForStableFiles,
         deferFacetCacheRefresh,
-        skipThumbnail: false
+        skipThumbnail: false,
+        preserveSourceBoundaries: false
     });
 };
 
@@ -750,7 +831,9 @@ export const processTargetedFiles = async (
         failedPaths: [],
         touchedFacetTypes: [],
         touchedFacetResources: createEmptyTouchedFacetResources(),
-        wasCancelled: false
+        wasCancelled: false,
+        completedSourcePaths: [],
+        cancelledSourcePaths: []
     };
 
     if (paths.length === 0) return result;
@@ -770,6 +853,11 @@ export const processTargetedFiles = async (
     result.touchedFacetTypes = imported.touchedFacetTypes;
     result.touchedFacetResources = imported.touchedFacetResources;
     result.wasCancelled = imported.wasCancelled;
+    if (imported.wasCancelled) {
+        pushUniquePaths(result.cancelledSourcePaths, paths);
+    } else if (imported.failedPaths.length === 0) {
+        pushUniquePaths(result.completedSourcePaths, paths);
+    }
 
     // Live Watch keeps the grid responsive here and lets SyncContext queue the
     // targeted incremental facet refresh immediately after the import settles.

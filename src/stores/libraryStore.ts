@@ -5,6 +5,27 @@ import type { MissingFileAuditResult } from '../types';
 
 let liveWatchTimeout: ReturnType<typeof setTimeout> | null = null;
 const LIVE_WATCH_IDLE_TIMEOUT_MS = 60000;
+let importRunCounter = 0;
+
+const createImportRunId = (owner: string): string => {
+    importRunCounter += 1;
+    return `${owner}-${Date.now()}-${importRunCounter}`;
+};
+
+const isImportRunDebugEnabled = (): boolean => {
+    try {
+        return typeof window !== 'undefined'
+            && window.localStorage?.getItem('ambit:debug-import-progress') === '1';
+    } catch {
+        return false;
+    }
+};
+
+const debugImportRun = (event: string, data: Record<string, unknown>) => {
+    if (isImportRunDebugEnabled()) {
+        console.debug(`[ImportRun] ${event}`, data);
+    }
+};
 
 export interface SyncProgress {
     current: number;
@@ -14,6 +35,13 @@ export interface SyncProgress {
     mode?: 'determinate' | 'indeterminate' | 'complete';
     detail?: string;
     startedAt?: number;
+}
+
+interface BeginImportRunOptions {
+    runId?: string;
+    owner?: string;
+    abortController?: AbortController | null;
+    progress?: SyncProgress | null;
 }
 
 export type ThumbnailOptimizationDetailProfile = 'quiet' | 'balanced' | 'fast';
@@ -155,6 +183,8 @@ interface LibraryState {
     isImporting: boolean;
     importProgress: SyncProgress | null;
     importAbortController: AbortController | null; // Added
+    importRunId: string | null;
+    importRunOwner: string | null;
     isRegeneratingThumbnails: boolean;
     thumbnailProgress: SyncProgress | null;
     thumbnailAbortController: AbortController | null;
@@ -213,6 +243,9 @@ interface LibraryState {
     setIsImporting: (isImporting: boolean) => void;
     setImportProgress: (progress: SyncProgress | null) => void;
     setImportAbortController: (ctrl: AbortController | null) => void; // Added
+    beginImportRun: (options?: BeginImportRunOptions) => string | null;
+    setImportProgressForRun: (runId: string, progress: SyncProgress | null) => void;
+    finishImportRun: (runId: string) => void;
     cancelImport: () => void; // Added
     setIsRegeneratingThumbnails: (val: boolean) => void;
     setThumbnailProgress: (progress: SyncProgress | null) => void;
@@ -279,6 +312,8 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     isImporting: false,
     importProgress: null,
     importAbortController: null,
+    importRunId: null,
+    importRunOwner: null,
     isRegeneratingThumbnails: false,
     thumbnailProgress: null,
     thumbnailAbortController: null,
@@ -364,10 +399,102 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     },
     setImportProgress: (progress) => set({ importProgress: progress }),
     setImportAbortController: (ctrl) => set({ importAbortController: ctrl }),
+    beginImportRun: (options = {}) => {
+        const owner = options.owner ?? 'import';
+        const runId = options.runId ?? createImportRunId(owner);
+        let didStart = false;
+
+        const { isScanningDuplicates, cancelDuplicateScan, isScanningMissingFiles, cancelMissingScan } = useLibraryStore.getState();
+        if (isScanningDuplicates) {
+            cancelDuplicateScan();
+        }
+        if (isScanningMissingFiles) {
+            cancelMissingScan();
+        }
+
+        set((state) => {
+            if (state.isImporting && state.importRunId && state.importRunId !== runId) {
+                debugImportRun('begin-ignored-active-run', {
+                    runId,
+                    owner,
+                    activeRunId: state.importRunId,
+                    activeOwner: state.importRunOwner
+                });
+                return {};
+            }
+
+            if (state.isImporting && !state.importRunId) {
+                debugImportRun('begin-ignored-legacy-active', { runId, owner });
+                return {};
+            }
+
+            didStart = true;
+            debugImportRun('begin', { runId, owner });
+            return {
+                isImporting: true,
+                importRunId: runId,
+                importRunOwner: owner,
+                importAbortController: options.abortController ?? null,
+                importProgress: options.progress ?? null,
+                isActivityDockDismissed: false
+            };
+        });
+
+        return didStart ? runId : null;
+    },
+    setImportProgressForRun: (runId, progress) => set((state) => {
+        if (state.importRunId !== runId) {
+            debugImportRun('progress-ignored-stale-run', {
+                runId,
+                activeRunId: state.importRunId,
+                progress
+            });
+            return {};
+        }
+
+        debugImportRun('progress', {
+            runId,
+            owner: state.importRunOwner,
+            current: progress?.current,
+            total: progress?.total,
+            message: progress?.message,
+            phase: progress?.phase,
+            detail: progress?.detail
+        });
+        return { importProgress: progress };
+    }),
+    finishImportRun: (runId) => set((state) => {
+        if (state.importRunId !== runId) {
+            debugImportRun('finish-ignored-stale-run', {
+                runId,
+                activeRunId: state.importRunId
+            });
+            return {};
+        }
+
+        debugImportRun('finish', { runId, owner: state.importRunOwner });
+        return {
+            isImporting: false,
+            importProgress: null,
+            importAbortController: null,
+            importRunId: null,
+            importRunOwner: null
+        };
+    }),
     cancelImport: () => set((state) => {
         if (state.importAbortController) {
+            debugImportRun('cancel', {
+                runId: state.importRunId,
+                owner: state.importRunOwner
+            });
             state.importAbortController.abort();
-            return { isImporting: false, importProgress: null, importAbortController: null };
+            return {
+                isImporting: false,
+                importProgress: null,
+                importAbortController: null,
+                importRunId: null,
+                importRunOwner: null
+            };
         }
         return {};
     }),

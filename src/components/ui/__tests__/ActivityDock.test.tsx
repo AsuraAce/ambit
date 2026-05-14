@@ -20,6 +20,8 @@ const resetLibraryStore = () => {
         isImporting: false,
         importProgress: null,
         importAbortController: null,
+        importRunId: null,
+        importRunOwner: null,
         isRegeneratingThumbnails: false,
         thumbnailProgress: null,
         isResolvingModels: false,
@@ -138,6 +140,29 @@ describe('ActivityDock', () => {
         expect(useLibraryStore.getState().isImporting).toBe(false);
         expect(useLibraryStore.getState().importProgress).toBeNull();
         expect(useLibraryStore.getState().importAbortController).toBeNull();
+    });
+
+    it('keeps stale import run progress out of the visible dock', () => {
+        const runId = useLibraryStore.getState().beginImportRun({
+            owner: 'folder-import',
+            abortController: new AbortController(),
+            progress: {
+                current: 1,
+                total: 10,
+                message: 'Importing images from 3 folders...'
+            }
+        });
+        expect(runId).toBeTruthy();
+        useLibraryStore.getState().setImportProgressForRun('old-run', {
+            current: 9,
+            total: 10,
+            message: 'Scanning C:/old-folder...'
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Importing images from 3 folders...')).toBeTruthy();
+        expect(screen.queryByText('Scanning C:/old-folder...')).toBeNull();
     });
 
     it('renders running smart thumbnail progress without repeated checked counts', () => {

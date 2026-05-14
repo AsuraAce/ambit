@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AIImage, AppSettings, Collection, FilterState } from '../../types';
+import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState } from '../../types';
 import { SettingsModal } from '../../features/settings/components/SettingsModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CompareModal } from '../../features/viewer/components/CompareModal';
@@ -39,7 +39,7 @@ interface GlobalModalsProps {
   filteredImages: AIImage[];
 
   // Actions
-  onSettingsSave?: (s: AppSettings) => void;
+  onSettingsSave?: (s: AppSettingsUpdate) => void;
   canCheckForUpdates?: boolean;
   onExportConfirm: (filename: string, folder: string) => void;
   onDeleteConfirm: () => void;
