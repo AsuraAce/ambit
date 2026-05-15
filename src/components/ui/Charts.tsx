@@ -97,9 +97,10 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                                         <Bar
                                             dataKey="count"
                                             radius={[6, 6, 0, 0]}
-                                            onClick={(data: any) => {
-                                                if (data && data.fullName) {
-                                                    onFilter('model', data.fullName);
+                                            onClick={(data: unknown) => {
+                                                const datum = data as Partial<ModelChartStat> | null;
+                                                if (typeof datum?.fullName === 'string') {
+                                                    onFilter('model', datum.fullName);
                                                 }
                                             }}
                                             cursor="pointer"
@@ -135,7 +136,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                                     totalImages={totalGenerations}
                                     isLoading={isFiltering}
                                     onWordClick={(word) => {
-                                        setFilters((prev: any) => ({
+                                        setFilters((prev) => ({
                                             ...prev,
                                             searchQuery: prev.searchQuery ? `${prev.searchQuery.trim()} ${word}` : word
                                         }));

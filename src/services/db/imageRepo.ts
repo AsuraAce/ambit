@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -47,6 +47,25 @@ export interface DeleteRemovedImagesResult {
     failedIds: string[];
     thumbnailWarningIds: string[];
 }
+
+interface CountRow {
+    count: number;
+}
+
+interface OriginalParsedMetadataRow {
+    original_parsed_json: string | null;
+}
+
+interface MetadataJsonRow {
+    metadata_json: string | null;
+}
+
+type RemovedImageRow = ImageRow & {
+    id: string;
+    path: string;
+    thumbnail_path?: string | null;
+    collection_ids_json?: string | null;
+};
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
 
@@ -324,7 +343,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
             WHERE board_id IS NOT NULL
         `;
 
-        const params: any[] = [];
+        const params: unknown[] = [];
         if (ids && ids.length > 0) {
             // SQLite has a limit on parameters, so we chunk if necessary, 
             // but for typical batch sizes (500) it's fine.
@@ -342,7 +361,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
  * Safely updates individual fields within the metadata_json blob without overwriting the entire object.
  * CRITICAL: Prevents data loss when editing from "light" grid view imagery.
  */
-export const updateImageMetadataFields = async (id: string, updates: Record<string, any>) => {
+export const updateImageMetadataFields = async (id: string, updates: Record<string, unknown>) => {
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
         if (image) {
@@ -357,7 +376,7 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
 
         let query = 'UPDATE images SET metadata_json = ';
         let jsonSetExpr = 'metadata_json';
-        const params: any[] = [];
+        const params: unknown[] = [];
 
         Object.entries(updates).forEach(([key, value]) => {
             // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
@@ -419,9 +438,9 @@ export const revertImageMetadata = async (id: string) => {
         const normalizedId = normalizePath(id);
 
         // 1. Fetch the original parsed metadata (already parsed, no re-parsing needed!)
-        const row: any = await db.select('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
-        if (!row || row.length === 0) return;
-        const img = row[0];
+        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
+        if (rows.length === 0) return;
+        const img = rows[0];
 
         if (!img.original_parsed_json) {
             // If no original parsed metadata, just clear overrides
@@ -441,7 +460,10 @@ export const revertImageMetadata = async (id: string) => {
 
         try {
             // Parse the already-stored baseline (no re-parsing from raw chunks!)
-            const originalMetadata = JSON.parse(img.original_parsed_json);
+            const originalMetadata = JSON.parse(img.original_parsed_json) as Partial<ImageMetadata> & {
+                positive_prompt?: string;
+                negative_prompt?: string;
+            };
 
             // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
             originalMetadata.isIntermediate = false;
@@ -498,7 +520,7 @@ export const isImageNew = async (id: string): Promise<boolean> => {
     }
 
     const db = await getDb();
-    const result = await db.select<any[]>(`SELECT count(*) as count FROM images WHERE id = ?`, [id]);
+    const result = await db.select<CountRow[]>(`SELECT count(*) as count FROM images WHERE id = ?`, [id]);
     return (result[0]?.count || 0) === 0;
 };
 
@@ -536,7 +558,7 @@ export const getAllImages = async (
         ? `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
         : `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy}`;
 
-    const rows = await db.select<any[]>(query);
+    const rows = await db.select<ImageRow[]>(query);
     return rows.map(mapRowToImage);
 };
 
@@ -556,7 +578,7 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
         const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})`;
-        const rows = await db.select<any[]>(query, chunk);
+        const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
 
@@ -574,7 +596,7 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
         const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders})`;
-        const rows = await db.select<any[]>(query, chunk);
+        const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
 
@@ -588,7 +610,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<any[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -709,12 +731,12 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: any[] = [];
+        const rows: RemovedImageRow[] = [];
 
         console.info('[Repo] removeImagesFromLibrary: loading images', { count: normalizedIds.length });
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<any[]>(
+            const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
                         original_metadata_json, original_parsed_json, original_state_json, is_corrupt
@@ -803,10 +825,10 @@ export const restoreRemovedImages = async (ids: string[]) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: any[] = [];
+        const rows: RemovedImageRow[] = [];
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<any[]>(
+            const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
                 chunk
             );
@@ -899,10 +921,10 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
 
     return dbMutex.dispatch(async () => {
         const db = await getDb();
-        const rows: any[] = [];
+        const rows: RemovedImageRow[] = [];
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<any[]>(
+            const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT id, path, thumbnail_path FROM removed_images WHERE id IN (${placeholders})`,
                 chunk
             );
@@ -928,11 +950,12 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
                 }
             }
 
-            if (shouldTrashThumbnail(row.path, row.thumbnail_path)) {
+            const thumbnailPath = row.thumbnail_path;
+            if (thumbnailPath && shouldTrashThumbnail(row.path, thumbnailPath)) {
                 try {
-                    await unwrap(commands.deleteThumbnail(row.thumbnail_path));
+                    await unwrap(commands.deleteThumbnail(thumbnailPath));
                 } catch (e) {
-                    console.warn('[Repo] Failed to trash removed thumbnail:', row.thumbnail_path, e);
+                    console.warn('[Repo] Failed to trash removed thumbnail:', thumbnailPath, e);
                     thumbnailWarningIds.push(row.id);
                 }
             }
@@ -977,11 +1000,11 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]) as any[];
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return;
 
     try {
-        const metadata = JSON.parse(rows[0].metadata_json);
+        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
         metadata.workflowJson = workflowJson;
         metadata.hasWorkflowHint = true; // Mark as having workflow
 
@@ -1004,11 +1027,11 @@ export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean):
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]) as any[];
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return;
 
     try {
-        const metadata = JSON.parse(rows[0].metadata_json);
+        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
         metadata.hasWorkflowHint = hasWorkflow;
 
         await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
@@ -1097,8 +1120,8 @@ export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediat
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<any[]>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<any[]>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
     ]);
 
     return {

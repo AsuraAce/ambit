@@ -73,7 +73,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
 const NavButton = ({ active, onClick, icon, tooltip, badgeContent, badgeColor = "bg-sage-500" }: { active: boolean, onClick: () => void, icon: React.ReactNode, tooltip: string, badgeContent?: string | number, badgeColor?: string }) => (
   <button onClick={onClick} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}>
-    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { size: 20 }) : icon}
+    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 }) : icon}
 
     <AnimatePresence>
       {badgeContent !== undefined && (

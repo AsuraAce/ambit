@@ -133,7 +133,7 @@ export const regenerateAllUnoptimized = async (
     onProgress?: (current: number, total: number) => void,
     signal?: AbortSignal,
     whereClause: string = '',
-    params: any[] = [],
+    params: unknown[] = [],
     includeUpgradeable: boolean = false
 ): Promise<number> => {
     const thumbDir = await getThumbnailDir();

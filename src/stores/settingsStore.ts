@@ -194,7 +194,8 @@ export const useSettingsStore = create<SettingsState>()(
                         }
 
                         // Ensure API key from env takes precedence if present
-                        const envKey = (process.env as any).API_KEY;
+                        const env = import.meta.env as Record<string, string | boolean | undefined>;
+                        const envKey = typeof env.API_KEY === 'string' ? env.API_KEY : undefined;
                         if (envKey && envKey !== 'undefined') apiKey = envKey;
 
                         // NEW: Enable devMode by default in development environment if not already set

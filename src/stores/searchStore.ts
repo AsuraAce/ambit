@@ -30,7 +30,7 @@ interface SearchState {
 
     // Deprecated but kept to prevent breakages during hot-reload if components call them.
     // In strict build, we could remove them.
-    fetchData: (isLoadMore?: boolean, collectionsDependency?: any[]) => Promise<void>;
+    fetchData: (isLoadMore?: boolean, collectionsDependency?: unknown[]) => Promise<void>;
 }
 
 const INITIAL_FILTERS: FilterState = {

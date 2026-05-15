@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { useEffect } from 'react';
 import { AIImage, FilterState, ViewMode } from '../types';
+import type { VirtualGridHandle } from '../features/library/components/VirtualGrid';
 
 interface GlobalShortcutsProps {
     viewMode: ViewMode;
@@ -9,7 +10,7 @@ interface GlobalShortcutsProps {
     filteredImages: AIImage[];
     lastSelectedId: string | null;
     selectedImageIndex: number | null;
-    gridRef: React.RefObject<any>;
+    gridRef: React.RefObject<VirtualGridHandle | null>;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
 
     // Actions

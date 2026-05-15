@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
+import type { LayoutItem } from './useTimelineLayout';
 
 interface UseTimelineSelectionProps {
     containerRef: React.RefObject<HTMLDivElement | null>;
-    layoutItems: any[];
+    layoutItems: LayoutItem[];
     onRangeSelection?: (selectedIndexes: number[], isAdditive: boolean) => void;
     onBackgroundClick?: () => void;
 }
@@ -80,7 +81,7 @@ export const useTimelineSelection = ({
 
                 layoutItems.forEach(item => {
                     if (item.type === 'row') {
-                        item.items.forEach((subItem: any) => {
+                        item.items?.forEach((subItem) => {
                             const itemX = subItem.x;
                             const itemY = item.y;
                             const itemW = subItem.width;

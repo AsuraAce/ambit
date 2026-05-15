@@ -56,7 +56,7 @@ export const AppHeader = React.memo(({
     const {
         settings, setSettings,
         recentSearches, setRecentSearches,
-    } = useLibraryContext() as any;
+    } = useLibraryContext();
     const toast = React.useContext(ToastContext);
     const addToast = toast?.addToast ?? ((message: string) => console.info(message));
     const browserMockMode = isBrowserMockMode();

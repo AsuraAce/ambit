@@ -7,14 +7,22 @@ export interface TimelineGroup {
     images: AIImage[];
 }
 
-interface LayoutItem {
+export interface TimelineRowItem {
+    image: AIImage;
+    x: number;
+    width: number;
+    height: number;
+    globalIndex: number;
+}
+
+export interface LayoutItem {
     type: 'header' | 'row' | 'shelf';
     y: number;
     height: number;
     id?: string;
     date?: string;
     count?: number;
-    items?: any[];
+    items?: TimelineRowItem[];
 }
 
 interface UseTimelineLayoutProps {

@@ -10,7 +10,8 @@ export const startLiveLink = async (invokeAiPath: string, onNewImage: () => void
         const unwatch = await watch(imagesPath, (event) => {
             // Check if it's a creation event
             // In tauri-plugin-fs v2, event.type can be an object or string
-            const type = typeof event.type === 'string' ? event.type : (event.type as any).Create || (event.type as any).Modify;
+            const eventType = event.type as string | { Create?: unknown; Modify?: unknown };
+            const type = typeof eventType === 'string' ? eventType : eventType.Create || eventType.Modify;
 
             if (type) {
                 // Throttle or debounce if needed, but for live watch we want immediate trigger

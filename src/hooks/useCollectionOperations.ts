@@ -19,8 +19,8 @@ interface UseCollectionOperationsProps {
   smartCollections: SmartCollection[];
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
   refreshCollections: (debounced?: boolean) => Promise<void>;
-  setFilters: React.Dispatch<React.SetStateAction<any>>;
-  setImages: React.Dispatch<React.SetStateAction<any[]>>;
+  setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+  setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
   activeCollectionId: string | null;
 }
 
@@ -109,7 +109,7 @@ export const useCollectionOperations = ({
     // Optimistic Update
     setAllCollections(prev => prev.filter(c => c.id !== id));
     if (activeCollectionId === id) {
-      setFilters((prev: any) => ({ ...prev, collectionId: null }));
+      setFilters((prev) => ({ ...prev, collectionId: null }));
     }
 
     try {
@@ -166,7 +166,7 @@ export const useCollectionOperations = ({
     // Optimistic Update
     setAllCollections(prev => prev.map(c => c.id === id ? { ...c, isArchived: newState } : c));
     if (activeCollectionId === id && newState) {
-      setFilters((prev: any) => ({ ...prev, collectionId: null }));
+      setFilters((prev) => ({ ...prev, collectionId: null }));
     }
 
     try {

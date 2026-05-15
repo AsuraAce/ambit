@@ -7,7 +7,7 @@ import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
 import { getDb } from '../services/db/connection';
 
-import { Facets, ValidFacetNames } from '../services/db/searchRepo';
+import { Facets, LibraryStats, ValidFacetNames } from '../services/db/searchRepo';
 import {
     checkHiddenContentAvailability,
     rebuildThumbnailFacetCache,
@@ -22,15 +22,6 @@ import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
 import { useLibraryStore } from '../stores/libraryStore';
-
-interface LibraryStats {
-    totalImages: number;
-    totalGenerations: number;
-    avgSteps: number;
-    estSizeMB: string;
-    modelStats: any[];
-    keywordStats: { text: string; value: number }[];
-}
 
 interface SearchContextType {
     images: AIImage[];
@@ -48,7 +39,7 @@ interface SearchContextType {
     clearAllFilters: () => void;
     isFiltering: boolean;
     activeSqlWhere: string;
-    activeSqlParams: any[];
+    activeSqlParams: unknown[];
     refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
     fetchData: (isLoadMore: boolean, isSilent?: boolean) => Promise<void>;
     recentSearches: string[];
@@ -236,7 +227,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
-    const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+    const [activeSqlParams, setActiveSqlParams] = useState<unknown[]>([]);
 
     // Track loaded facet types for lazy loading
     // 'tools', 'checkpoints', 'loras' are default

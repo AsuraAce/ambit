@@ -42,7 +42,7 @@ export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_
             return { valid: true };
         }
         return { valid: false, error: "Invalid response from Gemini API" };
-    } catch (error: any) {
+    } catch (error: unknown) {
         // Log error but be selective about what we expose to UI
         console.error("Gemini Verification Error:", error);
 
@@ -58,7 +58,7 @@ export const verifyApiKey = async (apiKey: string, modelId: string = DEFAULT_AI_
         } else if (errorStr.includes("permission") || errorStr.includes("not found")) {
             message = "Model not found or access denied";
         } else {
-            message = error.message || "Unknown error";
+            message = error instanceof Error ? error.message : "Unknown error";
         }
 
         return { valid: false, error: message };

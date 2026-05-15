@@ -72,7 +72,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         setModelResolutionProgress: setResolutionProgress,
         lastModelResolutionResult: resolutionResult,
         setLastModelResolutionResult: setResolutionResult
-    } = useLibraryContext() as any;
+    } = useLibraryContext();
 
     const { addToast } = useToast();
     const queryClient = useQueryClient();
@@ -104,7 +104,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
     // InvokeAI folders re-sync from their database; all others re-parse stored PNG chunks.
     const handleRefresh = useCallback((path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
         if (isManaged && variant === GeneratorTool.INVOKEAI) {
-            const folder = combinedFolders.find((f: any) => (f.isManaged ? f.pathRaw : f.path) === path);
+            const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
             if (folder) {
                 handleRescan(folder.id, path, variant, true);
             }
@@ -115,10 +115,10 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
 
     const handleRefreshAll = useCallback(async () => {
         // 1. If we have a managed InvokeAI integration, sync it first
-        const managedInvoke = (combinedFolders as any[]).find((f) => f.isManaged && f.variant === GeneratorTool.INVOKEAI);
+        const managedInvoke = combinedFolders.find((f) => f.isManaged && f.variant === GeneratorTool.INVOKEAI);
         if (managedInvoke) {
             console.log('[FoldersTab] Syncing managed InvokeAI database for Refresh All');
-            await handleRescan(managedInvoke.id, managedInvoke.pathRaw, GeneratorTool.INVOKEAI, true);
+            await handleRescan(managedInvoke.id, managedInvoke.pathRaw ?? managedInvoke.path, GeneratorTool.INVOKEAI, true);
         }
 
         // 2. Trigger the global reparse job

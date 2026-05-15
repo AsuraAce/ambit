@@ -4,6 +4,7 @@ import { commands, ScanResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { getDb } from '../db/connection';
 import { insertImagesBatch } from '../db/imageRepo';
+import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
 
 export const scanForOrphans = async (
     rootPath: string,
@@ -30,8 +31,8 @@ export const scanForOrphans = async (
         try {
             const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
             const invokeDb = await Database.load(`sqlite:${dbPath.replace(/\\/g, '/')}`);
-            const interRows = await (invokeDb as any).select("SELECT image_name FROM images WHERE is_intermediate = 1");
-            knownIntermediates = new Set(interRows.map((r: any) => r.image_name));
+            const interRows = await invokeDb.select<Array<{ image_name: string }>>("SELECT image_name FROM images WHERE is_intermediate = 1");
+            knownIntermediates = new Set(interRows.map((r) => r.image_name));
         } catch (e) {
             console.error("[Hybrid Sync] ERROR loading intermediates:", e);
         }
@@ -75,7 +76,7 @@ export const scanForOrphans = async (
         try {
             const scanResults = await unwrap(commands.scanImagesBulk(chunkAbsPaths, null, true, false, null, null));
 
-            const batchToInsert: any[] = [];
+            const batchToInsert: AIImage[] = [];
             for (let j = 0; j < chunk.length; j++) {
                 const meta = scanResults[j];
                 const absPath = chunkAbsPaths[j];
@@ -86,10 +87,8 @@ export const scanForOrphans = async (
                 if (!options.importIntermediates && meta.metadata?.isIntermediate) continue;
                 if (ambitExistingIds.has(absPath)) continue;
 
-                const finalMeta: any = {
-                    tool: 'InvokeAI',
-                    source: 'orphan_scan',
-                    tags: ['ambit_orphan'],
+                const finalMeta: ImageMetadata = {
+                    tool: GeneratorTool.INVOKEAI,
                     model: meta.metadata?.model || 'Unknown',
                     seed: meta.metadata?.seed || 0,
                     steps: meta.metadata?.steps || 0,
@@ -99,16 +98,16 @@ export const scanForOrphans = async (
                     sampler: meta.metadata?.sampler || '',
                     loras: meta.metadata?.loras || [],
                     controlNets: meta.metadata?.controlNets || [],
-                    workflowJson: meta.metadata?.workflowJson,
-                    rawParameters: meta.metadata?.rawParameters,
+                    workflowJson: meta.metadata?.workflowJson ?? undefined,
+                    rawParameters: meta.metadata?.rawParameters ?? undefined,
                     isIntermediate: !!meta.metadata?.isIntermediate || !meta.metadata
                 };
 
-                const newImg: any = {
+                const newImg: AIImage = {
                     id: absPath,
                     url: convertFileSrc(absPath),
                     thumbnailUrl: meta.thumbnail || absPath,
-                    filename: relName.split('/').pop(),
+                    filename: relName.split('/').pop() ?? relName,
                     fileSize: meta.size,
                     timestamp: meta.modified || Date.now(),
                     width: meta.width,

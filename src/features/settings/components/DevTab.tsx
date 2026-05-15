@@ -13,8 +13,11 @@ import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
+import type { LogLevel } from '../../../types';
 
 type DevTabId = 'prompts' | 'tools';
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'none'] as const satisfies readonly LogLevel[];
+const isLogLevel = (value: string): value is LogLevel => (LOG_LEVELS as readonly string[]).includes(value);
 
 export const DevTab: React.FC = () => {
     const { fetchData } = useLibraryContext();
@@ -269,7 +272,12 @@ export const DevTab: React.FC = () => {
                                     </div>
                                     <select
                                         value={settings.logLevel || 'info'}
-                                        onChange={(e) => setSettings(prev => ({ ...prev, logLevel: e.target.value as any }))}
+                                        onChange={(e) => {
+                                            const nextLevel = e.target.value;
+                                            if (isLogLevel(nextLevel)) {
+                                                setSettings(prev => ({ ...prev, logLevel: nextLevel }));
+                                            }
+                                        }}
                                         className="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-bold font-mono text-gray-700 dark:text-gray-300 outline-none focus:ring-2 focus:ring-sage-500/50 cursor-pointer"
                                     >
                                         <option value="debug">DEBUG</option>
@@ -296,8 +304,9 @@ export const DevTab: React.FC = () => {
                                                 addToast(msg, 'info');
                                                 await navigator.clipboard.writeText(msg);
                                                 addToast('Stats copied to clipboard', 'success');
-                                            } catch (e: any) {
-                                                addToast(`Error: ${e.message || e}`, 'error');
+                                            } catch (e: unknown) {
+                                                const message = e instanceof Error ? e.message : String(e);
+                                                addToast(`Error: ${message}`, 'error');
                                             }
                                         }}
                                         className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-gray-500/20"

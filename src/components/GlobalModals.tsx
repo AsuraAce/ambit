@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { AIImage, AppSettings, AppSettingsUpdate } from '../types';
+import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, RecoveryStyle, ViewMode } from '../types';
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 import type { ImportResult } from '../services/importService';
+import { createDefaultFilters } from '../utils/filterState';
 
 const SettingsModal = React.lazy(() => import('../features/settings/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 const ExportModal = React.lazy(() => import('../features/library/components/ExportModal').then(module => ({ default: module.ExportModal })));
@@ -25,7 +26,7 @@ interface GlobalModalsProps {
     onExportConfirm: (name: string, folder: string) => void;
     onDeleteConfirm: () => void;
     onDeleteCollectionConfirm: () => void;
-    onRecoverMetadata: (options: any) => void;
+    onRecoverMetadata: (style: RecoveryStyle) => void;
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => void;
     onCloseExport: () => void;
     exportIds: Set<string>;
@@ -36,10 +37,10 @@ interface GlobalModalsProps {
     isRecoveringMetadata: boolean;
     isExporting: boolean;
     slideshowShuffle: boolean;
-    initialSettingsTab: string;
-    shortcutsModalTab: string;
+    initialSettingsTab: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+    shortcutsModalTab: 'shortcuts' | 'search';
     commandPaletteProps: {
-        onNavigate: (mode: any) => void;
+        onNavigate: (mode: ViewMode) => void;
         onToggleTheme: () => void;
         onOpenSettings: () => void;
         onImport: () => void;
@@ -47,14 +48,14 @@ interface GlobalModalsProps {
         onToggleAI: () => void;
         settings: AppSettings;
     };
-    collections: any[];
-    smartCollections?: any[];
+    collections: Collection[];
+    smartCollections?: Collection[];
     toggleFavorite: (id: string) => void;
     togglePin?: (id: string, isPinned: boolean) => void;
     settings: AppSettings;
-    filters?: any;
+    filters?: FilterState;
     collectionToEditId?: string | null;
-    onSaveCollectionFilters?: (id: string, filters: any) => void;
+    onSaveCollectionFilters?: (id: string, filters: FilterState | undefined) => void | Promise<void>;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
@@ -118,7 +119,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         onSave={onSettingsSave}
                         settings={settings}
                         canCheckForUpdates={canCheckForUpdates}
-                        initialTab={initialSettingsTab as any}
+                        initialTab={initialSettingsTab}
                         onScanFolder={onScanFolder}
                         onInvokeSync={onInvokeSync}
                         hasPendingUpdate={hasPendingUpdate}
@@ -204,7 +205,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                     <ShortcutsModal
                         isOpen={modals.shortcuts}
                         onClose={() => closeModal('shortcuts')}
-                        initialTab={shortcutsModalTab as any}
+                        initialTab={shortcutsModalTab}
                     />
                 )}
 
@@ -230,7 +231,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         isOpen={modals.collectionEditor}
                         onClose={() => closeModal('collectionEditor')}
                         collection={[...collections, ...smartCollections].find(c => c.id === collectionToEditId) || null}
-                        filters={filters}
+                        filters={filters ?? createDefaultFilters()}
                         onSave={onSaveCollectionFilters || (() => { })}
                     />
                 )}

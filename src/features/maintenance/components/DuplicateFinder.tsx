@@ -233,7 +233,7 @@ interface DuplicateFinderProps {
     onResolve: (keepId: string, deleteIds: string[]) => void;
     // Privacy
     maskedKeywords: string[];
-    onRefresh?: (scope: 'global' | 'filtered') => void | Promise<any>;
+    onRefresh?: (scope: 'global' | 'filtered') => void | Promise<unknown>;
     scope?: 'global' | 'filtered';
     isScanning?: boolean;
     scanProgress?: SyncProgress | null;

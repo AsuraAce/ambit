@@ -512,8 +512,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 addToast('Synchronization complete: No new changes.', 'info');
             }
 
-        } catch (e: any) {
-            if (e.message === 'Aborted') {
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (message === 'Aborted') {
                 liveOutcome = 'aborted';
                 setSyncStatus('idle');
             }
@@ -521,7 +522,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 liveOutcome = 'errored';
                 console.error('Sync failed', e);
                 setSyncStatus('error');
-                if (options.mode === 'manual' || options.mode === 'startup') addToast('Sync failed: ' + e.message, 'error');
+                if (options.mode === 'manual' || options.mode === 'startup') addToast('Sync failed: ' + message, 'error');
             }
         } finally {
             setSyncAbortController(null);
@@ -798,9 +799,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             console.log('[Purge] Purge complete. User should restart the app.');
 
             // Note: In production, the app auto-restarts. In dev mode, user must restart terminal.
-        } catch (e: any) {
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
             console.error("[Purge] Purge failed:", e);
-            addToast('Purge failed: ' + e.message, 'error');
+            addToast('Purge failed: ' + message, 'error');
         }
     }, [addToast, setSettings, queryClient]);
 

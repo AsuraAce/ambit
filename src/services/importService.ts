@@ -185,7 +185,7 @@ async function waitForStableFileSizes(
     return !abortSignal?.aborted;
 }
 
-const mapMetadata = (meta: any) => ({
+const mapMetadata = (meta: Partial<ImageMetadata>): ImageMetadata => ({
     ...meta,
     tool: meta.tool || GeneratorTool.UNKNOWN,
     model: meta.model || 'Unknown',
@@ -326,11 +326,14 @@ async function processFileEntries(
                     continue; // Skip valid object creation if hard error
                 }
 
+                const mappedMetadata = mapMetadata(info.metadata);
+
                 // Create AIImage object
                 const img: AIImage = {
                     id: normalizePath(path),
-                    ...mapMetadata(info.metadata),
-                    timestamp: info.timestamp,
+                    ...mappedMetadata,
+                    filename: path.split(/[\\/]/).pop() || path,
+                    timestamp: info.timestamp ?? Date.now(),
                     width: info.width || 0,
                     height: info.height || 0,
                     fileSize: info.fileSize,
@@ -339,7 +342,7 @@ async function processFileEntries(
                     isPinned: false,
                     isDeleted: false,
                     isIntermediate: info.isIntermediate || false,
-                    metadata: info.metadata,
+                    metadata: mappedMetadata,
                     url: convertFileSrc(path),
                     thumbnailSource: info.thumbnailSource,
                     microThumbnail: info.microThumbnail,
@@ -773,14 +776,15 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
 /**
  * Canonical stringify to ignore key order for metadata comparison
  */
-function canonicalStringify(obj: any): string {
+function canonicalStringify(obj: unknown): string {
     if (obj === null || typeof obj !== 'object') {
         return JSON.stringify(obj);
     }
-    const allKeys = Object.keys(obj).sort();
-    const result: any = {};
+    const record = obj as Record<string, unknown>;
+    const allKeys = Object.keys(record).sort();
+    const result: Record<string, string> = {};
     for (const key of allKeys) {
-        result[key] = canonicalStringify(obj[key]);
+        result[key] = canonicalStringify(record[key]);
     }
     return JSON.stringify(result);
 }

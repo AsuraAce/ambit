@@ -1,3 +1,40 @@
+import { GeneratorTool, ImageMetadata } from '../../types';
+
+type MetadataRecord = Record<string, unknown>;
+type ResourceArrays = 'loras' | 'controlNets' | 'ipAdapters' | 'embeddings' | 'hypernetworks';
+export type InvokeImageMetadata = ImageMetadata & Required<Pick<ImageMetadata, ResourceArrays>>;
+
+const isRecord = (value: unknown): value is MetadataRecord =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+
+const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
+
+const readString = (record: MetadataRecord, ...keys: string[]): string => {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === 'string' && value.length > 0) return value;
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    }
+    return '';
+};
+
+const readNumber = (record: MetadataRecord, ...keys: string[]): number | undefined => {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string' && value !== '' && Number.isFinite(Number(value))) return Number(value);
+    }
+    return undefined;
+};
+
+const readResourceName = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    const record = asRecord(value);
+    const model = asRecord(record.model);
+    if (Object.keys(model).length > 0) return readString(model, 'model_name', 'name', 'default');
+    return readString(record, 'model_name', 'name', 'lora_name');
+};
+
 // Helper to clean model names consistent with backend logic
 export function cleanModelName(name: string): string {
     if (!name || typeof name !== 'string') return '';
@@ -95,7 +132,7 @@ interface Resources {
     hypernetworks: string[];
 }
 
-function scanForResources(val: any, res: Resources, depth = 0) {
+function scanForResources(val: unknown, res: Resources, depth = 0) {
     if (!val || typeof val !== 'object' || depth > 20) return;
 
     if (Array.isArray(val)) {
@@ -103,18 +140,20 @@ function scanForResources(val: any, res: Resources, depth = 0) {
         return;
     }
 
+    const obj = asRecord(val);
+
     // Check for LoRAs
-    if (val.loras && Array.isArray(val.loras)) {
-        val.loras.forEach((l: any) => {
+    if (Array.isArray(obj.loras)) {
+        obj.loras.forEach((l) => {
             if (!l) return;
-            let name = '';
-            if (typeof l === 'string') name = l;
-            else if (l.model && typeof l.model === 'object') name = l.model.model_name || l.model.name;
-            else if (l.lora && typeof l.lora === 'object') name = l.lora.model_name || l.lora.name;
-            else name = l.model_name || l.name || l.lora_name;
+            const loraRecord = asRecord(l);
+            const loraModel = asRecord(loraRecord.lora);
+            const name = typeof l === 'string'
+                ? l
+                : (readResourceName(loraModel) || readResourceName(loraRecord));
 
             if (name && typeof name === 'string') {
-                const weight = typeof l.weight === 'number' ? l.weight : 1.0;
+                const weight = readNumber(loraRecord, 'weight') ?? 1.0;
                 const entry = Math.abs(weight - 1.0) > 0.001 ? `${name} (${weight.toFixed(2)})` : name;
                 if (!res.loras.includes(entry)) res.loras.push(entry);
             }
@@ -124,20 +163,19 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     // Check for ControlNets (Support both arrays of adapters and individual node patterns)
     const cns_keys = ["controlnets", "control_adapters", "control_model"];
     cns_keys.forEach(key => {
-        const cns = val[key];
+        const cns = obj[key];
         if (cns) {
             const items = Array.isArray(cns) ? cns : [cns];
-            items.forEach((c: any) => {
+            items.forEach((c) => {
                 if (!c) return;
                 let name = '';
                 if (typeof c === 'string') name = c;
-                else if (c.control_model) {
-                    if (typeof c.control_model === 'string') name = c.control_model;
-                    else name = c.control_model.model_name || c.control_model.name;
-                } else if (c.model && typeof c.model === 'object') {
-                    name = c.model.model_name || c.model.name;
-                } else {
-                    name = c.model_name || c.name || (typeof c === 'string' ? c : '');
+                else {
+                    const item = asRecord(c);
+                    const controlModel = item.control_model;
+                    if (typeof controlModel === 'string') name = controlModel;
+                    else if (isRecord(controlModel)) name = readResourceName(controlModel);
+                    else name = readResourceName(item);
                 }
 
                 if (name && typeof name === 'string') {
@@ -151,20 +189,19 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     // Check for IP-Adapters
     const ips_keys = ["ip_adapters", "ip_adapter", "ip_adapter_model"];
     ips_keys.forEach(key => {
-        const ips = val[key];
+        const ips = obj[key];
         if (ips) {
             const items = Array.isArray(ips) ? ips : [ips];
-            items.forEach((i: any) => {
+            items.forEach((i) => {
                 if (!i) return;
                 let name = '';
                 if (typeof i === 'string') name = i;
-                else if (i.ip_adapter_model) {
-                    if (typeof i.ip_adapter_model === 'string') name = i.ip_adapter_model;
-                    else name = i.ip_adapter_model.model_name || i.ip_adapter_model.name;
-                } else if (i.model && typeof i.model === 'object') {
-                    name = i.model.model_name || i.model.name;
-                } else {
-                    name = i.model_name || i.name || (typeof i === 'string' ? i : '');
+                else {
+                    const item = asRecord(i);
+                    const adapterModel = item.ip_adapter_model;
+                    if (typeof adapterModel === 'string') name = adapterModel;
+                    else if (isRecord(adapterModel)) name = readResourceName(adapterModel);
+                    else name = readResourceName(item);
                 }
 
                 if (name && typeof name === 'string') {
@@ -178,15 +215,12 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     // Check for embeddings
     const embs_keys = ["embeddings", "ti", "textual_inversion"];
     embs_keys.forEach(key => {
-        const embs = val[key];
+        const embs = obj[key];
         if (embs) {
             const items = Array.isArray(embs) ? embs : [embs];
-            items.forEach((e: any) => {
+            items.forEach((e) => {
                 if (!e) return;
-                let name = '';
-                if (typeof e === 'string') name = e;
-                else if (e.model && typeof e.model === 'object') name = e.model.model_name || e.model.name;
-                else name = e.model_name || e.name || '';
+                const name = typeof e === 'string' ? e : readResourceName(e);
 
                 if (name && typeof name === 'string') {
                     const cleaned = cleanModelName(name);
@@ -199,15 +233,12 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     // Check for hypernetworks
     const hn_keys = ["hypernetworks", "hypernet", "hypernets"];
     hn_keys.forEach(key => {
-        const hn = val[key];
+        const hn = obj[key];
         if (hn) {
             const items = Array.isArray(hn) ? hn : [hn];
-            items.forEach((h: any) => {
+            items.forEach((h) => {
                 if (!h) return;
-                let name = '';
-                if (typeof h === 'string') name = h;
-                else if (h.model && typeof h.model === 'object') name = h.model.model_name || h.model.name;
-                else name = h.model_name || h.name || '';
+                const name = typeof h === 'string' ? h : readResourceName(h);
 
                 if (name && typeof name === 'string') {
                     const cleaned = cleanModelName(name);
@@ -218,9 +249,9 @@ function scanForResources(val: any, res: Resources, depth = 0) {
     });
 
     // Recursively scan all object values
-    for (const k in val) {
-        if (Object.prototype.hasOwnProperty.call(val, k)) {
-            const v = val[k];
+    for (const k in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, k)) {
+            const v = obj[k];
             if (v && typeof v === 'object') {
                 scanForResources(v, res, depth + 1);
             }
@@ -229,12 +260,18 @@ function scanForResources(val: any, res: Resources, depth = 0) {
 }
 
 // Helper to map InvokeAI metadata to Ambit's format using a database row
-export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: number): any {
-    const rawVal = row[metaCol];
+export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex: number): InvokeImageMetadata {
+    const rowRecord = asRecord(row);
+    const rawVal = rowRecord[metaCol];
 
     // Base metadata - always includes tool: 'InvokeAI' since we know the source
-    const baseMetadata: any = {
-        tool: 'InvokeAI',
+    const baseMetadata: InvokeImageMetadata = {
+        tool: GeneratorTool.INVOKEAI,
+        model: 'Unknown',
+        seed: 0,
+        steps: 0,
+        cfg: 0,
+        sampler: 'Unknown',
         positivePrompt: '',
         negativePrompt: '',
         loras: [],
@@ -242,8 +279,8 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
         ipAdapters: [],
         embeddings: [],
         hypernetworks: [],
-        hasWorkflowHint: row.has_workflow === 1 || row.has_workflow === true,
-        isIntermediate: row.is_intermediate === 1 || row.is_intermediate === true
+        hasWorkflowHint: rowRecord.has_workflow === 1 || rowRecord.has_workflow === true,
+        isIntermediate: rowRecord.is_intermediate === 1 || rowRecord.is_intermediate === true
     };
 
     // Even if metadata is empty, we still know this is an InvokeAI image
@@ -253,7 +290,7 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
         const meta = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
         const mapped = mapRawInvokeMetadata(meta);
         // Overwrite hints from higher-level row if present
-        if (row.has_workflow !== undefined) mapped.hasWorkflowHint = row.has_workflow === 1 || row.has_workflow === true;
+        if (rowRecord.has_workflow !== undefined) mapped.hasWorkflowHint = rowRecord.has_workflow === 1 || rowRecord.has_workflow === true;
         return mapped;
     } catch (e) {
         return baseMetadata;
@@ -264,9 +301,14 @@ export function mapInvokeMetadata(row: any, metaCol: string, processedIndex: num
  * Standard mapper for raw InvokeAI metadata objects.
  * Used both during sync and when displaying "Original" metadata in the UI.
  */
-export function mapRawInvokeMetadata(meta: any): any {
+export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     if (!meta) return {
-        tool: 'InvokeAI',
+        tool: GeneratorTool.INVOKEAI,
+        model: 'Unknown',
+        seed: 0,
+        steps: 0,
+        cfg: 0,
+        sampler: 'Unknown',
         positivePrompt: '',
         negativePrompt: '',
         loras: [],
@@ -279,27 +321,29 @@ export function mapRawInvokeMetadata(meta: any): any {
     };
 
     // Check if the input is wrapped in our internal DB structure
-    let root = meta;
-    if (meta.invokeai_metadata || meta['sd-metadata'] || meta.dream_metadata) {
-        root = meta.invokeai_metadata || meta['sd-metadata'] || meta.dream_metadata;
+    const metaRecord = asRecord(meta);
+    let root: unknown = metaRecord;
+    if (metaRecord.invokeai_metadata || metaRecord['sd-metadata'] || metaRecord.dream_metadata) {
+        root = metaRecord.invokeai_metadata || metaRecord['sd-metadata'] || metaRecord.dream_metadata;
         // If the wrapper contains a string (double-encoded legacy case), parse it
         if (typeof root === 'string') {
             try {
                 root = JSON.parse(root);
             } catch (e) {
-                root = meta; // Fallback
+                root = metaRecord; // Fallback
             }
         }
     }
 
-    const actualRoot = root.image || root.generation || root;
+    const rootRecord = asRecord(root);
+    const actualRoot = asRecord(rootRecord.image || rootRecord.generation || rootRecord);
 
     // Aggressive Workflow Detection - searches all potential storage locations
-    const workflow = root.workflow || meta.workflow || root.graph || meta.graph ||
-        actualRoot.workflow || actualRoot.graph || meta.has_workflow_data;
+    const workflow = rootRecord.workflow || metaRecord.workflow || rootRecord.graph || metaRecord.graph ||
+        actualRoot.workflow || actualRoot.graph || metaRecord.has_workflow_data;
 
-    const mapped: any = {
-        tool: 'InvokeAI',
+    const mapped: InvokeImageMetadata = {
+        tool: GeneratorTool.INVOKEAI,
         model: 'Unknown',
         steps: 0,
         cfg: 0,
@@ -312,44 +356,49 @@ export function mapRawInvokeMetadata(meta: any): any {
         ipAdapters: [],
         embeddings: [],
         hypernetworks: [],
-        hasWorkflowHint: !!(workflow || meta.has_workflow),
-        isIntermediate: root?.is_intermediate === 1 || root?.is_intermediate === true || meta?.is_intermediate === 1 || meta?.is_intermediate === true,
+        hasWorkflowHint: !!(workflow || metaRecord.has_workflow),
+        isIntermediate: rootRecord.is_intermediate === 1 || rootRecord.is_intermediate === true || metaRecord.is_intermediate === 1 || metaRecord.is_intermediate === true,
         generationType: 'unknown',
         workflowJson: workflow ? (typeof workflow === 'string' ? workflow : JSON.stringify(workflow)) : undefined
     };
 
     // Support both snake_case (InvokeAI) and camelCase (our internal mapped format)
-    if (actualRoot.positive_prompt || actualRoot.positivePrompt) mapped.positivePrompt = (actualRoot.positive_prompt || actualRoot.positivePrompt).toString().trim();
-    if (actualRoot.negative_prompt || actualRoot.negativePrompt) mapped.negativePrompt = (actualRoot.negative_prompt || actualRoot.negativePrompt).toString().trim();
-    if (actualRoot.steps !== undefined) mapped.steps = actualRoot.steps;
-    if (actualRoot.cfg_scale !== undefined || actualRoot.cfg !== undefined) mapped.cfg = actualRoot.cfg_scale !== undefined ? actualRoot.cfg_scale : actualRoot.cfg;
-    if (actualRoot.seed !== undefined) mapped.seed = actualRoot.seed;
+    const positivePrompt = readString(actualRoot, 'positive_prompt', 'positivePrompt');
+    const negativePrompt = readString(actualRoot, 'negative_prompt', 'negativePrompt');
+    if (positivePrompt) mapped.positivePrompt = positivePrompt.trim();
+    if (negativePrompt) mapped.negativePrompt = negativePrompt.trim();
+    mapped.steps = readNumber(actualRoot, 'steps') ?? mapped.steps;
+    mapped.cfg = readNumber(actualRoot, 'cfg_scale', 'cfg') ?? mapped.cfg;
+    mapped.seed = readNumber(actualRoot, 'seed') ?? mapped.seed;
     // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
-    if (actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name) {
-        mapped.sampler = actualRoot.scheduler || actualRoot.sampler || actualRoot.sampler_name;
+    const sampler = readString(actualRoot, 'scheduler', 'sampler', 'sampler_name');
+    if (sampler) {
+        mapped.sampler = sampler;
     }
 
     // Hash extraction (v2.x uses model_hash at root, v3.5+ uses model.hash)
-    if (root.model_hash) mapped.modelHash = root.model_hash.toString();
-    else if (meta.model_hash) mapped.modelHash = meta.model_hash.toString();
-    else if (actualRoot.model?.hash) {
+    if (rootRecord.model_hash) mapped.modelHash = String(rootRecord.model_hash);
+    else if (metaRecord.model_hash) mapped.modelHash = String(metaRecord.model_hash);
+    else if (asRecord(actualRoot.model).hash) {
         // Strip prefixes like "blake3:" if present
-        const hashStr = actualRoot.model.hash.toString();
+        const hashStr = String(asRecord(actualRoot.model).hash);
         mapped.modelHash = hashStr.split(':').pop() || hashStr;
     }
 
     // Additional fields for parity with Rust ImageMetadata
-    if (actualRoot.clip_skip !== undefined || actualRoot.clipSkip !== undefined) mapped.clipSkip = actualRoot.clip_skip !== undefined ? actualRoot.clip_skip : actualRoot.clipSkip;
-    if (actualRoot.hrf_strength !== undefined || actualRoot.denoisingStrength !== undefined) mapped.denoisingStrength = actualRoot.hrf_strength !== undefined ? actualRoot.hrf_strength : actualRoot.denoisingStrength;
-    if (actualRoot.hrf_method || actualRoot.hiresUpscaler) mapped.hiresUpscaler = actualRoot.hrf_method || actualRoot.hiresUpscaler;
-    if (actualRoot.generation_mode || actualRoot.generationType || actualRoot.type) mapped.generationType = actualRoot.generation_mode || actualRoot.generationType || actualRoot.type;
+    mapped.clipSkip = readNumber(actualRoot, 'clip_skip', 'clipSkip') ?? mapped.clipSkip;
+    mapped.denoisingStrength = readNumber(actualRoot, 'hrf_strength', 'denoisingStrength') ?? mapped.denoisingStrength;
+    const hiresUpscaler = readString(actualRoot, 'hrf_method', 'hiresUpscaler');
+    if (hiresUpscaler) mapped.hiresUpscaler = hiresUpscaler;
+    const generationType = readString(actualRoot, 'generation_mode', 'generationType', 'type');
+    if (generationType) mapped.generationType = generationType as ImageMetadata['generationType'];
 
     // Check for favorite status in legacy formats
     if (actualRoot.subject === 'favorite' || actualRoot.isFavorite) mapped.isFavorite = true;
 
     if (!mapped.positivePrompt && actualRoot.prompt) {
         if (Array.isArray(actualRoot.prompt)) {
-            mapped.positivePrompt = actualRoot.prompt.map((p: any) => p.prompt).join(' ');
+            mapped.positivePrompt = actualRoot.prompt.map((p) => readString(asRecord(p), 'prompt')).join(' ');
         } else if (typeof actualRoot.prompt === 'string') {
             mapped.positivePrompt = actualRoot.prompt.trim();
         }
@@ -358,9 +407,7 @@ export function mapRawInvokeMetadata(meta: any): any {
     if (actualRoot.model) {
         let modelFull = '';
         if (typeof actualRoot.model === 'string') modelFull = actualRoot.model;
-        else if (actualRoot.model.model_name) modelFull = actualRoot.model.model_name;
-        else if (actualRoot.model.name) modelFull = actualRoot.model.name;
-        else if (actualRoot.model.default) modelFull = actualRoot.model.default;
+        else modelFull = readResourceName(actualRoot.model);
 
         if (modelFull) mapped.model = cleanModelName(modelFull);
     }
@@ -374,6 +421,9 @@ export function mapRawInvokeMetadata(meta: any): any {
     mapped.ipAdapters = resources.ipAdapters;
     mapped.embeddings = resources.embeddings;
     mapped.hypernetworks = resources.hypernetworks;
+    const embeddings = mapped.embeddings;
+    const loras = mapped.loras;
+    const hypernetworks = mapped.hypernetworks;
 
     // --- Extract Embeddings from Prompts (Legacy/Text-based) ---
     const promptEmbeddings = [
@@ -381,8 +431,8 @@ export function mapRawInvokeMetadata(meta: any): any {
         ...extractEmbeddingsFromPrompt(mapped.negativePrompt)
     ];
     promptEmbeddings.forEach(emb => {
-        if (!mapped.embeddings.includes(emb)) {
-            mapped.embeddings.push(emb);
+        if (!embeddings.includes(emb)) {
+            embeddings.push(emb);
         }
     });
 
@@ -392,8 +442,8 @@ export function mapRawInvokeMetadata(meta: any): any {
         ...extractLorasFromPrompt(mapped.negativePrompt)
     ];
     promptLoras.forEach(lora => {
-        if (!mapped.loras.includes(lora)) {
-            mapped.loras.push(lora);
+        if (!loras.includes(lora)) {
+            loras.push(lora);
         }
     });
 
@@ -403,8 +453,8 @@ export function mapRawInvokeMetadata(meta: any): any {
         ...extractHypernetsFromPrompt(mapped.negativePrompt)
     ];
     promptHypernets.forEach(hn => {
-        if (!mapped.hypernetworks.includes(hn)) {
-            mapped.hypernetworks.push(hn);
+        if (!hypernetworks.includes(hn)) {
+            hypernetworks.push(hn);
         }
     });
 

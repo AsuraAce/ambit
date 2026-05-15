@@ -272,7 +272,7 @@ export const useFoldersTabLogic = ({
                     imageCount: 0,
                     variant: GeneratorTool.INVOKEAI,
                     isManaged: true
-                } as any);
+                });
             }
         }
         return list;
