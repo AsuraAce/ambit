@@ -296,6 +296,7 @@ Use this at the end of a pass:
 - Tested by:
 - Date:
 - Platforms covered:
+- Updater signing preflight run:
 - Highest dataset size covered:
 - Blocking issues:
 - Non-blocking issues:

@@ -53,6 +53,7 @@ Ambit uses a tiered workflow setup for public open-source development:
 
 ### Manual signing preflight
 *   Use **Actions > updater-signing-preflight > Run workflow** to verify that GitHub can use `TAURI_SIGNING_PRIVATE_KEY` non-interactively.
+*   The expected successful workflow log ends with `Updater signing preflight passed.`; record the passing run URL in the release checklist before tagging.
 *   The preflight signs only a temporary file and does not create tags, releases, updater manifests, release assets, or artifacts.
 *   A full updater validation still requires a real public or otherwise reachable release because `latest.json`, published release assets, and installed-app update behavior are outside this preflight.
 
