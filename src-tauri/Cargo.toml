@@ -46,7 +46,7 @@ tauri-plugin-shell = "2.3.4"
 chrono = { version = "0.4.43", features = ["serde"] }
 trash = "5.1.1"
 once_cell = "1.21.3"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 keyring = "2"
 tauri-plugin-process = "2"
