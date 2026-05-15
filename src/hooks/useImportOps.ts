@@ -117,7 +117,7 @@ export const useImportOps = ({
         }
 
         try {
-            if (nativePaths.length === files.length && nativePaths.length > 0) {
+            if (abortCtrl) {
                 const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
@@ -156,7 +156,7 @@ export const useImportOps = ({
         }
 
         try {
-            if (nativePaths.length === files.length && nativePaths.length > 0) {
+            if (abortCtrl) {
                 const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {

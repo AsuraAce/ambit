@@ -232,7 +232,7 @@ describe('ResourceSection asset scope filtering', () => {
     });
 
     it('stores aliases for merged used local assets when clicked', () => {
-        let nextFilters: FilterState | null = null;
+        let nextFilters: FilterState = filters;
         const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
             nextFilters = update(filters);
         });
@@ -258,8 +258,8 @@ describe('ResourceSection asset scope filtering', () => {
 
         fireEvent.click(screen.getByText('Detailer-Style'));
 
-        expect(nextFilters?.loras).toEqual(['Detailer-Style']);
-        expect(nextFilters?.assetFilterAliases?.loras?.['Detailer-Style']).toEqual(['Detailer-Style', 'detailer style']);
+        expect(nextFilters.loras).toEqual(['Detailer-Style']);
+        expect(nextFilters.assetFilterAliases?.loras?.['Detailer-Style']).toEqual(['Detailer-Style', 'detailer style']);
     });
 
     it('keeps merged aliases visible when a valid alias exists in the current result set', () => {

@@ -10,7 +10,7 @@ interface GlobalShortcutsProps {
     lastSelectedId: string | null;
     selectedImageIndex: number | null;
     gridRef: React.RefObject<any>;
-    searchInputRef: React.RefObject<HTMLInputElement>;
+    searchInputRef: React.RefObject<HTMLInputElement | null>;
 
     // Actions
     setSelectedImageIndex: (index: number | null) => void;

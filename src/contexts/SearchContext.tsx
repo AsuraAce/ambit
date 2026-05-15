@@ -100,6 +100,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
+    const setSortOptionDispatch = useCallback((value: React.SetStateAction<SortOption>) => {
+        const nextSortOption = typeof value === 'function'
+            ? value(sortOption)
+            : value;
+        setSortOption(nextSortOption);
+    }, [setSortOption, sortOption]);
+
     useEffect(() => {
         if (!shouldRefreshPrivacyMaskIndex) {
             setPrivacyMaskReady(false);
@@ -370,7 +377,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             filters,
             setFilters,
             sortOption,
-            setSortOption,
+            setSortOption: setSortOptionDispatch,
             facets: activeFacets,
             stats: activeStats,
             totalImages: totalImagesCount,

@@ -77,8 +77,8 @@ export function useParameterRangesQuery(filters: FilterState) {
             const result = await commands.getParameterRanges(
                 where,
                 JSON.stringify(params),
-                collectionId,
-                loraName
+                collectionId ?? null,
+                loraName ?? null
             );
 
             if (result.status === 'error') {

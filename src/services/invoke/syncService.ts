@@ -81,11 +81,11 @@ export const syncImages = async (
 
     onProgress(0, 0, 'Analyzing database schema...');
     const schemaStartedAt = liveWatchNow();
-    const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)');
+    const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)') as Array<{ name: string }>;
     const columns = tableInfo.map(c => c.name);
 
-    const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'");
-    const allTables = allTablesRows.map((t: any) => t.name);
+    const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'") as Array<{ name: string }>;
+    const allTables = allTablesRows.map(t => t.name);
     const hasGraphsTable = allTables.includes('graphs');
     logSyncDebug('Invoke DB schema analyzed', {
         schemaMs: elapsedMs(schemaStartedAt),

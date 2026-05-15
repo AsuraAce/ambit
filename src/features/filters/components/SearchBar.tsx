@@ -11,7 +11,7 @@ interface SearchBarProps {
     searchProps: {
         isAiSearchEnabled: boolean;
         isSearchingAi: boolean;
-        inputRef: React.RefObject<HTMLInputElement>;
+        inputRef: React.RefObject<HTMLInputElement | null>;
         toggleAiSearch: () => void;
         submitSearch: (query: string) => void;
         isFocused: boolean;

@@ -24,7 +24,7 @@ type PersistableImageRecord = {
     fileHash: string | null;
     timestamp: number;
     metadataJson: string;
-    thumbnailPath: string | null;
+    thumbnailPath: string;
     microThumbnail: string | null;
     thumbnailSource: string | null;
     isFavorite: boolean;
@@ -78,7 +78,7 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     fileHash: image.fileHash || null,
     timestamp: image.timestamp,
     metadataJson: JSON.stringify(image.metadata),
-    thumbnailPath: urlToPath(image.thumbnailUrl),
+    thumbnailPath: urlToPath(image.thumbnailUrl) ?? '',
     microThumbnail: image.microThumbnail || null,
     thumbnailSource: image.thumbnailSource || null,
     isFavorite: !!image.isFavorite,
@@ -874,7 +874,7 @@ export const deleteImageFromDisk = async (id: string, path: string, thumbnailPat
     }
 
     // 2. Trash Thumbnail
-    if (shouldTrashThumbnail(path, thumbnailPath)) {
+    if (thumbnailPath && shouldTrashThumbnail(path, thumbnailPath)) {
         try {
             await unwrap(commands.deleteThumbnail(thumbnailPath));
         } catch (e) {

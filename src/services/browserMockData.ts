@@ -568,12 +568,14 @@ export const getBrowserMockValidFacetNames = (filters: FilterState): ValidFacetN
 export const upsertBrowserMockCollection = (collection: Partial<Collection> & { id: string; name: string }): void => {
     const collections = getBrowserMockCollections();
     const existingIndex = collections.findIndex((item) => item.id === collection.id);
+    const existing = collections[existingIndex];
+    const { imageIds, createdAt, ...collectionFields } = collection;
     const next: Collection = {
-        imageIds: [],
-        createdAt: Date.now(),
         source: 'ambit',
-        ...collections[existingIndex],
-        ...collection,
+        ...existing,
+        ...collectionFields,
+        imageIds: imageIds ?? existing?.imageIds ?? [],
+        createdAt: createdAt ?? existing?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
     };
 

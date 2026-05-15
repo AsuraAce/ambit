@@ -26,7 +26,7 @@ interface GlobalModalsProps {
     onDeleteConfirm: () => void;
     onDeleteCollectionConfirm: () => void;
     onRecoverMetadata: (options: any) => void;
-    onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId: string | null) => void;
+    onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => void;
     onCloseExport: () => void;
     exportIds: Set<string>;
     pendingViewerDeleteId: string | null;
@@ -188,7 +188,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         selectedIds={Array.from(selectedIds)}
                         onConfirm={onCollectionAction}
                         mode={addToCollectionMode}
-                        sourceCollectionId={sourceCollectionId}
+                        sourceCollectionId={sourceCollectionId ?? undefined}
                     />
                 )}
 
