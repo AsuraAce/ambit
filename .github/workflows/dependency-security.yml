@@ -18,19 +18,13 @@ concurrency:
 jobs:
   dependency-review:
     name: dependency-review
-    if: ${{ github.event_name == 'pull_request' && (github.event.repository.private == false || vars.ENABLE_PRIVATE_DEPENDENCY_REVIEW == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
     steps:
-      - uses: actions/checkout@v6.0.2
-
-      - name: review dependency changes
-        uses: actions/dependency-review-action@v5
-        with:
-          fail-on-severity: high
+      - name: dependency review availability
+        run: |
+          echo "Dependency review is intentionally disabled while this repository is private."
+          echo "Re-enable actions/dependency-review-action after the public launch, or earlier if GitHub Advanced Security is available."
 
   dependency-audits:
     name: dependency-audits

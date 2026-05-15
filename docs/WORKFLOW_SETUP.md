@@ -46,7 +46,7 @@ Ambit uses a tiered workflow setup for public open-source development:
 *   `pr-ci` is the required fast feedback workflow for normal PR commits.
     *   `frontend-checks` runs version consistency, TypeScript, Vitest, and the frontend production build.
     *   `rust-tests` runs version consistency, dependency installation, generated binding drift checks, Rust cache restore/save, and Rust tests on Windows.
-*   `dependency-security` runs GitHub dependency review on pull requests once the repository is public. While the repository is private, set `ENABLE_PRIVATE_DEPENDENCY_REVIEW=true` as a repository variable only if dependency review is available for the repo.
+*   `dependency-security` keeps a passing `dependency-review` placeholder while the repository is private. Re-enable `actions/dependency-review-action` after the public launch, or earlier if dependency review is available for the repo.
 *   Full `pnpm audit --prod` and `cargo audit` checks run from `dependency-security` on dependency-file changes, weekly schedule, and manual dispatch.
 *   PR workflows use `pull_request` with read-only default permissions so untrusted external contributions do not receive release secrets.
 *   Dependabot tracks npm/pnpm, Cargo, and GitHub Actions dependencies weekly.
@@ -67,7 +67,7 @@ Ambit uses a tiered workflow setup for public open-source development:
 1.  Work on a feature branch.
 2.  Push the branch and open a Pull Request.
 3.  Ensure the PR title follows **Conventional Commits** (for example, `feat: something new` or `fix: resolve bug`).
-4.  PRs into `main` must pass the `frontend-checks`, `rust-tests`, and `dependency-review` GitHub Actions jobs.
+4.  PRs into `main` must pass the `frontend-checks`, `rust-tests`, and `dependency-review` GitHub Actions jobs. Before the public launch, `dependency-review` is a placeholder check and the real dependency audits run in the `dependency-audits` job.
 5.  **Squash and merge** the PR into `main` so the squashed commit title is the Conventional Commit that lands on the release branch.
 6.  `release-please` will automatically open or refresh a release PR.
 7.  Merge the release PR to trigger the `release.yml` workflow, which currently publishes Windows NSIS release artifacts plus MSI updater-compatibility artifacts.
