@@ -282,12 +282,15 @@ Owner: Shared, leaning user. I can produce and inspect artifacts; you should val
 - [ ] Uninstall or reinstall behavior is understood and documented.
 - [ ] Build artifact names and release attachments are correct.
 - [ ] Release notes accurately describe changes and known limitations.
+- [ ] `latest.json` is reachable without GitHub authentication from the configured updater endpoint.
+- [ ] Installed-app updater check can discover, verify, install, and relaunch into the release candidate.
 
 Phase 6 notes:
 - Fresh profile requires clearing both current directories, `AppData\Local\io.github.asuraace.ambit` and `AppData\Roaming\io.github.asuraace.ambit`; settings live under Local, while the main SQLite library lives under Roaming.
 - Identifier migration testing also uses the legacy directories `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`. The packaged release build should move legacy data into the current identifier when the current profile has no conflicting `library.json`, `.thumbnails`, or `images.db` data.
 - Conflict testing should pre-create current-profile data and confirm legacy `com.ambit.app` data is not overwritten or deleted.
 - Updater validation requires signing setup, public release assets, and installed-app behavior checks before each public beta release.
+- Current GitHub repository visibility is private as of the 2026-05-15 RC validation pass; unauthenticated updater checks will fail until the release assets are published from a public endpoint.
 - Version state as of this pass: package metadata is `0.5.0`; confirm the final release tag, GitHub Release, updater manifest, and installer metadata all match before publishing.
 
 ## Sign-Off Summary
@@ -299,6 +302,9 @@ Use this at the end of a pass:
 - Date:
 - Platforms covered:
 - Updater signing preflight run:
+- Release candidate artifact URL:
+- `latest.json` unauthenticated reachability:
+- Installed-app updater result:
 - Highest dataset size covered:
 - Blocking issues:
 - Non-blocking issues:

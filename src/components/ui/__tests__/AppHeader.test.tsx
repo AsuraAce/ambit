@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { render, screen } from '../../../test/testUtils';
+import { fireEvent, render, screen } from '../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '../AppHeader';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
@@ -117,5 +117,14 @@ describe('AppHeader', () => {
 
         expect(container.querySelector('.bg-sage-500')).toBeTruthy();
         expect(importButton.className).toContain('bg-sage-500/20');
+    });
+
+    it('opens the import flow from the header import button', () => {
+        const onImport = vi.fn();
+
+        render(<AppHeader {...defaultProps} onImport={onImport} />);
+        fireEvent.click(screen.getByTitle(/Import images\./));
+
+        expect(onImport).toHaveBeenCalledTimes(1);
     });
 });
