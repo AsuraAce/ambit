@@ -18,7 +18,7 @@ concurrency:
 jobs:
   dependency-review:
     name: dependency-review
-    if: github.event_name == 'pull_request' && (!github.event.repository.private || vars.ENABLE_PRIVATE_DEPENDENCY_REVIEW == 'true')
+    if: ${{ github.event_name == 'pull_request' && (github.event.repository.private == false || vars.ENABLE_PRIVATE_DEPENDENCY_REVIEW == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
