@@ -1,6 +1,12 @@
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { exists, readDir, remove } from '@tauri-apps/plugin-fs';
 import { scanImageNative, scanImagesBulk } from './metadataParser';
 import { AIImage } from '../types';
+import { getDb } from './db/connection';
+import { getUnoptimizedImagesCount, getUnoptimizedImageEntries } from './db/maintenanceRepo';
+import { updateThumbnailPathsBatch } from './db/imageRepo';
+import { normalizePath } from '../utils/pathUtils';
 
 let cachedThumbnailDir: string | null = null;
 
@@ -109,7 +115,6 @@ export const regenerateThumbnailsForImages = async (
     // Persist all updates to DB in one batch
     if (dbUpdates.length > 0) {
         try {
-            const { updateThumbnailPathsBatch } = await import('./db/imageRepo');
             await updateThumbnailPathsBatch(dbUpdates);
         } catch (e) {
             console.error('[Thumb] Failed to persist thumbnail updates to DB', e);
@@ -133,9 +138,6 @@ export const regenerateAllUnoptimized = async (
 ): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
-
-    const { getUnoptimizedImagesCount, getUnoptimizedImageEntries } = await import('./db/maintenanceRepo');
-    const { updateThumbnailPathsBatch } = await import('./db/imageRepo');
 
     // Get total count first
     const total = await getUnoptimizedImagesCount(whereClause, params, includeUpgradeable);
@@ -204,10 +206,6 @@ export const cleanupOrphanThumbnails = async (): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
-    const { readDir, remove } = await import('@tauri-apps/plugin-fs');
-    const { getDb } = await import('./db/connection');
-    const { normalizePath } = await import('../utils/pathUtils');
-
     // Get all thumbnail files on disk
     let files: { name: string }[];
     try {
@@ -265,10 +263,6 @@ export const syncExistingThumbnailsToDB = async (
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
-    const { getDb } = await import('./db/connection');
-    const { normalizePath } = await import('../utils/pathUtils');
-    const { convertFileSrc } = await import('@tauri-apps/api/core');
-
     // Get all images that don't have a thumbnail_path set
     const db = await getDb();
     const rows = await db.select<{ id: string }[]>(
@@ -321,7 +315,6 @@ export const syncExistingThumbnailsToDB = async (
     // Batch update the database
     if (updates.length > 0) {
         try {
-            const { updateThumbnailPathsBatch } = await import('./db/imageRepo');
             await updateThumbnailPathsBatch(updates);
             console.log(`[Thumb] Synced ${synced} thumbnails to DB`);
         } catch (e) {
@@ -341,11 +334,6 @@ export const syncExistingThumbnailsToDB = async (
 export const pruneBrokenThumbnails = async (): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
-
-    const { getDb } = await import('./db/connection');
-    const { exists } = await import('@tauri-apps/plugin-fs');
-    const { normalizePath } = await import('../utils/pathUtils');
-    const { join } = await import('@tauri-apps/api/path');
 
     console.log('[Thumb] Pruning broken thumbnails...');
 

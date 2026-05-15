@@ -9,6 +9,8 @@ import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
 import { normalizePath, urlToPath } from '../../../utils/pathUtils';
+import { generateSingleThumbnail } from '../../../services/thumbnailService';
+import { updateThumbnailPath } from '../../../services/db/imageRepo';
 
 interface GridItemProps {
     image: AIImage;
@@ -61,22 +63,18 @@ export const GridItem: React.FC<GridItemProps> = memo(({
         // Only trigger if: not missing, not already generating, and thumbnail == source
         if (!image.isMissing && image.thumbnailUrl === image.url && image.url) {
             // Generate thumbnail in background (fire-and-forget, updates state on success)
-            import('../../../services/thumbnailService').then(({ generateSingleThumbnail }) => {
-                generateSingleThumbnail(image.id).then((newThumb) => {
-                    if (newThumb) {
-                        // Success: update React state
-                        setImages(prev => prev.map(img =>
-                            img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
-                        ));
-                        // Persist to database so we don't regenerate on restart
-                        import('../../../services/db/imageRepo').then(({ updateThumbnailPath }) => {
-                            updateThumbnailPath(image.id, newThumb);
-                        });
-                    }
-                    // If generation fails, keep using source (no change needed)
-                }).catch(() => {
-                    // Silent failure - source image continues to work
-                });
+            generateSingleThumbnail(image.id).then((newThumb) => {
+                if (newThumb) {
+                    // Success: update React state
+                    setImages(prev => prev.map(img =>
+                        img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
+                    ));
+                    // Persist to database so we don't regenerate on restart
+                    void updateThumbnailPath(image.id, newThumb);
+                }
+                // If generation fails, keep using source (no change needed)
+            }).catch(() => {
+                // Silent failure - source image continues to work
             });
         }
     }, [image.id, image.isMissing, image.thumbnailUrl, image.url, setImages]);

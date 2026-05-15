@@ -6,6 +6,7 @@ import { createDefaultFilters } from '../../utils/filterState';
 import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
+import { buildSqlWhereClause } from '../../utils/sqlHelpers';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -283,7 +284,6 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
         return;
     }
 
-    const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
@@ -360,7 +360,6 @@ export const addImagesToCollection = async (collectionId: string, imageIds: stri
         return;
     }
 
-    const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
@@ -506,8 +505,6 @@ export const getSmartCollectionSummaries = async (
     if (smartCollections.length === 0) return {};
 
     const db = await getDb();
-    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
-
     const summaries: Record<string, SmartCollectionSummary> = {};
 
     try {
@@ -748,7 +745,6 @@ export const hydrateCollections = async () => {
 export const purgeInvokeCollections = async () => {
     if (isBrowserMockMode()) return;
 
-    const { dbMutex } = await import('./connection');
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         console.log('[DB] Purging InvokeAI collections...');

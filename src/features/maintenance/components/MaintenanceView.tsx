@@ -17,6 +17,8 @@ import { ScanPlaceholder } from './ScanPlaceholder';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
+import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
+import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -164,7 +166,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setScanMissingIds(new Set(ids));
         if (ids.length > 0) {
             try {
-                const { getImagesByIds } = await import('../../../services/db/imageRepo');
                 const fetched = await getImagesByIds(ids);
                 setFetchedMissingImages(fetched);
             } catch (e) {
@@ -335,7 +336,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             setThumbnailProgress({ current: 0, total: unoptimizedTotalCount });
 
             try {
-                const { regenerateAllUnoptimized } = await import('../../../services/thumbnailService');
                 await regenerateAllUnoptimized(
                     (current, total) => setThumbnailProgress({ current, total }),
                     abortCtrl.signal,
@@ -360,7 +360,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleUnmarkIntermediates = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
-        const { toggleImageIntermediate } = await import('../../../services/db/imageRepo');
         for (const id of ids) {
             await toggleImageIntermediate(id, false);
         }

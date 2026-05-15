@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { AIImage, FilterState, SortOption } from '../types';
+import { updateFavorite, updatePinned } from '../services/db/imageRepo';
 
 interface SearchState {
     // Data
@@ -106,7 +107,6 @@ export const useSearchStore = create<SearchState>()(
                 set({ images: newImages });
 
                 try {
-                    const { updateFavorite } = await import('../services/db/imageRepo');
                     await updateFavorite(id, newVal);
                 } catch (e) {
                     console.error("Toggle favorite failed", e);
@@ -124,7 +124,6 @@ export const useSearchStore = create<SearchState>()(
                 set({ images: newImages });
 
                 try {
-                    const { updatePinned } = await import('../services/db/imageRepo');
                     await updatePinned(id, newVal);
                 } catch (e) {
                     console.error("Toggle pin failed", e);

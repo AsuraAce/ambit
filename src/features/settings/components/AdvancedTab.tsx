@@ -6,6 +6,8 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { clearAllThumbnailPaths, rebuildFacetCache } from '../../../services/db/imageRepo';
+import { getDb } from '../../../services/db/connection';
+import { pruneBrokenThumbnails } from '../../../services/thumbnailService';
 import { BackupSettings } from './BackupSettings';
 import { commands } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
@@ -373,11 +375,10 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                         useLibraryStore.getState().setBackgroundHealingPaused(true);
                                         try {
                                             addToast('Starting file verification... this may take a moment.', 'info');
-                                            const { pruneBrokenThumbnails } = await import('../../../services/thumbnailService');
                                             const count = await pruneBrokenThumbnails();
 
                                             // Debug: check breakdown
-                                            const db = await import('../../../services/db/connection').then(m => m.getDb());
+                                            const db = await getDb();
                                             const total = await db.select<{ c: number }[]>('SELECT count(*) as c FROM images WHERE thumbnail_path IS NOT NULL');
                                             console.log(`[Verify] Checked ${total[0].c} thumbnails, fixed ${count}`);
 

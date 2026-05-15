@@ -1,7 +1,8 @@
 ﻿import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
-import { insertImage } from './db/imageRepo';
+import { getExistingMetadata, insertImage, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
@@ -291,7 +292,6 @@ async function processFileEntries(
             const batchStartedAt = liveWatchNow();
             const nativeProgressRunId = createNativeProgressRunId();
             // Setup listener for native progress stream for silky smooth UI loading bars
-            const { listen } = await import('@tauri-apps/api/event');
             unlisten = await listen<NativeImportProgressPayload>('import_progress', (e) => {
                 if (e.payload.progressRunId !== nativeProgressRunId) {
                     return;
@@ -355,7 +355,6 @@ async function processFileEntries(
                 // DB Insert/Update
                 // console.time(`insertBatch-${i}`);
                 const ids = batchImages.map(img => img.id);
-                const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
                 const existingMetaStartedAt = liveWatchNow();
                 if (abortSignal?.aborted) {
                     wasCancelled = true;
@@ -698,11 +697,9 @@ export async function processFoldersUnified(
     // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images.
     // Startup smart scans can defer this so useFolderMonitor can run one bounded incremental refresh.
     if (!deferFacetCacheRefresh && !result.wasCancelled) {
-        import('./db/imageRepo').then(({ rebuildFacetCache }) => {
-            rebuildFacetCache()
-                .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
-                .catch(e => console.error('[Import] Failed cleanup', e));
-        });
+        void rebuildFacetCache()
+            .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
+            .catch(e => console.error('[Import] Failed cleanup', e));
     } else if (deferFacetCacheRefresh) {
         console.info('[ImportUnified] Deferred facet cache refresh to startup catch-up coordinator.', {
             processed: result.stats.processed,

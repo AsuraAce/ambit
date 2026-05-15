@@ -6,6 +6,14 @@ import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useModalManager } from './useModalManager';
+import {
+    rebuildThumbnailFacetCache,
+    toggleImageFavorite,
+    toggleImageMask,
+    toggleImagePin,
+} from '../services/db/imageRepo';
+import { backfillParameterColumns } from '../services/db/maintenanceRepo';
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface UseAppActionsProps {
     viewingImageId: string | null;
@@ -52,7 +60,6 @@ export const useAppActions = ({
         errorMessage: string
     ) => {
         try {
-            const { toggleImagePin } = await import('../services/db/imageRepo');
             await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
             void refreshCollections(true);
         } catch (error) {
@@ -112,7 +119,7 @@ export const useAppActions = ({
         setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
 
         selectedIds.forEach(id => {
-            import('../services/db/imageRepo').then(db => db.toggleImageFavorite(id, anyUnfavorite));
+            void toggleImageFavorite(id, anyUnfavorite);
         });
 
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
@@ -165,8 +172,6 @@ export const useAppActions = ({
             return img;
         }));
 
-        const { toggleImageMask, rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
-        const { useLibraryStore } = await import('../stores/libraryStore');
         const promises: Promise<void>[] = [];
 
         idsToToggle.forEach(id => {
@@ -263,7 +268,6 @@ export const useAppActions = ({
 
     const runBackfill = async () => {
         addToast("Starting background backfill...", "info");
-        const { backfillParameterColumns } = await import('../services/db/maintenanceRepo');
         const count = await backfillParameterColumns();
         if (count > 0) {
             addToast(`Backfill complete: ${count} images updated`, "success");

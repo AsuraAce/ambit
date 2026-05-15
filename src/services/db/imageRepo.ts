@@ -14,6 +14,8 @@ import {
 } from '../../utils/liveWatchPerf';
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+import { clearLibraryStatsCache } from './searchRepo';
+import { scanImageNative } from '../metadataParser';
 
 type PersistableImageRecord = {
     id: string;
@@ -139,7 +141,6 @@ const persistImageRecords = async (
 };
 
 const clearFacetRelatedStatsCache = async () => {
-    const { clearLibraryStatsCache } = await import('./searchRepo');
     clearLibraryStatsCache();
 };
 
@@ -598,7 +599,6 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
     // This fixes "Legacy" images in the context of the Image Viewer.
     if (image.metadata.tool === GeneratorTool.AUTOMATIC1111 && !image.metadata.rawParameters) {
         try {
-            const { scanImageNative } = await import('../metadataParser');
             const deepScan = await scanImageNative(id, '', true, true);
             if (deepScan && deepScan.metadata.rawParameters) {
                 image.metadata = {

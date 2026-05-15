@@ -16,6 +16,7 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { unwrap } from '../../../utils/spectaUtils';
 import { formatHashResolutionMessage, isHashResolutionPartial } from '../utils/hashResolution';
 import type { ImportResult } from '../../../services/importService';
+import { rebuildFacetCacheIncremental } from '../../../services/db/imageRepo';
 
 interface TabProps {
     settings: AppSettings;
@@ -283,7 +284,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                             });
 
                                             try {
-                                                const { rebuildFacetCacheIncremental } = await import('../../../services/db/imageRepo');
                                                 await rebuildFacetCacheIncremental('checkpoints');
                                                 incrementFacetCacheVersion();
                                                 await Promise.all([

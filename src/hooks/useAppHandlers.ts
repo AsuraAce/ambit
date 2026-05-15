@@ -1,6 +1,16 @@
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
-import { updateImageMetadataFields, updateImageNotesCol, rebuildFacetCache, rebuildFacetCacheIncremental } from '../services/db/imageRepo';
+import {
+    deleteRemovedImagesFromDisk,
+    getImagesByIds,
+    rebuildFacetCache,
+    rebuildFacetCacheIncremental,
+    removeImagesFromLibrary,
+    restoreRemovedImages,
+    revertImageMetadata,
+    updateImageMetadataFields,
+    updateImageNotesCol,
+} from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 
 interface UseAppHandlersProps {
@@ -98,7 +108,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleResolveDuplicate = async (_keepId: string, deleteIds: string[]) => {
-        const { removeImagesFromLibrary } = await import('../services/db/imageRepo');
         await removeImagesFromLibrary(deleteIds);
         setImages(p => p.filter(i => !deleteIds.includes(i.id)));
         addToast(`Removed ${deleteIds.length} duplicate${deleteIds.length === 1 ? '' : 's'} from the library`, 'success');
@@ -107,7 +116,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleRestoreImages = async (ids: string[]) => {
-        const { restoreRemovedImages, getImagesByIds } = await import('../services/db/imageRepo');
         await restoreRemovedImages(ids);
         const restoredImages = await getImagesByIds(ids);
         setImages(p => {
@@ -121,7 +129,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
-        const { removeImagesFromLibrary } = await import('../services/db/imageRepo');
         await removeImagesFromLibrary(ids);
         setImages(p => p.filter(i => !ids.includes(i.id)));
         addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
@@ -130,7 +137,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleDeleteFile = async (ids: string[]) => {
-        const { deleteRemovedImagesFromDisk } = await import('../services/db/imageRepo');
         const result = await deleteRemovedImagesFromDisk(ids);
 
         if (result.deletedIds.length > 0) {
@@ -177,7 +183,6 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         };
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
 
-        const { revertImageMetadata } = await import('../services/db/imageRepo');
         await revertImageMetadata(id);
 
         // Revert can change tools and models, so we rebuild both incrementally

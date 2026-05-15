@@ -4,6 +4,7 @@ import { mapRowToImage, getImageFieldsLight } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
+import { commands } from '../../bindings';
 
 export interface LibraryStats {
     totalImages: number;
@@ -862,8 +863,6 @@ export const getValidFacetNames = async (
     loraName?: string
 ): Promise<ValidFacetNames | null> => {
     try {
-        // Import the command dynamically to avoid circular dependencies
-        const { commands } = await import('../../bindings');
         const reason = describeDbQueryReason(whereClause, collectionId, loraName);
         const result = await timeDbCall(
             'validFacets',

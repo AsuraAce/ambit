@@ -3,6 +3,17 @@ import { devtools } from 'zustand/middleware';
 import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
 import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
+import {
+    addImagesToCollection,
+    deleteCollectionFromDb,
+    ensureCollectionSchema,
+    getAllCollectionsWithStats,
+    getCollectionImageIds,
+    getCollectionThumbnailSummaries,
+    getSmartCollectionSummaries,
+    upsertCollection,
+} from '../services/db/collectionRepo';
+import { useLibraryStore } from './libraryStore';
 
 let initPromise: Promise<void> | null = null;
 let collectionRefreshRunId = 0;
@@ -87,7 +98,6 @@ export const useCollectionStore = create<CollectionState>()(
                 const runId = invalidateCollectionRefreshes();
                 const run = async (currentRunId: number) => {
                     try {
-                        const { getAllCollectionsWithStats } = await import('../services/db/collectionRepo');
                         const cols = await getAllCollectionsWithStats();
                         if (currentRunId !== collectionRefreshRunId) return;
 
@@ -125,7 +135,6 @@ export const useCollectionStore = create<CollectionState>()(
 
                         if (currentCollections.length === 0) return;
 
-                        const { getCollectionThumbnailSummaries } = await import('../services/db/collectionRepo');
                         for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
                             if (runId !== thumbnailRefreshRunId) return;
 
@@ -171,7 +180,6 @@ export const useCollectionStore = create<CollectionState>()(
             refreshSmartCounts: async (input = {}) => {
                 const runId = ++smartCountRunId;
                 try {
-                    const { useLibraryStore } = await import('./libraryStore');
                     if (useLibraryStore.getState().isImporting) {
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
                         return;
@@ -187,7 +195,6 @@ export const useCollectionStore = create<CollectionState>()(
                         if (runId !== smartCountRunId) return;
                     }
 
-                    const { getSmartCollectionSummaries } = await import('../services/db/collectionRepo');
                     const currentCols = collectionsSnapshot ?? get().collections;
                     const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
                     const smartCols = currentCols.filter(c =>
@@ -257,8 +264,6 @@ export const useCollectionStore = create<CollectionState>()(
                 initPromise = (async () => {
                     const startedAt = performance.now();
                     try {
-                        const { getAllCollectionsWithStats, upsertCollection, addImagesToCollection, ensureCollectionSchema } = await import('../services/db/collectionRepo');
-
                         // 0. Ensure schema is up to date (add updated_at if missing)
                         const schemaStartedAt = performance.now();
                         await ensureCollectionSchema();
@@ -312,7 +317,6 @@ export const useCollectionStore = create<CollectionState>()(
                         // 3. Cleanup Legacy Mock Collections (for existing users who might have them)
                         // If they are empty/unmodified, remove them.
                         const legacyIds = ['c1', 'c2', 'c3'];
-                        const { deleteCollectionFromDb, getCollectionImageIds } = await import('../services/db/collectionRepo');
 
                         for (const col of dbCols) {
                             if (legacyIds.includes(col.id)) {

@@ -8,6 +8,7 @@ import { MaintenanceItem } from './MaintenanceItem';
 import { MaintenanceHeader } from './MaintenanceHeader';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
+import { cleanupOrphanThumbnails, syncExistingThumbnailsToDB } from '../../../services/thumbnailService';
 
 interface ThumbnailsTabProps {
     images: AIImage[];
@@ -70,7 +71,6 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     const handleCleanup = async () => {
         setIsCleaningUp(true);
         try {
-            const { cleanupOrphanThumbnails } = await import('../../../services/thumbnailService');
             const count = await cleanupOrphanThumbnails();
             if (count > 0) {
                 addToast(`Cleaned up ${count} orphan thumbnail${count === 1 ? '' : 's'}`, 'success');
@@ -87,7 +87,6 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
     const handleSync = async () => {
         setIsSyncing(true);
         try {
-            const { syncExistingThumbnailsToDB } = await import('../../../services/thumbnailService');
             const count = await syncExistingThumbnailsToDB();
             if (count > 0) {
                 addToast(`Synced ${count} existing thumbnail${count === 1 ? '' : 's'} to database`, 'success');

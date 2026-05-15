@@ -9,6 +9,8 @@ import { AIImage, ContextMenuState } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
 import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
+import { toggleImageIntermediate } from '../../services/db/imageRepo';
+import { invoke } from '@tauri-apps/api/core';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
@@ -154,7 +156,6 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onToggleIntermediate={async () => {
                 if (contextMenu.imageId) {
-                    const { toggleImageIntermediate } = await import('../../services/db/imageRepo');
                     await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
                     // We might need to refresh state here, but let's assume watchers handle it
                     addToast(activeImage?.metadata?.isIntermediate ? "Unmarked as intermediate" : "Marked as intermediate", "info");
@@ -257,8 +258,6 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                     return;
                 }
                 if (contextMenu.imageId && activeImage?.id) {
-                    const { invoke } = await import('@tauri-apps/api/core');
-
                     await invoke('set_model_thumbnail', {
                         modelHash: model.hash,
                         modelName: model.name,

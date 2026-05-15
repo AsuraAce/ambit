@@ -11,6 +11,8 @@ import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils
 import { formatStableImportProgress } from '../../../utils/importProgress';
 import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
 import { isBrowserMockMode } from '../../../services/runtime';
+import { refreshFacetCacheForResourcesStrict } from '../../../services/db/imageRepo';
+import { getThumbnailDir } from '../../../services/thumbnailService';
 import {
     createEmptyTouchedFacetResources,
     hasTouchedFacetResources,
@@ -172,7 +174,6 @@ export const useFoldersTabLogic = ({
             detail: formatResourceScanDetail(scanResult),
             startedAt
         });
-        const { refreshFacetCacheForResourcesStrict } = await import('../../../services/db/imageRepo');
         const indexedRows = await refreshFacetCacheForResourcesStrict(resources);
         useLibraryStore.getState().incrementFacetCacheVersion();
         return indexedRows;
@@ -312,7 +313,6 @@ export const useFoldersTabLogic = ({
                         }
 
                         try {
-                            const { getThumbnailDir } = await import('../../../services/thumbnailService');
                             const thumbDir = await getThumbnailDir();
                             const result = await processNativePaths(
                                 changedPaths,
@@ -372,7 +372,6 @@ export const useFoldersTabLogic = ({
                             }
 
                             try {
-                                const { getThumbnailDir } = await import('../../../services/thumbnailService');
                                 const thumbDir = await getThumbnailDir();
                                 const result = await processNativePaths(
                                     repairPaths,

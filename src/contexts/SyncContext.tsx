@@ -21,6 +21,18 @@ import { isBrowserMockMode } from '../services/runtime';
 import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
 import { TouchedFacetResources } from '../utils/touchedFacetTypes';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
+import {
+    purgeLibrary,
+    rebuildFacetCache,
+    rebuildFacetCacheIncrementalBatchStrict,
+    rebuildFacetCacheStrict,
+    refreshFacetCacheForResourcesStrict,
+} from '../services/db/imageRepo';
+import { processTargetedFiles } from '../services/importService';
+import { scanForOrphans } from '../services/invoke/orphanScanner';
+import { syncImages } from '../services/invoke/syncService';
+import { appRepository } from '../services/repository';
+import { watcherService } from '../services/WatcherService';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -136,15 +148,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
     const liveFacetRefreshQueueRef = useRef(createLiveFacetRefreshQueue({
         runIncremental: async (facetTypes: FacetType[]) => {
-            const { rebuildFacetCacheIncrementalBatchStrict } = await import('../services/db/imageRepo');
             return await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
         },
         runResourceIncremental: async (resources: TouchedFacetResources) => {
-            const { refreshFacetCacheForResourcesStrict } = await import('../services/db/imageRepo');
             return await refreshFacetCacheForResourcesStrict(resources);
         },
         runFullFallback: async () => {
-            const { rebuildFacetCacheStrict } = await import('../services/db/imageRepo');
             return await rebuildFacetCacheStrict();
         },
         onRefreshApplied: () => {
@@ -289,9 +298,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         };
 
         try {
-            const { syncImages } = await import('../services/invoke/syncService');
-            const { scanForOrphans } = await import('../services/invoke/orphanScanner');
-
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncImages(
                 settingsRef.current.invokeAiPath!,
                 (c, t, msg) => {
@@ -438,7 +444,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                                 onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
                             });
                         } else {
-                            const { rebuildFacetCache } = await import('../services/db/imageRepo');
                             await rebuildFacetCache();
                             useLibraryStore.getState().incrementFacetCacheVersion();
                         }
@@ -599,7 +604,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 });
 
                 try {
-                    const { processTargetedFiles } = await import('../services/importService');
                     const result = await processTargetedFiles(nextBatch, {
                         forceRescan: true,
                         waitForStableFiles: true,
@@ -737,9 +741,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
 
         try {
             console.log('[Purge] Starting library purge...');
-            const { purgeLibrary } = await import('../services/db/imageRepo');
-            const { appRepository } = await import('../services/repository');
-            const { watcherService } = await import('../services/WatcherService');
 
             // 1. Graceful Shutdown & Auto-Healing Disable
             console.log('[Purge] Stopping background services...');

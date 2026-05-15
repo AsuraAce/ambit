@@ -8,6 +8,7 @@ import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
@@ -81,7 +82,6 @@ export const DevTab: React.FC = () => {
         let unlisten: (() => void) | undefined;
 
         const setupListener = async () => {
-            const { listen } = await import('@tauri-apps/api/event');
             unlisten = await listen<string>('reset-progress', (event) => {
                 addToast(event.payload, 'info');
             });

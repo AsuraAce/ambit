@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Shield, RefreshCw, CheckCircle2, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
+import { pruneMissingLinks, verifyLibraryIntegrity } from '../../../services/db/maintenanceRepo';
 
 interface LibraryHealthProps {
     mode?: 'compact' | 'detailed';
@@ -44,7 +45,6 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         });
         if (onScanComplete) onScanComplete([]);
         try {
-            const { verifyLibraryIntegrity } = await import('../../../services/db/maintenanceRepo');
             const res = await verifyLibraryIntegrity((curr, total) => {
                 if (!isCurrentAudit() || abortController.signal.aborted) return;
                 setMissingScanProgress({
@@ -72,7 +72,6 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
         if (!result || result.missingIds.length === 0) return;
         setPruningStatus('running');
         try {
-            const { pruneMissingLinks } = await import('../../../services/db/maintenanceRepo');
             await pruneMissingLinks(result.missingIds);
             setPruningStatus('done');
             setTimeout(() => window.location.reload(), 1500);

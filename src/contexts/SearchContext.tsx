@@ -8,6 +8,11 @@ import { appRepository } from '../services/repository';
 import { getDb } from '../services/db/connection';
 
 import { Facets, ValidFacetNames } from '../services/db/searchRepo';
+import {
+    checkHiddenContentAvailability,
+    rebuildThumbnailFacetCache,
+    updatePinned,
+} from '../services/db/imageRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -16,6 +21,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface LibraryStats {
     totalImages: number;
@@ -127,8 +133,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
-                    const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
-                    const { useLibraryStore } = await import('../stores/libraryStore');
                     await rebuildThumbnailFacetCache();
                     console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();
@@ -275,7 +279,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
 
         try {
-            const { updatePinned } = await import('../services/db/imageRepo');
             await updatePinned(id, newVal);
             setImages(imgs.map(i => i.id === id ? { ...i, isPinned: newVal } : i));
         } catch (e) { console.error(e); }
@@ -287,7 +290,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [availableHiddenContent, setAvailableHiddenContent] = useState({ hasIntermediates: false, hasGrids: false });
 
     const refreshHiddenAvailability = useCallback(async () => {
-        const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
         const availability = await checkHiddenContentAvailability();
         setAvailableHiddenContent(availability);
     }, []);
@@ -309,7 +311,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             // Actually store defaults to empty. We need to trigger initial fetch.
             // The main effect (debounced) triggers fetch.
 
-            const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
             const [appState, availability] = await Promise.all([
                 appRepository.load(),
                 checkHiddenContentAvailability()

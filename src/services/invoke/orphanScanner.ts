@@ -2,6 +2,8 @@ import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, ScanResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
+import { getDb } from '../db/connection';
+import { insertImagesBatch } from '../db/imageRepo';
 
 export const scanForOrphans = async (
     rootPath: string,
@@ -18,8 +20,6 @@ export const scanForOrphans = async (
     }
 
     onProgress('Scanning disk for untracked files...', 0, 0);
-
-    const { insertImagesBatch, getDb } = await import('../db');
 
     const ambitDb = await getDb();
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];

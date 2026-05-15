@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { AIImage } from '../types';
 import { useLibraryContext } from './useLibraryContext';
 import { useLibraryStore } from '../stores/libraryStore';
+import * as db from '../services/db/maintenanceRepo';
 
 export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails' | 'intermediates';
 
@@ -34,9 +35,6 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         const useGlobalLoader = showLoader && tab !== 'duplicates';
         if (useGlobalLoader) setIsLoading(true);
         try {
-            const db = await import('../services/db/maintenanceRepo');
-
-
             if (tab === 'trash') {
                 const data = await db.getDeletedImages();
                 setLocalDeletedImages(data);

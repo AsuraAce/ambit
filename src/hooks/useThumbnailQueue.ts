@@ -15,6 +15,8 @@ import {
     formatThumbnailQueueRunningMessage,
     THUMBNAIL_QUEUE_START_MESSAGE
 } from './thumbnailQueueProgress';
+import { rebuildThumbnailFacetCache } from '../services/db/imageRepo';
+import { getThumbnailDir } from '../services/thumbnailService';
 
 const STARTUP_DELAY_MS = 30000;
 const RESUME_DELAY_MS = 5000;
@@ -161,7 +163,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
 
         try {
-            const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
             await rebuildThumbnailFacetCache();
             useLibraryStore.getState().incrementFacetCacheVersion();
         } catch (error) {
@@ -347,7 +348,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             return;
         }
 
-        const { getThumbnailDir } = await import('../services/thumbnailService');
         const thumbnailDir = await getThumbnailDir();
 
         if (!thumbnailDir) {

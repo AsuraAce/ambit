@@ -21,6 +21,8 @@ import {
     orderFacetTypes,
     TouchedFacetResources
 } from '../../utils/touchedFacetTypes';
+import { getImagesByIds, insertImagesBatch, syncCollectionImages } from '../db/imageRepo';
+import { upsertCollection } from '../db/collectionRepo';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
@@ -204,8 +206,6 @@ export const syncImages = async (
     }
 
     onProgress(0, 0, `Scanning ${APP_NAME} library...`);
-    const { insertImagesBatch } = await import('../db');
-    const { getImagesByIds } = await import('../db/imageRepo');
 
     let processed = 0;
     let newImportedCount = 0;
@@ -483,7 +483,6 @@ export const syncImages = async (
         if (currentBatch.length > 0) {
             // Lazy Board Creation
             if (options.syncBoards) {
-                const { upsertCollection } = await import('../db/collectionRepo');
                 const boardCreateStartedAt = liveWatchNow();
                 const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
@@ -507,7 +506,6 @@ export const syncImages = async (
 
             // Incremental Linking
             if (options.syncBoards) {
-                const { syncCollectionImages } = await import('../db/imageRepo');
                 const collectionSyncStartedAt = liveWatchNow();
                 await syncCollectionImages(currentBatch.map(img => img.id));
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
@@ -535,7 +533,6 @@ export const syncImages = async (
     if (options.syncBoards && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
-        const { syncCollectionImages } = await import('../db/imageRepo');
         const finalCollectionSyncStartedAt = liveWatchNow();
         await syncCollectionImages();
         logSyncDebug('Invoke final collection sync complete', {
