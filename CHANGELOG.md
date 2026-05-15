@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1](https://github.com/AsuraAce/ambit/compare/v0.5.0...v0.5.1) (2026-05-15)
+
+
+### Bug Fixes
+
+* prefer nsis updater releases ([#61](https://github.com/AsuraAce/ambit/issues/61)) ([af82669](https://github.com/AsuraAce/ambit/commit/af8266944a5fa7bfaaef53a0a671bea636141d40))
+* prevent stale collection refresh overwrites ([#75](https://github.com/AsuraAce/ambit/issues/75)) ([a009fe9](https://github.com/AsuraAce/ambit/commit/a009fe97fa5d1574a795f547e33b90becf65b5bb))
+* stabilize integration import cancellation ([#60](https://github.com/AsuraAce/ambit/issues/60)) ([6485503](https://github.com/AsuraAce/ambit/commit/64855036bfba2cbff7a95e52f4a1a66d36b88d4a))
+
 ## [0.5.0](https://github.com/AsuraAce/ambit/compare/v0.4.0...v0.5.0) (2026-05-14)
 
 
