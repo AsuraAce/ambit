@@ -1,5 +1,5 @@
 use image::imageops::FilterType;
-use image::io::Reader;
+use image::ImageReader;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -51,7 +51,7 @@ pub fn generate_thumbnail(path: &str, thumbnail_dir: &str) -> Result<ThumbnailRe
         let generation_started_at = std::time::Instant::now();
 
         // Need to generate - we'll capture dimensions from the decoded image
-        let reader = Reader::open(path)
+        let reader = ImageReader::open(path)
             .map_err(|e| format!("Failed to open image: {}", e))?
             .with_guessed_format()
             .map_err(|e| format!("Failed to guess format: {}", e))?;

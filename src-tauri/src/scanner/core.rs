@@ -74,7 +74,7 @@ pub fn scan_image_internal(
 
     // Only read dimensions if we didn't get them from thumbnail generation
     if dimensions == (0, 0) {
-        let dimensions_result = image::io::Reader::open(&path)
+        let dimensions_result = image::ImageReader::open(&path)
             .and_then(|r| r.with_guessed_format())
             .map_err(|e| e.to_string())
             .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
