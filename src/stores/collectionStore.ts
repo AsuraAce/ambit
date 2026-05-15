@@ -5,8 +5,14 @@ import { appRepository } from '../services/repository';
 import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
 
 let initPromise: Promise<void> | null = null;
+let collectionRefreshRunId = 0;
 let smartCountRunId = 0;
 let thumbnailRefreshRunId = 0;
+
+const invalidateCollectionRefreshes = () => {
+    collectionRefreshRunId += 1;
+    return collectionRefreshRunId;
+};
 
 const STARTUP_SMART_COUNT_DELAY_MS = 1500;
 const SMART_COUNT_YIELD_MS = 25;
@@ -78,10 +84,13 @@ export const useCollectionStore = create<CollectionState>()(
             thumbnailHydrationPendingIds: {},
 
             refreshCollections: async (debounced = false) => {
-                const run = async () => {
+                const runId = invalidateCollectionRefreshes();
+                const run = async (currentRunId: number) => {
                     try {
                         const { getAllCollectionsWithStats } = await import('../services/db/collectionRepo');
                         const cols = await getAllCollectionsWithStats();
+                        if (currentRunId !== collectionRefreshRunId) return;
+
                         set({ collections: cols });
 
                         // Lazily fetch visible smart counts in the background.
@@ -95,13 +104,13 @@ export const useCollectionStore = create<CollectionState>()(
                     if (debounceTimer) clearTimeout(debounceTimer);
                     return new Promise((resolve) => {
                         debounceTimer = setTimeout(async () => {
-                            await run();
+                            await run(runId);
                             debounceTimer = null;
                             resolve();
                         }, 300);
                     });
                 } else {
-                    await run();
+                    await run(runId);
                 }
             },
 
@@ -228,11 +237,17 @@ export const useCollectionStore = create<CollectionState>()(
             },
 
             setCollections: (cols) => {
-                if (typeof cols === 'function') {
-                    set((state) => ({ collections: cols(state.collections) }));
-                } else {
-                    set({ collections: cols });
-                }
+                set((state) => {
+                    const nextCollections = typeof cols === 'function'
+                        ? cols(state.collections)
+                        : cols;
+
+                    if (nextCollections !== state.collections) {
+                        invalidateCollectionRefreshes();
+                    }
+
+                    return { collections: nextCollections };
+                });
             },
 
             initialize: async () => {

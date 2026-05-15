@@ -1,9 +1,10 @@
 import { act, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCollectionStore } from '../collectionStore';
-import { FilterState } from '../../types';
+import { Collection, FilterState } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 
+const mockGetAllCollectionsWithStats = vi.fn();
 const mockGetSmartCollectionSummaries = vi.fn();
 const mockGetCollectionThumbnailSummaries = vi.fn();
 
@@ -16,6 +17,7 @@ vi.mock('../libraryStore', () => ({
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
+    getAllCollectionsWithStats: mockGetAllCollectionsWithStats,
     getSmartCollectionSummaries: mockGetSmartCollectionSummaries,
     getCollectionThumbnailSummaries: mockGetCollectionThumbnailSummaries
 }));
@@ -24,10 +26,217 @@ const resetCollectionStore = () => {
     useCollectionStore.setState(useCollectionStore.getInitialState(), true);
 };
 
+const createDeferred = <T,>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+
+    return { promise, resolve, reject };
+};
+
+const makeStaticCollection = (overrides: Partial<Collection> = {}): Collection => ({
+    id: 'static-1',
+    name: 'Static One',
+    createdAt: 1,
+    updatedAt: 1,
+    source: 'ambit',
+    count: 0,
+    imageIds: [],
+    ...overrides
+});
+
 describe('collectionStore smart count refresh', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetAllCollectionsWithStats.mockResolvedValue([]);
+        mockGetSmartCollectionSummaries.mockResolvedValue({});
+        mockGetCollectionThumbnailSummaries.mockResolvedValue({});
         resetCollectionStore();
+    });
+
+    it('does not apply stale collection refresh rows after a newer refresh finishes', async () => {
+        const staleRefresh = createDeferred<Collection[]>();
+        const freshRefresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => staleRefresh.promise)
+            .mockImplementationOnce(() => freshRefresh.promise);
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [makeStaticCollection({ id: 'existing', name: 'Existing' })],
+                isLoaded: true
+            });
+        });
+
+        const staleRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+        const freshRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+
+        freshRefresh.resolve([
+            makeStaticCollection({
+                id: 'assets-showcase',
+                name: 'Assets: Showcase',
+                createdAt: 2,
+                updatedAt: 2
+            })
+        ]);
+        await act(async () => {
+            await freshRun;
+        });
+
+        staleRefresh.resolve([
+            makeStaticCollection({ id: 'existing', name: 'Existing' })
+        ]);
+        await act(async () => {
+            await staleRun;
+        });
+
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({
+                id: 'assets-showcase',
+                name: 'Assets: Showcase'
+            })
+        ]);
+    });
+
+    it('does not let an in-flight refresh overwrite a newer debounced refresh request', async () => {
+        const staleRefresh = createDeferred<Collection[]>();
+        const debouncedRefresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => staleRefresh.promise)
+            .mockImplementationOnce(() => debouncedRefresh.promise);
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [makeStaticCollection({ id: 'initial', name: 'Initial' })],
+                isLoaded: true
+            });
+        });
+
+        const staleRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+        const debouncedRun = useCollectionStore.getState().refreshCollections(true);
+
+        staleRefresh.resolve([
+            makeStaticCollection({ id: 'stale', name: 'Stale' })
+        ]);
+        await act(async () => {
+            await staleRun;
+        });
+
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({
+                id: 'initial',
+                name: 'Initial'
+            })
+        ]);
+
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+        debouncedRefresh.resolve([
+            makeStaticCollection({
+                id: 'assets-showcase',
+                name: 'Assets: Showcase',
+                createdAt: 2,
+                updatedAt: 2
+            })
+        ]);
+        await act(async () => {
+            await debouncedRun;
+        });
+
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({
+                id: 'assets-showcase',
+                name: 'Assets: Showcase'
+            })
+        ]);
+    });
+
+    it('does not let an in-flight refresh overwrite an optimistic collection update', async () => {
+        const staleRefresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats.mockImplementationOnce(() => staleRefresh.promise);
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [makeStaticCollection({ id: 'existing', name: 'Existing' })],
+                isLoaded: true
+            });
+        });
+
+        const staleRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        act(() => {
+            useCollectionStore.getState().setCollections(prev => [
+                ...prev,
+                makeStaticCollection({
+                    id: 'assets-showcase',
+                    name: 'Assets: Showcase',
+                    createdAt: 2,
+                    updatedAt: 2
+                })
+            ]);
+        });
+
+        staleRefresh.resolve([
+            makeStaticCollection({ id: 'existing', name: 'Existing' })
+        ]);
+        await act(async () => {
+            await staleRun;
+        });
+
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({
+                id: 'existing',
+                name: 'Existing'
+            }),
+            expect.objectContaining({
+                id: 'assets-showcase',
+                name: 'Assets: Showcase'
+            })
+        ]);
+    });
+
+    it('allows an in-flight refresh to apply after a no-op collection setter', async () => {
+        const refresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats.mockImplementationOnce(() => refresh.promise);
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [makeStaticCollection({ id: 'initial', name: 'Initial' })],
+                isLoaded: true
+            });
+        });
+
+        const refreshRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        act(() => {
+            useCollectionStore.getState().setCollections(prev => prev);
+        });
+
+        refresh.resolve([
+            makeStaticCollection({
+                id: 'db-refresh',
+                name: 'DB Refresh',
+                createdAt: 2,
+                updatedAt: 2
+            })
+        ]);
+        await act(async () => {
+            await refreshRun;
+        });
+
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({
+                id: 'db-refresh',
+                name: 'DB Refresh'
+            })
+        ]);
     });
 
     it('does not reintroduce a deleted collection when stale smart counts finish later', async () => {
