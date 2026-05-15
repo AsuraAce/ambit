@@ -64,7 +64,7 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
         hasher.update(&buffer[..read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 #[tauri::command(rename_all = "camelCase")]
