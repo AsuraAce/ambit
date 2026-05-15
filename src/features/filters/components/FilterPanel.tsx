@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Filter, Github, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
+import { Check, Filter, ExternalLink, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
 import { AIImage, FilterState } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
@@ -530,7 +530,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100"
                         title="Open Ambit on GitHub"
                     >
-                        <Github className="w-3 h-3" />
+                        <ExternalLink className="w-3 h-3" />
                     </button>
                     <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{appVersion ?? '...'}</span>
                 </div>
