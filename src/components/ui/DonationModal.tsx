@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Coffee, Github, Heart, X } from 'lucide-react';
+import { Coffee, Heart, X } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
 import { ENABLED_DONATION_PROVIDERS, SUPPORT_CHANNELS } from '../../constants/support';
 import { openExternalUrl } from '../../utils/externalLinks';
@@ -60,7 +60,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                             {ENABLED_DONATION_PROVIDERS.length > 0 ? (
                                 <div className="flex flex-col gap-3 w-full">
                                     {ENABLED_DONATION_PROVIDERS.map((provider) => {
-                                        const ProviderIcon = provider.id === 'github-sponsors' ? Github : Coffee;
+                                        const ProviderIcon = provider.id === 'github-sponsors' ? Heart : Coffee;
                                         const isKoFi = provider.id === 'ko-fi';
 
                                         return (
