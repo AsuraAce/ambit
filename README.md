@@ -20,6 +20,17 @@ Ambit is a local-first desktop app for cataloging, searching, and managing large
 *   **Backend**: Rust with Tauri v2 and SQLite (`rusqlite`)
 *   **Desktop distribution**: GitHub Releases plus Tauri updater artifacts
 
+## Privacy And Network Behavior
+
+Ambit is local-first. Core library management, browsing, search, metadata parsing, thumbnails, and settings work on local files without telemetry.
+
+The public beta has a few disclosed network paths:
+
+*   Automatic update checks contact GitHub Releases when enabled. Updates are downloaded and installed only after you confirm the prompt.
+*   Gemini features are optional. Requests are sent only when you configure a key and run an AI action or key verification.
+*   CivitAI model-hash resolution is optional. It runs only after you confirm Resolve Online and sends unresolved model hash strings, not image files.
+*   GitHub Sponsors, Ko-fi, and project links open only when clicked.
+
 ## Getting Started
 
 ### Prerequisites

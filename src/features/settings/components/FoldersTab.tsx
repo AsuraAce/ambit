@@ -218,8 +218,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                             <FolderSearch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">Model Hash Resolution</h4>
-                            <p className="text-xs text-gray-500">Resolve unknown model hashes using CivitAI</p>
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">Online Model Hash Resolution</h4>
+                            <p className="text-xs text-gray-500">Optional CivitAI lookup for unresolved model hashes</p>
                         </div>
                     </div>
                     {isResolving ? (
@@ -248,7 +248,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                 setConfirmState({
                                     isOpen: true,
                                     title: "Resolve Online?",
-                                    message: "Search CivitAI for metadata for images with unresolved model hashes? This sends model hashes to CivitAI, requires internet access, and may take some time.",
+                                    message: "Search CivitAI for metadata for unresolved model hashes? This sends hash strings to CivitAI, not image files. It requires internet access and may take some time.",
                                     confirmLabel: "Resolve Online",
                                     onConfirm: async () => {
                                         setConfirmState(prev => ({ ...prev, isOpen: false }));

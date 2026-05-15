@@ -97,7 +97,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                     >
                         <div>
                             <div className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Enable AI Features</div>
-                            <div className="text-sm text-gray-500">Unlocks natural language search, prompt analysis, and metadata recovery.</div>
+                            <div className="text-sm text-gray-500">Unlocks natural language search, prompt analysis, and metadata recovery through on-demand Gemini requests.</div>
                         </div>
                         <button
                             type="button"
@@ -167,7 +167,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             )}
 
                             <p className="text-xs text-gray-500 mt-2">
-                                Your key is stored locally. Get one at{' '}
+                                Your key is stored locally in the OS keyring. Gemini requests are sent only when you verify the key or run an AI feature. Get a key at{' '}
                                 <button
                                     type="button"
                                     onClick={() => openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL)}

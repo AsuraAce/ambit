@@ -10,6 +10,7 @@ import { unwrap } from '../../../utils/spectaUtils';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { formatStableImportProgress } from '../../../utils/importProgress';
 import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
+import { isBrowserMockMode } from '../../../services/runtime';
 import {
     createEmptyTouchedFacetResources,
     hasTouchedFacetResources,
@@ -203,6 +204,7 @@ export const useFoldersTabLogic = ({
     const fetchCounts = useCallback(async () => {
         if (!settings.monitoredFolders.length && !settings.invokeAiPath) return;
 
+        const browserMockMode = isBrowserMockMode();
         let hasUpdates = false;
         const updatesById = new Map<string, Partial<Pick<MonitoredFolder, 'imageCount' | 'variant'>>>();
         await Promise.all(settings.monitoredFolders.map(async (folder) => {
@@ -215,6 +217,8 @@ export const useFoldersTabLogic = ({
                         updatesById.set(folder.id, { ...(updatesById.get(folder.id) ?? {}), variant });
                     }
                 }
+
+                if (browserMockMode) return;
 
                 const res = await commands.getImageCountForPathPrefix(folder.path);
                 if (res.status === 'ok' && res.data !== folder.imageCount) {

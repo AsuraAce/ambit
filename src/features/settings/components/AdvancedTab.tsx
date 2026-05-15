@@ -261,7 +261,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 <div>
                                     <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Automatic Updates</div>
                                     <div className="text-xs text-gray-500 mt-1">
-                                        Keep {APP_NAME} ready to install newer public releases after you confirm the update prompt.
+                                        Check GitHub Releases at startup and install newer public releases only after you confirm the update prompt.
                                     </div>
                                 </div>
                                 <button
