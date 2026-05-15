@@ -41,7 +41,7 @@ thiserror = "1"
 specta = "=2.0.0-rc.22"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.9"
-dirs = "5"
+dirs = "6"
 tauri-plugin-shell = "2.3.4"
 chrono = { version = "0.4.43", features = ["serde"] }
 trash = "5.1.1"
