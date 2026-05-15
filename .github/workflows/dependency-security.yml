@@ -62,8 +62,6 @@ jobs:
       - name: install pnpm
         if: steps.audit-scope.outputs.run_audits == 'true'
         uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 9
 
       - name: setup node
         if: steps.audit-scope.outputs.run_audits == 'true'
