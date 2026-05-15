@@ -93,10 +93,13 @@ Goal: confirm the branch is shippable before manual QA starts.
 
 Owner: Codex first, then user only if a packaged artifact behaves differently on the target machine.
 
-- [ ] `pnpm run build` completes successfully.
-- [ ] `pnpm run test` passes for the current branch or any failures are known and documented.
+- [ ] `pnpm run lint` completes successfully.
+- [ ] `pnpm run coverage` passes for the current branch or any failures are known and documented.
+- [ ] `pnpm run build:guard` completes successfully without ineffective dynamic-import or startup chunk regressions.
 - [ ] `pnpm run test:rust` passes or any failures are known and documented.
 - [ ] `pnpm run check:versions` passes before packaging.
+- [ ] `pnpm run tauri:check` completes the no-bundle Tauri compatibility build.
+- [ ] `pnpm run verify:release` passes before installer packaging.
 - [ ] Packaged app can be produced with `pnpm run app:build`.
 - [ ] Release notes/version numbers are consistent across package metadata and Tauri config.
 - [ ] No accidental debug artifacts, local secrets, or scratch files are included in the build.
