@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev --config src-tauri/tauri.dev.json",
-    "app:build": "pnpm run verify:release && tauri build --ci --bundles nsis",
+    "app:build": "pnpm run verify:release && tauri build --ci --bundles nsis msi",
     "app:build:no-bundle": "pnpm run verify:release && tauri build --ci --no-bundle",
     "app:build:nsis": "pnpm run verify:release && tauri build --ci --bundles nsis",
     "bindings:generate": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings -- src/bindings.ts",

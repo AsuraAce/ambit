@@ -16,6 +16,34 @@ interface CheckForUpdatesOptions {
   manual?: boolean;
 }
 
+const RELEASE_FEED_UNAVAILABLE_MESSAGE =
+  'Update checks require Ambit release assets to be publicly reachable. The current GitHub Releases feed is unavailable, which is expected while the repository or release is private.';
+
+const isLikelyReleaseFeedAccessError = (message: string) => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('401') ||
+    normalized.includes('403') ||
+    normalized.includes('404') ||
+    normalized.includes('forbidden') ||
+    normalized.includes('not found') ||
+    normalized.includes('unauthorized')
+  );
+};
+
+const getRawUpdaterErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : 'Unexpected updater error';
+
+const getCheckForUpdatesErrorMessage = (error: unknown) => {
+  const rawMessage = getRawUpdaterErrorMessage(error);
+
+  if (isLikelyReleaseFeedAccessError(rawMessage)) {
+    return `${RELEASE_FEED_UNAVAILABLE_MESSAGE} Once releases are public, this check will report either an available update or that Ambit is already up to date.`;
+  }
+
+  return rawMessage;
+};
+
 export const useAppUpdater = ({
   addToast,
   autoCheckEnabled,
@@ -63,7 +91,7 @@ export const useAppUpdater = ({
         setStatus('available');
         return pendingUpdate;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unexpected updater error';
+        const message = getCheckForUpdatesErrorMessage(error);
         setUpdate(null);
         setStatus('error');
         setErrorMessage(message);
@@ -103,7 +131,7 @@ export const useAppUpdater = ({
       setUpdate(null);
       await relaunch();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unexpected updater error';
+      const message = getRawUpdaterErrorMessage(error);
       setStatus('error');
       setErrorMessage(message);
       addToast(`Failed to install update: ${message}`, 'error');

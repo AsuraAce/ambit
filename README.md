@@ -34,7 +34,7 @@ Ambit is currently in a private alpha phase. Invited testers can download curren
 
 Official release builds are currently available for **Windows only** while macOS and Linux support is being validated.
 
-1.  Download the Windows installer (`.msi`) from the release assets.
+1.  Download the Windows setup installer (`-setup.exe`) from the release assets.
 2.  Install and launch the app.
 3.  Report bugs or feedback through [GitHub Issues](https://github.com/AsuraAce/ambit/issues).
 
