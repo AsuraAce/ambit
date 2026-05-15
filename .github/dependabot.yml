@@ -1,28 +1,78 @@
 version: 2
+
 updates:
-  - package-ecosystem: npm
-    directory: /
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "09:00"
-      timezone: Europe/Berlin
-    open-pull-requests-limit: 5
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      npm-safe-patch-minor:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@tauri-apps/*"
+          - "typescript"
+        update-types:
+          - "minor"
+          - "patch"
 
-  - package-ecosystem: cargo
-    directory: /src-tauri
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "09:15"
-      timezone: Europe/Berlin
-    open-pull-requests-limit: 5
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      cargo-safe-patch-minor:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "tauri"
+          - "tauri-*"
+          - "tauri-plugin-*"
+          - "image"
+          - "webp"
+          - "sha2"
+          - "keyring"
+          - "rusqlite"
+          - "dirs"
+          - "notify"
+          - "reqwest"
+          - "specta"
+          - "specta-*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
+      day: "monday"
       time: "09:30"
-      timezone: Europe/Berlin
-    open-pull-requests-limit: 5
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github_actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
