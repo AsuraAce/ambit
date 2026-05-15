@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { processFoldersUnified, processTargetedFiles } from '../importService';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { processFoldersUnified, processNativePaths, processTargetedFiles } from '../importService';
+import { GeneratorTool } from '../../types';
 
 const mocks = vi.hoisted(() => ({
     listen: vi.fn(),
@@ -180,6 +181,8 @@ describe('processTargetedFiles', () => {
 
         expect(result.stats.imported).toBe(1);
         expect(result.wasCancelled).toBe(false);
+        expect(result.completedSourcePaths).toEqual(['C:/library']);
+        expect(result.cancelledSourcePaths).toEqual([]);
         expect(result.touchedFacetTypes).toEqual([
             'checkpoints',
             'loras',
@@ -209,6 +212,8 @@ describe('processTargetedFiles', () => {
         );
 
         expect(result.wasCancelled).toBe(true);
+        expect(result.completedSourcePaths).toEqual([]);
+        expect(result.cancelledSourcePaths).toEqual(['C:/library']);
         expect(result.failedPaths).toEqual([]);
         expect(mocks.scanDirectoryWithStats).not.toHaveBeenCalled();
         expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
@@ -248,8 +253,282 @@ describe('processTargetedFiles', () => {
         );
 
         expect(result.wasCancelled).toBe(true);
+        expect(result.completedSourcePaths).toEqual([]);
+        expect(result.cancelledSourcePaths).toEqual(['C:/library']);
         expect(result.failedPaths).toEqual([]);
         expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
+    });
+
+    it('processes multi-folder imports in source order without merging by variant', async () => {
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanDirectoryWithStats
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/library-a/a.png', modified: 1000, size: 100 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/library-b/b.png', modified: 2000, size: 200 }]
+            });
+        mocks.scanImagesBulk
+            .mockResolvedValueOnce([{
+                metadata: { tool: 'ComfyUI', model: 'Model A' },
+                timestamp: 1000,
+                width: 512,
+                height: 512,
+                fileSize: 100,
+                thumbnail: 'C:/thumbs/a.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-a',
+                originalChunks: {}
+            }])
+            .mockResolvedValueOnce([{
+                metadata: { tool: 'ComfyUI', model: 'Model B' },
+                timestamp: 2000,
+                width: 512,
+                height: 512,
+                fileSize: 200,
+                thumbnail: 'C:/thumbs/b.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-b',
+                originalChunks: {}
+            }]);
+
+        const result = await processFoldersUnified(
+            [
+                { path: 'C:/library-a', variant: GeneratorTool.COMFYUI },
+                { path: 'C:/library-b', variant: GeneratorTool.COMFYUI }
+            ],
+            { forceRescan: true }
+        );
+
+        expect(mocks.scanImagesBulk).toHaveBeenCalledTimes(2);
+        expect(mocks.scanImagesBulk).toHaveBeenNthCalledWith(1, ['C:/library-a/a.png'], '', true, true, GeneratorTool.COMFYUI, expect.any(String));
+        expect(mocks.scanImagesBulk).toHaveBeenNthCalledWith(2, ['C:/library-b/b.png'], '', true, true, GeneratorTool.COMFYUI, expect.any(String));
+        expect(result.completedSourcePaths).toEqual(['C:/library-a', 'C:/library-b']);
+        expect(result.cancelledSourcePaths).toEqual([]);
+    });
+
+    it('marks completed and unfinished source folders when cancellation happens mid-import', async () => {
+        const abortCtrl = new AbortController();
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanDirectoryWithStats
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/library-a/a.png', modified: 1000, size: 100 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/library-b/b.png', modified: 2000, size: 200 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/library-c/c.png', modified: 3000, size: 300 }]
+            });
+        mocks.scanImagesBulk
+            .mockResolvedValueOnce([{
+                metadata: { tool: 'ComfyUI', model: 'Model A' },
+                timestamp: 1000,
+                width: 512,
+                height: 512,
+                fileSize: 100,
+                thumbnail: 'C:/thumbs/a.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-a',
+                originalChunks: {}
+            }])
+            .mockImplementationOnce(async () => {
+                abortCtrl.abort();
+                return [{
+                    metadata: { tool: 'ComfyUI', model: 'Model B' },
+                    timestamp: 2000,
+                    width: 512,
+                    height: 512,
+                    fileSize: 200,
+                    thumbnail: 'C:/thumbs/b.webp',
+                    thumbnailSource: 'ambit',
+                    microThumbnail: 'mini-b',
+                    originalChunks: {}
+                }];
+            });
+
+        const result = await processFoldersUnified(
+            [
+                { path: 'C:/library-a' },
+                { path: 'C:/library-b' },
+                { path: 'C:/library-c' }
+            ],
+            {
+                forceRescan: true,
+                abortSignal: abortCtrl.signal
+            }
+        );
+
+        expect(result.wasCancelled).toBe(true);
+        expect(result.completedSourcePaths).toEqual(['C:/library-a']);
+        expect(result.cancelledSourcePaths).toEqual(['C:/library-b', 'C:/library-c']);
+        expect(mocks.insertImagesBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps partial-failure sources retryable without marking them cancelled', async () => {
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'C:/library/bad.png', modified: 1000, size: 100 }]
+        });
+        mocks.scanImagesBulk.mockResolvedValueOnce([{
+            metadata: {},
+            timestamp: 1000,
+            width: 0,
+            height: 0,
+            fileSize: 100,
+            thumbnail: '',
+            thumbnailSource: 'ambit',
+            microThumbnail: '',
+            originalChunks: {},
+            errorReason: 'bad metadata'
+        }]);
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library' }],
+            { forceRescan: true }
+        );
+
+        expect(result.wasCancelled).toBe(false);
+        expect(result.failedPaths).toEqual(['C:/library/bad.png']);
+        expect(result.completedSourcePaths).toEqual([]);
+        expect(result.cancelledSourcePaths).toEqual([]);
+    });
+
+    it('keeps native path imports batched instead of forcing one metadata scan per source path', async () => {
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanDirectoryWithStats
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/drop/a.png', modified: 1000, size: 100 }]
+            })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: [{ path: 'C:/drop/b.png', modified: 2000, size: 200 }]
+            });
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: { tool: 'ComfyUI', model: 'Model A' },
+                timestamp: 1000,
+                width: 512,
+                height: 512,
+                fileSize: 100,
+                thumbnail: 'C:/thumbs/a.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-a',
+                originalChunks: {}
+            },
+            {
+                metadata: { tool: 'ComfyUI', model: 'Model B' },
+                timestamp: 2000,
+                width: 512,
+                height: 512,
+                fileSize: 200,
+                thumbnail: 'C:/thumbs/b.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-b',
+                originalChunks: {}
+            }
+        ]);
+
+        await processNativePaths(
+            ['C:/drop/a.png', 'C:/drop/b.png'],
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            false,
+            true
+        );
+
+        expect(mocks.scanImagesBulk).toHaveBeenCalledTimes(1);
+        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+            ['C:/drop/b.png', 'C:/drop/a.png'],
+            '',
+            false,
+            true,
+            undefined,
+            expect.any(String)
+        );
+    });
+
+    it('ignores native metadata progress events from a different run id', async () => {
+        type NativeProgressEvent = {
+            payload: {
+                current: number;
+                total: number;
+                message: string;
+                progressRunId?: string;
+            };
+        };
+        let progressListener: ((event: NativeProgressEvent) => void) | undefined;
+        const progressMessages: string[] = [];
+
+        mocks.listen.mockImplementationOnce((
+            _event: string,
+            callback: (event: NativeProgressEvent) => void
+        ) => {
+            progressListener = callback;
+            return Promise.resolve(vi.fn());
+        });
+        mocks.getExistingMetadata.mockResolvedValue(new Map());
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'C:/library/a.png', modified: 1000, size: 100 }]
+        });
+        mocks.scanImagesBulk.mockImplementationOnce(async (
+            _paths: string[],
+            _thumbnailDir: string,
+            _skipThumbnail: boolean,
+            _extractWorkflow: boolean,
+            _defaultTool: GeneratorTool | undefined,
+            progressRunId: string
+        ) => {
+            progressListener?.({
+                payload: {
+                    current: 1,
+                    total: 1,
+                    message: 'Stale metadata progress',
+                    progressRunId: 'old-run'
+                }
+            });
+            progressListener?.({
+                payload: {
+                    current: 1,
+                    total: 1,
+                    message: 'Matching metadata progress',
+                    progressRunId
+                }
+            });
+            return [{
+                metadata: { tool: 'ComfyUI', model: 'Model A' },
+                timestamp: 1000,
+                width: 512,
+                height: 512,
+                fileSize: 100,
+                thumbnail: 'C:/thumbs/a.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-a',
+                originalChunks: {}
+            }];
+        });
+
+        await processFoldersUnified(
+            [{ path: 'C:/library', variant: GeneratorTool.COMFYUI }],
+            {
+                forceRescan: true,
+                onProgress: (_current, _total, message) => {
+                    if (message) progressMessages.push(message);
+                }
+            }
+        );
+
+        expect(progressMessages).toContain('Matching metadata progress');
+        expect(progressMessages).not.toContain('Stale metadata progress');
     });
 });

@@ -31,6 +31,15 @@ static SCAN_POOL: Lazy<rayon::ThreadPool> = Lazy::new(|| {
 
 // Re-export ScanResult so Specta can see it if needed via scanner::ScanResult
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportProgressPayload {
+    current: usize,
+    total: usize,
+    message: String,
+    progress_run_id: String,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn scan_image(
@@ -58,6 +67,7 @@ pub async fn scan_images_bulk(
     skip_thumbnail: bool,
     extract_workflow: bool,
     default_tool: Option<String>,
+    progress_run_id: Option<String>,
 ) -> Result<Vec<ScanResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let app_clone = app.clone();
@@ -93,14 +103,15 @@ pub async fn scan_images_bulk(
 
                     let current =
                         parsed_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                    if current % 10 == 0 || current == total {
+                    if progress_run_id.is_some() && (current % 10 == 0 || current == total) {
                         use tauri::Emitter;
                         let _ = app_clone.emit(
                             "import_progress",
-                            crate::db::ProgressPayload {
+                            ImportProgressPayload {
                                 current,
                                 total,
                                 message: "Extracting metadata...".to_string(),
+                                progress_run_id: progress_run_id.clone().unwrap_or_default(),
                             },
                         );
                     }

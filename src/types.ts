@@ -287,6 +287,8 @@ export interface AppSettings {
   logLevel?: LogLevel; // Console log severity level
 }
 
+export type AppSettingsUpdate = Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>);
+
 export interface ToastMessage {
   id: string;
   message: string;

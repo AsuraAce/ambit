@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { AppSettings } from '../types';
+import { AppSettings, AppSettingsUpdate } from '../types';
 import { appRepository } from '../services/repository';
 import { commands } from '../bindings';
 import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from '../services/assetScope';
@@ -15,7 +15,7 @@ interface SettingsState {
     geminiApiKey: string | null;
 
     // Actions
-    setSettings: (settings: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
+    setSettings: (settings: AppSettingsUpdate) => void;
     setGeminiApiKey: (key: string | null) => Promise<void>;
     setPrivacyEnabled: (enabled: boolean) => void;
     updateFolderLastScanned: (id: string, timestamp: number) => void;

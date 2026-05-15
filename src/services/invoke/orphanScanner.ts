@@ -73,7 +73,7 @@ export const scanForOrphans = async (
         });
 
         try {
-            const scanResults = await unwrap(commands.scanImagesBulk(chunkAbsPaths, null, true, false, null));
+            const scanResults = await unwrap(commands.scanImagesBulk(chunkAbsPaths, null, true, false, null, null));
 
             const batchToInsert: any[] = [];
             for (let j = 0; j < chunk.length; j++) {

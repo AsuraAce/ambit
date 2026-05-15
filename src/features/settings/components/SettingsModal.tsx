@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Shield, FlaskConical, Terminal, Link, Sparkles } from 'lucide-react';
-import { AppSettings } from '../../../types';
+import { AppSettings, AppSettingsUpdate } from '../../../types';
 import { GeneralTab, PrivacyTab, IntelligenceTab, DevTab, AdvancedTab, ConnectionsTab } from './';
 import { APP_NAME } from '../../../constants/app';
 import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
@@ -13,7 +13,7 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
-  onSave: (settings: AppSettings) => void;
+  onSave: (settings: AppSettingsUpdate) => void;
   canCheckForUpdates: boolean;
   initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
@@ -101,12 +101,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
     (updater) => {
       if (typeof updater === 'function') {
-        onSave(updater(settings));
+        onSave((latest) => updater(latest));
       } else {
         onSave(updater);
       }
     },
-    [onSave, settings]
+    [onSave]
   );
 
   return (
