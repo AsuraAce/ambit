@@ -3,13 +3,13 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const STARTUP_CHUNK_LIMIT_BYTES = 500 * 1024;
-const pnpmExecPath = process.env.npm_execpath;
-const command = pnpmExecPath ? process.execPath : (process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
-const args = pnpmExecPath
-  ? [pnpmExecPath, 'exec', 'vite', 'build']
-  : ['exec', 'vite', 'build'];
+const isWindows = process.platform === 'win32';
 
-const result = spawnSync(command, args, {
+const result = isWindows ? spawnSync('pnpm exec vite build', {
+  cwd: process.cwd(),
+  encoding: 'utf8',
+  shell: true,
+}) : spawnSync('pnpm', ['exec', 'vite', 'build'], {
   cwd: process.cwd(),
   encoding: 'utf8',
 });
