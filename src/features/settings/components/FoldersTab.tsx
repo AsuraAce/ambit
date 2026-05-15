@@ -191,7 +191,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                 <ResourceDiscoverySection
                     resourceFolders={settings.resourceFolders || []}
                     isScanning={isScanningDiscovery}
-                    scanProgress={discoveryScanProgress}
+                    scanProgress={discoveryScanProgress ?? undefined}
                     isPopulatingThumbnails={isPopulatingThumbnails}
                     newResourcePath={newResourcePath}
                     setNewResourcePath={setNewResourcePath}

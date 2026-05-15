@@ -96,6 +96,13 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const setMaintenanceCounts = useLibraryStore(s => s.setMaintenanceCounts);
     const startLiveWatchSession = useLibraryStore(s => s.startLiveWatchSession);
 
+    const setIsLiveWatchingDispatch = useCallback((value: React.SetStateAction<boolean>) => {
+        const nextIsLiveWatching = typeof value === 'function'
+            ? value(isLiveWatching)
+            : value;
+        setIsLiveWatching(nextIsLiveWatching);
+    }, [isLiveWatching, setIsLiveWatching]);
+
     const refreshMaintenanceCounts = useCallback(async () => {
         if (!isLoaded) return;
         try {
@@ -370,7 +377,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     return (
         <WatcherContext.Provider value={{
             isLiveWatching,
-            setIsLiveWatching,
+            setIsLiveWatching: setIsLiveWatchingDispatch,
             refreshMaintenanceCounts,
             maintenanceCounts,
             lastWatcherEvent

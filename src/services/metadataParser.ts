@@ -87,9 +87,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail,
-            microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource,
+            thumbnail: info.thumbnail ?? undefined,
+            microThumbnail: info.microThumbnail ?? undefined,
+            thumbnailSource: info.thumbnailSource ?? undefined,
             originalChunks: info.chunks as Record<string, string>
         };
     }
@@ -121,9 +121,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail,
-            microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource,
+            thumbnail: info.thumbnail ?? undefined,
+            microThumbnail: info.microThumbnail ?? undefined,
+            thumbnailSource: info.thumbnailSource ?? undefined,
             originalChunks: info.chunks as Record<string, string>,
             errorReason: (info as any).error
         };
@@ -141,9 +141,9 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             height: info.height,
             fileSize: info.size,
             timestamp: info.modified,
-            thumbnail: info.thumbnail,
-            microThumbnail: info.microThumbnail,
-            thumbnailSource: info.thumbnailSource,
+            thumbnail: info.thumbnail ?? undefined,
+            microThumbnail: info.microThumbnail ?? undefined,
+            thumbnailSource: info.thumbnailSource ?? undefined,
             errorReason: workerError instanceof Error ? workerError.message : String(workerError)
         };
     }

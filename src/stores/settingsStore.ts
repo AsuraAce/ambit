@@ -82,11 +82,10 @@ export const useSettingsStore = create<SettingsState>()(
             },
 
             setSettings: (update) => {
-                let previousSettings: AppSettings | null = null;
-                let nextSettings: AppSettings | null = null;
+                const previousSettings = get().settings;
+                let nextSettings = previousSettings;
 
                 set((state) => {
-                    previousSettings = state.settings;
                     const newSettings = typeof update === 'function'
                         ? { ...state.settings, ...update(state.settings) }
                         : { ...state.settings, ...update };
@@ -111,7 +110,7 @@ export const useSettingsStore = create<SettingsState>()(
                     return { settings: newSettings };
                 });
 
-                if (previousSettings && nextSettings) {
+                if (previousSettings !== nextSettings) {
                     const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
 
                     nextSettings.monitoredFolders.forEach((folder) => {

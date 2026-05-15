@@ -185,7 +185,7 @@ describe('useImportOps', () => {
         });
         mocks.processFoldersUnified.mockResolvedValueOnce(partialCancel);
         const { result } = renderImportOps();
-        let returned: ImportResult | void;
+        let returned: ImportResult | void = undefined;
 
         await act(async () => {
             returned = await result.current.handleImportFolders([
@@ -232,7 +232,7 @@ describe('useImportOps', () => {
         mocks.processFoldersUnified.mockResolvedValueOnce(partialCancel);
         mocks.rebuildFacetCache.mockRejectedValueOnce(new Error('facet rebuild failed'));
         const { result } = renderImportOps();
-        let returned: ImportResult | void;
+        let returned: ImportResult | void = undefined;
 
         await act(async () => {
             returned = await result.current.handleImportFolders([

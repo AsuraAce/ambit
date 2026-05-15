@@ -89,7 +89,7 @@ export const useMaintenanceOps = ({
 
             const { recoverImageMetadata } = await import('../services/geminiService');
             const recoveredMeta = await recoverImageMetadata(base64, style, apiKey, settings.aiModel, settings.systemPrompts);
-            const recoveredPrompt = recoveredMeta.positivePrompt;
+            const recoveredPrompt = recoveredMeta.positivePrompt ?? '';
 
             const updatedImg = {
                 ...img,

@@ -55,10 +55,18 @@ const validNames: ValidFacetNames = {
     ipAdapters: [],
 };
 
-const settings = {
+const settings: AppSettings = {
+    hasCompletedOnboarding: false,
+    theme: 'dark',
+    thumbnailSize: 200,
+    autoCheckForUpdates: true,
+    confirmDelete: true,
+    defaultTheaterMode: false,
+    monitoredFolders: [],
     maskingMode: 'blur',
     maskedKeywords: [],
-} as AppSettings;
+    enableAI: false,
+};
 
 const renderStatsHook = (
     filters = createDefaultFilters(),
@@ -198,7 +206,7 @@ describe('useLibraryStatsQuery valid facets', () => {
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalled());
         expect(searchRepoMocks.getValidFacetNames).not.toHaveBeenCalled();
 
-        rerender({ currentFilters: filteredState, drilldownEnabled: true });
+        rerender({ currentFilters: filteredState, currentAssetScope: 'used', drilldownEnabled: true });
 
         await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalled());
     });
@@ -364,9 +372,9 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1));
 
-        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026' }) });
+        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026' }), currentAssetScope: 'used', drilldownEnabled: true });
         await waitForMs(600);
-        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026-04' }) });
+        rerender({ currentFilters: createDefaultFilters({ searchQuery: 'date:2026-04' }), currentAssetScope: 'used', drilldownEnabled: true });
         await waitForMs(SIDE_QUERY_SEARCH_DEBOUNCE_MS - 100);
 
         expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1);
@@ -392,7 +400,7 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(1));
 
-        rerender({ currentFilters: createDefaultFilters({ dateRange: 'today' }) });
+        rerender({ currentFilters: createDefaultFilters({ dateRange: 'today' }), currentAssetScope: 'used', drilldownEnabled: true });
 
         await waitFor(() => expect(searchRepoMocks.getLibraryStats).toHaveBeenCalledTimes(2));
     });

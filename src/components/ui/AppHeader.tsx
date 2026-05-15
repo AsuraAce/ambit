@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Import } from 'lucide-react';
-import { FilterState, LayoutMode, SortOption, ViewMode } from '../../types';
+import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { SearchBar } from '../../features/filters/components/SearchBar';
@@ -16,7 +16,7 @@ interface AppHeaderProps {
     searchProps: {
         isAiSearchEnabled: boolean;
         isSearchingAi: boolean;
-        inputRef: React.RefObject<HTMLInputElement>;
+        inputRef: React.RefObject<HTMLInputElement | null>;
         toggleAiSearch: () => void;
         submitSearch: (query: string) => void;
         isFocused: boolean;
@@ -178,7 +178,7 @@ export const AppHeader = React.memo(({
                         sortOption={sortOption}
                         setSortOption={setSortOption}
                         thumbnailSize={settings.thumbnailSize}
-                        setThumbnailSize={(size) => setSettings(p => ({ ...p, thumbnailSize: size }))}
+                        setThumbnailSize={(size) => setSettings((p: AppSettings) => ({ ...p, thumbnailSize: size }))}
                         displayedCount={displayedCount}
                         totalCount={totalCount}
                         scopeName={scopeName}

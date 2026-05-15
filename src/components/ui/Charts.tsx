@@ -23,10 +23,17 @@ const TIPS = [
     "Drag and drop images to import them."
 ];
 
+type ModelChartStat = {
+    name: string;
+    fullName?: string;
+    count: number;
+};
+
 export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     // Use DB-backed global stats
     const { stats, setFilters, isFiltering } = useLibraryContext();
     const { totalGenerations, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
+    const modelChartStats: ModelChartStat[] = modelStats ?? [];
 
     const [showTip, setShowTip] = useState(true);
 
@@ -80,7 +87,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                             <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
                             <div className="flex-1 min-h-0 w-full">
                                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                                    <BarChart data={modelStats} style={{ outline: 'none' }}>
+                                    <BarChart data={modelChartStats} style={{ outline: 'none' }}>
                                         <XAxis dataKey="name" stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
                                         <YAxis stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
                                         <Tooltip
@@ -103,7 +110,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                                                 strokeOpacity: 0.5
                                             }}
                                         >
-                                            {modelStats.map((entry, index) => (
+                                            {modelChartStats.map((entry, index) => (
                                                 <Cell
                                                     key={`cell-${index}`}
                                                     fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]}
