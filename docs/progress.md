@@ -25,7 +25,7 @@ Last reviewed: 2026-05-15
 - Add browser smoke tests for lazy-loaded app surfaces: settings, dashboard, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editor.
 - Add coverage thresholds after the public-beta baseline is reviewed.
 - Add a small Tauri desktop launch smoke test later, using a temporary app data/profile directory; keep installer/update testing for release packaging work.
-- The Tauri identifier warning is deferred intentionally. See `docs/refactor.md#tauri-bundle-identifier-migration` before changing `com.ambit.app`.
+- Production builds now use the Tauri identifier `io.github.asuraace.ambit`. Release builds run a one-time startup migration from the legacy `com.ambit.app` Roaming and Local AppData directories before SQL initialization, and reset/repair paths still check both identifiers during the public-beta transition.
 - The durable engineering follow-up from earlier work still stands: clarify whether `src/services/repository.ts` remains a supported non-desktop or mock fallback, or should be retired in a dedicated cleanup.
 - Live Watch still needs a separate pending-completion UX pass if we want toggle-off to distinguish "activity detected but output not complete yet" from passive idle or summary states. See `docs/refactor.md#live-watch-pending-completion-state`.
 - Use this file for active repo state and durable near-term follow-ups. Move recurring structural debt to `docs/refactor.md`, and keep personal scratch planning out of tracked files.

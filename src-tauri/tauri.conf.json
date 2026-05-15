@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Ambit",
   "version": "0.5.0",
-  "identifier": "com.ambit.app",
+  "identifier": "io.github.asuraace.ambit",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1421",

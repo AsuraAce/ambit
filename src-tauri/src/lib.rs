@@ -1,3 +1,4 @@
+mod app_data_migration;
 mod db;
 mod fs_commands;
 mod metadata;
@@ -101,7 +102,12 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 pub fn run() {
     let builder = create_builder();
 
-    // Check for deferred purge request BEFORE initializing the database
+    // Move legacy production app-data before the SQL plugin resolves images.db.
+    if !cfg!(debug_assertions) {
+        app_data_migration::migrate_legacy_identifier_data();
+    }
+
+    // Check for deferred purge request BEFORE initializing the database.
     check_and_execute_deferred_purge();
     repair_known_migration_metadata();
 
@@ -181,25 +187,10 @@ pub fn run() {
 
 /// Check for and execute any pending database purge request.
 /// This runs BEFORE the SQL plugin initializes, so the DB file isn't locked yet.
+#[cfg(not(test))]
 fn check_and_execute_deferred_purge() {
-    // We need to check both potential locations because Tauri might look in either
-    // depending on system configuration and version.
-    let mut paths_to_check = Vec::new();
-
-    if let Some(config_dir) = dirs::config_dir() {
-        paths_to_check.push(config_dir.join("com.ambit.app"));
-        paths_to_check.push(config_dir.join("com.ambit.dev"));
-        paths_to_check.push(config_dir.join("com.ambit.alpha"));
-        paths_to_check.push(config_dir.join("com.tauri.dev"));
-    }
-    if let Some(data_local_dir) = dirs::data_local_dir() {
-        paths_to_check.push(data_local_dir.join("com.ambit.app"));
-        paths_to_check.push(data_local_dir.join("com.ambit.dev"));
-        paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
-        paths_to_check.push(data_local_dir.join("com.tauri.dev"));
-    }
-
-    for app_dir in paths_to_check {
+    // Check current and transitional identifiers in both Roaming and Local AppData.
+    for app_dir in app_data_migration::app_identifier_dirs_to_check() {
         let marker_path = app_dir.join(".purge_on_restart");
 
         if marker_path.exists() {
@@ -269,27 +260,12 @@ fn check_and_execute_deferred_purge() {
 fn repair_known_migration_metadata() {
     use sha2::{Digest, Sha384};
 
-    let mut paths_to_check = Vec::new();
-
-    if let Some(config_dir) = dirs::config_dir() {
-        paths_to_check.push(config_dir.join("com.ambit.app"));
-        paths_to_check.push(config_dir.join("com.ambit.dev"));
-        paths_to_check.push(config_dir.join("com.ambit.alpha"));
-        paths_to_check.push(config_dir.join("com.tauri.dev"));
-    }
-    if let Some(data_local_dir) = dirs::data_local_dir() {
-        paths_to_check.push(data_local_dir.join("com.ambit.app"));
-        paths_to_check.push(data_local_dir.join("com.ambit.dev"));
-        paths_to_check.push(data_local_dir.join("com.ambit.alpha"));
-        paths_to_check.push(data_local_dir.join("com.tauri.dev"));
-    }
-
     let migration55 = db::migrations::m55_manual_thumbnail_lookup_index::migration55();
     let expected_m55_checksum = Sha384::digest(migration55.sql.as_bytes()).to_vec();
     let migration56 = db::migrations::m56_thumbnail_optimization::migration56();
     let expected_m56_checksum = Sha384::digest(migration56.sql.as_bytes()).to_vec();
 
-    for app_dir in paths_to_check {
+    for app_dir in app_data_migration::app_identifier_dirs_to_check() {
         let db_path = app_dir.join("images.db");
         if !db_path.exists() {
             continue;

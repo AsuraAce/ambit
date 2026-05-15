@@ -112,7 +112,7 @@ Owner: Shared. I can prepare the build and review logs; you should verify the vi
 
 - [ ] App launches cleanly from a packaged build.
 - [ ] Existing library opens without crash, long stall, or blank screen.
-- [ ] Fresh profile can complete first-run setup.
+- [ ] Fresh profile can complete first-run setup under `io.github.asuraace.ambit`.
 - [ ] Settings modal opens and closes cleanly.
 - [ ] At least one watched folder can be added successfully.
 - [ ] Initial scan/import completes and images appear in the library.
@@ -278,13 +278,15 @@ Owner: Shared, leaning user. I can produce and inspect artifacts; you should val
 - [ ] Installer runs cleanly on the target OS.
 - [ ] Installed app launches outside the dev environment.
 - [ ] App version shown in UI or metadata matches the intended release.
-- [ ] Upgrade from the previous release preserves the library and settings.
+- [ ] Upgrade from the previous release preserves the library and settings, including one-time migration from `com.ambit.app` to `io.github.asuraace.ambit`.
 - [ ] Uninstall or reinstall behavior is understood and documented.
 - [ ] Build artifact names and release attachments are correct.
 - [ ] Release notes accurately describe changes and known limitations.
 
 Phase 6 notes:
-- Fresh profile requires clearing both `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`; settings live under Local, while the main SQLite library lives under Roaming.
+- Fresh profile requires clearing both current directories, `AppData\Local\io.github.asuraace.ambit` and `AppData\Roaming\io.github.asuraace.ambit`; settings live under Local, while the main SQLite library lives under Roaming.
+- Identifier migration testing also uses the legacy directories `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`. The packaged release build should move legacy data into the current identifier when the current profile has no conflicting `library.json`, `.thumbnails`, or `images.db` data.
+- Conflict testing should pre-create current-profile data and confirm legacy `com.ambit.app` data is not overwritten or deleted.
 - Updater validation requires signing setup, public release assets, and installed-app behavior checks before each public beta release.
 - Version state as of this pass: package metadata is `0.5.0`; confirm the final release tag, GitHub Release, updater manifest, and installer metadata all match before publishing.
 
