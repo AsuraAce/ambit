@@ -28,11 +28,11 @@ Ambit is a local-first desktop app for cataloging, searching, and managing large
 *   [Rust](https://www.rust-lang.org/tools/install) stable
 *   [VS Code](https://code.visualstudio.com/) with the Tauri extension and standard TypeScript tooling
 
-### Private Alpha Builds
+### Public Beta Builds
 
-Ambit is currently in a private alpha phase. Invited testers can download current builds from [GitHub Releases](https://github.com/AsuraAce/ambit/releases).
+Ambit is currently in public beta. Current builds are published on [GitHub Releases](https://github.com/AsuraAce/ambit/releases).
 
-Official release builds are currently available for **Windows only** while macOS and Linux support is being validated.
+Official public beta builds are currently available for **Windows only** while macOS and Linux support is being validated.
 
 1.  Download the Windows setup installer (`-setup.exe`) from the release assets.
 2.  Install and launch the app.
@@ -47,23 +47,19 @@ Official release builds are currently available for **Windows only** while macOS
     ```
 2.  Install dependencies:
     ```bash
-    npm install
+    pnpm install
     ```
 3.  Configure optional local environment settings if needed.
 4.  Run the desktop app:
     ```bash
-    npm run app:dev
+    pnpm run app:dev
     ```
 
 ## Contributing
 
-Contributions are welcome. Follow the standard GitHub workflow:
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and pull request expectations.
 
-1.  Fork the project.
-2.  Create a feature branch.
-3.  Commit with a conventional message.
-4.  Push the branch.
-5.  Open a pull request.
+For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## Support
 

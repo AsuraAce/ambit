@@ -1,7 +1,7 @@
 # Release Test Checklist
 
 Status: Working draft
-Last updated: 2026-04-30
+Last updated: 2026-05-15
 
 Use this checklist for staged release testing of Ambit. It is scoped to the current app shape:
 
@@ -282,8 +282,8 @@ Owner: Shared, leaning user. I can produce and inspect artifacts; you should val
 
 Phase 6 notes:
 - Fresh profile requires clearing both `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`; settings live under Local, while the main SQLite library lives under Roaming.
-- Updater validation is not closed in this pass. Local updater artifacts require signing setup/keys, and the release workflow should be validated in a dedicated future worktree before shipping auto-update support.
-- Version state as of this pass: GitHub releases and tags only go through `v0.3.0`; `main` package metadata is still `0.3.0`; the release-please branch prepares `0.4.0` in `package.json`, `tauri.conf.json`, and `CHANGELOG.md`. Align this before final release.
+- Updater validation requires signing setup, public release assets, and installed-app behavior checks before each public beta release.
+- Version state as of this pass: package metadata is `0.5.0`; confirm the final release tag, GitHub Release, updater manifest, and installer metadata all match before publishing.
 
 ## Sign-Off Summary
 
@@ -304,8 +304,8 @@ Deferred Phase 4 investigations:
 - Image pinning can still block collection navigation for multiple seconds in some production-sized libraries.
 
 Deferred release investigations:
-- Auto-updater signing and artifact validation must be handled in a dedicated worktree/session with the required signing key setup.
-- Final release version/tag alignment must happen before publishing: current GitHub latest is `v0.3.0`, while release-please has prepared `0.4.0` but no `v0.4.0` tag or release exists yet.
+- Auto-updater signing and artifact validation must be handled with the required signing key setup and reachable GitHub Release assets.
+- Final release version/tag alignment must happen before publishing: package metadata, Tauri config, changelog, release tag, installer names, and `latest.json` must agree.
 
 ## Recommended Pass Order
 
@@ -323,18 +323,18 @@ Use this loop to avoid unnecessary work:
 
 1. I run the automatable gate first and summarize only failures, warnings, and residual risk.
 2. You run only the manual checks that still matter after that gate passes.
-3. When you hit a problem, send me the shortest repro you can; I’ll own investigation and fixes.
+3. When you hit a problem, send me the shortest repro you can; I'll own investigation and fixes.
 4. After fixes, I rerun the relevant automated checks and tell you exactly which manual checks need re-verification.
 
 ## High-Risk Areas To Watch Closely
 
 These areas deserve extra attention during release testing:
 
-- [src/App.tsx](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src/App.tsx)
-- [src/contexts/SearchContext.tsx](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src/contexts/SearchContext.tsx)
-- [src/features/library/components/VirtualGrid.tsx](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src/features/library/components/VirtualGrid.tsx)
-- [src/stores/settingsStore.ts](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src/stores/settingsStore.ts)
-- [src/services/TauriFsRepository.ts](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src/services/TauriFsRepository.ts)
-- [src-tauri/src/db](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src-tauri/src/db)
-- [src-tauri/src/metadata](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src-tauri/src/metadata)
-- [src-tauri/src/watcher.rs](C:/Users/Artemis/.codex/worktrees/26f3/project-ambit-alpha/src-tauri/src/watcher.rs)
+- `src/App.tsx`
+- `src/contexts/SearchContext.tsx`
+- `src/features/library/components/VirtualGrid.tsx`
+- `src/stores/settingsStore.ts`
+- `src/services/TauriFsRepository.ts`
+- `src-tauri/src/db`
+- `src-tauri/src/metadata`
+- `src-tauri/src/watcher.rs`

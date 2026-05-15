@@ -2,10 +2,10 @@
 name = "app"
 version = "0.5.0"
 default-run = "app"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "High-performance local AI image manager for large AI-generated image libraries."
+authors = ["AsuraAce"]
+license = "MIT"
+repository = "https://github.com/AsuraAce/ambit"
 edition = "2021"
 rust-version = "1.77.2"
 

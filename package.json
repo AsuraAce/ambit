@@ -1,8 +1,20 @@
 {
   "name": "ambit",
   "private": true,
+  "description": "High-performance local AI image manager for large AI-generated image libraries.",
   "version": "0.5.0",
   "type": "module",
+  "author": "AsuraAce",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AsuraAce/ambit.git"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
