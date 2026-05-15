@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState } from '../../types';
+import { AIImage, AppSettingsUpdate, RecoveryStyle, ViewMode } from '../../types';
 import { SettingsModal } from '../../features/settings/components/SettingsModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CompareModal } from '../../features/viewer/components/CompareModal';
@@ -32,7 +32,7 @@ interface GlobalModalsProps {
   };
 
   // Setters
-  setModals: React.Dispatch<React.SetStateAction<any>>;
+  setModals: React.Dispatch<React.SetStateAction<GlobalModalsProps['modals']>>;
 
   // Local View Data
   selectedIds: Set<string>;
@@ -44,7 +44,7 @@ interface GlobalModalsProps {
   onExportConfirm: (filename: string, folder: string) => void;
   onDeleteConfirm: () => void;
   onDeleteCollectionConfirm: () => void;
-  onRecoverMetadata: (style: any) => void;
+  onRecoverMetadata: (style: RecoveryStyle) => void;
   onCollectionAction: (ids: string[], targetColId: string, mode: 'add' | 'move', sourceColId?: string) => void;
   onCloseExport?: () => void;
   exportIds?: Set<string>;
@@ -68,7 +68,7 @@ interface GlobalModalsProps {
 
   // Command Palette Specifics
   commandPaletteProps: {
-    onNavigate: (mode: any) => void;
+    onNavigate: (mode: ViewMode) => void;
     onToggleTheme: () => void;
     onOpenSettings: () => void;
     onImport: () => void;
@@ -117,7 +117,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   const { images, toggleFavorite, togglePin } = useSearch();
 
   // Individual tabs now handle their own toast notifications
-  const close = (key: keyof typeof modals) => setModals((p: any) => ({ ...p, [key]: false }));
+  const close = (key: keyof typeof modals) => setModals((p) => ({ ...p, [key]: false }));
 
   const collectionName = collections.find(c => c.id === collectionToDeleteId)?.name || 'Collection';
 

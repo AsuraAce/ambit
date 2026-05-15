@@ -11,7 +11,39 @@ interface WorkflowInspectorProps {
     onWorkflowLoaded?: (workflowJson: string) => void;
 }
 
-const WorkflowNode: React.FC<{ title: string; type: string; inputs: Record<string, any> | any[] }> = ({ title, type, inputs }) => {
+type WorkflowValue = string | number | boolean | null | undefined | Record<string, unknown> | unknown[];
+type WorkflowInputs = Record<string, WorkflowValue> | WorkflowValue[];
+
+interface WorkflowRawNode extends Record<string, unknown> {
+    id?: string | number;
+    type?: string;
+    class_type?: string;
+    _type?: string;
+    node_type?: string;
+    title?: string;
+    label?: string;
+    widgets_values?: WorkflowValue[];
+    inputs?: Record<string, WorkflowValue>;
+    data?: Record<string, WorkflowValue>;
+    _meta?: { title?: string };
+}
+
+interface WorkflowDisplayNode {
+    id: string | number;
+    title: string;
+    type: string;
+    inputs: WorkflowInputs;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+
+const isWorkflowRawNode = (value: unknown): value is WorkflowRawNode => isRecord(value);
+
+const asStringValue = (value: unknown, fallback = ''): string =>
+    typeof value === 'string' && value.length > 0 ? value : fallback;
+
+const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const hasContent = Object.keys(inputs).length > 0;
 
@@ -77,21 +109,21 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 }
             }
 
-            const json = JSON.parse(parseTarget);
+            const json = JSON.parse(parseTarget) as unknown;
 
             // Case 1: Standard Node Graph (ComfyUI / InvokeAI)
-            if (Array.isArray(json.nodes) && json.nodes.length > 0) return true;
+            if (isRecord(json) && Array.isArray(json.nodes) && json.nodes.length > 0) return true;
 
             // Case 2: Flat Object Graph (API formats)
             // Must contain objects with 'class_type', 'type', 'inputs', or 'widgets_values'
-            if (typeof json === 'object' && !Array.isArray(json) && json !== null) {
+            if (isRecord(json)) {
                 const keys = Object.keys(json);
                 if (keys.length === 0) return false;
 
                 // Heuristic: At least 50% of top-level values must look like nodes
                 const nodeLikeCount = keys.filter(k => {
                     const val = json[k];
-                    return val && typeof val === 'object' && !Array.isArray(val) && (
+                    return isWorkflowRawNode(val) && (
                         val.class_type || val.type || val.node_type || val.inputs || val.widgets_values
                     );
                 }).length;
@@ -202,55 +234,58 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 }
             }
 
-            const json = JSON.parse(parseTarget);
-            const nodes: any[] = [];
+            const json = JSON.parse(parseTarget) as unknown;
+            const nodes: WorkflowDisplayNode[] = [];
 
             // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
-            let nodeList: any[] = [];
+            let nodeList: WorkflowRawNode[] = [];
 
-            if (Array.isArray(json.nodes)) {
-                nodeList = json.nodes;
-            } else if (typeof json === 'object') {
+            if (isRecord(json) && Array.isArray(json.nodes)) {
+                nodeList = json.nodes.filter(isWorkflowRawNode);
+            } else if (isRecord(json)) {
                 // If it's a flat object of nodes (InvokeAI API or Comfy API)
-                nodeList = Object.entries(json).map(([id, node]: [string, any]) => ({
-                    ...node,
-                    id: node.id || id
-                }));
+                nodeList = Object.entries(json)
+                    .filter((entry): entry is [string, WorkflowRawNode] => isWorkflowRawNode(entry[1]))
+                    .map(([id, node]) => ({
+                        ...node,
+                        id: node.id || id
+                    }));
             }
 
-            nodeList.forEach((node: any) => {
-                const incomingInputs = node.widgets_values || node.inputs || node.data || {};
+            nodeList.forEach((node) => {
+                const incomingInputs: WorkflowInputs = node.widgets_values || node.inputs || node.data || {};
+                const inputRecord = Array.isArray(incomingInputs) ? {} : incomingInputs;
 
                 // 1. Determine Type
-                let type = node.type || node.class_type || node._type || node.node_type || incomingInputs.type || incomingInputs.node_type || "Unknown";
+                let type = asStringValue(node.type || node.class_type || node._type || node.node_type || inputRecord.type || inputRecord.node_type, "Unknown");
 
                 // 2. Determine Title
-                let title = node.title || node.label || node._meta?.title || incomingInputs.label || incomingInputs.title || type;
+                let title = asStringValue(node.title || node.label || node._meta?.title || inputRecord.label || inputRecord.title, type);
 
                 // 3. Refine Generic "Invocation" labels
                 // InvokeAI 4.x often labels EVERYTHING as 'invocation' at the top level
-                if (String(type).toLowerCase() === 'invocation' && (node.node_type || incomingInputs.type || incomingInputs.node_type)) {
-                    type = node.node_type || incomingInputs.type || incomingInputs.node_type;
+                if (String(type).toLowerCase() === 'invocation' && (node.node_type || inputRecord.type || inputRecord.node_type)) {
+                    type = asStringValue(node.node_type || inputRecord.type || inputRecord.node_type, type);
                 }
 
                 if (String(title).toLowerCase() === 'invocation') {
-                    if (incomingInputs.label) title = incomingInputs.label;
-                    else if (incomingInputs.title) title = incomingInputs.title;
+                    if (inputRecord.label) title = asStringValue(inputRecord.label, title);
+                    else if (inputRecord.title) title = asStringValue(inputRecord.title, title);
                     else if (String(type).toLowerCase() !== 'invocation') title = type;
                 }
 
                 if (type || node.id) {
                     nodes.push({
-                        id: node.id,
-                        title: title,
-                        type: type,
+                        id: node.id ?? `${type}-${nodes.length}`,
+                        title,
+                        type,
                         inputs: incomingInputs
                     });
                 }
             });
 
             // Hybrid Sorting Strategy: Hoist "Hero Nodes" (Sampler, Prompt, etc.)
-            const getNodePriority = (node: any) => {
+            const getNodePriority = (node: WorkflowDisplayNode) => {
                 const t = String(node.type || "").toLowerCase();
                 const l = String(node.title || "").toLowerCase();
 

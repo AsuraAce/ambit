@@ -106,7 +106,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 {/* Left Panel - Visuals */}
                 <div className="w-full md:w-1/3 bg-gradient-to-br from-zinc-900 via-zinc-900 to-sage-900/40 p-10 flex flex-col justify-between text-white relative overflow-hidden">
                     {/* Noise & Mesh Gradient */}
-                    <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+                    <div className="absolute inset-0 opacity-20 mix-blend-overlay pointer-events-none bg-[url('/branding/noise.svg')]"></div>
                     <div className="absolute -top-20 -left-20 w-64 h-64 bg-sage-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
                     <div className="relative z-10">
@@ -271,7 +271,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                         <input type="checkbox" className="hidden" checked={enableAI} onChange={() => setEnableAI(!enableAI)} />
                                         <div className="flex-1">
                                             <span className="font-bold text-gray-900 dark:text-white block">Enable Intelligence Features</span>
-                                            <span className="text-xs text-gray-500">Unlock all AI-powered features.</span>
+                                            <span className="text-xs text-gray-500">AI actions contact Gemini only when you run them.</span>
                                         </div>
                                     </motion.label>
 
@@ -336,7 +336,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 <div className="flex-1">
                                                     <h4 className="font-bold text-sm text-gray-900 dark:text-white">Cloud Intelligence</h4>
                                                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                                                        AI features run only on-demand. Your data never leaves your device unless you explicitly trigger an AI feature.
+                                                        AI features run only on-demand through your Gemini API key. Image content or prompts are sent only when you explicitly trigger an AI action.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5">
+                                                <Link2 className="w-6 h-6 text-sage-500 mt-1" />
+                                                <div className="flex-1">
+                                                    <h4 className="font-bold text-sm text-gray-900 dark:text-white">Optional Network Checks</h4>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                                                        Public beta builds can check GitHub Releases for updates. CivitAI model lookups run only after you confirm Resolve Online.
                                                     </p>
                                                 </div>
                                             </div>

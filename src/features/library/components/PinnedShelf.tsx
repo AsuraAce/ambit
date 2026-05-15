@@ -114,7 +114,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                 const selectedIndexes: number[] = [];
                 const itemNodes = containerRef.current!.querySelectorAll('[data-pinned-item-index]');
 
-                itemNodes.forEach((node: any) => {
+                itemNodes.forEach((node) => {
                     const idx = parseInt(node.getAttribute('data-pinned-item-index') || '0');
                     const rect = node.getBoundingClientRect();
                     const containerRect = containerRef.current!.getBoundingClientRect();

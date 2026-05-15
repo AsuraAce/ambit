@@ -5,21 +5,26 @@ import { isImageMasked } from '../../utils/maskingUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { useSearchStore } from '../../stores/searchStore';
-import { AIImage, ContextMenuState } from '../../types';
+import { AIImage, ContextMenuState, FilterState } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
 import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
+import { toggleImageIntermediate } from '../../services/db/imageRepo';
+import { invoke } from '@tauri-apps/api/core';
+import type { useAppActions } from '../../hooks/useAppActions';
+import type { useCollectionOperations } from '../../hooks/useCollectionOperations';
+import type { useModalManager } from '../../hooks/useModalManager';
 
 interface AppContextMenuProps {
     contextMenu: ContextMenuState | null;
     onClose: () => void;
     images: AIImage[];
-    actions: any;
-    fileOps: any;
-    colOps: any;
+    actions: ReturnType<typeof useAppActions>;
+    fileOps: unknown;
+    colOps: ReturnType<typeof useCollectionOperations>;
     onMoveToCollection: () => void;
-    modals: any;
-    filters: any;
+    modals: ReturnType<typeof useModalManager>;
+    filters: FilterState;
 }
 
 export const AppContextMenu: React.FC<AppContextMenuProps> = ({
@@ -48,8 +53,9 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     if (!contextMenu) return null;
 
     const activeImage = images.find(i => i.id === contextMenu.imageId);
-    const activeCollection = filters.collectionId
-        ? (collections.find((c: any) => c.id === filters.collectionId) || smartCollections.find((c: any) => c.id === filters.collectionId))
+    const collectionId = filters.collectionId;
+    const activeCollection = collectionId
+        ? (collections.find((c) => c.id === collectionId) || smartCollections.find((c) => c.id === collectionId))
         : undefined;
 
     return (
@@ -154,7 +160,6 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onToggleIntermediate={async () => {
                 if (contextMenu.imageId) {
-                    const { toggleImageIntermediate } = await import('../../services/db/imageRepo');
                     await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
                     // We might need to refresh state here, but let's assume watchers handle it
                     addToast(activeImage?.metadata?.isIntermediate ? "Unmarked as intermediate" : "Marked as intermediate", "info");
@@ -189,9 +194,9 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 }
                 onClose();
             }}
-            onSetThumbnail={filters.collectionId && activeImage ? async () => {
+            onSetThumbnail={collectionId && activeImage ? async () => {
                 try {
-                    await colOps.setCollectionThumbnail(filters.collectionId, activeImage);
+                    await colOps.setCollectionThumbnail(collectionId, activeImage);
                 } catch (error) {
                     console.error('[ContextMenu] Failed to set collection thumbnail', error);
                     addToast('Failed to update thumbnail', 'error');
@@ -199,11 +204,9 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                     onClose();
                 }
             } : undefined}
-            onUnsetThumbnail={filters.collectionId && activeCollection?.customThumbnail ? async () => {
+            onUnsetThumbnail={collectionId && activeCollection?.customThumbnail ? async () => {
                 try {
-                    if (filters.collectionId) {
-                        await colOps.resetCollectionThumbnail(filters.collectionId);
-                    }
+                    await colOps.resetCollectionThumbnail(collectionId);
                 } catch (error) {
                     console.error('[ContextMenu] Failed to reset collection thumbnail', error);
                     addToast('Failed to reset thumbnail', 'error');
@@ -257,8 +260,6 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                     return;
                 }
                 if (contextMenu.imageId && activeImage?.id) {
-                    const { invoke } = await import('@tauri-apps/api/core');
-
                     await invoke('set_model_thumbnail', {
                         modelHash: model.hash,
                         modelName: model.name,

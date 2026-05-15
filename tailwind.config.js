@@ -5,8 +5,8 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Inter', 'sans-serif'],
-                jp: ['Noto Sans JP', 'sans-serif']
+                sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+                jp: ['Noto Sans JP', 'ui-sans-serif', 'system-ui', 'sans-serif']
             },
             colors: {
                 sage: {

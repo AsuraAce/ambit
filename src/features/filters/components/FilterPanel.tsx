@@ -153,7 +153,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             // For lists (models, etc.), we UNION them.
             // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
 
-            const saved = activeSmartCol.filters || ({} as any);
+            const saved: FilterState = activeSmartCol.filters ?? filters;
             const manual = filters;
             const hasManualDateFilter = !!getDateFilterLabel(manual);
 
@@ -185,7 +185,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 // but types might require it. 
                 // However, onUpdateCollectionFilters generally treats this as the "rules blob".
                 // We'll pass it as is, strict type compliance.
-                collectionId: undefined, // Don't save circular self-ref (or keep undefined if that's how it's stored)
+                collectionId: null, // Don't save circular self-ref
                 showGrids: saved.showGrids, // Preserve
                 showIntermediates: saved.showIntermediates // Preserve
             } as FilterState;

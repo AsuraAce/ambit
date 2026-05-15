@@ -2,9 +2,21 @@ import { commands, type FileHashBackfillResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import type { AIImage, MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+
+interface ImagePathRow {
+    id: string;
+    path: string;
+}
+
+interface MaintenanceCountRow {
+    untagged?: number;
+    missing?: number;
+    intermediates?: number;
+    trash?: number;
+}
 
 /**
  * Backfill the denormalized parameter columns (steps, cfg, sampler, generation_type).
@@ -26,7 +38,7 @@ export const normalizeAllPaths = async () => {
 
     await dbMutex.dispatch(async () => {
         const db = await getDb();
-        const check = await db.select<any[]>('SELECT id FROM images WHERE id LIKE "%\\%" OR path LIKE "%\\%" LIMIT 1');
+        const check = await db.select<{ id: string }[]>('SELECT id FROM images WHERE id LIKE "%\\%" OR path LIKE "%\\%" LIMIT 1');
         if (check.length === 0) return;
 
         console.log('[DB] Normalizing paths to use forward slashes...');
@@ -51,7 +63,7 @@ export const verifyLibraryIntegrity = async (
     }
 
     const db = await getDb();
-    const allImages = await db.select<any[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
+    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
 
     if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
@@ -104,7 +116,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<any[]>(`
+    const rows = await db.select<ImageRow[]>(`
         SELECT ${getImageFieldsLight()}
         FROM images
         WHERE is_missing = 1
@@ -139,11 +151,11 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<any[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
-export const getIntermediateImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+export const getIntermediateImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockImages().filter(image => !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
     }
@@ -165,11 +177,11 @@ export const getIntermediateImages = async (whereClause: string = '', params: an
     }
 
     query += ' ORDER BY timestamp DESC';
-    const rows = await db.select<any[]>(query, params);
+    const rows = await db.select<ImageRow[]>(query, params);
     return rows.map(mapRowToImage);
 };
 
-export const getUntaggedImages = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockImages().filter(image => !image.isDeleted && !image.metadata.positivePrompt);
     }
@@ -192,7 +204,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: any[] 
     }
 
     query += ' ORDER BY timestamp DESC';
-    const rows = await db.select<any[]>(query, params);
+    const rows = await db.select<ImageRow[]>(query, params);
     return rows.map(mapRowToImage);
 };
 
@@ -230,7 +242,7 @@ function buildUnoptimizedCondition(includeUpgradeable: boolean): string {
     `;
 }
 
-export const getUnoptimizedImages = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
+export const getUnoptimizedImages = async (whereClause: string = '', params: unknown[] = [], includeUpgradeable: boolean = false): Promise<AIImage[]> => {
     if (isBrowserMockMode()) return [];
 
     const db = await getDb();
@@ -260,7 +272,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
     }
 
     query += ' ORDER BY timestamp DESC LIMIT 500';
-    const rows = await db.select<any[]>(query, params);
+    const rows = await db.select<ImageRow[]>(query, params);
     return rows.map(mapRowToImage);
 };
 
@@ -268,7 +280,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: any
  * Fast count-only query for unoptimized images.
  * Used by the scan button to show total without loading all rows.
  */
-export const getUnoptimizedImagesCount = async (whereClause: string = '', params: any[] = [], includeUpgradeable: boolean = false): Promise<number> => {
+export const getUnoptimizedImagesCount = async (whereClause: string = '', params: unknown[] = [], includeUpgradeable: boolean = false): Promise<number> => {
     if (isBrowserMockMode()) return 0;
 
     const db = await getDb();
@@ -309,7 +321,7 @@ export const getUnoptimizedImageEntries = async (
     offset: number,
     limit: number,
     whereClause: string = '',
-    params: any[] = [],
+    params: unknown[] = [],
     includeUpgradeable: boolean = false
 ): Promise<{ id: string; path: string }[]> => {
     if (isBrowserMockMode()) return [];
@@ -362,7 +374,7 @@ export const cancelImageFileHashBackfill = async (): Promise<void> => {
     await commands.cancelImageFileHashBackfill();
 };
 
-export const getDuplicateCandidates = async (whereClause: string = '', params: any[] = []): Promise<AIImage[]> => {
+export const getDuplicateCandidates = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockImages().slice(0, 6);
     }
@@ -410,7 +422,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: a
     `;
 
     try {
-        const rows = await db.select<any[]>(query, params);
+        const rows = await db.select<ImageRow[]>(query, params);
         return rows.map(mapRowToImage);
     } catch (e) {
         console.error('[DB] Failed to get duplicate candidates', e);
@@ -434,7 +446,7 @@ export const getMaintenanceCounts = async () => {
     const db = await getDb();
 
     // Batch all counts into a single query to reduce IPC overhead
-    const res = await db.select<any[]>(`
+    const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
             COUNT(*) FILTER (WHERE (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,

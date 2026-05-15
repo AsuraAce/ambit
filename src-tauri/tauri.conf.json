@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Ambit",
   "version": "0.5.0",
-  "identifier": "com.ambit.app",
+  "identifier": "io.github.asuraace.ambit",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1421",
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost https://grainy-gradients.vercel.app; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://generativelanguage.googleapis.com;",
+      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com;",
       "capabilities": [
         "default"
       ],

@@ -4,6 +4,8 @@ import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
+import { getImagesByIds } from '../services/db/imageRepo';
+import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 
 interface UseThumbnailOpsProps {
     images: AIImage[];
@@ -36,7 +38,6 @@ export const useThumbnailOps = ({
 
         if (targetIds && targetIds.length > 0) {
             try {
-                const { getImagesByIds } = await import('../services/db/imageRepo');
                 candidates = await getImagesByIds(targetIds);
             } catch (e) {
                 console.error("Failed to fetch images for regeneration", e);
@@ -57,7 +58,6 @@ export const useThumbnailOps = ({
         setThumbnailProgress({ current: 0, total: candidates.length });
 
         try {
-            const { regenerateThumbnailsForImages } = await import('../services/thumbnailService');
             const updates = await regenerateThumbnailsForImages(candidates, (curr, tot) => {
                 setThumbnailProgress({ current: curr, total: tot });
                 if (onProgress) onProgress(curr, tot);

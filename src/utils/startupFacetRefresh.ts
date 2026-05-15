@@ -6,6 +6,7 @@ import {
     touchedFacetResourcesToTypes
 } from './touchedFacetTypes';
 import { elapsedMs, liveWatchNow } from './liveWatchPerf';
+import { rebuildFacetCacheStrict, refreshFacetCacheForResourcesStrict } from '../services/db/imageRepo';
 
 export const STARTUP_INCREMENTAL_MAX_PROCESSED = 500;
 export const STARTUP_INCREMENTAL_MAX_TOUCHED_RESOURCES = 64;
@@ -90,7 +91,6 @@ const runFullRefresh = async (
     incrementalMs?: number
 ): Promise<StartupFacetRefreshResult> => {
     const fullRefreshStartedAt = liveWatchNow();
-    const { rebuildFacetCacheStrict } = await import('../services/db/imageRepo');
     const entryCount = await rebuildFacetCacheStrict();
     const fullRefreshMs = elapsedMs(fullRefreshStartedAt);
     await options.onRefreshApplied();
@@ -167,7 +167,6 @@ export const refreshStartupFacetCache = async (
     const incrementalStartedAt = liveWatchNow();
 
     try {
-        const { refreshFacetCacheForResourcesStrict } = await import('../services/db/imageRepo');
         const entryCount = await refreshFacetCacheForResourcesStrict(options.touchedFacetResources);
         const incrementalMs = elapsedMs(incrementalStartedAt);
         await options.onRefreshApplied();

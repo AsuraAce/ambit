@@ -17,6 +17,8 @@ import { ScanPlaceholder } from './ScanPlaceholder';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
+import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
+import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -164,7 +166,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setScanMissingIds(new Set(ids));
         if (ids.length > 0) {
             try {
-                const { getImagesByIds } = await import('../../../services/db/imageRepo');
                 const fetched = await getImagesByIds(ids);
                 setFetchedMissingImages(fetched);
             } catch (e) {
@@ -335,7 +336,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             setThumbnailProgress({ current: 0, total: unoptimizedTotalCount });
 
             try {
-                const { regenerateAllUnoptimized } = await import('../../../services/thumbnailService');
                 await regenerateAllUnoptimized(
                     (current, total) => setThumbnailProgress({ current, total }),
                     abortCtrl.signal,
@@ -360,7 +360,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const handleUnmarkIntermediates = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
-        const { toggleImageIntermediate } = await import('../../../services/db/imageRepo');
         for (const id of ids) {
             await toggleImageIntermediate(id, false);
         }
@@ -439,7 +438,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 thumbnailsScope={thumbnailsScope}
                                 onScopeChange={handleThumbnailsScopeChange}
                                 maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as any}
+                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
                                 includeUpgradeable={includeUpgradeable}
@@ -494,7 +493,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onRemoveFromLibrary={handleDeleteSelected}
                                 onViewImage={setViewingImageId}
                                 maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as any}
+                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
                                 untaggedScope={untaggedScope}
@@ -525,7 +524,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onDeleteSelected={handleDeleteSelected}
                                 onPurgeMissing={handlePurgeMissing}
                                 onViewImage={setViewingImageId}
-                                scrollContainerRef={scrollContainerRef as any}
+                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
                             />
@@ -549,7 +548,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onRestoreSelected={handleRestoreSelected}
                                 onDeleteSelected={handleDeleteSelected}
                                 maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as any}
+                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
                                 busyAction={removedAction}
@@ -575,7 +574,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onUnmarkSelected={handleUnmarkIntermediates}
                                 onViewImage={setViewingImageId}
                                 maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as any}
+                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}
                                 scope={intermediatesScope}

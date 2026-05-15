@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { AIImage } from '../types';
 import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
+import { getImagesByIds } from '../services/db/imageRepo';
 
 interface UseExportOpsProps {
     images: AIImage[];
@@ -25,7 +26,6 @@ export const useExportOps = ({ images }: UseExportOpsProps) => {
             let targetImages = images.filter(img => idArray.includes(img.id));
 
             if (targetImages.length < idArray.length) {
-                const { getImagesByIds } = await import('../services/db/imageRepo');
                 targetImages = await getImagesByIds(idArray);
             }
 

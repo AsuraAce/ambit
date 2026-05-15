@@ -7,7 +7,12 @@ import { useSearchStore } from '../stores/searchStore';
 import { appRepository } from '../services/repository';
 import { getDb } from '../services/db/connection';
 
-import { Facets, ValidFacetNames } from '../services/db/searchRepo';
+import { Facets, LibraryStats, ValidFacetNames } from '../services/db/searchRepo';
+import {
+    checkHiddenContentAvailability,
+    rebuildThumbnailFacetCache,
+    updatePinned,
+} from '../services/db/imageRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -16,15 +21,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
-
-interface LibraryStats {
-    totalImages: number;
-    totalGenerations: number;
-    avgSteps: number;
-    estSizeMB: string;
-    modelStats: any[];
-    keywordStats: { text: string; value: number }[];
-}
+import { useLibraryStore } from '../stores/libraryStore';
 
 interface SearchContextType {
     images: AIImage[];
@@ -42,7 +39,7 @@ interface SearchContextType {
     clearAllFilters: () => void;
     isFiltering: boolean;
     activeSqlWhere: string;
-    activeSqlParams: any[];
+    activeSqlParams: unknown[];
     refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
     fetchData: (isLoadMore: boolean, isSilent?: boolean) => Promise<void>;
     recentSearches: string[];
@@ -127,8 +124,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
-                    const { rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
-                    const { useLibraryStore } = await import('../stores/libraryStore');
                     await rebuildThumbnailFacetCache();
                     console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();
@@ -232,7 +227,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
-    const [activeSqlParams, setActiveSqlParams] = useState<any[]>([]);
+    const [activeSqlParams, setActiveSqlParams] = useState<unknown[]>([]);
 
     // Track loaded facet types for lazy loading
     // 'tools', 'checkpoints', 'loras' are default
@@ -275,7 +270,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
 
         try {
-            const { updatePinned } = await import('../services/db/imageRepo');
             await updatePinned(id, newVal);
             setImages(imgs.map(i => i.id === id ? { ...i, isPinned: newVal } : i));
         } catch (e) { console.error(e); }
@@ -287,7 +281,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [availableHiddenContent, setAvailableHiddenContent] = useState({ hasIntermediates: false, hasGrids: false });
 
     const refreshHiddenAvailability = useCallback(async () => {
-        const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
         const availability = await checkHiddenContentAvailability();
         setAvailableHiddenContent(availability);
     }, []);
@@ -309,7 +302,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             // Actually store defaults to empty. We need to trigger initial fetch.
             // The main effect (debounced) triggers fetch.
 
-            const { checkHiddenContentAvailability } = await import('../services/db/imageRepo');
             const [appState, availability] = await Promise.all([
                 appRepository.load(),
                 checkHiddenContentAvailability()

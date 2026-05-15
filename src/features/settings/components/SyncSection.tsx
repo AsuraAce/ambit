@@ -12,6 +12,10 @@ interface SyncSectionProps {
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
+type StarredAs = NonNullable<AppSettings['starredAs']>;
+const STARRED_AS_VALUES = ['favorite', 'pin', 'both', 'none'] as const satisfies readonly StarredAs[];
+const isStarredAs = (value: string): value is StarredAs => (STARRED_AS_VALUES as readonly string[]).includes(value);
+
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
     const { syncState, startInvokeSync, cancelSync } = useLibrary();
     const { status, progress } = syncState;
@@ -22,7 +26,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
     const [syncBoards, setSyncBoards] = useState(true);
 
     const handleStarredAsChange = (value: string) => {
-        setSettings(prev => ({ ...prev, starredAs: value as any }));
+        if (!isStarredAs(value)) return;
+        setSettings(prev => ({ ...prev, starredAs: value }));
         addToast(`Starred images mapped to ${value}`, 'success');
     };
 

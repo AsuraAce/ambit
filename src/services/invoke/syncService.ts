@@ -21,23 +21,47 @@ import {
     orderFacetTypes,
     TouchedFacetResources
 } from '../../utils/touchedFacetTypes';
+import { insertImagesBatch } from '../db';
+import { getImagesByIds, syncCollectionImages } from '../db/imageRepo';
+import { upsertCollection } from '../db/collectionRepo';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
     syncBoards?: boolean;
-    afterTimestamp?: any;
+    afterTimestamp?: number | null;
     importIntermediates?: boolean;
     starredAs?: 'favorite' | 'pin' | 'both' | 'none';
     perfContext?: InvokeLiveWatchPerfContext;
     mode?: 'manual' | 'startup' | 'live';
 }
 
+interface CountRow {
+    count: number;
+}
+
+interface InvokeImageRow {
+    image_name: string;
+    metadata_blob: string | null;
+    created_at: string;
+    updated_at?: string | null;
+    width?: number | null;
+    height?: number | null;
+    starred?: number | boolean | null;
+    is_starred?: number | boolean | null;
+    thumbnail_name?: string | null;
+    has_workflow?: number | boolean | null;
+    is_intermediate?: number | boolean | null;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+
 export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number, message?: string) => void,
     signal?: AbortSignal,
     options: InvokeSyncOptions = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: any, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
+): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
@@ -53,7 +77,7 @@ export const syncImages = async (
             ...(data ?? {})
         });
     };
-    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: '', syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
@@ -67,7 +91,7 @@ export const syncImages = async (
     const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
-    let invokeDb;
+    let invokeDb: Database;
     const connectStartedAt = liveWatchNow();
     try {
         invokeDb = await Database.load(connectionString);
@@ -81,10 +105,10 @@ export const syncImages = async (
 
     onProgress(0, 0, 'Analyzing database schema...');
     const schemaStartedAt = liveWatchNow();
-    const tableInfo = await (invokeDb as any).select('PRAGMA table_info(images)') as Array<{ name: string }>;
+    const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
     const columns = tableInfo.map(c => c.name);
 
-    const allTablesRows = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table'") as Array<{ name: string }>;
+    const allTablesRows = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table'");
     const allTables = allTablesRows.map(t => t.name);
     const hasGraphsTable = allTables.includes('graphs');
     logSyncDebug('Invoke DB schema analyzed', {
@@ -134,7 +158,7 @@ export const syncImages = async (
 
     if (options.mode === 'live' || (options.mode === 'startup' && options.afterTimestamp && options.afterTimestamp > 0)) {
         const candidateCheckStartedAt = liveWatchNow();
-        const candidateRes = await (invokeDb as any).select(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
+        const candidateRes = await invokeDb.select<Array<{ found: number }>>(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
         hasCandidates = candidateRes.length > 0;
         logSyncDebug('Invoke candidate detection complete', {
             mode: options.mode,
@@ -151,7 +175,7 @@ export const syncImages = async (
 
     if (hasCandidates) {
         const countStartedAt = liveWatchNow();
-        const countRes = await (invokeDb as any).select(`SELECT count(*) as count FROM images i ${whereClause} `);
+        const countRes = await invokeDb.select<CountRow[]>(`SELECT count(*) as count FROM images i ${whereClause} `);
         totalToImport = countRes[0]?.count || 0;
         logSyncDebug('Invoke sync candidate count computed', {
             totalToImport,
@@ -185,7 +209,7 @@ export const syncImages = async (
 
     let hasBoardsTable = false;
     try {
-        const boardsTable = await (invokeDb as any).select("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
+        const boardsTable = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
         hasBoardsTable = boardsTable.length > 0;
     } catch (e) { }
 
@@ -204,8 +228,6 @@ export const syncImages = async (
     }
 
     onProgress(0, 0, `Scanning ${APP_NAME} library...`);
-    const { insertImagesBatch } = await import('../db');
-    const { getImagesByIds } = await import('../db/imageRepo');
 
     let processed = 0;
     let newImportedCount = 0;
@@ -238,12 +260,12 @@ export const syncImages = async (
 `;
 
         const batchQueryStartedAt = liveWatchNow();
-        const rows = await (invokeDb as any).select(query);
+        const rows = await invokeDb.select<InvokeImageRow[]>(query);
         const batchQueryMs = elapsedMs(batchQueryStartedAt);
         if (rows.length === 0) break;
         batchCount++;
 
-        const batchPaths = rows.map((row: any) => {
+        const batchPaths = rows.map((row) => {
             const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
             return rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
         });
@@ -262,7 +284,7 @@ export const syncImages = async (
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
-        const currentBatch: any[] = [];
+        const currentBatch: AIImage[] = [];
         const batchBuildStartedAt = liveWatchNow();
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
@@ -376,11 +398,12 @@ export const syncImages = async (
 
                     // We can inspect the raw chunks if they exist
                     let formatLooksMapped = false;
-                    const rawChunks = existing.originalChunks as any;
-                    if (rawChunks?.invokeai_metadata) {
-                        const meta = typeof rawChunks.invokeai_metadata === 'string'
-                            ? JSON.parse(rawChunks.invokeai_metadata)
-                            : rawChunks.invokeai_metadata;
+                    const rawChunkValue = existing.originalChunks?.invokeai_metadata;
+                    if (rawChunkValue) {
+                        const parsedMeta: unknown = typeof rawChunkValue === 'string'
+                            ? JSON.parse(rawChunkValue)
+                            : rawChunkValue;
+                        const meta = isRecord(parsedMeta) ? parsedMeta : {};
 
                         // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
                         // Check for both snake_case and camelCase to determine if it's already mapped
@@ -483,7 +506,6 @@ export const syncImages = async (
         if (currentBatch.length > 0) {
             // Lazy Board Creation
             if (options.syncBoards) {
-                const { upsertCollection } = await import('../db/collectionRepo');
                 const boardCreateStartedAt = liveWatchNow();
                 const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
@@ -507,7 +529,6 @@ export const syncImages = async (
 
             // Incremental Linking
             if (options.syncBoards) {
-                const { syncCollectionImages } = await import('../db/imageRepo');
                 const collectionSyncStartedAt = liveWatchNow();
                 await syncCollectionImages(currentBatch.map(img => img.id));
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
@@ -535,7 +556,6 @@ export const syncImages = async (
     if (options.syncBoards && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
-        const { syncCollectionImages } = await import('../db/imageRepo');
         const finalCollectionSyncStartedAt = liveWatchNow();
         await syncCollectionImages();
         logSyncDebug('Invoke final collection sync complete', {

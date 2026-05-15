@@ -20,6 +20,17 @@ Ambit is a local-first desktop app for cataloging, searching, and managing large
 *   **Backend**: Rust with Tauri v2 and SQLite (`rusqlite`)
 *   **Desktop distribution**: GitHub Releases plus Tauri updater artifacts
 
+## Privacy And Network Behavior
+
+Ambit is local-first. Core library management, browsing, search, metadata parsing, thumbnails, and settings work on local files without telemetry.
+
+The public beta has a few disclosed network paths:
+
+*   Automatic update checks contact GitHub Releases when enabled. Updates are downloaded and installed only after you confirm the prompt.
+*   Gemini features are optional. Requests are sent only when you configure a key and run an AI action or key verification.
+*   CivitAI model-hash resolution is optional. It runs only after you confirm Resolve Online and sends unresolved model hash strings, not image files.
+*   GitHub Sponsors, Ko-fi, and project links open only when clicked.
+
 ## Getting Started
 
 ### Prerequisites
@@ -28,11 +39,11 @@ Ambit is a local-first desktop app for cataloging, searching, and managing large
 *   [Rust](https://www.rust-lang.org/tools/install) stable
 *   [VS Code](https://code.visualstudio.com/) with the Tauri extension and standard TypeScript tooling
 
-### Private Alpha Builds
+### Public Beta Builds
 
-Ambit is currently in a private alpha phase. Invited testers can download current builds from [GitHub Releases](https://github.com/AsuraAce/ambit/releases).
+Ambit is currently in public beta. Current builds are published on [GitHub Releases](https://github.com/AsuraAce/ambit/releases).
 
-Official release builds are currently available for **Windows only** while macOS and Linux support is being validated.
+Official public beta builds are currently available for **Windows only** while macOS and Linux support is being validated.
 
 1.  Download the Windows setup installer (`-setup.exe`) from the release assets.
 2.  Install and launch the app.
@@ -47,23 +58,19 @@ Official release builds are currently available for **Windows only** while macOS
     ```
 2.  Install dependencies:
     ```bash
-    npm install
+    pnpm install
     ```
 3.  Configure optional local environment settings if needed.
 4.  Run the desktop app:
     ```bash
-    npm run app:dev
+    pnpm run app:dev
     ```
 
 ## Contributing
 
-Contributions are welcome. Follow the standard GitHub workflow:
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and pull request expectations.
 
-1.  Fork the project.
-2.  Create a feature branch.
-3.  Commit with a conventional message.
-4.  Push the branch.
-5.  Open a pull request.
+For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## Support
 

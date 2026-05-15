@@ -6,6 +6,7 @@ import { createDefaultFilters } from '../../utils/filterState';
 import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
+import { buildSqlWhereClause } from '../../utils/sqlHelpers';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -262,9 +263,10 @@ export const ensureCollectionSchema = async () => {
                     await db.execute('ALTER TABLE collections ADD COLUMN updated_at INTEGER');
                     // Backfill updated_at with created_at for existing records
                     await db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL');
-                } catch (e: any) {
+                } catch (e: unknown) {
                     // Ignore duplicate column error if it raced despite mutex (unlikely but safe)
-                    if (e?.toString().includes('duplicate column')) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    if (message.includes('duplicate column')) {
                         console.warn('[DB] Migration raced, column already exists (handled)');
                     } else {
                         throw e;
@@ -283,7 +285,6 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
         return;
     }
 
-    const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
@@ -360,7 +361,6 @@ export const addImagesToCollection = async (collectionId: string, imageIds: stri
         return;
     }
 
-    const { dbMutex } = await import('./connection');
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         const now = Date.now();
@@ -506,8 +506,6 @@ export const getSmartCollectionSummaries = async (
     if (smartCollections.length === 0) return {};
 
     const db = await getDb();
-    const { buildSqlWhereClause } = await import('../../utils/sqlHelpers');
-
     const summaries: Record<string, SmartCollectionSummary> = {};
 
     try {
@@ -615,7 +613,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
         const BATCH_SIZE = 900;
         const normalizedIds = imageIds.map(normalizePath);
 
-        let candidates: Array<{ path: string, timestamp: number, is_pinned: number }> = [];
+        let candidates: Array<{ path: string | null, timestamp: number, is_pinned: number }> = [];
 
         for (let i = 0; i < normalizedIds.length; i += BATCH_SIZE) {
             const batch = normalizedIds.slice(i, i + BATCH_SIZE);
@@ -630,7 +628,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
                 LIMIT 1
             `;
 
-            const res = await db.select<any[]>(query, [...batch, ...batch]);
+            const res = await db.select<Array<{ path: string | null; timestamp: number | null; is_pinned: number | null }>>(query, [...batch, ...batch]);
             if (res && res.length > 0) {
                 candidates.push({
                     path: res[0].path,
@@ -659,7 +657,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
     }
 };
 
-export const getSmartCollectionThumbnail = async (whereClause: string, params: any[]): Promise<string | undefined> => {
+export const getSmartCollectionThumbnail = async (whereClause: string, params: unknown[]): Promise<string | undefined> => {
     if (isBrowserMockMode()) {
         return getBrowserMockCollections().find(collection => collection.filters)?.thumbnail;
     }
@@ -674,7 +672,7 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: a
             ORDER BY images.is_pinned DESC, images.timestamp DESC
             LIMIT 1
         `;
-        const res = await db.select<any[]>(query, params);
+        const res = await db.select<Array<{ thumbnail_path: string | null; timestamp: number | null; is_pinned: number | null }>>(query, params);
         if (res && res.length > 0) {
             const rawPath = res[0].thumbnail_path;
             if (!rawPath) return undefined;
@@ -748,7 +746,6 @@ export const hydrateCollections = async () => {
 export const purgeInvokeCollections = async () => {
     if (isBrowserMockMode()) return;
 
-    const { dbMutex } = await import('./connection');
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         console.log('[DB] Purging InvokeAI collections...');

@@ -23,8 +23,6 @@ jobs:
 
       - name: install pnpm
         uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 9
 
       - name: setup node
         uses: actions/setup-node@v6.4.0
@@ -38,26 +36,27 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: lint
+        run: pnpm run lint
+
       - name: typecheck
-        run: pnpm exec tsc --noEmit
+        run: pnpm run typecheck
 
-      - name: run frontend tests
-        run: pnpm exec vitest run
+      - name: run coverage tests
+        run: pnpm run coverage
 
-      - name: build frontend
-        run: pnpm build
+      - name: guard production build output
+        run: pnpm run build:guard
 
   rust-tests:
     name: rust-tests
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
 
       - name: install pnpm
         uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 9
 
       - name: setup node
         uses: actions/setup-node@v6.4.0
@@ -79,3 +78,6 @@ jobs:
 
       - name: run rust tests
         run: pnpm test:rust
+
+      - name: verify Tauri no-bundle build
+        run: pnpm run tauri:check

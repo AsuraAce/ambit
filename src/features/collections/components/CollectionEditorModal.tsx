@@ -53,7 +53,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         onClose();
     };
 
-    const removeFilter = (key: keyof FilterState, value: any) => {
+    const removeFilter = (key: keyof FilterState, value: unknown) => {
         if (!draftFilters) return;
 
         setDraftFilters(prev => {
@@ -61,7 +61,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             const next = { ...prev };
 
             if (Array.isArray(next[key])) {
-                (next[key] as any[]) = (next[key] as any[]).filter(item => item !== value);
+                (next[key] as unknown[]) = (next[key] as unknown[]).filter(item => item !== value);
             } else if (key === 'dateRange') {
                 next.dateRange = 'all';
                 next.dateFrom = undefined;

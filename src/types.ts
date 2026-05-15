@@ -224,6 +224,10 @@ export interface PaginationCursor {
 export interface MonitoredFolder {
   id: string;
   path: string;
+  /** Synthetic integration folders rendered in settings but not persisted as user-added folders. */
+  isManaged?: boolean;
+  /** Raw integration output path for managed folders. */
+  pathRaw?: string;
   isActive: boolean;
   imageCount: number;
   lastScanned?: number; // Timestamp of last successful full/partial scan

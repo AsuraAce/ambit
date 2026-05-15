@@ -9,84 +9,37 @@ import { WatcherProvider, useWatchers } from './WatcherContext';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { MetadataRefreshScope } from '../types';
 
-// Existing type for backward compatibility
-export interface LibraryContextType {
-  images: any[];
-  setImages: any;
-  filters: any;
-  setFilters: any;
-  sortOption: any;
-  setSortOption: any;
-  collections: any[];
-  setCollections: any;
-  setAllCollections: any;
-  smartCollections: any[];
-  setSmartCollections: any;
-  settings: any;
-  setSettings: any;
-  settingsRef: React.MutableRefObject<any>;
-  recentSearches: string[];
-  setRecentSearches: any;
-  facets: any;
-  stats: any;
-  totalImages: number;
-  globalTotal: number;
-  hasMoreImages: boolean;
-  loadMoreImages: () => Promise<void>;
-  startInvokeSync: (options?: any) => Promise<void>;
-  cancelSync: () => void;
-  cleanLibrary: () => Promise<void>;
-  syncStatus: string;
-  // syncProgress removed
-  syncState: {
-    status: 'idle' | 'syncing' | 'complete' | 'error';
-    progress: { current: number; total: number; message?: string };
+type LibraryStoreState = ReturnType<typeof useLibraryStore.getState>;
+
+// Existing aggregate context kept for backward compatibility while individual
+// feature contexts remain the source of truth.
+export type LibraryContextType =
+  ReturnType<typeof useSettings>
+  & ReturnType<typeof useCollections>
+  & ReturnType<typeof useSearch>
+  & ReturnType<typeof useWatchers>
+  & Pick<ReturnType<typeof useSync>, 'syncState' | 'startInvokeSync' | 'cancelSync' | 'cleanLibrary' | 'isLiveSyncing'>
+  & Pick<
+    LibraryStoreState,
+    | 'syncStatus'
+    | 'isImporting'
+    | 'setIsImporting'
+    | 'setImportProgress'
+    | 'isRegeneratingThumbnails'
+    | 'setIsRegeneratingThumbnails'
+    | 'setThumbnailProgress'
+    | 'isResolvingModels'
+    | 'setIsResolvingModels'
+    | 'modelResolutionProgress'
+    | 'setModelResolutionProgress'
+    | 'lastModelResolutionResult'
+    | 'setLastModelResolutionResult'
+    | 'isActivityDockDismissed'
+    | 'setIsActivityDockDismissed'
+  >
+  & {
+    isLoaded: boolean;
   };
-  isFiltering: boolean;
-  isLoaded: boolean;
-
-  // Transient state moved to useLibraryStore
-  // isImporting, isLiveWatching, etc. (Wait, isLiveWatching was already in Store but exposed here?)
-
-  isImporting: boolean;
-  setIsImporting: (val: boolean) => void;
-  setImportProgress: (progress: any) => void;
-  isRegeneratingThumbnails: boolean;
-  setIsRegeneratingThumbnails: (val: boolean) => void;
-  setThumbnailProgress: (progress: any) => void;
-  isResolvingModels: boolean;
-  setIsResolvingModels: (val: boolean) => void;
-  modelResolutionProgress: any;
-  setModelResolutionProgress: (progress: any) => void;
-  lastModelResolutionResult: any;
-  setLastModelResolutionResult: (result: any) => void;
-  isLiveSyncing: boolean;
-  // isLiveWatching should be removed too? It was migrated earlier.
-  // Actually isLiveWatching was used in AppHeader from LibraryContext earlier.
-  // Now AppHeader gets it from Store. 
-  // WatcherContext ALSO uses store.
-
-  isLiveWatching: boolean; // Keeping for now if used elsewhere, but ideally remove.
-  setIsLiveWatching: any;
-
-  toggleFavorite: (id: string) => Promise<void>;
-  togglePin: (id: string, isPinned?: boolean) => Promise<void>;
-  clearAllFilters: () => void;
-  refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
-  fetchData: (loadMore: boolean) => Promise<void>;
-  refreshCollections: (debounced?: boolean) => Promise<void>;
-  refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
-  activeSqlWhere: string;
-  activeSqlParams: any[];
-  maintenanceCounts: any;
-  refreshMaintenanceCounts: () => Promise<void>;
-  isActivityDockDismissed: boolean;
-  setIsActivityDockDismissed: (val: boolean) => void;
-  privacyEnabled: boolean;
-  setPrivacyEnabled: (val: boolean) => void;
-  isFacetsLoading: boolean;
-  loadFacet: (type: 'embeddings' | 'hypernetworks') => Promise<void>;
-}
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
@@ -154,7 +107,7 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
   // Use Store for Activity Check
   const {
     isImporting, isRegeneratingThumbnails, isResolvingModels,
-    syncStatus, setIsActivityDockDismissed,
+    syncStatus, isActivityDockDismissed, setIsActivityDockDismissed,
     setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress,
     lastModelResolutionResult, setLastModelResolutionResult,
     setIsImporting, setImportProgress,
@@ -169,11 +122,14 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, [isAnyTaskActive, setIsActivityDockDismissed]);
 
-  const value = useMemo(() => ({
+  const value = useMemo<LibraryContextType>(() => ({
     ...settingsCtx,
     ...collectionCtx,
     ...searchCtx,
     ...watcherCtx,
+    syncStatus,
+    isActivityDockDismissed,
+    setIsActivityDockDismissed,
     isImporting,
     setIsImporting,
     setImportProgress,
@@ -186,15 +142,16 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     setModelResolutionProgress,
     lastModelResolutionResult,
     setLastModelResolutionResult,
+    isLiveSyncing: syncCtx.isLiveSyncing,
     syncState: syncCtx.syncState,
     startInvokeSync: syncCtx.startInvokeSync,
     cancelSync: syncCtx.cancelSync,
     cleanLibrary: syncCtx.cleanLibrary,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
-  }), [settingsCtx, collectionCtx, searchCtx, syncCtx, watcherCtx, isImporting, isRegeneratingThumbnails, isResolvingModels, modelResolutionProgress, lastModelResolutionResult]);
+  }), [settingsCtx, collectionCtx, searchCtx, watcherCtx, syncStatus, isActivityDockDismissed, setIsActivityDockDismissed, isImporting, setIsImporting, setImportProgress, isRegeneratingThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, isResolvingModels, setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress, lastModelResolutionResult, setLastModelResolutionResult, syncCtx.isLiveSyncing, syncCtx.syncState, syncCtx.startInvokeSync, syncCtx.cancelSync, syncCtx.cleanLibrary]);
 
   return (
-    <LibraryContext.Provider value={value as any}>
+    <LibraryContext.Provider value={value}>
       {children}
     </LibraryContext.Provider>
   );

@@ -10,6 +10,14 @@ export interface StackGroup {
     confidence: number;
 }
 
+const getModelName = (model: unknown): string => {
+    if (typeof model === 'string') return model;
+    if (model && typeof model === 'object' && 'name' in model) {
+        return String((model as { name?: unknown }).name || '');
+    }
+    return '';
+};
+
 // Global worker instance to prevent respawning
 let sharedWorker: Worker | null = null;
 const getWorker = () => {
@@ -68,7 +76,7 @@ export const useStacking = (images: AIImage[]) => {
                 metadata: {
                     positivePrompt: img.metadata.positivePrompt,
                     seed: img.metadata.seed,
-                    model: typeof img.metadata.model === 'string' ? img.metadata.model : ((img.metadata.model as any)?.name || ''),
+                    model: getModelName(img.metadata.model),
                     steps: img.metadata.steps,
                     cfg: img.metadata.cfg,
                     variationId: img.metadata.variationId,

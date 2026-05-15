@@ -3,14 +3,22 @@ import { Database, FolderOpen, RefreshCw, FileClock, AlertCircle } from 'lucide-
 import { commands, BackupInfo } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { isOsOpenUnavailable, showPathInFolder } from '../../../services/osOpen';
+import { isBrowserMockMode } from '../../../services/runtime';
 
 export const BackupSettings: React.FC = () => {
     const [backups, setBackups] = React.useState<BackupInfo[]>([]);
     const [isLoading, setIsLoading] = React.useState(false);
     const [isCreating, setIsCreating] = React.useState(false);
     const { addToast } = useToast();
+    const browserMockMode = isBrowserMockMode();
 
     const loadBackups = React.useCallback(async () => {
+        if (browserMockMode) {
+            setBackups([]);
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
         const result = await commands.getBackups();
         if (result.status === 'ok') {
@@ -20,13 +28,18 @@ export const BackupSettings: React.FC = () => {
             addToast('Failed to load backups', 'error');
         }
         setIsLoading(false);
-    }, [addToast]);
+    }, [addToast, browserMockMode]);
 
     React.useEffect(() => {
         loadBackups();
     }, [loadBackups]);
 
     const handleCreateBackup = async () => {
+        if (browserMockMode) {
+            addToast('Backups are unavailable in browser mock mode.', 'info');
+            return;
+        }
+
         setIsCreating(true);
         const result = await commands.backupDatabase();
         if (result.status === 'ok') {
@@ -95,7 +108,7 @@ export const BackupSettings: React.FC = () => {
                     )}
                     <button
                         onClick={handleCreateBackup}
-                        disabled={isCreating}
+                        disabled={isCreating || browserMockMode}
                         className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-sage-600 rounded-lg hover:bg-sage-500 transition-colors disabled:opacity-50"
                     >
                         <Database className="w-4 h-4" />
@@ -108,7 +121,7 @@ export const BackupSettings: React.FC = () => {
                 {backups.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 border border-dashed border-gray-200 dark:border-white/10 rounded-lg">
                         <Database className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                        <p>No backups found</p>
+                        <p>{browserMockMode ? 'Backups are unavailable in browser mock mode' : 'No backups found'}</p>
                     </div>
                 ) : (
                     backups.slice(0, 3).map((backup) => (

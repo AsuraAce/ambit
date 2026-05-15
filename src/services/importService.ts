@@ -1,7 +1,8 @@
 ﻿import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../types';
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
-import { insertImage } from './db/imageRepo';
+import { getExistingMetadata, insertImage, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
@@ -184,7 +185,7 @@ async function waitForStableFileSizes(
     return !abortSignal?.aborted;
 }
 
-const mapMetadata = (meta: any) => ({
+const mapMetadata = (meta: Partial<ImageMetadata>): ImageMetadata => ({
     ...meta,
     tool: meta.tool || GeneratorTool.UNKNOWN,
     model: meta.model || 'Unknown',
@@ -291,7 +292,6 @@ async function processFileEntries(
             const batchStartedAt = liveWatchNow();
             const nativeProgressRunId = createNativeProgressRunId();
             // Setup listener for native progress stream for silky smooth UI loading bars
-            const { listen } = await import('@tauri-apps/api/event');
             unlisten = await listen<NativeImportProgressPayload>('import_progress', (e) => {
                 if (e.payload.progressRunId !== nativeProgressRunId) {
                     return;
@@ -326,11 +326,14 @@ async function processFileEntries(
                     continue; // Skip valid object creation if hard error
                 }
 
+                const mappedMetadata = mapMetadata(info.metadata);
+
                 // Create AIImage object
                 const img: AIImage = {
                     id: normalizePath(path),
-                    ...mapMetadata(info.metadata),
-                    timestamp: info.timestamp,
+                    ...mappedMetadata,
+                    filename: path.split(/[\\/]/).pop() || path,
+                    timestamp: info.timestamp ?? Date.now(),
                     width: info.width || 0,
                     height: info.height || 0,
                     fileSize: info.fileSize,
@@ -339,7 +342,7 @@ async function processFileEntries(
                     isPinned: false,
                     isDeleted: false,
                     isIntermediate: info.isIntermediate || false,
-                    metadata: info.metadata,
+                    metadata: mappedMetadata,
                     url: convertFileSrc(path),
                     thumbnailSource: info.thumbnailSource,
                     microThumbnail: info.microThumbnail,
@@ -355,7 +358,6 @@ async function processFileEntries(
                 // DB Insert/Update
                 // console.time(`insertBatch-${i}`);
                 const ids = batchImages.map(img => img.id);
-                const { insertImagesBatch, getExistingMetadata } = await import('./db/imageRepo');
                 const existingMetaStartedAt = liveWatchNow();
                 if (abortSignal?.aborted) {
                     wasCancelled = true;
@@ -698,11 +700,9 @@ export async function processFoldersUnified(
     // Fire-and-forget so we do not block the UI from immediately fetching and displaying the images.
     // Startup smart scans can defer this so useFolderMonitor can run one bounded incremental refresh.
     if (!deferFacetCacheRefresh && !result.wasCancelled) {
-        import('./db/imageRepo').then(({ rebuildFacetCache }) => {
-            rebuildFacetCache()
-                .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
-                .catch(e => console.error('[Import] Failed cleanup', e));
-        });
+        void rebuildFacetCache()
+            .then(() => useLibraryStore.getState().incrementFacetCacheVersion())
+            .catch(e => console.error('[Import] Failed cleanup', e));
     } else if (deferFacetCacheRefresh) {
         console.info('[ImportUnified] Deferred facet cache refresh to startup catch-up coordinator.', {
             processed: result.stats.processed,
@@ -776,14 +776,15 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
 /**
  * Canonical stringify to ignore key order for metadata comparison
  */
-function canonicalStringify(obj: any): string {
+function canonicalStringify(obj: unknown): string {
     if (obj === null || typeof obj !== 'object') {
         return JSON.stringify(obj);
     }
-    const allKeys = Object.keys(obj).sort();
-    const result: any = {};
+    const record = obj as Record<string, unknown>;
+    const allKeys = Object.keys(record).sort();
+    const result: Record<string, string> = {};
     for (const key of allKeys) {
-        result[key] = canonicalStringify(obj[key]);
+        result[key] = canonicalStringify(record[key]);
     }
     return JSON.stringify(result);
 }

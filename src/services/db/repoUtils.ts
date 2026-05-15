@@ -36,7 +36,7 @@ export const REMOVED_IMAGE_FIELDS = `
     NULL as positive_prompt, NULL as negative_prompt
 `;
 
-type ImageRow = Record<string, unknown>;
+export type ImageRow = Record<string, unknown>;
 
 const asString = (value: unknown): string | undefined =>
     typeof value === 'string' && value.length > 0 ? value : undefined;

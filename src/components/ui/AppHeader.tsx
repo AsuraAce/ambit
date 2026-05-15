@@ -56,7 +56,7 @@ export const AppHeader = React.memo(({
     const {
         settings, setSettings,
         recentSearches, setRecentSearches,
-    } = useLibraryContext() as any;
+    } = useLibraryContext();
     const toast = React.useContext(ToastContext);
     const addToast = toast?.addToast ?? ((message: string) => console.info(message));
     const browserMockMode = isBrowserMockMode();
@@ -140,13 +140,7 @@ export const AppHeader = React.memo(({
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1">
                         <button
-                            onClick={() => {
-                                if (browserMockMode) {
-                                    addToast('Unavailable in browser mock mode.', 'info');
-                                    return;
-                                }
-                                onImport();
-                            }}
+                            onClick={onImport}
                             className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                             title="Import images. For automatic sync with favorites & boards, set up an Integration in Settings."
                         >

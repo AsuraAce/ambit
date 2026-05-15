@@ -5,12 +5,18 @@ interface GridSkeletonProps {
     layout?: LayoutMode;
 }
 
+interface SkeletonSize {
+    height?: string;
+    width?: string;
+    flexGrow?: number;
+}
+
 export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }) => {
     // Generate a fixed number of skeleton items
     const items = Array.from({ length: 24 });
 
     // Memoize randomized heights/widths to prevent flicker on re-renders
-    const randomSizes = React.useMemo(() =>
+    const randomSizes = React.useMemo<SkeletonSize[]>(() =>
         items.map(() => {
             if (layout === 'masonry') {
                 // Random height between 200px and 400px for masonry
@@ -52,7 +58,7 @@ export const GridSkeleton: React.FC<GridSkeletonProps> = ({ layout = 'masonry' }
                         className="h-64 rounded-xl bg-gray-200 dark:bg-white/5 overflow-hidden relative"
                         style={{
                             width: randomSizes[i].width,
-                            flexGrow: (randomSizes[i] as any).flexGrow,
+                            flexGrow: randomSizes[i].flexGrow,
                             animation: `pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
                             animationDelay: `${i * 50}ms`
                         }}

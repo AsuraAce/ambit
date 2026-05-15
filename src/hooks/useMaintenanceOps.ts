@@ -6,6 +6,13 @@ import { imageToBase64 } from '../services/imageService';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { urlToPath } from '../utils/pathUtils';
+import {
+    deleteImageFromDisk,
+    getImagesByIds,
+    insertImage,
+    rebuildFacetCache,
+    removeImagesFromLibrary,
+} from '../services/db/imageRepo';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
@@ -29,7 +36,6 @@ export const useMaintenanceOps = ({
         let rebuildSucceeded = false;
 
         try {
-            const { removeImagesFromLibrary, deleteImageFromDisk, getImagesByIds, rebuildFacetCache } = await import('../services/db/imageRepo');
             if (permanent) {
                 console.info(`${logPrefix}: fetching images`, { count: ids.length });
                 const imagesToDelete = await getImagesByIds(ids);
@@ -102,7 +108,6 @@ export const useMaintenanceOps = ({
 
             setImages(prev => prev.map(pImg => pImg.id === img.id ? updatedImg : pImg));
 
-            const { insertImage } = await import('../services/db/imageRepo');
             await insertImage(updatedImg);
 
             addToast("Metadata recovered successfully!", "success");

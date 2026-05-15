@@ -64,8 +64,8 @@ export const generateMockImages = (count: number): AIImage[] => {
 
     return {
       id: `img_${i}`,
-      url: `https://picsum.photos/${width}/${height}?random=${i}`,
-      thumbnailUrl: `https://picsum.photos/300/300?random=${i}`,
+      url: '/branding/ambit-window-icon.png',
+      thumbnailUrl: '/branding/ambit-window-icon.png',
       filename: `gen_${Date.now()}_${i}.png`,
       fileSize: Math.floor(Math.random() * 5000000) + 1000000, // Random size between 1MB and 6MB
       timestamp: getRandomDate(),

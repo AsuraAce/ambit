@@ -27,6 +27,10 @@ interface SettingsModalProps {
 }
 
 type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
+type ConnectionSubTab = 'folders' | 'invokeai' | 'a1111' | 'comfyui';
+type DirectSettingsTab = Exclude<SettingsTab, 'connections' | 'advanced'>;
+
+const CONNECTION_SUB_TABS: readonly ConnectionSubTab[] = ['folders', 'invokeai', 'a1111', 'comfyui'];
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
@@ -79,19 +83,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 }) => {
   const appVersion = useAppVersion();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
-  const [connectionSubTab, setConnectionSubTab] = useState<'folders' | 'invokeai' | 'a1111' | 'comfyui' | undefined>(undefined);
+  const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
 
   // Reset to initial tab when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (['folders', 'invokeai', 'a1111', 'comfyui'].includes(initialTab)) {
+      if (CONNECTION_SUB_TABS.includes(initialTab as ConnectionSubTab)) {
         setActiveTab('connections');
-        setConnectionSubTab(initialTab as any);
+        setConnectionSubTab(initialTab as ConnectionSubTab);
       } else if (initialTab === 'experiments') {
         setActiveTab('intelligence');
         setConnectionSubTab(undefined);
       } else {
-        setActiveTab(initialTab as SettingsTab);
+        setActiveTab(initialTab as DirectSettingsTab);
         setConnectionSubTab(undefined);
       }
     }

@@ -1,9 +1,10 @@
 import { AIImage, AssetScope, FacetType } from '../../types';
 import { getDb } from './connection';
-import { mapRowToImage, getImageFieldsLight } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
+import { commands } from '../../bindings';
 
 export interface LibraryStats {
     totalImages: number;
@@ -85,6 +86,23 @@ interface FacetMergeGroup {
     item: FacetItem;
     usedAliases: Set<string>;
     displayCount: number;
+}
+
+interface CountRow {
+    count: number;
+}
+
+interface BasicStatsRow {
+    total: number;
+}
+
+interface ModelStatsRow {
+    name: string | null;
+    count: number;
+}
+
+interface PromptRow {
+    positive_prompt: string | null;
 }
 
 export interface GetFacetsOptions {
@@ -296,7 +314,7 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
     return null;
 };
 
-export const countImages = async (whereClause: string, params: any[], collectionId?: string, loraName?: string): Promise<number> => {
+export const countImages = async (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
@@ -310,7 +328,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [collectionId, loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -322,7 +340,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [collectionId, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -334,7 +352,7 @@ export const countImages = async (whereClause: string, params: any[], collection
             CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
         `;
-        const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, [loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -344,7 +362,7 @@ export const countImages = async (whereClause: string, params: any[], collection
         : 'FROM images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
-    const result = await timeDbCall('countImages', reason, () => db.select<any[]>(query, params));
+    const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
     return result[0]?.count || 0;
 };
 
@@ -354,13 +372,13 @@ export const countImages = async (whereClause: string, params: any[], collection
  */
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
-    const result = await timeDbCall('countGlobalImages', 'default', () => db.select<any[]>(
+    const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
         `SELECT count(*) as count FROM images WHERE is_deleted = 0`
     ));
     return result[0]?.count || 0;
 };
 
-export const searchImageIds = async (whereClause: string, params: any[]): Promise<string[]> => {
+export const searchImageIds = async (whereClause: string, params: unknown[]): Promise<string[]> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
@@ -373,7 +391,7 @@ export const searchImageIds = async (whereClause: string, params: any[]): Promis
 
 export const searchImages = async (
     whereClause: string,
-    params: any[],
+    params: unknown[],
     limit: number,
     // offset removed
     sortField: string = 'timestamp',
@@ -446,7 +464,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [collectionId, loraName, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, loraName, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -461,7 +479,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [collectionId, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -477,7 +495,7 @@ export const searchImages = async (
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, [loraName, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [loraName, ...params]));
         return rows.map(mapRowToImage);
     }
 
@@ -500,7 +518,7 @@ export const searchImages = async (
         LIMIT ${limit}
     `;
 
-    const rows = await timeDbCall('searchImages', reason, () => db.select<any[]>(query, params));
+    const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, params));
     
     return rows.map(mapRowToImage);
 };
@@ -531,7 +549,7 @@ const buildScopedImageJoins = (collectionId?: string, loraName?: string): { join
     };
 };
 
-export const getLibraryStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
+export const getLibraryStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
     // Return cached result instantly for unfiltered dashboard loads
     if (!whereClause && !collectionId && !loraName && globalStatsCache) {
         return globalStatsCache;
@@ -552,7 +570,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             ${finalWhere}
         `;
 
-        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<any[]>(statsQuery, [...joinParams, ...params]));
+        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<BasicStatsRow[]>(statsQuery, [...joinParams, ...params]));
         
         const total = basicStats[0]?.total || 0;
         const avgSteps = 0; // Temporarily disabled for performance
@@ -572,7 +590,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
             LIMIT 20
             `;
             
-        const modelRows = await timeDbCall('libraryStats.modelStats', reason, () => db.select<any[]>(modelQuery, params));
+        const modelRows = await timeDbCall('libraryStats.modelStats', reason, () => db.select<ModelStatsRow[]>(modelQuery, params));
 
         const modelStats = modelRows.map(r => ({
             name: (r.name || 'Unknown').split(' ')[0],
@@ -610,7 +628,7 @@ export const getLibraryStats = async (whereClause: string = '', params: any[] = 
     }
 };
 
-export const getKeywordStats = async (whereClause: string = '', params: any[] = [], collectionId?: string, loraName?: string): Promise<{ text: string; value: number }[]> => {
+export const getKeywordStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<{ text: string; value: number }[]> => {
     const db = await getDb();
 
     try {
@@ -667,7 +685,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
         `;
         
         const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
-        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<any[]>(promptQuery, [...joinParams, ...params]));
+        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<PromptRow[]>(promptQuery, [...joinParams, ...params]));
         
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
         const counts: Record<string, number> = {};
@@ -706,7 +724,7 @@ export const getKeywordStats = async (whereClause: string = '', params: any[] = 
  */
 export const getFacets = async (
     _whereClause: string = '',
-    _params: any[] = [],
+    _params: unknown[] = [],
     types: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'],
     options: GetFacetsOptions = {}
 ): Promise<Facets> => {
@@ -862,8 +880,6 @@ export const getValidFacetNames = async (
     loraName?: string
 ): Promise<ValidFacetNames | null> => {
     try {
-        // Import the command dynamically to avoid circular dependencies
-        const { commands } = await import('../../bindings');
         const reason = describeDbQueryReason(whereClause, collectionId, loraName);
         const result = await timeDbCall(
             'validFacets',

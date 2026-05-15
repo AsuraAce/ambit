@@ -1,6 +1,6 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-04-16
+Last reviewed: 2026-05-15
 
 ## System Overview
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
@@ -42,11 +42,19 @@ Interacts with: `src/features/`, `src/bindings.ts`, `src-tauri/src/db/`, app-loc
 Risks: state ownership is split across React Query, contexts, Zustand, and repository adapters, which makes duplicate sources of truth easy to introduce
 Related docs: `docs/progress.md#active-workstreams`, `docs/refactor.md#frontend-state-and-shell-coordination`
 
+### Network Surface
+Purpose: keep the core app local-first while supporting explicit public-beta network paths.
+Code: `src/hooks/useAppUpdater.ts`, `src/services/geminiService.ts`, `src-tauri/src/metadata/civitai.rs`, `src/features/settings/`
+Interacts with: GitHub Releases updater feed, optional Gemini API requests, optional CivitAI hash resolution, and user-clicked external support/project links
+Risks: passive third-party assets or unclear copy can make local-first behavior hard to audit
+Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
+
 ## Invariants
 - SQLite is the source of truth for image records and heavy metadata. `library.json` should not become a second image store.
 - Rust-exposed command and type changes should flow through Specta into `src/bindings.ts`; do not hand-maintain Rust-backed TypeScript mirrors.
 - Filesystem access must remain local-only and within Tauri-registered or scoped paths.
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
+- Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
 - Large library browsing paths must remain virtualized and performance-conscious.
 
 ## High-Risk Areas

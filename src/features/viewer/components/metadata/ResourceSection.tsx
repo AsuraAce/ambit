@@ -3,7 +3,7 @@ import { LucideIcon } from 'lucide-react';
 
 interface ResourceSectionProps {
     title: string;
-    items: (string | any)[]; // Keeping looser type for compatibility with current data shape
+    items: (string | unknown)[]; // Keeping looser type for compatibility with current data shape
     icon: LucideIcon;
     onSearch: (term: string) => void;
     onClose: () => void;
@@ -18,7 +18,7 @@ export const ResourceSection = ({ title, items, icon: Icon, onSearch, onClose }:
                 <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">{title}</h3>
             </div>
             <div className="flex flex-wrap gap-2">
-                {items.map((item: any, i: number) => {
+                {items.map((item: unknown, i: number) => {
                     let text = String(item);
                     if (typeof item !== 'string') return <div key={i} className="px-2 py-1.5 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-mono text-gray-700 dark:text-gray-300 truncate">{text}</div>;
 

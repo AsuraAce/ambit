@@ -10,10 +10,35 @@ interface TabProps {
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
+interface InvokeDiagCount {
+    count: number;
+}
+
+interface InvokeCategoryDiag extends InvokeDiagCount {
+    image_category: string;
+}
+
+interface InvokeOriginDiag extends InvokeDiagCount {
+    image_origin: string;
+}
+
+interface InvokeFolderAudit {
+    imageFiles: number;
+    thumbnailFiles: number;
+    subfolders: Record<string, number>;
+}
+
+interface InvokeDiagnostics {
+    totalInDb: number;
+    categories: InvokeCategoryDiag[];
+    origins: InvokeOriginDiag[];
+    folder: InvokeFolderAudit;
+}
+
 export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
-    const [diagData, setDiagData] = useState<any>(null);
+    const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
 
     const runDiagnostics = async () => {
@@ -21,8 +46,8 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         setIsDiagLoading(true);
         try {
             const { diagnoseInvokeAI } = await import('../../../services/invoke/connection');
-            const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath);
-            const folderAudit: any = await invoke('audit_invokeai_folder', { path: settings.invokeAiPath });
+            const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath) as Omit<InvokeDiagnostics, 'folder'>;
+            const folderAudit = await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath });
 
             setDiagData({
                 ...dbDiag,
@@ -206,7 +231,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <div className="space-y-3">
                                     <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Categories (DB)</div>
                                     <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
-                                        {diagData.categories.map((c: any) => (
+                                        {diagData.categories.map((c) => (
                                             <div key={c.image_category} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
                                                 <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{c.image_category}</span>
                                                 <span className="font-black text-gray-900 dark:text-white tabular-nums">{c.count.toLocaleString()}</span>
@@ -218,7 +243,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <div className="space-y-3">
                                     <div className="text-[9px] text-gray-400 uppercase font-black tracking-widest px-1">Origins (DB)</div>
                                     <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-2 scrollbar-thin">
-                                        {diagData.origins.map((o: any) => (
+                                        {diagData.origins.map((o) => (
                                             <div key={o.image_origin} className="flex justify-between text-[10px] p-2.5 bg-gray-100/50 dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/5 transition-colors hover:bg-gray-200/50 dark:hover:bg-white/[0.05]">
                                                 <span className="text-gray-500 dark:text-gray-400 capitalize font-bold">{o.image_origin}</span>
                                                 <span className="font-black text-gray-900 dark:text-white tabular-nums">{o.count.toLocaleString()}</span>
@@ -237,7 +262,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-2">
-                                    {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]: [any, any]) => (
+                                    {Object.entries(diagData.folder.subfolders || {}).map(([folder, count]) => (
                                         <div key={folder} className="flex justify-between items-center text-[10px] p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded-lg border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <FolderOpen className="w-3 h-3 text-gray-400 flex-shrink-0" />

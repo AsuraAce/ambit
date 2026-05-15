@@ -1,21 +1,42 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, AppSettings, FilterState, Collection } from '../types';
+import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
-import { useModalManager } from './useModalManager';
+import {
+    rebuildThumbnailFacetCache,
+    toggleImageFavorite,
+    toggleImageMask,
+    toggleImagePin,
+} from '../services/db/imageRepo';
+import { backfillParameterColumns } from '../services/db/maintenanceRepo';
+import { useLibraryStore } from '../stores/libraryStore';
+
+interface AppActionFileOps {
+    deleteImages: (ids: string[]) => void | Promise<void>;
+    exportImages: (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => Promise<void>;
+    recoverMetadata?: (targetId: string, style: RecoveryStyle, onComplete: () => void) => Promise<void>;
+}
+
+interface AppActionModalManager {
+    openModal: (key: 'settings' | 'deleteConfirm' | 'recovery' | 'export') => void;
+    closeModal: (key: 'deleteConfirm' | 'recovery' | 'export') => void;
+    pendingViewerDeleteId: string | null;
+    setPendingViewerDeleteId: React.Dispatch<React.SetStateAction<string | null>>;
+    setInitialSettingsTab?: (tab: 'intelligence') => void;
+}
 
 interface UseAppActionsProps {
     viewingImageId: string | null;
     selectedImageIndex: number | null;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
-    fileOps: any;
+    fileOps: AppActionFileOps;
     selectedIds: Set<string>;
     setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     lastSelectedId: string | null;
-    modalManager: any; // Renamed from modals
+    modalManager: AppActionModalManager; // Renamed from modals
 }
 
 export const useAppActions = ({
@@ -52,7 +73,6 @@ export const useAppActions = ({
         errorMessage: string
     ) => {
         try {
-            const { toggleImagePin } = await import('../services/db/imageRepo');
             await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
             void refreshCollections(true);
         } catch (error) {
@@ -112,7 +132,7 @@ export const useAppActions = ({
         setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
 
         selectedIds.forEach(id => {
-            import('../services/db/imageRepo').then(db => db.toggleImageFavorite(id, anyUnfavorite));
+            void toggleImageFavorite(id, anyUnfavorite);
         });
 
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
@@ -165,8 +185,6 @@ export const useAppActions = ({
             return img;
         }));
 
-        const { toggleImageMask, rebuildThumbnailFacetCache } = await import('../services/db/imageRepo');
-        const { useLibraryStore } = await import('../stores/libraryStore');
         const promises: Promise<void>[] = [];
 
         idsToToggle.forEach(id => {
@@ -209,7 +227,7 @@ export const useAppActions = ({
         addToast(next ? "Privacy Mode Enabled" : "Privacy Mode Disabled (Hidden/Blurred items revealed)", "info");
     };
 
-    const executeMetadataRecovery = async (style: any) => {
+    const executeMetadataRecovery = async (style: RecoveryStyle) => {
         const targetId = viewingImageId || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
         if (!targetId) return;
 
@@ -219,6 +237,11 @@ export const useAppActions = ({
             modals.setInitialSettingsTab?.('intelligence');
             openModal('settings');
             addToast('Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.', 'info');
+            return;
+        }
+
+        if (!fileOps.recoverMetadata) {
+            addToast('Prompt Recovery is unavailable in this runtime.', 'error');
             return;
         }
 
@@ -263,7 +286,6 @@ export const useAppActions = ({
 
     const runBackfill = async () => {
         addToast("Starting background backfill...", "info");
-        const { backfillParameterColumns } = await import('../services/db/maintenanceRepo');
         const count = await backfillParameterColumns();
         if (count > 0) {
             addToast(`Backfill complete: ${count} images updated`, "success");

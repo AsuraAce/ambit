@@ -1,6 +1,32 @@
 import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
 import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
 
+type MetadataRecord = Record<string, unknown>;
+type ComfyNode = MetadataRecord & {
+    id?: string | number;
+    class_type?: string;
+    type?: string;
+    inputs?: MetadataRecord;
+    widgets_values?: unknown[];
+};
+
+const isRecord = (value: unknown): value is MetadataRecord =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+
+const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
+
+const asComfyNode = (value: unknown): ComfyNode => asRecord(value) as ComfyNode;
+
+const readString = (record: MetadataRecord, key: string): string | undefined => {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+};
+
+const readNumber = (record: MetadataRecord, key: string): number | undefined => {
+    const value = record[key];
+    return typeof value === 'number' ? value : undefined;
+};
+
 /**
  * Maps raw PNG/EXIF chunks to the standard ImageMetadata format based on the detected tool.
  * This is used to reconstruct "Original" metadata for comparison in the UI.
@@ -8,7 +34,7 @@ import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
  * NOTE: This must be HIGHLY ROBUST and match the Rust-side reparse logic 
  * (`src-tauri/src/metadata/reparse.rs`) to prevent data loss on revert.
  */
-export function mapRawChunksToMetadata(chunks: any, tool: GeneratorTool): Partial<ImageMetadata> {
+export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Partial<ImageMetadata> {
     if (!chunks) return {};
 
     const toolLower = tool?.toLowerCase() || "";
@@ -45,23 +71,29 @@ export function mapRawChunksToMetadata(chunks: any, tool: GeneratorTool): Partia
     }
 
     // --- Object-based Mapping & Tool Detection ---
+    const chunkRecord = asRecord(chunks);
+    if (Object.keys(chunkRecord).length === 0) {
+        if (toolLower.includes('invoke')) return mapRawInvokeMetadata(chunkRecord);
+        if (toolLower.includes('comfy')) return { tool: GeneratorTool.COMFYUI };
+        return {};
+    }
 
     // 1. Detect tool from chunks if possible (overrides the passed tool argument)
     let detectedTool = tool;
-    if (chunks.parameters || chunks.Parameters || chunks.PARAMETERS) {
+    if (chunkRecord.parameters || chunkRecord.Parameters || chunkRecord.PARAMETERS) {
         detectedTool = GeneratorTool.AUTOMATIC1111;
-    } else if (chunks.workflow || (chunks.prompt && typeof chunks.prompt === 'object') || chunks.nodes || Object.keys(chunks).some(k => !isNaN(Number(k)))) {
+    } else if (chunkRecord.workflow || (chunkRecord.prompt && typeof chunkRecord.prompt === 'object') || chunkRecord.nodes || Object.keys(chunkRecord).some(k => !isNaN(Number(k)))) {
         detectedTool = GeneratorTool.COMFYUI;
-    } else if (chunks.invokeai_metadata || chunks['sd-metadata'] || chunks.dream_metadata || (chunks.image && chunks.image.prompt)) {
+    } else if (chunkRecord.invokeai_metadata || chunkRecord['sd-metadata'] || chunkRecord.dream_metadata || (isRecord(chunkRecord.image) && chunkRecord.image.prompt)) {
         detectedTool = GeneratorTool.INVOKEAI;
     }
 
     const effectiveToolLower = detectedTool?.toLowerCase() || "";
 
     // 2. ComfyUI flat structure check (no 'prompt'/'workflow' keys, just nodes/IDs)
-    if (effectiveToolLower.includes('comfy') && (chunks.nodes || Object.keys(chunks).some(k => !isNaN(Number(k))))) {
-        const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: JSON.stringify(chunks) };
-        parseComfyUIMetadata(chunks, metadata);
+    if (effectiveToolLower.includes('comfy') && (chunkRecord.nodes || Object.keys(chunkRecord).some(k => !isNaN(Number(k))))) {
+        const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: JSON.stringify(chunkRecord) };
+        parseComfyUIMetadata(chunkRecord, metadata);
         return metadata;
     }
 
@@ -71,18 +103,18 @@ export function mapRawChunksToMetadata(chunks: any, tool: GeneratorTool): Partia
         case GeneratorTool.FORGE:
         case GeneratorTool.ANAPNOE: {
             // Check for direct parameters key (standard in A1111 PNG chunks)
-            const text = chunks.parameters || chunks.Parameters || chunks.PARAMETERS;
+            const text = chunkRecord.parameters || chunkRecord.Parameters || chunkRecord.PARAMETERS;
             if (text && typeof text === 'string') return parseA1111Parameters(text, detectedTool);
 
             // If it's a JSON blob from SDNext that was already parsed
-            if (chunks.prompt && typeof chunks.prompt === 'string') {
+            if (typeof chunkRecord.prompt === 'string') {
                 const metadata: Partial<ImageMetadata> = {
                     tool: detectedTool,
-                    positivePrompt: chunks.prompt,
-                    negativePrompt: chunks.negative_prompt || '',
-                    seed: chunks.seed,
-                    steps: chunks.steps,
-                    cfg: chunks.cfg || chunks.cfg_scale
+                    positivePrompt: chunkRecord.prompt,
+                    negativePrompt: readString(chunkRecord, 'negative_prompt') || '',
+                    seed: readNumber(chunkRecord, 'seed'),
+                    steps: readNumber(chunkRecord, 'steps'),
+                    cfg: readNumber(chunkRecord, 'cfg') ?? readNumber(chunkRecord, 'cfg_scale')
                 };
                 return metadata;
             }
@@ -91,7 +123,7 @@ export function mapRawChunksToMetadata(chunks: any, tool: GeneratorTool): Partia
 
         case GeneratorTool.COMFYUI: {
             // ComfyUI usually stores workflow/prompt as JSON strings within these keys
-            const workflow = chunks.workflow || chunks.prompt;
+            const workflow = chunkRecord.workflow || chunkRecord.prompt;
             if (workflow) {
                 const workflowStr = typeof workflow === 'string' ? workflow : JSON.stringify(workflow);
                 try {
@@ -106,7 +138,7 @@ export function mapRawChunksToMetadata(chunks: any, tool: GeneratorTool): Partia
 
         case GeneratorTool.INVOKEAI: {
             // High-fidelity mapping for InvokeAI
-            return mapRawInvokeMetadata(chunks);
+            return mapRawInvokeMetadata(chunkRecord);
         }
     }
 
@@ -311,16 +343,20 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
 /**
  * Standard ComfyUI parameter parser (extracted from metadata worker).
  */
-export function parseComfyUIMetadata(json: any, metadata: Partial<ImageMetadata>) {
-    const nodes = json.nodes ? (Array.isArray(json.nodes) ? json.nodes : Object.values(json.nodes)) : Object.values(json);
+export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetadata>) {
+    const root = asRecord(json);
+    const rawNodes = root.nodes
+        ? (Array.isArray(root.nodes) ? root.nodes : Object.values(asRecord(root.nodes)))
+        : Object.values(root);
+    const nodes = rawNodes.map(asComfyNode);
     const loras = new Set<string>();
 
-    let checkpointNode: any = null;
-    const candidateSamplers: any[] = [];
+    let checkpointNode: ComfyNode | null = null;
+    const candidateSamplers: ComfyNode[] = [];
 
     for (const node of nodes) {
-        const type = node.class_type || node.type || "";
-        const inputs = node.inputs || node.widgets_values || {};
+        const type = String(node.class_type || node.type || "");
+        const inputs = asRecord(node.inputs);
 
         if (type === 'KSampler' || type === 'KSamplerAdvanced' || type === 'SDParameterGenerator' || type === 'SDPromptSaver' || (type.includes('KSampler') && !type.includes('Context'))) {
             candidateSamplers.push(node);
@@ -352,13 +388,13 @@ export function parseComfyUIMetadata(json: any, metadata: Partial<ImageMetadata>
 
     if (candidateSamplers.length > 0) {
         candidateSamplers.sort((a, b) => {
-            const idA = parseInt(a.id) || 999999;
-            const idB = parseInt(b.id) || 999999;
+            const idA = Number(a.id) || 999999;
+            const idB = Number(b.id) || 999999;
             return idA - idB;
         });
 
         const mainSampler = candidateSamplers[0];
-        const type = mainSampler.class_type || mainSampler.type || "";
+        const type = String(mainSampler.class_type || mainSampler.type || "");
         const w = mainSampler.widgets_values;
 
         if (Array.isArray(w)) {
@@ -424,14 +460,15 @@ export function parseComfyUIMetadata(json: any, metadata: Partial<ImageMetadata>
 
         if (checkpointNode) {
             if (Array.isArray(checkpointNode.widgets_values) && checkpointNode.widgets_values.length > 0) {
-                const rawName = checkpointNode.widgets_values.find((v: any) =>
+                const rawName = checkpointNode.widgets_values.find((v: unknown) =>
                     typeof v === 'string' && /\.(safetensors|ckpt|pt|bin|sft)$/i.test(v)
                 );
-                if (rawName) {
+                if (typeof rawName === 'string') {
                     metadata.model = rawName.replace(/\.(safetensors|ckpt|pt|sft|bin)$/i, '').split(/[\\/]/).pop();
                 }
             } else if (checkpointNode.inputs) {
-                const rawName = checkpointNode.inputs.unet_name || checkpointNode.inputs.ckpt_name || checkpointNode.inputs.model_name;
+                const inputs = asRecord(checkpointNode.inputs);
+                const rawName = inputs.unet_name || inputs.ckpt_name || inputs.model_name;
                 if (typeof rawName === 'string') {
                     metadata.model = rawName.replace(/\.(safetensors|ckpt|pt|sft|bin)$/i, '').split(/[\\/]/).pop();
                 }

@@ -84,7 +84,7 @@ export const MetadataInfoTab = ({
 
         // Handle equivalent empty values (null, undefined, empty string)
         // CRITICAL: We also treat "Unknown" as empty to avoid modification flags for unresolved models
-        const isEmpty = (v: any) => v === null || v === undefined || v === '' || (typeof v === 'string' && v.toLowerCase() === 'unknown');
+        const isEmpty = (v: unknown) => v === null || v === undefined || v === '' || (typeof v === 'string' && v.toLowerCase() === 'unknown');
 
         if (isEmpty(cur) && isEmpty(orig)) return false;
 

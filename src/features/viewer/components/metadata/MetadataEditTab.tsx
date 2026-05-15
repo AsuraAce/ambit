@@ -3,6 +3,7 @@ import {
     Layout, Search, Check, Plus, FileText, ClipboardList, AlertCircle, Save, Code
 } from 'lucide-react';
 import { AIImage, GeneratorTool, Collection } from '../../../../types';
+import { getCollectionsForImage } from '../../../../services/db/collectionRepo';
 
 interface MetadataEditTabProps {
     image: AIImage;
@@ -54,8 +55,6 @@ export const MetadataEditTab = ({
         const fetchImageMembership = async () => {
             setIsLoadingCollections(true);
             try {
-                // Dynamic import to avoid circular defaults if possible, or just keep as is
-                const { getCollectionsForImage } = await import('../../../../services/db/collectionRepo');
                 const colIds = await getCollectionsForImage(image.id);
                 if (!isCancelled) setImageCollections(colIds);
             } catch (e) {

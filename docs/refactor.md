@@ -244,7 +244,7 @@ Status: Deferred
 ### Current Pain Points
 - It is easy to modify the wrong persistence layer or leave migrations half-finished.
 - Startup, onboarding, folder scope registration, and secure key handling all depend on coordinated changes across TypeScript and Rust.
-- Fresh-profile or reset instructions must mention both `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app` while this split remains.
+- Fresh-profile or reset instructions must mention both the current `io.github.asuraace.ambit` directories and the legacy `com.ambit.app` directories while the public-beta identifier migration remains in the transition window.
 - A naive switch from Roaming to Local would look like data loss for existing users if `images.db`, `images.db-wal`, and `images.db-shm` are not migrated before the SQL plugin opens the database.
 
 ### Safe-Change Warning
@@ -277,22 +277,30 @@ Status: Deferred
 - `docs/architecture.md#desktop-shell-and-command-surface`
 
 ## Tauri Bundle Identifier Migration
-Status: Deferred
+Status: In transition
 
-### Why Cleanup Is Needed
-- Production config currently uses `com.ambit.app` as the bundle identifier.
-- Tauri warns because identifiers ending in `.app` can conflict with the macOS application bundle extension.
+### Current State
+- Production config now uses `io.github.asuraace.ambit` as the bundle identifier.
+- Development config remains on `com.ambit.dev`.
+- Release builds run a one-time startup migration before SQL initialization:
+  - Roaming AppData moves from `com.ambit.app` to `io.github.asuraace.ambit` when the new profile has no `images.db`.
+  - Local AppData moves from `com.ambit.app` to `io.github.asuraace.ambit` when the new profile has no `library.json` or `.thumbnails`.
+  - Existing new-profile data is never overwritten.
+- Reset/purge and historical migration repair code check both the current and legacy production identifiers during this transition.
 
 ### Safe-Change Warning
-- Do not rename the production identifier as an incidental build-warning cleanup.
-- Changing the identifier can affect installer identity, update continuity, app data locations, and OS-level permissions.
+- Do not remove the legacy `com.ambit.app` fallback checks until the public-beta upgrade window is intentionally closed.
+- Changing identifier behavior can affect installer identity, update continuity, app data locations, and OS-level permissions.
+- This migration is Windows-first; macOS and Linux remain unshipped until identifier, data-path, and updater behavior are explicitly validated there.
 
 ### Suggested Future Direction
-- Coordinate a future identifier migration before a macOS release or at an explicitly breaking installer/update boundary.
-- Include existing-user upgrade notes and validate app data, updater, and filesystem-scope behavior across old and new identifiers.
+- Validate fresh-profile, legacy-profile, and conflict-profile startup behavior on packaged Windows builds.
+- Keep release notes explicit that existing alpha data under `com.ambit.app` is migrated once into `io.github.asuraace.ambit`.
+- After the transition window, decide whether to keep legacy purge/repair checks as harmless compatibility or remove them in a dedicated cleanup.
 
 ### Not Part of the Current Task
-- Keep `src-tauri/tauri.conf.json` on `com.ambit.app` for the current production build-hardening pass.
+- Do not change the dev identifier.
+- Do not move the SQLite database from Roaming to Local AppData as part of this identifier-only migration.
 
 ## Smart Thumbnail Optimization and Removed Maintenance Tab
 Status: Deferred

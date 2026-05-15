@@ -16,8 +16,34 @@ const worker = new Worker(new URL('../workers/metadata.worker.ts', import.meta.u
     type: 'module'
 });
 
+type WorkerExtra = ParseResult['extra'];
+
+interface WorkerInput {
+    chunks?: unknown;
+    buffer?: Uint8Array;
+}
+
+interface WorkerParseResponse {
+    requestId?: string;
+    error?: string;
+    metadata?: Partial<ImageMetadata>;
+    extra?: WorkerExtra;
+    isIntermediate?: boolean;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+
+const toWorkerInput = (value: unknown): WorkerInput => {
+    if (!isRecord(value)) return { chunks: value };
+    return {
+        chunks: 'chunks' in value ? value.chunks : value,
+        buffer: value.buffer instanceof Uint8Array ? value.buffer : undefined
+    };
+};
+
 // Helper to wrap worker messaging in a Promise
-const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool?: GeneratorTool): Promise<{ metadata: Partial<ImageMetadata>, extra: any, isIntermediate?: boolean }> => {
+const parseInWorker = (chunks: unknown, filename: string, path?: string, defaultTool?: GeneratorTool): Promise<{ metadata: Partial<ImageMetadata>, extra: WorkerExtra, isIntermediate?: boolean }> => {
     return new Promise((resolve, reject) => {
         // We use a simple one-off handler approach for now.
         // For high concurrency, we might want a proper ID-based pool, 
@@ -36,16 +62,22 @@ const parseInWorker = (chunks: any, filename: string, path?: string, defaultTool
         let timeoutId: ReturnType<typeof setTimeout>;
 
         const handler = (e: MessageEvent) => {
-            if (e.data.requestId === requestId) {
+            const data = e.data as WorkerParseResponse;
+            if (data.requestId === requestId) {
                 worker.removeEventListener('message', handler);
                 clearTimeout(timeoutId);
-                if (e.data.error) reject(e.data.error);
-                else resolve(e.data);
+                if (data.error) reject(new Error(data.error));
+                else resolve({
+                    metadata: data.metadata ?? {},
+                    extra: data.extra ?? {},
+                    isIntermediate: data.isIntermediate
+                });
             }
         };
 
+        const payload = toWorkerInput(chunks);
         worker.addEventListener('message', handler);
-        worker.postMessage({ chunks: (chunks as any).chunks, buffer: (chunks as any).buffer, filename, requestId, path, defaultTool });
+        worker.postMessage({ chunks: payload.chunks, buffer: payload.buffer, filename, requestId, path, defaultTool });
 
         // Timeout safety
         timeoutId = setTimeout(() => {
@@ -73,14 +105,14 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             fileSize: 0,
             timestamp: Date.now(),
             error: true,
-            errorReason: (info as any).error
+            errorReason: info.error ?? undefined
         };
     }
 
     // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
     if (info.metadata) {
         return {
-            metadata: info.metadata as any,
+            metadata: info.metadata as Partial<ImageMetadata>,
             extra: {},
             isIntermediate: info.metadata.isIntermediate,
             width: info.width,
@@ -103,7 +135,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
     const workerStartedAt = liveWatchNow();
 
     try {
-        const { metadata, extra, isIntermediate } = (await parseInWorker(info.chunks, filename, path, defaultTool)) as any;
+        const { metadata, extra, isIntermediate } = await parseInWorker(info.chunks, filename, path, defaultTool);
         const finalIsIntermediate = isIntermediate || metadata.isIntermediate;
         debugLiveWatchPerf('Worker parse complete', {
             filename,
@@ -125,7 +157,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             microThumbnail: info.microThumbnail ?? undefined,
             thumbnailSource: info.thumbnailSource ?? undefined,
             originalChunks: info.chunks as Record<string, string>,
-            errorReason: (info as any).error
+            errorReason: info.error ?? undefined
         };
     } catch (workerError) {
         debugLiveWatchPerf('Worker parse failed', {
@@ -212,7 +244,7 @@ export const scanImagesBulk = async (
 // Helper for buffer (node/drag drop raw)
 export const parseImageBuffer = async (data: Uint8Array, filename: string, path?: string): Promise<ParseResult> => {
     try {
-        const { metadata, extra } = await parseInWorker({ buffer: data } as any, filename, path);
+        const { metadata, extra } = await parseInWorker({ buffer: data }, filename, path);
         return {
             metadata,
             extra,

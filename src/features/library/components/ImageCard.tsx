@@ -174,7 +174,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             <div className="min-w-0">
               <div className="text-xs font-bold text-white truncate drop-shadow-md font-sans">
                 {(() => {
-                  const model = typeof image.metadata.model === 'string' ? image.metadata.model : (image.metadata.model as any)?.name;
+                  const modelValue = image.metadata.model as unknown;
+                  const model = typeof modelValue === 'string'
+                    ? modelValue
+                    : modelValue && typeof modelValue === 'object' && 'name' in modelValue
+                      ? String((modelValue as { name?: unknown }).name || '')
+                      : '';
                   if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);
                   if (model && model !== 'Unknown') return formatModelName(model);
                   if (image.metadata.modelHash) return `Hash: ${image.metadata.modelHash.slice(0, 8)}`;

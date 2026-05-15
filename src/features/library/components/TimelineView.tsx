@@ -147,7 +147,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             const rowKey = item.items?.[0]?.image.id || `r-${item.y}`;
                             return (
                                 <div key={rowKey} className="absolute w-full" style={{ top: item.y, height: item.height }}>
-                                    {item.items?.map((subItem: any) => (
+                                    {item.items?.map((subItem) => (
                                         <div
                                             key={subItem.image.id}
                                             style={{

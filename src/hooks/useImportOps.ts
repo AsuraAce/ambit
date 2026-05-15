@@ -8,6 +8,9 @@ import { processWebFiles, processNativePaths, processFoldersUnified, ImportResul
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { formatStableImportProgress } from '../utils/importProgress';
+import { getThumbnailDir } from '../services/thumbnailService';
+import { rebuildFacetCache, syncCollectionImages } from '../services/db/imageRepo';
+import { syncImages } from '../services/invoke/syncService';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -118,7 +121,6 @@ export const useImportOps = ({
 
         try {
             if (abortCtrl) {
-                const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
                     setImportProgressForRun(importRunId, { current, total, message });
@@ -157,7 +159,6 @@ export const useImportOps = ({
 
         try {
             if (abortCtrl) {
-                const { getThumbnailDir } = await import('../services/thumbnailService');
                 const thumbDir = await getThumbnailDir();
                 const result = await processNativePaths(nativePaths, thumbDir, (current, total, message) => {
                     setImportProgressForRun(importRunId, { current, total, message });
@@ -209,7 +210,6 @@ export const useImportOps = ({
         }
 
         try {
-            const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
 
             const onProgress: ImportProgressCallback = (current, total, message, meta) => {
@@ -303,7 +303,6 @@ export const useImportOps = ({
                 }));
                 await commitImportResult(result, { toastMode: 'none' });
                 if (result.wasCancelled) {
-                    const { rebuildFacetCache } = await import('../services/db/imageRepo');
                     await rebuildFacetCache();
                     useLibraryStore.getState().incrementFacetCacheVersion();
                 }
@@ -349,7 +348,6 @@ export const useImportOps = ({
         }
 
         try {
-            const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
                 setImportProgressForRun(importRunId, { current, total, message });
@@ -381,9 +379,6 @@ export const useImportOps = ({
         }
 
         try {
-            const { syncImages } = await import('../services/invoke/syncService');
-            const { rebuildFacetCache, syncCollectionImages } = await import('../services/db/imageRepo');
-
             const result = await syncImages(
                 settings.invokeAiPath,
                 (current, total, message) => {
@@ -463,7 +458,6 @@ export const useImportOps = ({
             const scanTypeMsg = isIncremental ? 'Syncing new files' : 'Full scan';
             setImportProgressForRun(importRunId, { current: 0, total: filesToScan.length, message: `${scanTypeMsg}...` });
 
-            const { getThumbnailDir } = await import('../services/thumbnailService');
             const thumbDir = await getThumbnailDir();
 
             const result = await processNativePaths(

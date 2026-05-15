@@ -4,9 +4,17 @@ import { useCollectionStore } from '../collectionStore';
 import { Collection, FilterState } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 
-const mockGetAllCollectionsWithStats = vi.fn();
-const mockGetSmartCollectionSummaries = vi.fn();
-const mockGetCollectionThumbnailSummaries = vi.fn();
+const collectionRepoMocks = vi.hoisted(() => ({
+    mockGetAllCollectionsWithStats: vi.fn(),
+    mockGetSmartCollectionSummaries: vi.fn(),
+    mockGetCollectionThumbnailSummaries: vi.fn()
+}));
+
+const {
+    mockGetAllCollectionsWithStats,
+    mockGetSmartCollectionSummaries,
+    mockGetCollectionThumbnailSummaries
+} = collectionRepoMocks;
 
 vi.mock('../libraryStore', () => ({
     useLibraryStore: {
@@ -17,9 +25,9 @@ vi.mock('../libraryStore', () => ({
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
-    getAllCollectionsWithStats: mockGetAllCollectionsWithStats,
-    getSmartCollectionSummaries: mockGetSmartCollectionSummaries,
-    getCollectionThumbnailSummaries: mockGetCollectionThumbnailSummaries
+    getAllCollectionsWithStats: collectionRepoMocks.mockGetAllCollectionsWithStats,
+    getSmartCollectionSummaries: collectionRepoMocks.mockGetSmartCollectionSummaries,
+    getCollectionThumbnailSummaries: collectionRepoMocks.mockGetCollectionThumbnailSummaries
 }));
 
 const resetCollectionStore = () => {

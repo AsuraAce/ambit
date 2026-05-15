@@ -33,24 +33,24 @@ export const setupGlobalLogging = () => {
         return LOG_LEVELS[level] ?? LOG_LEVELS.info;
     };
 
-    console.debug = (...args: any[]) => {
+    console.debug = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.debug) originalConsole!.debug(...args);
     };
 
-    console.log = (...args: any[]) => {
+    console.log = (...args: unknown[]) => {
         // Treat generic console.log as info
         if (getLevelValue() <= LOG_LEVELS.info) originalConsole!.log(...args);
     };
 
-    console.info = (...args: any[]) => {
+    console.info = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.info) originalConsole!.info(...args);
     };
 
-    console.warn = (...args: any[]) => {
+    console.warn = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.warn) originalConsole!.warn(...args);
     };
 
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
         if (getLevelValue() <= LOG_LEVELS.error) originalConsole!.error(...args);
     };
 };

@@ -16,6 +16,7 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { unwrap } from '../../../utils/spectaUtils';
 import { formatHashResolutionMessage, isHashResolutionPartial } from '../utils/hashResolution';
 import type { ImportResult } from '../../../services/importService';
+import { rebuildFacetCacheIncremental } from '../../../services/db/imageRepo';
 
 interface TabProps {
     settings: AppSettings;
@@ -71,7 +72,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         setModelResolutionProgress: setResolutionProgress,
         lastModelResolutionResult: resolutionResult,
         setLastModelResolutionResult: setResolutionResult
-    } = useLibraryContext() as any;
+    } = useLibraryContext();
 
     const { addToast } = useToast();
     const queryClient = useQueryClient();
@@ -103,7 +104,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
     // InvokeAI folders re-sync from their database; all others re-parse stored PNG chunks.
     const handleRefresh = useCallback((path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
         if (isManaged && variant === GeneratorTool.INVOKEAI) {
-            const folder = combinedFolders.find((f: any) => (f.isManaged ? f.pathRaw : f.path) === path);
+            const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
             if (folder) {
                 handleRescan(folder.id, path, variant, true);
             }
@@ -114,10 +115,10 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
 
     const handleRefreshAll = useCallback(async () => {
         // 1. If we have a managed InvokeAI integration, sync it first
-        const managedInvoke = (combinedFolders as any[]).find((f) => f.isManaged && f.variant === GeneratorTool.INVOKEAI);
+        const managedInvoke = combinedFolders.find((f) => f.isManaged && f.variant === GeneratorTool.INVOKEAI);
         if (managedInvoke) {
             console.log('[FoldersTab] Syncing managed InvokeAI database for Refresh All');
-            await handleRescan(managedInvoke.id, managedInvoke.pathRaw, GeneratorTool.INVOKEAI, true);
+            await handleRescan(managedInvoke.id, managedInvoke.pathRaw ?? managedInvoke.path, GeneratorTool.INVOKEAI, true);
         }
 
         // 2. Trigger the global reparse job
@@ -218,8 +219,8 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                             <FolderSearch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">Model Hash Resolution</h4>
-                            <p className="text-xs text-gray-500">Resolve unknown model hashes using CivitAI</p>
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">Online Model Hash Resolution</h4>
+                            <p className="text-xs text-gray-500">Optional CivitAI lookup for unresolved model hashes</p>
                         </div>
                     </div>
                     {isResolving ? (
@@ -248,7 +249,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                 setConfirmState({
                                     isOpen: true,
                                     title: "Resolve Online?",
-                                    message: "Search CivitAI for metadata for images with unresolved model hashes? This sends model hashes to CivitAI, requires internet access, and may take some time.",
+                                    message: "Search CivitAI for metadata for unresolved model hashes? This sends hash strings to CivitAI, not image files. It requires internet access and may take some time.",
                                     confirmLabel: "Resolve Online",
                                     onConfirm: async () => {
                                         setConfirmState(prev => ({ ...prev, isOpen: false }));
@@ -283,7 +284,6 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                                             });
 
                                             try {
-                                                const { rebuildFacetCacheIncremental } = await import('../../../services/db/imageRepo');
                                                 await rebuildFacetCacheIncremental('checkpoints');
                                                 incrementFacetCacheVersion();
                                                 await Promise.all([

@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { Folder, Info, Monitor, RefreshCw, Trash2, FileJson } from 'lucide-react';
-import { GeneratorTool } from '../../../types';
+import { GeneratorTool, MonitoredFolder } from '../../../types';
 
 interface FolderItemProps {
-    folder: any; // Using any for compatibility with the mixed MonitoredFolder/Managed type
+    folder: MonitoredFolder;
     scanningIds: Set<string>;
     onRescan: (id: string, path: string, variant?: string, isManaged?: boolean) => void;
     onRemove: (id: string) => void;
@@ -31,7 +31,7 @@ const getVariantIcon = (variant?: GeneratorTool) => {
 
 export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, onRefresh }) => {
     const isScanning = scanningIds.has(folder.id);
-    const path = folder.isManaged ? folder.pathRaw : folder.path;
+    const path = folder.isManaged ? (folder.pathRaw ?? folder.path) : folder.path;
 
     return (
         <div className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 group transition-colors">

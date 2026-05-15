@@ -8,10 +8,10 @@ import { ErrorBoundary } from './ui/ErrorBoundary';
 import { GridSkeleton } from '../features/library/components/GridSkeleton';
 import { PinnedShelf } from '../features/library/components/PinnedShelf';
 import { TimelineView } from '../features/library/components/TimelineView';
-import { VirtualGrid } from '../features/library/components/VirtualGrid';
+import { VirtualGrid, type VirtualGridHandle } from '../features/library/components/VirtualGrid';
 import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
-import { AIImage, FilterState, ViewMode, LayoutMode, SortOption, AppSettings } from '../types';
+import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode } from '../types';
 import { Import, Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -19,6 +19,11 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
 import { setupGlobalLogging } from '../utils/logger';
 import { isCollectionThumbnailImage } from '../utils/thumbnailUtils';
+import type { useAppActions } from '../hooks/useAppActions';
+import type { useAppHandlers } from '../hooks/useAppHandlers';
+import type { useCollectionOperations } from '../hooks/useCollectionOperations';
+import type { useFileOperations } from '../hooks/useFileOperations';
+import type { useModalManager } from '../hooks/useModalManager';
 
 setupGlobalLogging();
 
@@ -39,21 +44,27 @@ interface GridLayoutPosition {
     height: number;
 }
 
+type AddToast = (message: string, type?: ToastMessage['type']) => void;
+type AppHandlers = ReturnType<typeof useAppHandlers> & {
+    setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
+    setContextMenu: React.Dispatch<React.SetStateAction<ContextMenuState | null>>;
+};
+
 interface AppLayoutProps {
     // Sidebar Props
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
     isFilterPanelOpen: boolean;
     setIsFilterPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-    colOps: any;
+    colOps: ReturnType<typeof useCollectionOperations>;
     setExportIds: React.Dispatch<React.SetStateAction<Set<string>>>;
-    modals: any;
-    addToast: any;
+    modals: ReturnType<typeof useModalManager>;
+    addToast: AddToast;
 
     // Header & Main View Props
     viewMode: ViewMode;
     changeViewMode: (mode: ViewMode) => void;
-    searchProps: any;
+    searchProps: React.ComponentProps<typeof AppHeader>['searchProps'];
     layoutMode: LayoutMode;
     setLayoutMode: React.Dispatch<React.SetStateAction<LayoutMode>>;
     sortOption: SortOption;
@@ -62,7 +73,7 @@ interface AppLayoutProps {
     scopeTotal: number;
     scopeName: string;
     isFiltering: boolean;
-    fileOps: any;
+    fileOps: ReturnType<typeof useFileOperations>;
     onOpenImportModal: () => void;
     clearAllFilters: () => void;
 
@@ -70,21 +81,21 @@ interface AppLayoutProps {
     // Grid/View Props
     scrollContainerRef: React.RefObject<HTMLDivElement | null>;
     images: AIImage[];
-    handlers: any;
+    handlers: AppHandlers;
     setViewingImageId: (id: string | null) => void;
-    toggleFavorite: (id: string) => void;
-    actions: any;
+    toggleFavorite: (id: string) => void | Promise<void>;
+    actions: ReturnType<typeof useAppActions>;
     availableTags: string[];
-    selectedIds: Set<Set<string> | any>; // selectedIds is a Set<string>
-    handleImageClick: (e: any, id: string, index: number, callback: any) => void;
+    selectedIds: Set<string>;
+    handleImageClick: (e: React.MouseEvent, id: string, index: number, callback: (index: number) => void) => void;
     setSelectedImageIndex: (index: number | null) => void;
-    handleSelectionToggle: (e: any, id: string) => void;
-    activeCollection: any;
-    activeSmartCollection: any;
+    handleSelectionToggle: (e: React.MouseEvent | undefined, id: string) => void;
+    activeCollection: Collection | null | undefined;
+    activeSmartCollection: SmartCollection | null | undefined;
     handleRangeSelection: (indices: number[], isAdditive: boolean) => void;
     clearSelection: () => void;
-    gridRef: React.RefObject<any>;
-    loadMoreImages: () => void;
+    gridRef: React.RefObject<VirtualGridHandle | null>;
+    loadMoreImages: () => void | Promise<void>;
     handleLayoutChange: (c: number, h: number) => void;
     isSearchFocused: boolean;
     setIsSearchFocused: (f: boolean) => void;

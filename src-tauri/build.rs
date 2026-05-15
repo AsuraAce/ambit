@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(mobile)");
+
     if std::env::var("SKIP_TAURI_BUILD").is_err() {
         tauri_build::build()
     } else {
