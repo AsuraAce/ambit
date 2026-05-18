@@ -41,7 +41,7 @@
     "coverage": "vitest run --coverage --maxWorkers=1"
   },
   "dependencies": {
-    "@google/genai": "^1.52.0",
+    "@google/genai": "^2.4.0",
     "@tanstack/react-query": "^5.100.10",
     "@tanstack/react-query-devtools": "^5.100.10",
     "@tauri-apps/api": "2.11.0",
