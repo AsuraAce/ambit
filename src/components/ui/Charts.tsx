@@ -1,7 +1,6 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Lightbulb, X, BarChart3 } from 'lucide-react';
 import { AIImage } from '../../types';
 // Note: useLibraryStats hook is deprecated for large library performance. Using DB stats.
@@ -34,6 +33,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     const { stats, setFilters, isFiltering } = useLibraryContext();
     const { totalGenerations, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
     const modelChartStats: ModelChartStat[] = modelStats ?? [];
+    const maxModelCount = Math.max(1, ...modelChartStats.map(stat => stat.count));
 
     const [showTip, setShowTip] = useState(true);
 
@@ -85,42 +85,49 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         {/* Bar Chart */}
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col">
                             <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
-                            <div className="flex-1 min-h-0 w-full">
-                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                                    <BarChart data={modelChartStats} style={{ outline: 'none' }}>
-                                        <XAxis dataKey="name" stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
-                                        <YAxis stroke="#52525b" tick={{ fill: '#71717a', fontSize: 12 }} />
-                                        <Tooltip
-                                            contentStyle={{ backgroundColor: '#18181b', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '0.5rem' }}
-                                            cursor={{ fill: '#27272a', opacity: 0.2 }}
-                                        />
-                                        <Bar
-                                            dataKey="count"
-                                            radius={[6, 6, 0, 0]}
-                                            onClick={(data: unknown) => {
-                                                const datum = data as Partial<ModelChartStat> | null;
-                                                if (typeof datum?.fullName === 'string') {
-                                                    onFilter('model', datum.fullName);
+                            <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1 space-y-3">
+                                {modelChartStats.length === 0 ? (
+                                    <div className="h-full flex items-center justify-center text-xs uppercase tracking-wider text-gray-400">
+                                        No model stats found
+                                    </div>
+                                ) : modelChartStats.map((stat, index) => {
+                                    const widthPercent = Math.max(6, Math.round((stat.count / maxModelCount) * 100));
+                                    const colorClass = [
+                                        'bg-indigo-500',
+                                        'bg-violet-500',
+                                        'bg-rose-500',
+                                        'bg-teal-500'
+                                    ][index % 4];
+
+                                    return (
+                                        <button
+                                            key={`${stat.fullName ?? stat.name}-${index}`}
+                                            type="button"
+                                            className="group w-full text-left rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors focus:outline-none focus:ring-2 focus:ring-sage-500/60"
+                                            title={stat.fullName ?? stat.name}
+                                            onClick={() => {
+                                                if (typeof stat.fullName === 'string') {
+                                                    onFilter('model', stat.fullName);
                                                 }
                                             }}
-                                            cursor="pointer"
-                                            activeBar={{
-                                                fillOpacity: 0.9,
-                                                stroke: '#ffffff',
-                                                strokeWidth: 1.5,
-                                                strokeOpacity: 0.5
-                                            }}
                                         >
-                                            {modelChartStats.map((entry, index) => (
-                                                <Cell
-                                                    key={`cell-${index}`}
-                                                    fill={['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6'][index % 4]}
-                                                    style={{ outline: 'none' }}
+                                            <div className="flex items-center justify-between gap-3 mb-1">
+                                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
+                                                    {stat.name}
+                                                </span>
+                                                <span className="text-xs font-mono text-gray-500 dark:text-gray-400 shrink-0">
+                                                    {stat.count.toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div className="h-2.5 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full ${colorClass} group-hover:opacity-90 transition-all`}
+                                                    style={{ width: `${widthPercent}%` }}
                                                 />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
