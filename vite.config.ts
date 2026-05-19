@@ -14,43 +14,26 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [react()],
     build: {
+      modulePreload: false,
       rolldownOptions: {
         output: {
           codeSplitting: {
             minSize: 20_000,
             groups: [
               {
-                name: 'react-vendor',
+                name: 'react-runtime',
                 test: /node_modules[\\/]\.pnpm[\\/](react|react-dom|scheduler)@/,
                 priority: 30,
               },
               {
-                name: 'state-vendor',
-                test: /node_modules[\\/]\.pnpm[\\/](@tanstack[+]react-query|zustand)@/,
-                priority: 25,
-              },
-              {
-                name: 'ui-vendor',
-                test: /node_modules[\\/]\.pnpm[\\/](framer-motion|lucide-react)@/,
-                priority: 20,
-                maxSize: 250_000,
-              },
-              {
-                name: 'tauri-vendor',
-                test: /node_modules[\\/]\.pnpm[\\/]@tauri-apps[+\\/]/,
+                name: 'app-runtime',
+                test: /node_modules[\\/]\.pnpm[\\/](@tanstack[+]react-query|zustand|framer-motion)@/,
                 priority: 20,
               },
               {
-                name: 'app-data-core',
-                test: /[\\/]src[\\/](bindings\.ts|services[\\/]db[\\/]|utils[\\/]sqlHelpers\.ts)/,
+                name: 'ui-icons',
+                test: /node_modules[\\/]\.pnpm[\\/]lucide-react@/,
                 priority: 10,
-                maxSize: 250_000,
-              },
-              {
-                name: 'vendor',
-                test: /node_modules[\\/]/,
-                priority: 1,
-                maxSize: 250_000,
               },
             ],
           },
