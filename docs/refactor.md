@@ -472,3 +472,41 @@ collections/counts -> dynamic thumbnail candidate -> targeted custom id/path loo
 - `src/contexts/SearchContext.tsx`
 - `src/stores/collectionStore.ts`
 - `src-tauri/src/db/facets.rs`
+
+## Credential Storage Modernization
+Status: Deferred
+
+### Why Cleanup Is Needed
+- The current Gemini API key path in `src-tauri/src/security.rs` uses the legacy `keyring` v2 client API directly and works with Ambit's existing Tauri commands.
+- Dependabot PR `#92` showed that `keyring` v4 is not a drop-in replacement. The crate now acts as store-selection/sample-code glue, while the old app-facing `Entry` API moved to `keyring-core`.
+- Treating this as a routine dependency bump breaks the Rust build immediately and risks turning a stable OS-keyring integration into an unplanned credential-store architecture migration.
+
+### Current Pain Points
+- Credential storage policy is implicit in the dependency choice rather than documented as a deliberate architectural decision.
+- Automated dependency tooling can still propose a major `keyring` upgrade even though the repo already treats the crate as a special-case dependency.
+- The current implementation is Windows-first operationally, but any move to `keyring-core` would need explicit validation of store bootstrap and behavior across Windows, macOS, and Linux.
+
+### Safe-Change Warning
+- Do not merge major `keyring` upgrades as routine dependency maintenance.
+- Do not swap `keyring` for `keyring-core` without a dedicated migration that preserves the existing Tauri command contract: `save_api_key`, `load_api_key`, and `delete_api_key`.
+- Do not mix credential-store migration work with unrelated frontend or Tauri upgrades; secret storage changes need isolated verification and rollback clarity.
+
+### Suggested Future Direction
+- Keep `keyring` v2 until there is a concrete product or platform reason to modernize the credential-store layer.
+- If modernization becomes worthwhile, evaluate whether Ambit should:
+  - stay on `keyring` v2 longer,
+  - migrate to `keyring-core` with explicit native-store bootstrap,
+  - or adopt another intentionally chosen credential-store integration.
+- Scope that migration around Windows-first verification, then validate macOS and Linux behavior before expanding release expectations.
+- Add focused tests or smoke coverage for save/load/delete key flows before and after any future migration.
+
+### Acceptance Direction
+- Dependency automation does not reopen major `keyring` upgrade PRs by default.
+- Contributors can see from repo docs that credential storage is a deliberate manual-decision area, not a routine dependency refresh.
+- Any future credential-store migration starts from an explicit architecture task instead of a Dependabot PR.
+
+### Related Code
+- `.github/dependabot.yml`
+- `src-tauri/src/security.rs`
+- `src-tauri/Cargo.toml`
+- `src/bindings.ts`
