@@ -28,6 +28,10 @@ export interface DbCollection {
     custom_thumbnail?: string;
     source: 'ambit' | 'invoke';
     updated_at?: number;
+    dynamic_thumbnail_path?: string | null;
+    dynamic_safe_thumbnail_path?: string | null;
+    dynamic_thumbnail_is_sensitive?: number | null;
+    dynamic_thumbnail_cached_at?: number | null;
 }
 
 interface CollectionThumbnailRow {
@@ -64,6 +68,18 @@ export interface CollectionThumbnailSummary {
     thumbnailSourceKind?: Collection['thumbnailSourceKind'];
 }
 
+interface CollectionThumbnailBuildResult {
+    summaries: Record<string, CollectionThumbnailSummary>;
+    cacheUpdates: DynamicThumbnailCacheUpdate[];
+}
+
+interface DynamicThumbnailCacheUpdate {
+    collectionId: string;
+    thumbnailPath?: string | null;
+    safeThumbnailPath?: string | null;
+    thumbnailIsSensitive?: boolean | null;
+}
+
 interface CollectionStatsOptions {
     includeThumbnails?: boolean;
 }
@@ -75,6 +91,10 @@ interface SmartCollectionSummaryOptions {
 interface CollectionThumbnailInput {
     id: string;
     custom_thumbnail?: string | null;
+}
+
+interface CollectionSchemaColumn {
+    name: string;
 }
 
 const toDisplayUrl = (rawPath?: string | null): string | undefined => {
@@ -135,11 +155,50 @@ const loadImageThumbnailLookup = async (
     return matches;
 };
 
+const getCachedDynamicThumbnailSummary = (collection: DbCollection): CollectionThumbnailSummary | undefined => {
+    if (collection.custom_thumbnail || !collection.dynamic_thumbnail_path) return undefined;
+
+    return {
+        thumbnail: toDisplayUrl(collection.dynamic_thumbnail_path),
+        safeThumbnail: toDisplayUrl(collection.dynamic_safe_thumbnail_path),
+        thumbnailIsSensitive: collection.dynamic_thumbnail_is_sensitive === 1,
+        thumbnailSourceKind: 'dynamic'
+    };
+};
+
+const writeDynamicThumbnailCache = async (
+    db: Awaited<ReturnType<typeof getDb>>,
+    updates: DynamicThumbnailCacheUpdate[]
+) => {
+    if (updates.length === 0) return;
+
+    const cachedAt = Date.now();
+    for (const update of updates) {
+        const hasThumbnail = !!update.thumbnailPath;
+        await db.execute(
+            `UPDATE collections
+             SET dynamic_thumbnail_path = ?,
+                 dynamic_safe_thumbnail_path = ?,
+                 dynamic_thumbnail_is_sensitive = ?,
+                 dynamic_thumbnail_cached_at = ?
+             WHERE id = ?
+               AND (custom_thumbnail IS NULL OR custom_thumbnail = '')`,
+            [
+                hasThumbnail ? update.thumbnailPath : null,
+                hasThumbnail ? update.safeThumbnailPath || null : null,
+                hasThumbnail ? (update.thumbnailIsSensitive ? 1 : 0) : null,
+                hasThumbnail ? cachedAt : null,
+                update.collectionId
+            ]
+        );
+    }
+};
+
 const buildCollectionThumbnailSummaries = async (
     db: Awaited<ReturnType<typeof getDb>>,
     collections: CollectionThumbnailInput[]
-): Promise<Record<string, CollectionThumbnailSummary>> => {
-    if (collections.length === 0) return {};
+): Promise<CollectionThumbnailBuildResult> => {
+    if (collections.length === 0) return { summaries: {}, cacheUpdates: [] };
 
     const ids = [...new Set(collections.map((collection) => collection.id).filter(Boolean))];
     const thumbnailRows: CollectionThumbnailRow[] = [];
@@ -198,7 +257,8 @@ const buildCollectionThumbnailSummaries = async (
     const unresolvedCustomValues = customThumbValues.filter((value) => !customById.has(value));
     const customByPath = await loadImageThumbnailLookup(db, 'path', unresolvedCustomValues);
 
-    return Object.fromEntries(collections.map((collection) => {
+    const cacheUpdates: DynamicThumbnailCacheUpdate[] = [];
+    const summaries = Object.fromEntries(collections.map((collection) => {
         const thumbRow = thumbMap.get(collection.id);
         const customThumb = collection.custom_thumbnail
             ? customById.get(collection.custom_thumbnail) ?? customByPath.get(collection.custom_thumbnail)
@@ -222,6 +282,15 @@ const buildCollectionThumbnailSummaries = async (
             }
         }
 
+        if (!collection.custom_thumbnail) {
+            cacheUpdates.push({
+                collectionId: collection.id,
+                thumbnailPath: rawThumb || null,
+                safeThumbnailPath: rawThumb ? safeThumb || null : null,
+                thumbnailIsSensitive: rawThumb ? thumbnailIsSensitive : null
+            });
+        }
+
         return [collection.id, {
             thumbnail: toDisplayUrl(rawThumb),
             safeThumbnail: collection.custom_thumbnail ? undefined : toDisplayUrl(safeThumb),
@@ -229,6 +298,8 @@ const buildCollectionThumbnailSummaries = async (
             thumbnailSourceKind
         }];
     }));
+
+    return { summaries, cacheUpdates };
 };
 
 export const parsePersistedCollectionFilters = (filterState?: string | null): FilterState | undefined => {
@@ -253,26 +324,54 @@ export const ensureCollectionSchema = async () => {
     return dbMutex.dispatch(async () => {
         const db = await getDb();
         try {
-            // Check if updated_at column exists
-            const columns = await db.select<{ name: string }[]>('PRAGMA table_info(collections)');
-            const hasUpdatedAt = columns.some(c => c.name === 'updated_at');
+            const columns = await db.select<CollectionSchemaColumn[]>('PRAGMA table_info(collections)');
+            const existingColumns = new Set(columns.map(c => c.name));
 
-            if (!hasUpdatedAt) {
-                console.log('[DB] Migrating collections table: adding updated_at column');
+            const addColumnIfMissing = async (
+                columnName: string,
+                alterSql: string,
+                afterAdd?: () => Promise<unknown>
+            ) => {
+                if (existingColumns.has(columnName)) return;
+
+                console.log(`[DB] Migrating collections table: adding ${columnName} column`);
                 try {
-                    await db.execute('ALTER TABLE collections ADD COLUMN updated_at INTEGER');
-                    // Backfill updated_at with created_at for existing records
-                    await db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL');
+                    await db.execute(alterSql);
+                    existingColumns.add(columnName);
+                    await afterAdd?.();
                 } catch (e: unknown) {
                     // Ignore duplicate column error if it raced despite mutex (unlikely but safe)
                     const message = e instanceof Error ? e.message : String(e);
                     if (message.includes('duplicate column')) {
-                        console.warn('[DB] Migration raced, column already exists (handled)');
+                        console.warn(`[DB] Migration raced, ${columnName} column already exists (handled)`);
+                        existingColumns.add(columnName);
                     } else {
                         throw e;
                     }
                 }
-            }
+            };
+
+            await addColumnIfMissing(
+                'updated_at',
+                'ALTER TABLE collections ADD COLUMN updated_at INTEGER',
+                () => db.execute('UPDATE collections SET updated_at = created_at WHERE updated_at IS NULL')
+            );
+            await addColumnIfMissing(
+                'dynamic_thumbnail_path',
+                'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_path TEXT'
+            );
+            await addColumnIfMissing(
+                'dynamic_safe_thumbnail_path',
+                'ALTER TABLE collections ADD COLUMN dynamic_safe_thumbnail_path TEXT'
+            );
+            await addColumnIfMissing(
+                'dynamic_thumbnail_is_sensitive',
+                'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_is_sensitive INTEGER'
+            );
+            await addColumnIfMissing(
+                'dynamic_thumbnail_cached_at',
+                'ALTER TABLE collections ADD COLUMN dynamic_thumbnail_cached_at INTEGER'
+            );
         } catch (e) {
             console.error('[DB] Failed to ensure collection schema', e);
         }
@@ -409,28 +508,39 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     );
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
-    let mappedCollections: Collection[] = collections.map(c => ({
-        id: c.id,
-        name: c.name,
-        color: c.color,
-        isArchived: !!c.is_archived,
-        isPinned: !!c.is_pinned,
-        createdAt: c.created_at,
-        updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
-        count: countMap.get(c.id) || 0,
-        imageIds: [] as string[],
-        customThumbnail: c.custom_thumbnail,
-        filters: parsePersistedCollectionFilters(c.filter_state),
-        manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
-        source: c.source
-    }));
+    let mappedCollections: Collection[] = collections.map(c => {
+        const collection: Collection = {
+            id: c.id,
+            name: c.name,
+            color: c.color,
+            isArchived: !!c.is_archived,
+            isPinned: !!c.is_pinned,
+            createdAt: c.created_at,
+            updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
+            count: countMap.get(c.id) || 0,
+            imageIds: [],
+            customThumbnail: c.custom_thumbnail,
+            filters: parsePersistedCollectionFilters(c.filter_state),
+            manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
+            source: c.source
+        };
+        const cachedThumbnail = getCachedDynamicThumbnailSummary(c);
+        return cachedThumbnail ? { ...collection, ...cachedThumbnail } : collection;
+    });
 
     if (includeThumbnails) {
         const thumbnailStartedAt = nowMs();
-        const thumbnails = await buildCollectionThumbnailSummaries(db, collections);
+        const thumbnailInputs = mappedCollections
+            .filter(collection => !collection.filters || !!collection.customThumbnail)
+            .map(collection => ({
+                id: collection.id,
+                custom_thumbnail: collection.customThumbnail ?? null
+            }));
+        const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(db, thumbnailInputs);
+        await writeDynamicThumbnailCache(db, cacheUpdates);
         mappedCollections = mappedCollections.map((collection) => ({
             ...collection,
-            ...thumbnails[collection.id]
+            ...summaries[collection.id]
         }));
         logStartupDuration('collection thumbnail hydration', thumbnailStartedAt);
     }
@@ -465,13 +575,17 @@ export const getCollectionThumbnailSummaries = async (
     return timeDbCall(
         'collectionThumbnails',
         `${collections.length} collections`,
-        () => buildCollectionThumbnailSummaries(
-            db,
-            collections.map((collection) => ({
-                id: collection.id,
-                custom_thumbnail: collection.customThumbnail ?? null
-            }))
-        )
+        async () => {
+            const { summaries, cacheUpdates } = await buildCollectionThumbnailSummaries(
+                db,
+                collections.map((collection) => ({
+                    id: collection.id,
+                    custom_thumbnail: collection.customThumbnail ?? null
+                }))
+            );
+            await writeDynamicThumbnailCache(db, cacheUpdates);
+            return summaries;
+        }
     );
 };
 
@@ -507,6 +621,10 @@ export const getSmartCollectionSummaries = async (
 
     const db = await getDb();
     const summaries: Record<string, SmartCollectionSummary> = {};
+    const customThumbnailById = new Map(
+        smartCollections.map(collection => [collection.id, collection.customThumbnail])
+    );
+    const cacheUpdates: DynamicThumbnailCacheUpdate[] = [];
 
     try {
         const queries = smartCollections.map(c => {
@@ -578,14 +696,26 @@ export const getSmartCollectionSummaries = async (
 
             const normal = normalRows[0];
             const safe = safeRows[0];
+            const thumbnailPath = normal?.thumbnail_path || null;
             summaries[query.id] = {
                 ...(summaries[query.id] || { count: 0, thumbnailSourceKind: 'dynamic' as const }),
-                thumbnail: toDisplayUrl(normal?.thumbnail_path),
+                thumbnail: toDisplayUrl(thumbnailPath),
                 safeThumbnail: toDisplayUrl(safe?.thumbnail_path),
                 thumbnailIsSensitive: normal?.privacy_hidden === 1,
                 thumbnailSourceKind: 'dynamic'
             };
+
+            if (!customThumbnailById.get(query.id)) {
+                cacheUpdates.push({
+                    collectionId: query.id,
+                    thumbnailPath,
+                    safeThumbnailPath: thumbnailPath ? safe?.thumbnail_path || null : null,
+                    thumbnailIsSensitive: thumbnailPath ? normal?.privacy_hidden === 1 : null
+                });
+            }
         }
+
+        await writeDynamicThumbnailCache(db, cacheUpdates);
     } catch (e) {
         console.error("[DB] Failed smart collection summaries", e);
     }

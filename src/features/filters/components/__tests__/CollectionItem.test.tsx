@@ -3,6 +3,7 @@ import { render, screen } from '../../../../test/testUtils';
 import { describe, expect, it, vi } from 'vitest';
 import type { Collection, FilterState } from '../../../../types';
 import { CollectionItem } from '../CollectionItem';
+import { createDefaultFilters } from '../../../../utils/filterState';
 
 vi.mock('../../../../components/ui/PrivacyAwareThumbnail', () => ({
     PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => (
@@ -34,6 +35,13 @@ const baseCollection: Collection = {
     createdAt: 1,
     updatedAt: 1,
     source: 'ambit'
+};
+
+const smartCollection: Collection = {
+    ...baseCollection,
+    id: 'smart-collection-1',
+    name: 'Smart Collection One',
+    filters: createDefaultFilters({ dateRange: 'today' })
 };
 
 const noopDrag = (_event: React.DragEvent, _collectionId: string) => { };
@@ -105,5 +113,33 @@ describe('CollectionItem thumbnail hydration states', () => {
         });
 
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
+    });
+
+    it('renders a skeleton while a smart collection thumbnail is pending', () => {
+        renderCollectionItem(smartCollection, { isThumbnailPending: true });
+
+        expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
+        expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
+        expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
+    });
+
+    it('renders a cached smart collection thumbnail instead of the pending skeleton', () => {
+        renderCollectionItem({
+            ...smartCollection,
+            thumbnail: 'asset://cached-smart-thumb.webp',
+            thumbnailSourceKind: 'dynamic'
+        }, { isThumbnailPending: true });
+
+        expect(screen.getByTestId('privacy-aware-thumbnail').getAttribute('data-src')).toBe('asset://cached-smart-thumb.webp');
+        expect(screen.queryByTestId('collection-thumbnail-skeleton')).toBeNull();
+        expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
+    });
+
+    it('renders the smart collection fallback after pending clears with no thumbnail', () => {
+        renderCollectionItem(smartCollection);
+
+        expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
+        expect(screen.queryByTestId('collection-thumbnail-skeleton')).toBeNull();
+        expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
     });
 });

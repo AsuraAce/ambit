@@ -48,6 +48,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
     const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
+    const smartSummaryPendingIds = useCollectionStore(s => s.smartSummaryPendingIds);
 
     const allCollections = [...collections, ...smartCollections];
 
@@ -171,7 +172,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                     {filtered.length > 0 ? (
                         <div className="grid grid-cols-1 gap-1">
                             {filtered.map(col => {
-                                const showThumbnailSkeleton = !!thumbnailHydrationPendingIds[col.id] && !col.thumbnail;
+                                const showThumbnailSkeleton = (!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]) && !col.thumbnail;
 
                                 return (
                                     <button

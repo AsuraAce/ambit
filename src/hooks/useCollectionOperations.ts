@@ -36,6 +36,30 @@ export const useCollectionOperations = ({
   const { addToast } = useToast();
   const queryClient = useQueryClient();
   const maskedKeywords = useSettingsStore(s => s.settings.maskedKeywords);
+  const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
+  const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+
+  const refreshAffectedCollectionThumbnails = useCallback((affectedCollections: Collection[]) => {
+    const hasStaticCollection = affectedCollections.some(collection => !collection.filters);
+    const smartCollectionIds = [...new Set(
+      affectedCollections
+        .filter(collection => !!collection.filters)
+        .map(collection => collection.id)
+    )];
+
+    if (hasStaticCollection) {
+      void refreshCollectionThumbnails(true);
+    }
+
+    if (smartCollectionIds.length > 0) {
+      void refreshSmartCounts({
+        collectionIds: smartCollectionIds,
+        includeArchived: true,
+        includePromptSearch: true,
+        markPending: true
+      });
+    }
+  }, [refreshCollectionThumbnails, refreshSmartCounts]);
 
   const createCollection = useCallback(async (name: string, filters?: FilterState) => {
     const id = `c_${Date.now()}`;
@@ -215,12 +239,13 @@ export const useCollectionOperations = ({
         refreshCollections(),
         queryClient.invalidateQueries({ queryKey: ['images'] })
       ]);
+      refreshAffectedCollectionThumbnails([col]);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
       addToast("Failed to add to collection", "error");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
 
   const removeImagesFromCollection = useCallback(async (imageIds: string[], collectionId: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
@@ -251,12 +276,13 @@ export const useCollectionOperations = ({
         refreshCollections(),
         queryClient.invalidateQueries({ queryKey: ['images'] })
       ]);
+      refreshAffectedCollectionThumbnails([col]);
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
       addToast("Failed to remove from collection", "error");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
 
   // Deprecated/Aliased for backward compat
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
@@ -297,6 +323,7 @@ export const useCollectionOperations = ({
         refreshCollections(),
         queryClient.invalidateQueries({ queryKey: ['images'] })
       ]);
+      refreshAffectedCollectionThumbnails([sourceCol, targetCol]);
     } catch (e) {
       // Rollback both
       setAllCollections(prev => prev.map(c => {
@@ -306,7 +333,7 @@ export const useCollectionOperations = ({
       }));
       addToast("Failed to move images", "error");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
 
   const setCollectionThumbnail = useCallback(async (collectionId: string, image: AIImage) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);

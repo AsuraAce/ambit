@@ -125,6 +125,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const setCollections = useCollectionStore(s => s.setCollections);
+    const refreshCollections = useCollectionStore(s => s.refreshCollections);
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
 
     // Zustand State
     const syncStatus = useLibraryStore(s => s.syncStatus);
@@ -356,6 +358,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     return changed ? next : prev;
                 });
             }
+            const shouldRefreshBoardCollectionThumbnails = !!boardMapping && boardMapping.size > 0;
 
             // Orphan scanning
             let orphansImported = 0;
@@ -415,6 +418,14 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         cycleId: livePerfContext?.cycleId,
                         changedImageCount: totalProcessed
                     }, touchedFacetResources);
+
+                    if (shouldRefreshBoardCollectionThumbnails) {
+                        void refreshCollections()
+                            .then(() => refreshCollectionThumbnails(true))
+                            .catch((error) => {
+                                console.error('[Sync] Failed to refresh collection thumbnails after live Invoke sync', error);
+                            });
+                    }
                 } else {
                     // MANUAL HEAVY REBUILD
                     setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
@@ -463,7 +474,14 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     if (options.mode !== 'startup') {
                         await onSyncComplete?.('full');
                     } else {
+                        if (shouldRefreshBoardCollectionThumbnails) {
+                            await refreshCollections();
+                        }
                         setSyncStatus('complete');
+                    }
+
+                    if (shouldRefreshBoardCollectionThumbnails) {
+                        await refreshCollectionThumbnails(true);
                     }
 
                     await persistInvokeSnapshot(snapshotCursor);
@@ -552,7 +570,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 }
             }
         }
-    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, setSettings, setCollections, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {
