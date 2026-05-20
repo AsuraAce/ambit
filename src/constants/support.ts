@@ -14,6 +14,7 @@ export interface SupportChannel {
 export interface DonationProvider {
     id: 'ko-fi' | 'github-sponsors' | 'patreon';
     label: string;
+    ctaLabel: string;
     url: string | null;
 }
 
@@ -36,16 +37,19 @@ export const DONATION_PROVIDERS: DonationProvider[] = [
     {
         id: 'ko-fi',
         label: 'Ko-fi',
+        ctaLabel: 'Buy me a coffee',
         url: KO_FI_URL
     },
     {
         id: 'github-sponsors',
         label: 'GitHub Sponsors',
+        ctaLabel: 'Sponsor on GitHub',
         url: GITHUB_SPONSORS_URL
     },
     {
         id: 'patreon',
         label: 'Patreon',
+        ctaLabel: 'Become a patron',
         url: null
     }
 ];

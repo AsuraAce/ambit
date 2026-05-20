@@ -2,7 +2,7 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Coffee, Heart, X } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
-import { ENABLED_DONATION_PROVIDERS, SUPPORT_CHANNELS } from '../../constants/support';
+import { ENABLED_DONATION_PROVIDERS } from '../../constants/support';
 import { openExternalUrl } from '../../utils/externalLinks';
 
 interface DonationModalProps {
@@ -73,7 +73,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                                     : 'bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900'
                                                     }`}
                                             >
-                                                <ProviderIcon className="w-5 h-5" /> Support via {provider.label}
+                                                <ProviderIcon className="w-5 h-5" /> {provider.ctaLabel}
                                             </button>
                                         );
                                     })}
@@ -86,23 +86,6 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                     </div>
                                 </div>
                             )}
-
-                            <p className="mt-5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed max-w-xs">
-                                Ambit remains free and open source. There are no paid-only features or priority-support tiers.
-                            </p>
-
-                            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-gray-400">
-                                {SUPPORT_CHANNELS.map((channel) => (
-                                    <button
-                                        key={channel.id}
-                                        type="button"
-                                        onClick={() => handleOpenLink(channel.url)}
-                                        className="hover:text-sage-600 dark:hover:text-sage-300 hover:underline transition-colors"
-                                    >
-                                        {channel.label}
-                                    </button>
-                                ))}
-                            </div>
 
                             <div className="mt-8 text-xs text-gray-400">
                                 Thank you for being part of the journey.
