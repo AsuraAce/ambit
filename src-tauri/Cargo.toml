@@ -36,7 +36,7 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 notify = { version = "8.2.0", features = ["serde"] }
 regex = "1.12.2"
 tokio = { version = "1", features = ["sync", "time"] }
-reqwest = { version = "0.13.1", default-features = false, features = ["json", "native-tls", "http2"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["json", "native-tls", "http2"] }
 thiserror = "2"
 specta = "=2.0.0-rc.22"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
