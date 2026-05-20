@@ -67,6 +67,7 @@ interface RefreshSmartCountsOptions {
     delayMs?: number;
     includeThumbnails?: boolean;
     includePromptSearch?: boolean;
+    markPending?: boolean;
 }
 
 type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
@@ -75,6 +76,7 @@ interface CollectionState {
     collections: Collection[];
     isLoaded: boolean;
     thumbnailHydrationPendingIds: Record<string, true>;
+    smartSummaryPendingIds: Record<string, true>;
 
     // Actions
     initialize: () => Promise<void>;
@@ -93,6 +95,7 @@ export const useCollectionStore = create<CollectionState>()(
             collections: [],
             isLoaded: false,
             thumbnailHydrationPendingIds: {},
+            smartSummaryPendingIds: {},
 
             refreshCollections: async (debounced = false) => {
                 const runId = invalidateCollectionRefreshes();
@@ -104,7 +107,7 @@ export const useCollectionStore = create<CollectionState>()(
                         set({ collections: cols });
 
                         // Lazily fetch visible smart counts in the background.
-                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500 });
+                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500, markPending: true });
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
                     }
@@ -179,16 +182,25 @@ export const useCollectionStore = create<CollectionState>()(
 
             refreshSmartCounts: async (input = {}) => {
                 const runId = ++smartCountRunId;
+                const collectionsSnapshot = Array.isArray(input) ? input : undefined;
+                const options: RefreshSmartCountsOptions = Array.isArray(input)
+                    ? { includePromptSearch: true }
+                    : input;
+                const includeThumbnails = options.includeThumbnails !== false;
+                const shouldManagePending = includeThumbnails && options.markPending;
+
+                if (!shouldManagePending) {
+                    set({ smartSummaryPendingIds: {} });
+                }
+
                 try {
                     if (useLibraryStore.getState().isImporting) {
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
+                        if (shouldManagePending && runId === smartCountRunId) {
+                            set({ smartSummaryPendingIds: {} });
+                        }
                         return;
                     }
-
-                    const collectionsSnapshot = Array.isArray(input) ? input : undefined;
-                    const options: RefreshSmartCountsOptions = Array.isArray(input)
-                        ? { includePromptSearch: true }
-                        : input;
 
                     if (options.delayMs && options.delayMs > 0) {
                         await delay(options.delayMs);
@@ -204,12 +216,26 @@ export const useCollectionStore = create<CollectionState>()(
                         && (options.includePromptSearch || shouldAutoRefreshSmartCollectionSummary(c))
                     );
 
-                    if (smartCols.length === 0) return;
+                    if (smartCols.length === 0) {
+                        if (shouldManagePending) {
+                            set({ smartSummaryPendingIds: {} });
+                        }
+                        return;
+                    }
+
+                    if (shouldManagePending) {
+                        set({
+                            smartSummaryPendingIds: Object.fromEntries(
+                                smartCols
+                                    .filter(collection => !collection.thumbnail && !collection.customThumbnail)
+                                    .map(collection => [collection.id, true] as const)
+                            )
+                        });
+                    }
 
                     for (const smartCol of smartCols) {
                         if (runId !== smartCountRunId) return;
 
-                        const includeThumbnails = options.includeThumbnails !== false;
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
                         if (runId !== smartCountRunId) return;
                         const summary = summaries[smartCol.id];
@@ -234,11 +260,27 @@ export const useCollectionStore = create<CollectionState>()(
                                         : c
                                 )
                             }));
+                            if (shouldManagePending) {
+                                set((state) => {
+                                    const remaining = { ...state.smartSummaryPendingIds };
+                                    delete remaining[smartCol.id];
+                                    return { smartSummaryPendingIds: remaining };
+                                });
+                            }
+                        } else if (shouldManagePending) {
+                            set((state) => {
+                                const remaining = { ...state.smartSummaryPendingIds };
+                                delete remaining[smartCol.id];
+                                return { smartSummaryPendingIds: remaining };
+                            });
                         }
 
                         await delay(SMART_COUNT_YIELD_MS);
                     }
                 } catch (e) {
+                    if (runId === smartCountRunId) {
+                        set({ smartSummaryPendingIds: {} });
+                    }
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }
             },
@@ -340,12 +382,17 @@ export const useCollectionStore = create<CollectionState>()(
 
                         void get().refreshCollectionThumbnails();
 
-                        // Defer visible smart collection counts so startup remains responsive.
+                        // Defer smart summaries so startup remains responsive: counts first,
+                        // then thumbnails for non-prompt smart collections after the list is visible.
                         void get().refreshSmartCounts({
                             includeArchived: false,
                             delayMs: STARTUP_SMART_COUNT_DELAY_MS,
                             includeThumbnails: false
-                        });
+                        }).then(() => get().refreshSmartCounts({
+                            includeArchived: false,
+                            delayMs: 500,
+                            markPending: true
+                        }));
                     } catch (e) {
                         console.error('[CollectionStore] Failed to initialize', e);
                         set({ isLoaded: true });

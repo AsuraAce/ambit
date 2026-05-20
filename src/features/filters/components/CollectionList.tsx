@@ -68,6 +68,7 @@ export function CollectionList<T extends Collection>({
     const { settings, setSettings } = useSettings();
     const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
     const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
+    const smartSummaryPendingIds = useCollectionStore(s => s.smartSummaryPendingIds);
     const persistedSort = settings.resourceSortOptions?.collections;
     const sort: CollectionSortOption = isCollectionSort(persistedSort) ? persistedSort : 'recent_desc';
 
@@ -98,7 +99,7 @@ export function CollectionList<T extends Collection>({
 
     React.useEffect(() => {
         if (showArchived) {
-            void refreshSmartCounts({ includeArchived: true });
+            void refreshSmartCounts({ includeArchived: true, markPending: true });
         }
     }, [showArchived, refreshSmartCounts]);
 
@@ -113,7 +114,8 @@ export function CollectionList<T extends Collection>({
         void refreshSmartCounts({
             collectionIds: [selectedSmartCollection.id],
             includeArchived: true,
-            includePromptSearch: true
+            includePromptSearch: true,
+            markPending: true
         });
     }, [collections, filters.collectionId, refreshSmartCounts]);
 
@@ -306,7 +308,7 @@ export function CollectionList<T extends Collection>({
                                             onResetThumbnail={onResetCollectionThumbnail}
                                             onDelete={onDeleteCollection}
                                             viewMode={viewMode}
-                                            isThumbnailPending={!!thumbnailHydrationPendingIds[col.id]}
+                                            isThumbnailPending={!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]}
                                         />
                                     </motion.div>
                                 ))}
@@ -355,7 +357,7 @@ export function CollectionList<T extends Collection>({
                                     onResetThumbnail={onResetCollectionThumbnail}
                                     onDelete={onDeleteCollection}
                                     viewMode={viewMode}
-                                    isThumbnailPending={!!thumbnailHydrationPendingIds[col.id]}
+                                    isThumbnailPending={!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]}
                                 />
                             </motion.div>
                         ))}

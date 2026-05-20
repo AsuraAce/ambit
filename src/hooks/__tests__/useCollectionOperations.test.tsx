@@ -2,15 +2,28 @@
 import { renderHook, act } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useCollectionOperations } from '../useCollectionOperations';
-import { AIImage, Collection } from '../../types';
+import { AIImage, Collection, FilterState, SmartCollection } from '../../types';
+import { createDefaultFilters } from '../../utils/filterState';
 
 // --- Mocks ---
 
 const mockAddToast = vi.fn();
+const mockRefreshCollectionThumbnails = vi.fn();
+const mockRefreshSmartCounts = vi.fn();
 vi.mock('../useToast', () => ({
     useToast: () => ({
         addToast: mockAddToast,
     }),
+}));
+
+vi.mock('../../stores/collectionStore', () => ({
+    useCollectionStore: (selector: (state: {
+        refreshCollectionThumbnails: typeof mockRefreshCollectionThumbnails;
+        refreshSmartCounts: typeof mockRefreshSmartCounts;
+    }) => unknown) => selector({
+        refreshCollectionThumbnails: mockRefreshCollectionThumbnails,
+        refreshSmartCounts: mockRefreshSmartCounts
+    })
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
@@ -30,6 +43,7 @@ describe('useCollectionOperations', () => {
     const mockCollections: Collection[] = [
         { id: 'col1', name: 'Collection 1', createdAt: 100, source: 'ambit', count: 5, imageIds: ['img1'] },
     ];
+    const smartFilters: FilterState = createDefaultFilters({ searchQuery: 'portrait' });
 
     const makeImage = (overrides: Partial<AIImage> = {}): AIImage => ({
         id: 'img2',
@@ -72,6 +86,8 @@ describe('useCollectionOperations', () => {
         (collectionRepo.removeImagesFromCollection as any).mockResolvedValue(undefined);
         (collectionRepo.setCollectionCustomThumbnail as any).mockResolvedValue(undefined);
         mockRefreshCollections.mockResolvedValue(undefined);
+        mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
+        mockRefreshSmartCounts.mockResolvedValue(undefined);
     });
 
     describe('createCollection', () => {
@@ -141,6 +157,80 @@ describe('useCollectionOperations', () => {
             expect(nextState[0].count).toBe(6); // 5 + 1
             expect(addImgs).toHaveBeenCalledWith('col1', ['img2']);
         });
+
+        it('refreshes static collection thumbnails after adding images', async () => {
+            const { result } = renderHook(() => useCollectionOperations(props));
+
+            await act(async () => {
+                await result.current.addImagesToCollection(['img2'], 'col1');
+            });
+
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledWith(true);
+            expect(mockRefreshSmartCounts).not.toHaveBeenCalled();
+        });
+
+        it('refreshes targeted smart summaries after adding images to a smart collection', async () => {
+            const smartCollection: SmartCollection = {
+                id: 'smart1',
+                name: 'Smart Collection',
+                createdAt: 300,
+                source: 'ambit',
+                count: 1,
+                imageIds: [],
+                filters: smartFilters
+            };
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                collections: [],
+                smartCollections: [smartCollection]
+            }));
+
+            await act(async () => {
+                await result.current.addImagesToCollection(['img2'], 'smart1');
+            });
+
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
+            expect(mockRefreshSmartCounts).toHaveBeenCalledTimes(1);
+            expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart1'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true
+            });
+        });
+    });
+
+    describe('removeImagesFromCollection', () => {
+        it('refreshes targeted smart summaries after removing images from a smart collection', async () => {
+            const smartCollection: SmartCollection = {
+                id: 'smart1',
+                name: 'Smart Collection',
+                createdAt: 300,
+                source: 'ambit',
+                count: 3,
+                imageIds: [],
+                filters: smartFilters
+            };
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                collections: [],
+                smartCollections: [smartCollection]
+            }));
+
+            await act(async () => {
+                await result.current.removeImagesFromCollection(['img1'], 'smart1');
+            });
+
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
+            expect(mockRefreshSmartCounts).toHaveBeenCalledTimes(1);
+            expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart1'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true
+            });
+        });
     });
 
     describe('moveImagesBetweenCollections', () => {
@@ -166,6 +256,94 @@ describe('useCollectionOperations', () => {
 
             expect(source.count).toBe(4);
             expect(target.count).toBe(1);
+        });
+
+        it('refreshes static collection thumbnails once when moving between static collections', async () => {
+            const multiProps = {
+                ...props,
+                collections: [
+                    ...mockCollections,
+                    { id: 'col2', name: 'Target', createdAt: 200, source: 'ambit' as const, count: 0, imageIds: [] as string[] }
+                ]
+            };
+            const { result } = renderHook(() => useCollectionOperations(multiProps));
+
+            await act(async () => {
+                await result.current.moveImagesBetweenCollections(['img1'], 'col1', 'col2');
+            });
+
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledWith(true);
+            expect(mockRefreshSmartCounts).not.toHaveBeenCalled();
+        });
+
+        it('refreshes both static and smart summaries when moving between mixed collection types', async () => {
+            const smartCollection: SmartCollection = {
+                id: 'smart1',
+                name: 'Smart Collection',
+                createdAt: 300,
+                source: 'ambit',
+                count: 0,
+                imageIds: [],
+                filters: smartFilters
+            };
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                smartCollections: [smartCollection]
+            }));
+
+            await act(async () => {
+                await result.current.moveImagesBetweenCollections(['img1'], 'col1', 'smart1');
+            });
+
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledTimes(1);
+            expect(mockRefreshCollectionThumbnails).toHaveBeenCalledWith(true);
+            expect(mockRefreshSmartCounts).toHaveBeenCalledTimes(1);
+            expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart1'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true
+            });
+        });
+
+        it('refreshes both smart summaries in one targeted call when moving between smart collections', async () => {
+            const sourceSmart: SmartCollection = {
+                id: 'smart-source',
+                name: 'Smart Source',
+                createdAt: 300,
+                source: 'ambit',
+                count: 3,
+                imageIds: [],
+                filters: smartFilters
+            };
+            const targetSmart: SmartCollection = {
+                id: 'smart-target',
+                name: 'Smart Target',
+                createdAt: 400,
+                source: 'ambit',
+                count: 0,
+                imageIds: [],
+                filters: createDefaultFilters({ dateRange: 'today' })
+            };
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                collections: [],
+                smartCollections: [sourceSmart, targetSmart]
+            }));
+
+            await act(async () => {
+                await result.current.moveImagesBetweenCollections(['img1'], 'smart-source', 'smart-target');
+            });
+
+            expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
+            expect(mockRefreshSmartCounts).toHaveBeenCalledTimes(1);
+            expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+                collectionIds: ['smart-source', 'smart-target'],
+                includeArchived: true,
+                includePromptSearch: true,
+                markPending: true
+            });
         });
     });
 

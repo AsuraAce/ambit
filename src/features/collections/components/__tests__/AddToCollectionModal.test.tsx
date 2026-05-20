@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Collection } from '../../../../types';
 import { useCollectionStore } from '../../../../stores/collectionStore';
 import { AddToCollectionModal } from '../AddToCollectionModal';
+import { createDefaultFilters } from '../../../../utils/filterState';
 
 vi.mock('framer-motion', () => {
     type MotionDivProps = React.HTMLAttributes<HTMLDivElement> & {
@@ -67,6 +68,25 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         });
 
         renderModal([baseCollection]);
+
+        expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
+        expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
+        expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
+    });
+
+    it('renders a skeleton for smart collections with pending summary hydration', () => {
+        useCollectionStore.setState({
+            smartSummaryPendingIds: {
+                'smart-collection-1': true
+            }
+        });
+
+        renderModal([{
+            ...baseCollection,
+            id: 'smart-collection-1',
+            name: 'Smart Collection One',
+            filters: createDefaultFilters({ dateRange: 'today' })
+        }]);
 
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
         expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
