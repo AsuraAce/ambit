@@ -28,7 +28,7 @@ tauri-plugin-fs = { version = "2.5.1", features = ["watch"] }
 tauri-plugin-dialog = "2.7.1"
 image = "0.25"
 webp = "0.3"
-base64 = "0.21"
+base64 = "0.22"
 rayon = "1.12"
 flate2 = "1.1.5"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
