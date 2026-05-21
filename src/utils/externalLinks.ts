@@ -6,8 +6,6 @@ import {
     REPOSITORY_URL,
 } from '../constants/support';
 
-export const GOOGLE_AI_STUDIO_API_KEY_URL = 'https://aistudio.google.com/app/apikey';
-
 const normalizeAllowedExternalUrl = (value: string): string | null => {
     try {
         const parsed = new URL(value);
@@ -29,7 +27,6 @@ const allowedExternalUrls = new Set(
         RELEASES_URL,
         GITHUB_SPONSORS_URL,
         KO_FI_URL,
-        GOOGLE_AI_STUDIO_API_KEY_URL,
     ].map((url) => normalizeAllowedExternalUrl(url)).filter((url): url is string => !!url)
 );
 

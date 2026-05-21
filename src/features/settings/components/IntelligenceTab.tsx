@@ -5,7 +5,6 @@ import { useToast } from '../../../hooks/useToast';
 import { AI_MODELS, DEFAULT_AI_MODEL } from '../../../constants/aiModels';
 import { ApiKeyInput } from '../../../components/ui/ApiKeyInput';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import { GOOGLE_AI_STUDIO_API_KEY_URL, openExternalUrl } from '../../../utils/externalLinks';
 
 interface TabProps {
     settings: AppSettings;
@@ -167,14 +166,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             )}
 
                             <p className="text-xs text-gray-500 mt-2">
-                                Your key is stored locally in the OS keyring. Gemini requests are sent only when you verify the key or run an AI feature. Get a key at{' '}
-                                <button
-                                    type="button"
-                                    onClick={() => openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL)}
-                                    className="text-sage-600 hover:underline"
-                                >
-                                    Google AI Studio
-                                </button>.
+                                Use your own Gemini API key. Your key is stored locally in the OS keyring, and requests are sent only when you verify the key or run an AI feature.
                             </p>
                         </div>
                     )}
