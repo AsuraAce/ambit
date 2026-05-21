@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
-import { getFacets, getLibraryStats, Facets, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
+import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
-import { getBrowserMockFacets, getBrowserMockStats, getBrowserMockValidFacetNames } from '../services/browserMockData';
+import { getBrowserMockFacets, getBrowserMockKeywordStats, getBrowserMockStatsSummary, getBrowserMockValidFacetNames } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 
 interface UseLibraryStatsQueryProps {
@@ -18,14 +18,15 @@ interface UseLibraryStatsQueryProps {
     validFacetsEnabled?: boolean;
 }
 
-const INITIAL_STATS = {
+const INITIAL_STATS_SUMMARY: LibraryStatsSummary = {
     totalImages: 0,
     totalGenerations: 0,
     avgSteps: 0,
     estSizeMB: '0',
-    modelStats: [],
-    keywordStats: []
+    modelStats: []
 };
+
+const INITIAL_KEYWORD_STATS: LibraryStats['keywordStats'] = [];
 
 const INITIAL_FACETS: Facets = {
     checkpoints: [],
@@ -133,37 +134,68 @@ export const useLibraryStatsQuery = ({
 
             if (!queryInput) return INITIAL_FACETS;
 
-            return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, { assetScope });
+            return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, {
+                assetScope,
+                collectionId: queryInput.collectionId,
+                loraName: queryInput.loraName
+            });
         },
-        placeholderData: (previousData) => previousData ?? INITIAL_FACETS,
+        placeholderData: (previousData) => previousData,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded
     });
 
-    const summaryQuery = useQuery({
-        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
+    const statsSummaryQuery = useQuery({
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
             if (useBrowserMocks) {
-                return {
-                    stats: getBrowserMockStats(sideQueryFilters),
-                    validNames: fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null
-                };
+                return getBrowserMockStatsSummary(sideQueryFilters);
             }
 
             if (!queryInput) {
-                return { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null };
+                return INITIAL_STATS_SUMMARY;
+            }
+
+            const { where, params, collectionId, loraName } = queryInput;
+            return getLibraryStatsSummary(where, params, collectionId, loraName);
+        },
+        placeholderData: (previousData) => previousData,
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded
+    });
+    const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
+    const lastSettledSummaryUpdatedAtRef = useRef(0);
+
+    useEffect(() => {
+        if (statsSummaryQuery.status !== 'success' || statsSummaryQuery.isFetching || statsSummaryQuery.isPlaceholderData) {
+            return;
+        }
+        if (statsSummaryQuery.dataUpdatedAt === 0 || statsSummaryQuery.dataUpdatedAt === lastSettledSummaryUpdatedAtRef.current) {
+            return;
+        }
+
+        lastSettledSummaryUpdatedAtRef.current = statsSummaryQuery.dataUpdatedAt;
+        setActiveSummaryVersion((version) => version + 1);
+    }, [
+        statsSummaryQuery.dataUpdatedAt,
+        statsSummaryQuery.isFetching,
+        statsSummaryQuery.isPlaceholderData,
+        statsSummaryQuery.status
+    ]);
+    const validNamesQuery = useQuery({
+        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
+        queryFn: async () => {
+            if (useBrowserMocks) {
+                return fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null;
+            }
+
+            if (!queryInput || !fetchValidFacets) {
+                return null as ValidFacetNames | null;
             }
 
             const { where, params, collectionId, loraName } = queryInput;
 
-            // Fetch stats and valid facet names in parallel. Facets are queried separately
-            // so asset-scope changes do not rerun expensive privacy-valid facet checks.
-            const [stats, baseValidNames] = await Promise.all([
-                getLibraryStats(where, params, collectionId, loraName),
-                fetchValidFacets
-                    ? getValidFacetNames(where, params, collectionId, loraName)
-                    : Promise.resolve(null)
-            ]);
+            const baseValidNames = await getValidFacetNames(where, params, collectionId, loraName);
 
             const disjunctiveCategories: FacetType[] = [];
             if (activeCollectionId) {
@@ -222,22 +254,72 @@ export const useLibraryStatsQuery = ({
                 }
             }
 
-            return { stats, validNames: finalValidNames };
+            return finalValidNames;
         },
-        placeholderData: (previousData) => previousData ?? { stats: INITIAL_STATS, validNames: null as ValidFacetNames | null },
+        placeholderData: (previousData) => previousData,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded
     });
 
+    const keywordQuery = useQuery({
+        // Keep keywords on a separate root key so broad library-stats invalidations
+        // refresh the cheap summary first before restarting the prompt scan.
+        queryKey: ['libraryKeywordStats', activeSummaryVersion],
+        queryFn: async () => {
+            if (useBrowserMocks) {
+                return {
+                    summaryVersion: activeSummaryVersion,
+                    keywordStats: getBrowserMockKeywordStats(sideQueryFilters)
+                };
+            }
+
+            if (!queryInput) {
+                return {
+                    summaryVersion: activeSummaryVersion,
+                    keywordStats: INITIAL_KEYWORD_STATS
+                };
+            }
+
+            const { where, params, collectionId, loraName } = queryInput;
+            return {
+                summaryVersion: activeSummaryVersion,
+                keywordStats: await getKeywordStats(where, params, collectionId, loraName)
+            };
+        },
+        placeholderData: (previousData) => previousData,
+        staleTime: 1000 * 60 * 5,
+        enabled: settingsLoaded && activeSummaryVersion > 0 && statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData
+    });
+
+    const keywordStatsAreCurrent = useMemo(() => (
+        Boolean(keywordQuery.data) && keywordQuery.data?.summaryVersion === activeSummaryVersion
+    ), [activeSummaryVersion, keywordQuery.data]);
+
+    const currentKeywordStats = keywordStatsAreCurrent
+        ? (keywordQuery.data?.keywordStats ?? INITIAL_KEYWORD_STATS)
+        : INITIAL_KEYWORD_STATS;
+
+    const isKeywordStatsLoading = statsSummaryQuery.status === 'success'
+        && !statsSummaryQuery.isFetching
+        && !statsSummaryQuery.isPlaceholderData
+        && !keywordStatsAreCurrent;
+
+    const combinedStats = useMemo<LibraryStats>(() => ({
+        ...(statsSummaryQuery.data ?? INITIAL_STATS_SUMMARY),
+        keywordStats: currentKeywordStats
+    }), [currentKeywordStats, statsSummaryQuery.data]);
+
     return {
         data: {
             facets: facetsQuery.data ?? INITIAL_FACETS,
-            stats: summaryQuery.data?.stats ?? INITIAL_STATS,
-            validNames: summaryQuery.data?.validNames ?? null
+            stats: combinedStats,
+            validNames: validNamesQuery.data ?? null
         },
-        isLoading: facetsQuery.isLoading || summaryQuery.isLoading,
-        isFetching: facetsQuery.isFetching || summaryQuery.isFetching,
+        isLoading: facetsQuery.isLoading || statsSummaryQuery.isLoading || validNamesQuery.isLoading || keywordQuery.isLoading,
+        isFetching: facetsQuery.isFetching || statsSummaryQuery.isFetching || validNamesQuery.isFetching || keywordQuery.isFetching,
         isFacetsLoading: facetsQuery.isLoading,
-        isFacetsFetching: facetsQuery.isFetching
+        isFacetsFetching: facetsQuery.isFetching,
+        isStatsSummaryLoading: statsSummaryQuery.isLoading,
+        isKeywordStatsLoading
     };
 };

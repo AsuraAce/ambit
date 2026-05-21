@@ -4,12 +4,6 @@
  */
 export const WORD_CLOUD_CONFIG = {
     /**
-     * Maximum number of prompts to fetch and analyze in a single pass.
-     * 2000 is usually enough for a high-quality word cloud and keeps processing under 100ms.
-     */
-    ANALYSIS_LIMIT: 2000,
-
-    /**
      * Keywords to exclude from the word cloud.
      * These are common English words or metadata-specific terms that don't add value.
      */

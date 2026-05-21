@@ -114,6 +114,8 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     refreshHiddenAvailability: async () => { },
     isFacetsLoading: false,
     isLoadingMore: false,
+    isStatsSummaryLoading: false,
+    isKeywordStatsLoading: false,
     validFacetNames: null,
     assetScope: 'local',
     setAssetScope: vi.fn() as Dispatch<SetStateAction<AssetScope>>,

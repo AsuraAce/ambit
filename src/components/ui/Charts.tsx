@@ -28,12 +28,28 @@ type ModelChartStat = {
     count: number;
 };
 
+const SKELETON_BAR_WIDTHS = ['92%', '76%', '84%', '63%', '71%'];
+
+const formatAnalysisTarget = (globalTotal: number) =>
+    globalTotal > 0
+        ? `Analyzing ${globalTotal.toLocaleString()} library images`
+        : 'Analyzing library images';
+
 export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     // Use DB-backed global stats
-    const { stats, setFilters, isFiltering } = useLibraryContext();
+    const {
+        stats,
+        setFilters,
+        isFiltering,
+        globalTotal,
+        isStatsSummaryLoading,
+        isKeywordStatsLoading
+    } = useLibraryContext();
     const { totalGenerations, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
     const modelChartStats: ModelChartStat[] = modelStats ?? [];
     const maxModelCount = Math.max(1, ...modelChartStats.map(stat => stat.count));
+    const shouldShowWordCloudLoading = isStatsSummaryLoading || (isKeywordStatsLoading && keywordStats.length === 0);
+    const analysisTargetLabel = formatAnalysisTarget(globalTotal);
 
     const [showTip, setShowTip] = useState(true);
 
@@ -76,9 +92,24 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        <StatCard label="Total Images" value={totalGenerations} />
-                        <StatCard label="Avg. Steps" value={avgSteps} />
-                        <StatCard label="Disk Usage (Est.)" value={`${estSizeMB} MB`} />
+                        <StatCard
+                            label="Total Images"
+                            value={totalGenerations}
+                            isLoading={isStatsSummaryLoading}
+                            loadingText={analysisTargetLabel}
+                        />
+                        <StatCard
+                            label="Avg. Steps"
+                            value={avgSteps}
+                            isLoading={isStatsSummaryLoading}
+                            loadingText="Computing generation summary"
+                        />
+                        <StatCard
+                            label="Disk Usage (Est.)"
+                            value={`${estSizeMB} MB`}
+                            isLoading={isStatsSummaryLoading}
+                            loadingText="Estimating library footprint"
+                        />
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -86,7 +117,26 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col">
                             <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider flex-shrink-0">Generations per Model (Click to Filter)</h3>
                             <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1 space-y-3">
-                                {modelChartStats.length === 0 ? (
+                                {isStatsSummaryLoading ? (
+                                    <div className="h-full flex flex-col justify-center gap-4">
+                                        <div className="space-y-3">
+                                            {SKELETON_BAR_WIDTHS.map((width) => (
+                                                <div key={width} className="space-y-2">
+                                                    <div className="h-3 w-32 rounded-full bg-gray-200/70 dark:bg-white/10 animate-pulse" />
+                                                    <div className="h-2.5 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full bg-sage-300/70 dark:bg-sage-500/30 animate-pulse"
+                                                            style={{ width }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="text-[11px] uppercase tracking-[0.24em] font-semibold text-gray-400 text-center">
+                                            {analysisTargetLabel}
+                                        </div>
+                                    </div>
+                                ) : modelChartStats.length === 0 ? (
                                     <div className="h-full flex items-center justify-center text-xs uppercase tracking-wider text-gray-400">
                                         No model stats found
                                     </div>
@@ -113,7 +163,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                                         >
                                             <div className="flex items-center justify-between gap-3 mb-1">
                                                 <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
-                                                    {stat.name}
+                                                    {stat.fullName ?? stat.name}
                                                 </span>
                                                 <span className="text-xs font-mono text-gray-500 dark:text-gray-400 shrink-0">
                                                     {stat.count.toLocaleString()}
@@ -139,9 +189,9 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                             </h3>
                             <div className="flex-1 min-h-0">
                                 <WordCloud
-                                    keywords={isFiltering ? [] : (keywordStats || [])}
+                                    keywords={keywordStats || []}
                                     totalImages={totalGenerations}
-                                    isLoading={isFiltering}
+                                    isLoading={shouldShowWordCloudLoading}
                                     onWordClick={(word) => {
                                         setFilters((prev) => ({
                                             ...prev,
@@ -158,9 +208,26 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
     );
 };
 
-const StatCard = ({ label, value }: { label: string, value: number | string }) => (
+const StatCard = ({
+    label,
+    value,
+    isLoading = false,
+    loadingText
+}: {
+    label: string;
+    value: number | string;
+    isLoading?: boolean;
+    loadingText?: string;
+}) => (
     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 p-4 rounded-lg shadow-sm">
         <div className="text-gray-500 dark:text-gray-400 text-xs uppercase mb-1">{label}</div>
-        <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+        {isLoading ? (
+            <div className="space-y-3">
+                <div className="h-9 w-28 rounded-lg bg-gray-200/80 dark:bg-white/10 animate-pulse" />
+                <div className="text-[10px] uppercase tracking-[0.2em] text-gray-400">{loadingText}</div>
+            </div>
+        ) : (
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+        )}
     </div>
 );

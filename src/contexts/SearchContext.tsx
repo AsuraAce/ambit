@@ -54,6 +54,8 @@ interface SearchContextType {
 
     isFacetsLoading: boolean;
     isLoadingMore: boolean;
+    isStatsSummaryLoading: boolean;
+    isKeywordStatsLoading: boolean;
 
     /** Valid facet names for drill-down filtering. null = show all (no active filters) */
     validFacetNames: ValidFacetNames | null;
@@ -208,9 +210,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Stats & Facets Query
     const {
         data: statsData,
-        isLoading: isStatsLoading,
-        isFetching: isStatsFetching,
-        isFacetsFetching
+        isFacetsFetching,
+        isStatsSummaryLoading,
+        isKeywordStatsLoading
     } = useLibraryStatsQuery({
         filters,
         settings,
@@ -399,6 +401,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             refreshHiddenAvailability,
             isFacetsLoading: isFacetsFetching,
             isLoadingMore: isFetchingNextPage,
+            isStatsSummaryLoading,
+            isKeywordStatsLoading,
             validFacetNames: activeValidNames,
             assetScope,
             setAssetScope,

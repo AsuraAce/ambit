@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
     searchImages: vi.fn().mockResolvedValue([]),
     countImages: vi.fn().mockResolvedValue(0),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
-    getLibraryStats: vi.fn().mockResolvedValue({ totalImages: 0 }),
+    getLibraryStatsSummary: vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] }),
+    getKeywordStats: vi.fn().mockResolvedValue([]),
     syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] } }),
     rebuildFacetCache: vi.fn().mockResolvedValue(0),
     rebuildFacetCacheStrict: vi.fn().mockResolvedValue(0),
@@ -93,7 +94,8 @@ vi.mock('../../services/db/searchRepo', () => ({
     searchImages: (...args: any[]) => mocks.searchImages(...args),
     countImages: (...args: any[]) => mocks.countImages(...args),
     getFacets: (...args: any[]) => mocks.getFacets(...args),
-    getLibraryStats: (...args: any[]) => mocks.getLibraryStats(...args),
+    getLibraryStatsSummary: (...args: any[]) => mocks.getLibraryStatsSummary(...args),
+    getKeywordStats: (...args: any[]) => mocks.getKeywordStats(...args),
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
@@ -495,7 +497,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
-        mocks.getLibraryStats.mockClear();
+        mocks.getLibraryStatsSummary.mockClear();
         mocks.rebuildFacetCache.mockClear();
         mocks.rebuildFacetCacheStrict.mockClear();
         mocks.rebuildFacetCacheIncrementalBatchStrict.mockClear();
@@ -520,7 +522,7 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(mocks.searchImages).toHaveBeenCalled();
             expect(mocks.getFacets).toHaveBeenCalled();
-            expect(mocks.getLibraryStats).toHaveBeenCalled();
+            expect(mocks.getLibraryStatsSummary).toHaveBeenCalled();
         });
 
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();

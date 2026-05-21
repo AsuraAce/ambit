@@ -15,6 +15,14 @@ export interface LibraryStats {
     keywordStats: { text: string; value: number }[];
 }
 
+export interface LibraryStatsSummary {
+    totalImages: number;
+    totalGenerations: number;
+    avgSteps: number;
+    estSizeMB: string;
+    modelStats: { name: string; fullName: string; count: number }[];
+}
+
 export interface FacetItem {
     name: string;
     count: number;
@@ -101,12 +109,34 @@ interface ModelStatsRow {
     count: number;
 }
 
-interface PromptRow {
+interface PromptBatchRow {
+    rowid: number;
     positive_prompt: string | null;
 }
 
 export interface GetFacetsOptions {
     assetScope?: AssetScope;
+    collectionId?: string;
+    loraName?: string;
+}
+
+interface ScopedImageQueryParts {
+    cteSql: string;
+    queryParams: unknown[];
+    reason: string;
+}
+
+interface ScopedImageSourceParts {
+    fromClause: string;
+    scopedWhere: string;
+    queryParams: unknown[];
+    reason: string;
+}
+
+interface ScopedImageQueryOptions {
+    defaultFromClause?: string;
+    trailingPredicate?: string;
+    trailingParams?: unknown[];
 }
 
 const maxOptionalNumber = (a: number | undefined, b: number | undefined): number | undefined => {
@@ -142,9 +172,7 @@ const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetIte
 });
 
 const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
-    if (candidate.count > 0) {
-        group.usedAliases.add(candidate.name);
-    }
+    group.usedAliases.add(candidate.name);
 
     const totalCount = group.item.count + candidate.count;
     const isLocalDisk = Boolean(group.item.isLocalDisk || candidate.isLocalDisk);
@@ -184,6 +212,10 @@ const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
 
 const sortFacetItems = (items: FacetItem[]): FacetItem[] => (
     items.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+);
+
+const normalizeFacetCountKey = (value: string | null | undefined): string => (
+    getAssetMatchKey(value) || (value || 'Unknown').toLowerCase()
 );
 
 const cacheTypeToDiskResourceType = (cacheType: string): string | null => {
@@ -295,6 +327,17 @@ const getDiskModifiedAtForFacetRow = (
 };
 
 const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const KEYWORD_BATCH_SIZE = 500;
+
+const isDefaultGlobalScope = (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string
+): boolean => {
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    return !collectionId && !loraName && finalWhere === DEFAULT_VISIBLE_WHERE && params.length === 0;
+};
 
 const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
 const hasFastSortVisibilityPrefix = (whereClause: string) =>
@@ -313,6 +356,15 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
 
     return null;
 };
+
+const selectModelStatsIndex = (whereClause: string): string =>
+    hasPrivacyFilter(whereClause) && hasFastSortVisibilityPrefix(whereClause)
+        ? 'idx_images_privacy_model_stats_v1'
+        : 'idx_images_model_stats_v2';
+
+const appendTrailingPredicate = (whereClause: string, predicate?: string): string => (
+    predicate ? `${whereClause} AND ${predicate}` : whereClause
+);
 
 export const countImages = async (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
@@ -523,98 +575,289 @@ export const searchImages = async (
     return rows.map(mapRowToImage);
 };
 
-let globalStatsCache: LibraryStats | null = null;
+let globalStatsSummaryCache: LibraryStatsSummary | null = null;
 
 export const clearLibraryStatsCache = () => {
-    globalStatsCache = null;
+    globalStatsSummaryCache = null;
 };
 
-const buildScopedImageJoins = (collectionId?: string, loraName?: string): { joinClause: string; joinParams: unknown[] } => {
-    const joins: string[] = [];
-    const joinParams: unknown[] = [];
+const buildScopedImageSourceParts = (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string,
+    options: ScopedImageQueryOptions = {}
+): ScopedImageSourceParts => {
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
+    const {
+        defaultFromClause = 'FROM images',
+        trailingPredicate,
+        trailingParams = []
+    } = options;
+
+    if (collectionId && loraName) {
+        return {
+            fromClause: `
+                FROM collection_images ci
+                JOIN image_loras il ON il.image_id = ci.image_id
+                JOIN images ON images.id = ci.image_id
+            `,
+            scopedWhere: appendTrailingPredicate(
+                finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND'),
+                trailingPredicate
+            ),
+            queryParams: [collectionId, loraName, ...params, ...trailingParams],
+            reason
+        };
+    }
 
     if (collectionId) {
-        joins.push('JOIN collection_images ci ON ci.image_id = images.id AND ci.collection_id = ?');
-        joinParams.push(collectionId);
+        return {
+            fromClause: `
+                FROM collection_images ci
+                CROSS JOIN images ON images.id = ci.image_id
+            `,
+            scopedWhere: appendTrailingPredicate(
+                finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND'),
+                trailingPredicate
+            ),
+            queryParams: [collectionId, ...params, ...trailingParams],
+            reason
+        };
     }
 
     if (loraName) {
-        joins.push('JOIN image_loras il ON il.image_id = images.id AND il.lora_name = ?');
-        joinParams.push(loraName);
+        return {
+            fromClause: `
+                FROM image_loras il
+                CROSS JOIN images ON images.id = il.image_id
+            `,
+            scopedWhere: appendTrailingPredicate(
+                finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND'),
+                trailingPredicate
+            ),
+            queryParams: [loraName, ...params, ...trailingParams],
+            reason
+        };
     }
 
     return {
-        joinClause: joins.join('\n'),
-        joinParams
+        fromClause: defaultFromClause,
+        scopedWhere: appendTrailingPredicate(finalWhere, trailingPredicate),
+        queryParams: [...params, ...trailingParams],
+        reason
     };
 };
 
-export const getLibraryStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
-    // Return cached result instantly for unfiltered dashboard loads
-    if (!whereClause && !collectionId && !loraName && globalStatsCache) {
-        return globalStatsCache;
+const buildScopedImageQueryParts = (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string,
+    selectedColumns: string[] = ['images.id AS id', 'images.rowid AS rowid'],
+    options: ScopedImageQueryOptions = {}
+): ScopedImageQueryParts => {
+    const sourceParts = buildScopedImageSourceParts(whereClause, params, collectionId, loraName, options);
+
+    return {
+        cteSql: `
+            WITH scoped_images AS (
+                SELECT ${selectedColumns.join(', ')}
+                ${sourceParts.fromClause}
+                ${sourceParts.scopedWhere}
+            )
+        `,
+        queryParams: sourceParts.queryParams,
+        reason: sourceParts.reason
+    };
+};
+
+const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | null => {
+    switch (cacheType) {
+        case 'checkpoints':
+            return `
+                ${cteSql}
+                SELECT COALESCE(resolved_model_name, model_name, 'Unknown') AS name, count(*) AS count
+                FROM scoped_images
+                GROUP BY name
+            `;
+        case 'loras':
+            return `
+                ${cteSql}
+                SELECT COALESCE(il.lora_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                FROM scoped_images si
+                JOIN image_loras il ON il.image_id = si.id
+                GROUP BY il.lora_name
+            `;
+        case 'embeddings':
+            return `
+                ${cteSql}
+                SELECT COALESCE(ie.embedding_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                FROM scoped_images si
+                JOIN image_embeddings ie ON ie.image_id = si.id
+                GROUP BY ie.embedding_name
+            `;
+        case 'hypernetworks':
+            return `
+                ${cteSql}
+                SELECT COALESCE(ih.hypernetwork_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                FROM scoped_images si
+                JOIN image_hypernetworks ih ON ih.image_id = si.id
+                GROUP BY ih.hypernetwork_name
+            `;
+        case 'control_nets':
+            return `
+                ${cteSql}
+                SELECT COALESCE(ic.controlnet_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                FROM scoped_images si
+                JOIN image_controlnets ic ON ic.image_id = si.id
+                GROUP BY ic.controlnet_name
+            `;
+        case 'ip_adapters':
+            return `
+                ${cteSql}
+                SELECT COALESCE(ii.ipadapter_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                FROM scoped_images si
+                JOIN image_ipadapters ii ON ii.image_id = si.id
+                GROUP BY ii.ipadapter_name
+            `;
+        default:
+            return null;
+    }
+};
+
+const getScopedFacetCountMaps = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    cacheTypes: string[],
+    collectionId?: string,
+    loraName?: string
+): Promise<Map<string, Map<string, number>>> => {
+    const db = await getDb();
+    const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
+        'images.id AS id',
+        'images.resolved_model_name AS resolved_model_name',
+        'images.model_name AS model_name'
+    ]);
+
+    const queries = cacheTypes
+        .filter(cacheType => cacheType !== 'tools')
+        .map(async (cacheType) => {
+            const sql = buildScopedFacetCountSql(cacheType, scopedParts.cteSql);
+            if (!sql) return [cacheType, new Map<string, number>()] as const;
+
+            const rows = await timeDbCall(
+                `facets.scoped.${cacheType}`,
+                scopedParts.reason,
+                () => db.select<ModelStatsRow[]>(sql, scopedParts.queryParams)
+            );
+
+            return [
+                cacheType,
+                rows.reduce((counts, row) => {
+                    const key = normalizeFacetCountKey(row.name);
+                    counts.set(key, (counts.get(key) ?? 0) + row.count);
+                    return counts;
+                }, new Map<string, number>())
+            ] as const;
+        });
+
+    return new Map(await Promise.all(queries));
+};
+
+const buildLibraryStatsSummary = (
+    total: number,
+    modelRows: ModelStatsRow[]
+): LibraryStatsSummary => ({
+    totalImages: total,
+    totalGenerations: total,
+    avgSteps: 0,
+    estSizeMB: ((total * 2.4)).toFixed(1),
+    modelStats: modelRows.map(r => ({
+        name: r.name || 'Unknown',
+        fullName: r.name || 'Unknown',
+        count: r.count
+    }))
+});
+
+export const getLibraryStatsSummary = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string
+): Promise<LibraryStatsSummary> => {
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+
+    if (!whereClause && !collectionId && !loraName && globalStatsSummaryCache) {
+        return globalStatsSummaryCache;
     }
 
     const db = await getDb();
-    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
-    const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
-    const { joinClause, joinParams } = buildScopedImageJoins(collectionId, loraName);
+    const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
+        'images.id AS id',
+        'images.rowid AS rowid',
+        'images.resolved_model_name AS resolved_model_name',
+        'images.model_name AS model_name'
+    ]);
+    const modelScopedParts = buildScopedImageQueryParts(
+        whereClause,
+        params,
+        collectionId,
+        loraName,
+        [
+            'images.id AS id',
+            'images.rowid AS rowid',
+            'images.resolved_model_name AS resolved_model_name',
+            'images.model_name AS model_name'
+        ],
+        { defaultFromClause: `FROM images INDEXED BY ${selectModelStatsIndex(finalWhere)}` }
+    );
 
     try {
-        const statsQuery = `
-            SELECT 
-                count(*) as total
+        const total = await countImages(whereClause, params, collectionId, loraName);
 
-            FROM images 
-            ${joinClause}
-            ${finalWhere}
-        `;
-
-        const basicStats = await timeDbCall('libraryStats.basicStats', reason, () => db.select<BasicStatsRow[]>(statsQuery, [...joinParams, ...params]));
-        
-        const total = basicStats[0]?.total || 0;
-        const avgSteps = 0; // Temporarily disabled for performance
-
-        // Use denormalized resolved_model_name column for model stats
-        const modelStatsIndex = hasPrivacyFilter(finalWhere) && hasFastSortVisibilityPrefix(finalWhere)
-            ? 'idx_images_privacy_model_stats_v1'
-            : 'idx_images_model_stats_v2';
         const modelQuery = `
-        SELECT
-        COALESCE(resolved_model_name, model_name, 'Unknown') as name,
-            count(*) as count
-            FROM images INDEXED BY ${modelStatsIndex}
-            ${finalWhere}
+            ${modelScopedParts.cteSql}
+            SELECT
+                COALESCE(resolved_model_name, model_name, 'Unknown') as name,
+                count(*) as count
+            FROM scoped_images
             GROUP BY name
             ORDER BY count DESC
-            LIMIT 20
-            `;
-            
-        const modelRows = await timeDbCall('libraryStats.modelStats', reason, () => db.select<ModelStatsRow[]>(modelQuery, params));
+        `;
 
-        const modelStats = modelRows.map(r => ({
-            name: (r.name || 'Unknown').split(' ')[0],
-            fullName: r.name || 'Unknown',
-            count: r.count
-        }));
-
-        // Get Keyword Stats
-        const keywordStats = await timeDbCall('libraryStats.keywordStats', reason, () => getKeywordStats(finalWhere, params, collectionId, loraName));
-
-        const finalResult = {
-            totalImages: total,
-            totalGenerations: total,
-            avgSteps: avgSteps,
-            estSizeMB: ((total * 2.4)).toFixed(1),
-            modelStats,
-            keywordStats
-        };
+        const modelRows = await timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams));
+        const summary = buildLibraryStatsSummary(total, modelRows);
 
         if (!whereClause && !collectionId && !loraName) {
-            globalStatsCache = finalResult;
+            globalStatsSummaryCache = summary;
         }
 
-        return finalResult;
+        return summary;
+    } catch (e) {
+        console.error('[DB] Failed to get library stats summary', e);
+        return {
+            totalImages: 0,
+            totalGenerations: 0,
+            avgSteps: 0,
+            estSizeMB: '0',
+            modelStats: []
+        };
+    }
+};
+
+export const getLibraryStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<LibraryStats> => {
+    try {
+        const [summary, keywordStats] = await Promise.all([
+            getLibraryStatsSummary(whereClause, params, collectionId, loraName),
+            getKeywordStats(whereClause, params, collectionId, loraName)
+        ]);
+
+        return {
+            ...summary,
+            keywordStats
+        };
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
         return {
@@ -632,75 +875,59 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
     const db = await getDb();
 
     try {
-        // Debug: Log the incoming filter to debug "static" issues
-        console.log('[DB] getKeywordStats filter:', whereClause);
-
-        // Fix ambiguity for JOIN: replace and ensure columns are prefixed with 'images.'
-        const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
-
-        // Comprehensive list of columns in the 'images' table to prefix
-        const columnsToPrefix = [
-            'id', 'is_deleted', 'metadata_json', 'path', 'width', 'height', 'file_size',
-            'timestamp', 'thumbnail_path', 'is_favorite', 'is_pinned', 'is_missing',
-            'user_masked', 'group_id', 'board_id', 'notes', 'original_metadata_json',
-            // New denormalized columns
-            'model_hash', 'model_name', 'tool', 'resolved_model_name', 'is_intermediate_gen', 'is_grid_gen', 'privacy_hidden', 'sampler', 'generation_type',
-            'positive_prompt', 'negative_prompt'
-        ];
-
-        // Improved Regex:
-        // (?:\\bimages\\.)? -> Matches optional "images." prefix (non-capturing)
-        // \\b(${columnsToPrefix.join('|')}) -> Matches the column name itself
-        // \\b -> Word boundary to ensure full match
-        const columnRegex = new RegExp(`(?:\\bimages\\.)?\\b(${columnsToPrefix.join('|')})\\b`, 'g');
-
-        const safeWhere = finalWhere.replace(columnRegex, (match, col) => {
-            // Note: 'match' is the full string (e.g. "id" or "images.id")
-            // 'col' is the captured group 1 (e.g. "id")
-            // We always want to return "images.id"
-            return `images.${col}`;
-        });
-
-        // 1. Flip JOIN order: Filter 'images' first, then lookup FTS text
-        // 2. Add RANDOM() sort to LIMIT to get a representative sample of the filtered set
-        //    (instead of just the first N oldest images)
-        /*
-         * Note on Performance: 
-         * ORDER BY RANDOM() on the full set is slow. 
-         * But since we have a LIMIT, SQLite can sometimes optimize.
-         * For a word cloud, we need a diverse sample.
-         */
-        const { joinClause: scopedJoinClause, joinParams } = buildScopedImageJoins(collectionId, loraName);
-        const joinClause = `
-            ${scopedJoinClause}
-            JOIN images_fts ON images_fts.rowid = images.rowid
-        `;
-
-        const promptQuery = `
-            SELECT images_fts.positive_prompt 
-            FROM images
-            ${joinClause}
-            ${safeWhere}
-            LIMIT ${WORD_CLOUD_CONFIG.ANALYSIS_LIMIT}
-        `;
-        
-        const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
-        const rows = await timeDbCall('keywordStats.promptSample', reason, () => db.select<PromptRow[]>(promptQuery, [...joinParams, ...params]));
-        
         const stopWords = new Set(WORD_CLOUD_CONFIG.STOP_WORDS);
         const counts: Record<string, number> = {};
-        rows.forEach(r => {
-            const tokens = (r.positive_prompt || '')
-                .toLowerCase()
-                .replace(/[^a-z0-9\s]/g, ' ')
-                .split(/\s+/);
+        let lastRowId = 0;
 
-            tokens.forEach((token: string) => {
-                if (token.length > 3 && !stopWords.has(token) && !/^\d+$/.test(token)) {
-                    counts[token] = (counts[token] || 0) + 1;
+        for (;;) {
+            const scopedParts = buildScopedImageQueryParts(
+                whereClause,
+                params,
+                collectionId,
+                loraName,
+                [
+                    'images.id AS id',
+                    'images.rowid AS rowid'
+                ],
+                {
+                    trailingPredicate: 'images.rowid > ?',
+                    trailingParams: [lastRowId]
                 }
+            );
+            const promptQuery = `
+                ${scopedParts.cteSql}
+                SELECT si.rowid, images_fts.positive_prompt
+                FROM scoped_images si
+                JOIN images_fts ON images_fts.rowid = si.rowid
+                ORDER BY si.rowid ASC
+                LIMIT ${KEYWORD_BATCH_SIZE}
+            `;
+
+            const rows = await timeDbCall(
+                'keywordStats.promptBatch',
+                scopedParts.reason,
+                () => db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
+            );
+
+            rows.forEach(r => {
+                const tokens = (r.positive_prompt || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\s]/g, ' ')
+                    .split(/\s+/);
+
+                tokens.forEach((token: string) => {
+                    if (token.length > 3 && !stopWords.has(token) && !/^\d+$/.test(token)) {
+                        counts[token] = (counts[token] || 0) + 1;
+                    }
+                });
             });
-        });
+
+            const finalRow = rows.at(-1);
+            if (!finalRow) break;
+            lastRowId = finalRow.rowid;
+
+            if (rows.length < KEYWORD_BATCH_SIZE) break;
+        }
 
         return Object.entries(counts)
             .map(([text, value]) => ({ text, value }))
@@ -716,15 +943,11 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
 
 
 /**
- * Fetches facets from the pre-built cache.
- * 
- * TODO: _whereClause and _params are placeholders for future support of
- * "filtered facet counts" (e.g., "how many LoRAs in images from this week?").
- * The current implementation reads from `facet_cache` which represents global counts.
+ * Fetches facets from the pre-built cache, overlaying filter-scoped usage counts for used/all scopes.
  */
 export const getFacets = async (
-    _whereClause: string = '',
-    _params: unknown[] = [],
+    whereClause: string = '',
+    params: unknown[] = [],
     types: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'tools'],
     options: GetFacetsOptions = {}
 ): Promise<Facets> => {
@@ -753,9 +976,11 @@ export const getFacets = async (
                 .filter((type): type is string => type !== null)
         ));
         const diskPlaceholders = diskResourceTypes.map(() => '?').join(',');
-        const scopePredicate = assetScope === 'used'
-            ? 'AND fc.count > 0'
-            : '';
+        const shouldUseScopedFacetOverlay = assetScope !== 'local'
+            && !isDefaultGlobalScope(whereClause, params, options.collectionId, options.loraName);
+        const scopedCountMaps = shouldUseScopedFacetOverlay
+            ? await getScopedFacetCountMaps(whereClause, params, cacheTypes, options.collectionId, options.loraName)
+            : new Map<string, Map<string, number>>();
 
         const [cacheRows, diskRows] = await Promise.all([
             db.select<FacetCacheRow[]>(`
@@ -765,7 +990,6 @@ export const getFacets = async (
                 fc.safe_thumbnail_path, fc.thumbnail_image_id, fc.thumbnail_is_sensitive, fc.thumbnail_sensitivity_override
             FROM facet_cache fc
             WHERE fc.facet_type IN(${placeholders})
-            ${scopePredicate}
             ORDER BY fc.count DESC, fc.resource_name ASC
             `, cacheTypes),
             diskResourceTypes.length > 0
@@ -834,7 +1058,7 @@ export const getFacets = async (
             } else {
                 groupMap.set(assetMatchKey, {
                     item,
-                    usedAliases: new Set(item.count > 0 ? [item.name] : []),
+                    usedAliases: new Set([item.name]),
                     displayCount: item.count
                 });
             }
@@ -846,12 +1070,19 @@ export const getFacets = async (
             return item.count > 0 || Boolean(item.isLocalDisk);
         };
 
-        const finalizeGroups = (facetType: keyof typeof mergedResources): FacetItem[] => sortFacetItems(
-            Array.from(mergedResources[facetType].values()).map(group => ({
-                ...group.item,
-                filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
-            })).filter(shouldIncludeFacetItem)
-        );
+        const finalizeGroups = (facetType: keyof typeof mergedResources): FacetItem[] => {
+            const scopedCountMap = scopedCountMaps.get(facetType);
+
+            return sortFacetItems(
+                Array.from(mergedResources[facetType].values()).map(group => ({
+                    ...group.item,
+                    count: assetScope === 'local' || !shouldUseScopedFacetOverlay
+                        ? group.item.count
+                        : (scopedCountMap?.get(group.item.assetMatchKey || normalizeFacetCountKey(group.item.name)) ?? 0),
+                    filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
+                })).filter(shouldIncludeFacetItem)
+            );
+        };
 
         result.checkpoints = finalizeGroups('checkpoints');
         result.loras = finalizeGroups('loras');
