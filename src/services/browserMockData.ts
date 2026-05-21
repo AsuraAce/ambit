@@ -1,6 +1,6 @@
 import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption } from '../types';
 import type { AppState, IRepository } from './repository';
-import type { Facets, LibraryStats, ValidFacetNames } from './db/searchRepo';
+import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
@@ -521,17 +521,13 @@ export const getBrowserMockFacets = (filters?: FilterState): Facets => {
     };
 };
 
-export const getBrowserMockStats = (filters: FilterState): LibraryStats => {
+export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSummary => {
     const current = loadStoredState();
     const images = filterImages(current.images, filters, getBrowserMockCollections());
     const modelCounts = new Map<string, number>();
-    const keywordCounts = new Map<string, number>();
 
     images.forEach((image) => {
         modelCounts.set(image.metadata.model, (modelCounts.get(image.metadata.model) ?? 0) + 1);
-        image.metadata.positivePrompt.toLowerCase().split(/[^a-z0-9]+/).forEach((word) => {
-            if (word.length > 3) keywordCounts.set(word, (keywordCounts.get(word) ?? 0) + 1);
-        });
     });
 
     return {
@@ -543,12 +539,32 @@ export const getBrowserMockStats = (filters: FilterState): LibraryStats => {
         estSizeMB: (images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0) / 1_000_000).toFixed(1),
         modelStats: Array.from(modelCounts.entries())
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 20)
-            .map(([name, count]) => ({ name: name.split(' ')[0], fullName: name, count })),
-        keywordStats: Array.from(keywordCounts.entries())
+            .map(([name, count]) => ({ name, fullName: name, count }))
+    };
+};
+
+export const getBrowserMockKeywordStats = (filters: FilterState): LibraryStats['keywordStats'] => {
+    const current = loadStoredState();
+    const images = filterImages(current.images, filters, getBrowserMockCollections());
+    const keywordCounts = new Map<string, number>();
+
+    images.forEach((image) => {
+        image.metadata.positivePrompt.toLowerCase().split(/[^a-z0-9]+/).forEach((word) => {
+            if (word.length > 3) keywordCounts.set(word, (keywordCounts.get(word) ?? 0) + 1);
+        });
+    });
+
+    return Array.from(keywordCounts.entries())
             .sort((a, b) => b[1] - a[1])
             .slice(0, 40)
-            .map(([text, value]) => ({ text, value })),
+            .map(([text, value]) => ({ text, value }));
+};
+
+export const getBrowserMockStats = (filters: FilterState): LibraryStats => {
+    const summary = getBrowserMockStatsSummary(filters);
+    return {
+        ...summary,
+        keywordStats: getBrowserMockKeywordStats(filters)
     };
 };
 

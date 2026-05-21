@@ -24,13 +24,15 @@ vi.mock('./CollectionContext', () => ({
 const mockSearchImages = vi.fn().mockResolvedValue([]);
 const mockCountImages = vi.fn().mockResolvedValue(0);
 const mockGetFacets = vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] });
-const mockGetLibraryStats = vi.fn().mockResolvedValue({ totalImages: 0 });
+const mockGetLibraryStatsSummary = vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] });
+const mockGetKeywordStats = vi.fn().mockResolvedValue([]);
 
 vi.mock('../services/db/searchRepo', () => ({
     searchImages: (...args: any[]) => mockSearchImages(...args),
     countImages: (...args: any[]) => mockCountImages(...args),
     getFacets: (...args: any[]) => mockGetFacets(...args),
-    getLibraryStats: (...args: any[]) => mockGetLibraryStats(...args),
+    getLibraryStatsSummary: (...args: any[]) => mockGetLibraryStatsSummary(...args),
+    getKeywordStats: (...args: any[]) => mockGetKeywordStats(...args),
 }));
 
 vi.mock('../services/repository', () => ({
