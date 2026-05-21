@@ -93,4 +93,4 @@ Ambit is free and open source. Support is optional and there are currently no pa
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Ambit is licensed under the GNU General Public License v3.0 only. See [LICENSE](LICENSE) for details.
