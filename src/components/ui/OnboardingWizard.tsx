@@ -1,13 +1,12 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Link2, Workflow, Palette, Image, ChevronRight, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
+import { Sparkles, BrainCircuit, Shield, Key, Check, ArrowRight, Lock, EyeOff, ServerOff, FileJson, Link2, Workflow, Palette, Image, Zap, Search, Wand2, History, XCircle, Loader2 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
 import { useToast } from '../../hooks/useToast';
 import { ApiKeyInput } from './ApiKeyInput';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { GOOGLE_AI_STUDIO_API_KEY_URL, openExternalUrl } from '../../utils/externalLinks';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
@@ -281,16 +280,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             animate={{ opacity: 1, y: 0 }}
                                             className="space-y-4"
                                         >
-                                            <div className="flex justify-between items-end">
-                                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Gemini API Key</label>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL)}
-                                                    className="text-xs text-sage-500 hover:text-sage-400 font-bold flex items-center gap-1 transition-colors"
-                                                >
-                                                    Get Free Key <ChevronRight className="w-3 h-3" />
-                                                </button>
-                                            </div>
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Gemini API Key</label>
 
                                             <ApiKeyInput
                                                 value={apiKey}
@@ -311,6 +301,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                     }
                                                 }}
                                             />
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                Use your own Gemini API key. The key is stored locally and requests run only when you explicitly trigger an AI action.
+                                            </p>
                                         </motion.div>
                                     )}
                                 </div>

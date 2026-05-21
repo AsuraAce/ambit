@@ -1,10 +1,6 @@
 import { open } from '@tauri-apps/plugin-shell';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    GOOGLE_AI_STUDIO_API_KEY_URL,
-    isAllowedExternalUrl,
-    openExternalUrl,
-} from '../externalLinks';
+import { isAllowedExternalUrl, openExternalUrl } from '../externalLinks';
 
 describe('externalLinks', () => {
     beforeEach(() => {
@@ -22,11 +18,13 @@ describe('externalLinks', () => {
     it('falls back to window.open only for allowlisted URLs after Tauri shell fails', async () => {
         vi.mocked(open).mockRejectedValueOnce(new Error('shell unavailable'));
 
-        await openExternalUrl(GOOGLE_AI_STUDIO_API_KEY_URL);
+        const releasesUrl = 'https://github.com/AsuraAce/ambit/releases';
 
-        expect(open).toHaveBeenCalledWith(GOOGLE_AI_STUDIO_API_KEY_URL);
+        await openExternalUrl(releasesUrl);
+
+        expect(open).toHaveBeenCalledWith(releasesUrl);
         expect(window.open).toHaveBeenCalledWith(
-            GOOGLE_AI_STUDIO_API_KEY_URL,
+            releasesUrl,
             '_blank',
             'noopener,noreferrer'
         );
