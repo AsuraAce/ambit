@@ -140,6 +140,28 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Favorited'), 'success');
     });
 
+    it('should toggle a viewer favorite without a success toast', () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        act(() => {
+            result.current.handleFavoriteImage('1');
+        });
+
+        expect(mockToggleFavorite).toHaveBeenCalledWith('1');
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
+    it('should toggle a viewer unfavorite without a success toast', () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        act(() => {
+            result.current.handleFavoriteImage('2');
+        });
+
+        expect(mockToggleFavorite).toHaveBeenCalledWith('2');
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
     it('should handle bulk pin and refresh thumbnails', async () => {
         const { result } = renderHook(() => useAppActions(props));
 
@@ -150,6 +172,28 @@ describe('useAppActions', () => {
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
+    });
+
+    it('should keep single-image pin feedback outside the viewer path', async () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            result.current.handlePinImage('1', true);
+        });
+
+        expect(mockSetImages).toHaveBeenCalled();
+        expect(mockAddToast).toHaveBeenCalledWith('Pinned to top', 'info');
+    });
+
+    it('should toggle a viewer pin without a success toast', async () => {
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            result.current.handlePinImage('1', true, { showToast: false });
+        });
+
+        expect(mockSetImages).toHaveBeenCalled();
+        expect(mockAddToast).not.toHaveBeenCalled();
     });
 
     it('should show the bulk pin toast without waiting for collection refresh', async () => {

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { X, Share2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Layout, ExternalLink } from 'lucide-react';
+import { X, Share2, Heart, Pin, Trash2, PanelRightClose, PanelRightOpen, Copy, Layout, ExternalLink } from 'lucide-react';
 import { getFilename } from '../../../utils/pathUtils';
 import { AIImage } from '../../../types';
 
@@ -15,6 +15,7 @@ interface ViewerToolbarProps {
     onToggleTheater: () => void;
     onShare: () => void;
     onToggleFavorite: () => void;
+    onTogglePin?: () => void;
     onDelete?: () => void;
     onToggleSidebar?: () => void;
     onClose: () => void;
@@ -32,6 +33,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
     onToggleTheater,
     onShare,
     onToggleFavorite,
+    onTogglePin,
     onDelete,
     onToggleSidebar,
     onClose
@@ -86,6 +88,15 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
                 >
                     <Heart className={`w-5 h-5 ${image.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
                 </button>
+                {onTogglePin && (
+                    <button
+                        onClick={onTogglePin}
+                        className={`p-2.5 bg-black/50 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-full transition-all backdrop-blur-md shadow-lg ${image.isPinned ? 'text-sage-400 border-sage-500/50' : 'text-white/50 hover:text-white'}`}
+                        title={image.isPinned ? "Unpin (P)" : "Pin to top (P)"}
+                    >
+                        <Pin className={`w-5 h-5 ${image.isPinned ? 'fill-current' : ''}`} />
+                    </button>
+                )}
                 {onDelete && (
                     <button
                         onClick={onDelete}

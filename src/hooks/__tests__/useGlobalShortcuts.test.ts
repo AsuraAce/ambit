@@ -30,6 +30,7 @@ describe('useGlobalShortcuts', () => {
         filteredImages: [],
         lastSelectedId: null,
         selectedImageIndex: null,
+        isViewerOpen: false,
         gridRef: { current: null },
         searchInputRef: { current: null },
         isModalOpen: false,
@@ -53,6 +54,16 @@ describe('useGlobalShortcuts', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
 
         expect(mockActions.toggleFavorite).toHaveBeenCalled();
+    });
+
+    it('should let the viewer own favorite and pin shortcuts while open', () => {
+        renderHook(() => useGlobalShortcuts({ ...defaultProps, isViewerOpen: true, selectedImageIndex: 0 }));
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p' }));
+
+        expect(mockActions.toggleFavorite).not.toHaveBeenCalled();
+        expect(mockActions.togglePin).not.toHaveBeenCalled();
     });
 
     it('should block actions when a modal is open', () => {
