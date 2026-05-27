@@ -72,6 +72,7 @@ export default function App() {
 
     const {
         images, setImages,
+        imagesQueryKey,
         filters, setFilters,
         sortOption, setSortOption,
         totalImages, globalTotal,
@@ -158,6 +159,7 @@ export default function App() {
         selectedIds,
         setSelectedIds,
         lastSelectedId,
+        imagesQueryKey,
         modalManager: modals
     });
 

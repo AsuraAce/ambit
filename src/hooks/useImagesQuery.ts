@@ -15,6 +15,16 @@ interface UseImagesQueryProps {
     settingsLoaded?: boolean;
 }
 
+export type ImagesQueryKey = readonly [
+    'images',
+    FilterState,
+    SortOption,
+    boolean,
+    AppSettings['maskingMode'],
+    AppSettings['maskedKeywords'],
+    string | null
+];
+
 export const useImagesQuery = ({
     filters,
     sortOption,
@@ -41,8 +51,18 @@ export const useImagesQuery = ({
         [activeCollection?.filters]
     );
 
-    return useInfiniteQuery({
-        queryKey: ['images', filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+    const imagesQueryKey = useMemo<ImagesQueryKey>(() => [
+        'images',
+        filters,
+        sortOption,
+        privacyEnabled,
+        settings.maskingMode,
+        settings.maskedKeywords,
+        smartFilterHash
+    ], [filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash]);
+
+    const query = useInfiniteQuery({
+        queryKey: imagesQueryKey,
         queryFn: async ({ pageParam }) => {
             if (useBrowserMocks) {
                 const cursor = pageParam as PaginationCursor | undefined;
@@ -122,4 +142,6 @@ export const useImagesQuery = ({
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries
     });
+
+    return { ...query, queryKey: imagesQueryKey };
 };

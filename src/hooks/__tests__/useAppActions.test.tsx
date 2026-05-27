@@ -1,8 +1,8 @@
 
-import { renderHook, act } from '../../test/testUtils';
+import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppActions } from '../useAppActions';
-import { AppSettings, FilterState } from '../../types';
+import type { ImagesQueryKey } from '../useImagesQuery';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -12,12 +12,18 @@ vi.mock('../useToast', () => ({
 }));
 
 const mockSetImages = vi.fn();
-const mockToggleFavorite = vi.fn();
+const mockToggleImageFavorite = vi.fn();
+const mockToggleImagePin = vi.fn();
 const mockRefreshCollections = vi.fn();
+let mockStoreImages = [
+    { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
+    { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
+];
+let mockStoreFilters = { collectionId: 'col1' as string | null };
 
 vi.mock('../../services/db/imageRepo', () => ({
-    toggleImageFavorite: vi.fn(),
-    toggleImagePin: vi.fn(),
+    toggleImageFavorite: (id: string, isFavorite: boolean) => mockToggleImageFavorite(id, isFavorite),
+    toggleImagePin: (id: string, isPinned: boolean) => mockToggleImagePin(id, isPinned),
     toggleImageMask: vi.fn(),
     markAsDeleted: vi.fn(),
     deleteImage: vi.fn(),
@@ -25,13 +31,9 @@ vi.mock('../../services/db/imageRepo', () => ({
 
 vi.mock('../../stores/searchStore', () => ({
     useSearchStore: (selector: any) => selector({
-        images: [
-            { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
-            { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
-        ],
+        images: mockStoreImages,
         setImages: mockSetImages,
-        filters: { collectionId: 'col1' },
-        toggleFavorite: mockToggleFavorite,
+        filters: mockStoreFilters,
     }),
 }));
 
@@ -62,6 +64,7 @@ describe('useAppActions', () => {
         pendingViewerDeleteId: null,
         setPendingViewerDeleteId: vi.fn(),
     };
+    const mockImagesQueryKey = ['images', { collectionId: 'col1' }, 'date_desc', false, 'none', [], null] as unknown as ImagesQueryKey;
 
     const props = {
         viewingImageId: null,
@@ -71,11 +74,17 @@ describe('useAppActions', () => {
         selectedIds: new Set(['1']),
         setSelectedIds: mockSetSelectedIds,
         lastSelectedId: '1',
+        imagesQueryKey: mockImagesQueryKey,
         modalManager: mockModalManager,
     };
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockStoreImages = [
+            { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
+            { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
+        ];
+        mockStoreFilters = { collectionId: 'col1' };
     });
 
     it('should open delete confirmation modal if settings.confirmDelete is true', () => {
@@ -147,7 +156,8 @@ describe('useAppActions', () => {
             result.current.handleFavoriteImage('1');
         });
 
-        expect(mockToggleFavorite).toHaveBeenCalledWith('1');
+        expect(mockToggleImageFavorite).toHaveBeenCalledWith('1', true);
+        expect(mockSetImages).toHaveBeenCalled();
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
@@ -158,7 +168,8 @@ describe('useAppActions', () => {
             result.current.handleFavoriteImage('2');
         });
 
-        expect(mockToggleFavorite).toHaveBeenCalledWith('2');
+        expect(mockToggleImageFavorite).toHaveBeenCalledWith('2', false);
+        expect(mockSetImages).toHaveBeenCalled();
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
@@ -170,6 +181,7 @@ describe('useAppActions', () => {
         });
 
         expect(mockSetImages).toHaveBeenCalled();
+        expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
     });
@@ -182,7 +194,34 @@ describe('useAppActions', () => {
         });
 
         expect(mockSetImages).toHaveBeenCalled();
+        expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         expect(mockAddToast).toHaveBeenCalledWith('Pinned to top', 'info');
+    });
+
+    it('should preserve current order for single-image pins outside collections', async () => {
+        mockStoreFilters = { collectionId: null };
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            result.current.handlePinImage('1', true);
+        });
+
+        expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['1', '2']);
+    });
+
+    it('should restore the previous order when pin persistence fails', async () => {
+        mockToggleImagePin.mockRejectedValueOnce(new Error('pin failed'));
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            result.current.handlePinImage('1', true);
+        });
+
+        expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
+        await waitFor(() => {
+            expect(mockSetImages.mock.calls[1][0].map((img: { id: string }) => img.id)).toEqual(['1', '2']);
+            expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error');
+        });
     });
 
     it('should toggle a viewer pin without a success toast', async () => {

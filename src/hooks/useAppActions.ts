@@ -13,6 +13,9 @@ import {
 } from '../services/db/imageRepo';
 import { backfillParameterColumns } from '../services/db/maintenanceRepo';
 import { useLibraryStore } from '../stores/libraryStore';
+import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
+import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
+import type { ImagesQueryKey } from './useImagesQuery';
 
 interface AppActionFileOps {
     deleteImages: (ids: string[]) => void | Promise<void>;
@@ -36,6 +39,7 @@ interface UseAppActionsProps {
     selectedIds: Set<string>;
     setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     lastSelectedId: string | null;
+    imagesQueryKey: ImagesQueryKey;
     modalManager: AppActionModalManager; // Renamed from modals
 }
 
@@ -51,6 +55,7 @@ export const useAppActions = ({
     selectedIds,
     setSelectedIds,
     lastSelectedId,
+    imagesQueryKey,
     modalManager: modals // Destructure with alias for minimum logic change
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
@@ -60,7 +65,6 @@ export const useAppActions = ({
     const images = useSearchStore(s => s.images);
     const setImages = useSearchStore(s => s.setImages);
     const filters = useSearchStore(s => s.filters);
-    const toggleFavorite = useSearchStore(s => s.toggleFavorite);
 
     const settings = useSettingsStore(s => s.settings);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
@@ -74,6 +78,7 @@ export const useAppActions = ({
         ids: string[],
         isPinned: boolean,
         previousImages: typeof images,
+        optimisticImages: typeof images,
         errorMessage: string
     ) => {
         try {
@@ -82,9 +87,29 @@ export const useAppActions = ({
         } catch (error) {
             console.error('[Pin] Failed to persist pin state', error);
             setImages(previousImages);
+            restoreImagesInQueryCaches(queryClient, previousImages, {
+                previousOrder: optimisticImages,
+                nextOrder: previousImages,
+                reorderQueryKey: imagesQueryKey
+            });
             addToast(errorMessage, 'error');
         }
-    }, [refreshCollections, setImages, addToast, images]);
+    }, [refreshCollections, setImages, addToast, queryClient, imagesQueryKey]);
+
+    const persistFavoriteChanges = React.useCallback(async (
+        ids: string[],
+        isFavorite: boolean,
+        previousImages: typeof images
+    ) => {
+        try {
+            await Promise.all(ids.map(id => toggleImageFavorite(id, isFavorite)));
+        } catch (error) {
+            console.error('[Favorite] Failed to persist favorite state', error);
+            setImages(previousImages);
+            restoreImagesInQueryCaches(queryClient, previousImages);
+            addToast('Failed to update favorite state', 'error');
+        }
+    }, [addToast, queryClient, setImages]);
 
     const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null = null) => {
         fileOps.deleteImages(ids);
@@ -133,11 +158,13 @@ export const useAppActions = ({
 
     const handleBulkFavorite = () => {
         const anyUnfavorite = images.some(img => selectedIds.has(img.id) && !img.isFavorite);
-        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
+        const previousImages = images;
+        const ids = Array.from(selectedIds);
 
-        selectedIds.forEach(id => {
-            void toggleImageFavorite(id, anyUnfavorite);
-        });
+        setImages(prev => prev.map(img => selectedIds.has(img.id) ? { ...img, isFavorite: anyUnfavorite } : img));
+        patchImageFlagsInQueryCaches(queryClient, ids, { isFavorite: anyUnfavorite });
+
+        void persistFavoriteChanges(ids, anyUnfavorite, previousImages);
 
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
     };
@@ -147,7 +174,12 @@ export const useAppActions = ({
         if (!img) return;
 
         const newFavorite = !img.isFavorite;
-        void toggleFavorite(id);
+        const previousImages = images;
+
+        setImages(prev => prev.map(item => item.id === id ? { ...item, isFavorite: newFavorite } : item));
+        patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newFavorite });
+        void persistFavoriteChanges([id], newFavorite, previousImages);
+
         if (options.showToast) {
             addToast(newFavorite ? "Liked" : "Unliked", newFavorite ? "success" : "info");
         }
@@ -156,24 +188,23 @@ export const useAppActions = ({
     const handleBulkPin = () => {
         const anyUnpinned = images.some(img => selectedIds.has(img.id) && !img.isPinned);
         const previousImages = images;
+        const ids = Array.from(selectedIds);
+        const nextImages = applyOptimisticPinOrder(
+            previousImages,
+            ids,
+            anyUnpinned,
+            !!filters.collectionId
+        );
 
-        setImages(prev => {
-            const updated = prev.map(img => selectedIds.has(img.id) ? { ...img, isPinned: anyUnpinned } : img);
-
-            // Only sort if we are in a collection (where pinned items are forced to top)
-            // In "All Photos", we want to keep chronological order
-            if (filters.collectionId) {
-                return [...updated].sort((a, b) => {
-                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                    return (b.timestamp || 0) - (a.timestamp || 0);
-                });
-            }
-            return updated;
+        setImages(nextImages);
+        patchImageFlagsInQueryCaches(queryClient, ids, { isPinned: anyUnpinned }, {
+            previousOrder: previousImages,
+            nextOrder: nextImages,
+            reorderQueryKey: imagesQueryKey
         });
 
-        const ids = Array.from(selectedIds);
         addToast(`${anyUnpinned ? 'Pinned' : 'Unpinned'} ${selectedIds.size} images`, 'info');
-        void persistPinChanges(ids, anyUnpinned, previousImages, 'Failed to update pinned images');
+        void persistPinChanges(ids, anyUnpinned, previousImages, nextImages, 'Failed to update pinned images');
         // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 
@@ -265,23 +296,24 @@ export const useAppActions = ({
 
     const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
         const previousImages = images;
+        const nextImages = applyOptimisticPinOrder(
+            previousImages,
+            [id],
+            newPinned,
+            !!filters.collectionId
+        );
 
-        setImages(prev => {
-            const updated = prev.map(i => i.id === id ? { ...i, isPinned: newPinned } : i);
-
-            if (filters.collectionId) {
-                return [...updated].sort((a, b) => {
-                    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                    return (b.timestamp || 0) - (a.timestamp || 0);
-                });
-            }
-            return updated;
+        setImages(nextImages);
+        patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned }, {
+            previousOrder: previousImages,
+            nextOrder: nextImages,
+            reorderQueryKey: imagesQueryKey
         });
 
         if (options.showToast !== false) {
             addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
         }
-        void persistPinChanges([id], newPinned, previousImages, 'Failed to update pinned state');
+        void persistPinChanges([id], newPinned, previousImages, nextImages, 'Failed to update pinned state');
         // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 
@@ -327,7 +359,7 @@ export const useAppActions = ({
         handlePinImage,
         handleShortcutFavorite,
         handleShortcutPin,
-        toggleFavorite,
+        toggleFavorite: handleFavoriteImage,
         runBackfill
     };
 };
