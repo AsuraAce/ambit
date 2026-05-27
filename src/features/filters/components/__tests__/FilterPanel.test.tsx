@@ -5,6 +5,7 @@ import type { Collection, FilterState, SmartCollection, SortOption, AssetScope }
 import type { Facets } from '../../../../services/db/searchRepo';
 import type { useCollections } from '../../../../contexts/CollectionContext';
 import type { useSearch } from '../../../../contexts/SearchContext';
+import type { ImagesQueryKey } from '../../../../hooks/useImagesQuery';
 import { FilterPanel } from '../FilterPanel';
 
 type SearchContextValue = ReturnType<typeof useSearch>;
@@ -82,6 +83,7 @@ const emptyFacets = (): Facets => ({
 
 const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): SearchContextValue => ({
     images: [],
+    imagesQueryKey: ['images', filters, 'date_desc', false, 'blur', [], null] as ImagesQueryKey,
     setImages: vi.fn() as Dispatch<SetStateAction<SearchContextValue['images']>>,
     filters,
     setFilters: vi.fn() as Dispatch<SetStateAction<FilterState>>,

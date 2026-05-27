@@ -11,10 +11,11 @@ import { Facets, LibraryStats, ValidFacetNames } from '../services/db/searchRepo
 import {
     checkHiddenContentAvailability,
     rebuildThumbnailFacetCache,
+    updateFavorite,
     updatePinned,
 } from '../services/db/imageRepo';
 import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo';
-import { useImagesQuery } from '../hooks/useImagesQuery';
+import { useImagesQuery, type ImagesQueryKey } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,9 +24,12 @@ import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
 import { useLibraryStore } from '../stores/libraryStore';
+import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
+import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 
 interface SearchContextType {
     images: AIImage[];
+    imagesQueryKey: ImagesQueryKey;
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
@@ -80,9 +84,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         filters, setFilters,
         sortOption, setSortOption,
         // Removed deleted store properties
-        clearAllFilters,
-        toggleFavorite: storeToggleFavorite,
-        togglePin: storeTogglePin
+        clearAllFilters
     } = useSearchStore();
 
     const privacyMaskKeywords = React.useMemo(() => (
@@ -162,7 +164,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         hasNextPage,
         isFetchingNextPage,
         isLoading: isQueryLoading,
-        isPlaceholderData
+        isPlaceholderData,
+        queryKey: imagesQueryKey
     } = useImagesQuery({
         filters,
         sortOption,
@@ -263,21 +266,48 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
 
 
-    // Legacy support for togglePin (add to store or keep local wrapper calling repo directly?)
+    const toggleFavorite = useCallback(async (id: string) => {
+        const imgs = useSearchStore.getState().images;
+        const img = imgs.find(i => i.id === id);
+        if (!img) return;
+        const newVal = !img.isFavorite;
+
+        try {
+            setImages(imgs.map(i => i.id === id ? { ...i, isFavorite: newVal } : i));
+            patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newVal });
+            await updateFavorite(id, newVal);
+        } catch (e) {
+            console.error("Toggle favorite failed", e);
+            setImages(imgs);
+            restoreImagesInQueryCaches(queryClient, imgs);
+        }
+    }, [queryClient, setImages]);
+
     const togglePin = useCallback(async (id: string, isPinned?: boolean) => {
-        // ... implementation from old context, potentially update store images locally
-        // For now keep old impl but update Store images?
-        // Store has setImages.
         const imgs = useSearchStore.getState().images;
         const img = imgs.find(i => i.id === id);
         if (!img) return;
         const newVal = isPinned !== undefined ? isPinned : !img.isPinned;
+        const nextImages = applyOptimisticPinOrder(imgs, [id], newVal, filters.collectionId !== null);
 
         try {
+            setImages(nextImages);
+            patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newVal }, {
+                previousOrder: imgs,
+                nextOrder: nextImages,
+                reorderQueryKey: imagesQueryKey
+            });
             await updatePinned(id, newVal);
-            setImages(imgs.map(i => i.id === id ? { ...i, isPinned: newVal } : i));
-        } catch (e) { console.error(e); }
-    }, [setImages]);
+        } catch (e) {
+            console.error("Toggle pin failed", e);
+            setImages(imgs);
+            restoreImagesInQueryCaches(queryClient, imgs, {
+                previousOrder: nextImages,
+                nextOrder: imgs,
+                reorderQueryKey: imagesQueryKey
+            });
+        }
+    }, [filters.collectionId, imagesQueryKey, queryClient, setImages]);
 
     // ... Missing: setRecentSearches, loadFacet, availableHiddenContent
     // Store doesn't have recentSearches yet.
@@ -369,6 +399,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return (
         <SearchContext.Provider value={{
             images,
+            imagesQueryKey,
             setImages,
             filters,
             setFilters,
@@ -397,8 +428,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             fetchData,
             recentSearches,
             setRecentSearches,
-            toggleFavorite: storeToggleFavorite,
-            togglePin: storeTogglePin,
+            toggleFavorite,
+            togglePin,
             availableHiddenContent,
             refreshHiddenAvailability,
             isFacetsLoading: isFacetsFetching,

@@ -4,7 +4,6 @@ import { useToast } from '../../hooks/useToast';
 import { isImageMasked } from '../../utils/maskingUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
-import { useSearchStore } from '../../stores/searchStore';
 import { AIImage, ContextMenuState, FilterState } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
@@ -43,7 +42,6 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     const settings = useSettingsStore(s => s.settings);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const allCollections = useCollectionStore(s => s.collections);
-    const libraryToggleFavorite = useSearchStore(s => s.toggleFavorite);
     const queryClient = useQueryClient();
 
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
@@ -140,9 +138,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             }}
             onToggleFavorite={() => {
                 if (contextMenu.imageId) {
-                    // Use toggleFavorite from actions if available, else from library
-                    const toggle = actions.toggleFavorite || libraryToggleFavorite;
-                    toggle(contextMenu.imageId);
+                    actions.toggleFavorite(contextMenu.imageId);
                     onClose();
                 }
             }}
