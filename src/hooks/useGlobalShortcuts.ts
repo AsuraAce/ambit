@@ -10,6 +10,7 @@ interface GlobalShortcutsProps {
     filteredImages: AIImage[];
     lastSelectedId: string | null;
     selectedImageIndex: number | null;
+    isViewerOpen: boolean;
     gridRef: React.RefObject<VirtualGridHandle | null>;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
 
@@ -41,6 +42,7 @@ export const useGlobalShortcuts = ({
     filteredImages,
     lastSelectedId,
     selectedImageIndex,
+    isViewerOpen,
     gridRef,
     searchInputRef,
     setSelectedImageIndex,
@@ -140,12 +142,14 @@ export const useGlobalShortcuts = ({
 
             // 6. Action Shortcuts
             if (e.key === 'f' || e.key === 'F') {
+                if (isViewerOpen) return;
                 e.preventDefault();
                 toggleFavorite();
                 return;
             }
 
             if (e.key === 'p' || e.key === 'P') {
+                if (isViewerOpen) return;
                 e.preventDefault();
                 togglePin();
                 return;
@@ -234,6 +238,7 @@ export const useGlobalShortcuts = ({
         selectedIds,
         viewMode,
         selectedImageIndex,
+        isViewerOpen,
         lastSelectedId,
         isModalOpen,
         toggleShortcuts,

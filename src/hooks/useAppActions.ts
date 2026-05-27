@@ -39,6 +39,10 @@ interface UseAppActionsProps {
     modalManager: AppActionModalManager; // Renamed from modals
 }
 
+interface SingleImageActionOptions {
+    showToast?: boolean;
+}
+
 export const useAppActions = ({
     viewingImageId,
     selectedImageIndex,
@@ -136,6 +140,17 @@ export const useAppActions = ({
         });
 
         addToast(`${anyUnfavorite ? 'Favorited' : 'Unfavorited'} ${selectedIds.size} images`, 'success');
+    };
+
+    const handleFavoriteImage = (id: string, options: SingleImageActionOptions = {}) => {
+        const img = images.find(i => i.id === id);
+        if (!img) return;
+
+        const newFavorite = !img.isFavorite;
+        void toggleFavorite(id);
+        if (options.showToast) {
+            addToast(newFavorite ? "Liked" : "Unliked", newFavorite ? "success" : "info");
+        }
     };
 
     const handleBulkPin = () => {
@@ -248,7 +263,7 @@ export const useAppActions = ({
         fileOps.recoverMetadata(targetId, style, () => closeModal('recovery'));
     };
 
-    const handlePinImage = (id: string, newPinned: boolean) => {
+    const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
         const previousImages = images;
 
         setImages(prev => {
@@ -263,14 +278,16 @@ export const useAppActions = ({
             return updated;
         });
 
-        addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+        if (options.showToast !== false) {
+            addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
+        }
         void persistPinChanges([id], newPinned, previousImages, 'Failed to update pinned state');
         // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 
     const handleShortcutFavorite = () => {
         if (selectedImageIndex !== null && images[selectedImageIndex]) {
-            toggleFavorite(images[selectedImageIndex].id);
+            handleFavoriteImage(images[selectedImageIndex].id);
         } else {
             handleBulkFavorite();
         }
@@ -306,6 +323,7 @@ export const useAppActions = ({
         handleBulkMask,
         handleTogglePrivacy,
         executeMetadataRecovery,
+        handleFavoriteImage,
         handlePinImage,
         handleShortcutFavorite,
         handleShortcutPin,

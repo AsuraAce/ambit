@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { X, Share2, Minimize2, Maximize2, Heart, Trash2, PanelRightClose, PanelRightOpen, Copy, Wand2, Shuffle, Layers, ArrowRight, Layout, ExternalLink } from 'lucide-react';
+import { Heart, Pin } from 'lucide-react';
 import { AIImage, GeneratorTool } from '../../../types';
 import { useZoomPan } from '../../../hooks/useZoomPan';
 import { ImageCanvas } from './ImageCanvas';
@@ -45,6 +45,58 @@ interface ImageViewerProps {
 import { AIResultModal } from './AIResultModal';
 import { ViewerToolbar } from './ViewerToolbar';
 import { VersionSelector } from './VersionSelector';
+
+interface ViewerStatusHudProps {
+    isFavorite: boolean;
+    isPinned: boolean;
+    isVisible: boolean;
+}
+
+const ViewerStatusHud: React.FC<ViewerStatusHudProps> = ({ isFavorite, isPinned, isVisible }) => {
+    const statuses = [
+        {
+            key: 'favorite',
+            active: isFavorite,
+            Icon: Heart,
+            activeClass: 'border-red-400/40 bg-red-500/15 text-red-400 shadow-red-950/30',
+            inactiveClass: 'border-white/10 bg-black/30 text-white/35',
+            iconClass: isFavorite ? 'fill-current' : '',
+        },
+        {
+            key: 'pin',
+            active: isPinned,
+            Icon: Pin,
+            activeClass: 'border-sage-400/40 bg-sage-500/15 text-sage-300 shadow-sage-950/30',
+            inactiveClass: 'border-white/10 bg-black/30 text-white/35',
+            iconClass: isPinned ? 'fill-current' : '',
+        },
+    ];
+
+    if (!isVisible && !isFavorite && !isPinned) return null;
+
+    const label = [
+        isFavorite ? 'liked' : 'not liked',
+        isPinned ? 'pinned' : 'not pinned',
+    ].join(', ');
+
+    return (
+        <div
+            className="absolute bottom-8 right-8 z-20 flex items-center gap-2 pointer-events-none transition-opacity duration-300"
+            role="status"
+            aria-live="polite"
+            aria-label={label}
+        >
+            {statuses.map(({ key, active, Icon, activeClass, inactiveClass, iconClass }) => (
+                <div
+                    key={key}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border backdrop-blur-md shadow-lg transition-all duration-300 ${active ? activeClass : inactiveClass} ${isVisible || active ? 'opacity-100 scale-100' : 'opacity-0 scale-100'}`}
+                >
+                    <Icon className={`h-4 w-4 ${iconClass}`} />
+                </div>
+            ))}
+        </div>
+    );
+};
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
     image,
@@ -142,7 +194,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const [activeTab, setActiveTab] = useState<'info' | 'edit' | 'workflow'>('info');
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [showStatusHud, setShowStatusHud] = useState(true);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const statusHudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // --- Buffers (Notes/Prompt editing local to displayImage) ---
     const [notes, setNotes] = useState(displayImage.notes || '');
@@ -170,6 +224,29 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         });
     }, [displayImage.url]);
 
+    const revealStatusHud = useCallback((duration = 1600) => {
+        setShowStatusHud(true);
+        if (statusHudTimeoutRef.current) clearTimeout(statusHudTimeoutRef.current);
+        statusHudTimeoutRef.current = setTimeout(() => setShowStatusHud(false), duration);
+    }, []);
+
+    useEffect(() => {
+        revealStatusHud();
+        return () => {
+            if (statusHudTimeoutRef.current) clearTimeout(statusHudTimeoutRef.current);
+        };
+    }, [displayImage.id, revealStatusHud]);
+
+    const handleToggleFavorite = useCallback(() => {
+        onToggleFavorite(displayImage.id);
+        revealStatusHud(2000);
+    }, [displayImage.id, onToggleFavorite, revealStatusHud]);
+
+    const handleTogglePin = useCallback(() => {
+        onTogglePin?.(displayImage.id, !displayImage.isPinned);
+        revealStatusHud(2000);
+    }, [displayImage.id, displayImage.isPinned, onTogglePin, revealStatusHud]);
+
     // Theater Mode Controls Auto-Hide
     useEffect(() => {
         if (isSidebarOpen && !isTheaterMode) {
@@ -195,8 +272,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (e.key === 'ArrowLeft') onPrev();
 
             // Actions
-            if (key === 'f') onToggleFavorite(displayImage.id);
-            if (key === 'p') onTogglePin?.(displayImage.id, !displayImage.isPinned);
+            if (key === 'f') handleToggleFavorite();
+            if (key === 'p') handleTogglePin();
             if (key === 'i') onToggleSidebar?.();
 
             if (e.key === 'Escape') {
@@ -208,7 +285,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, isTheaterMode, onNext, onPrev, onToggleFavorite, onTogglePin, onToggleSidebar, displayImage, onClose]);
+    }, [isOpen, ai.modalOpen, isTheaterMode, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onClose]);
 
     if (!isOpen) return null;
 
@@ -265,7 +342,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onOpenExternal={handleOpenExternal}
                     onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
                     onShare={handleShare}
-                    onToggleFavorite={() => onToggleFavorite(displayImage.id)}
+                    onToggleFavorite={handleToggleFavorite}
+                    onTogglePin={onTogglePin ? handleTogglePin : undefined}
                     onDelete={onDelete ? () => onDelete(displayImage.id) : undefined}
                     onToggleSidebar={onToggleSidebar}
                     onClose={onClose}
@@ -286,6 +364,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     isTheaterMode={isTheaterMode}
                     onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
                     handlers={handlers}
+                />
+
+                <ViewerStatusHud
+                    isFavorite={Boolean(displayImage.isFavorite)}
+                    isPinned={Boolean(displayImage.isPinned)}
+                    isVisible={showStatusHud}
                 />
 
                 <VersionSelector
