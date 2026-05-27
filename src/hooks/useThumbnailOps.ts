@@ -10,7 +10,7 @@ import { regenerateThumbnailsForImages } from '../services/thumbnailService';
 interface UseThumbnailOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    refreshCollectionThumbnails: () => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean) => Promise<void>;
 }
 
 export const useThumbnailOps = ({
@@ -72,7 +72,7 @@ export const useThumbnailOps = ({
                     ? `Cancelled after optimizing ${updates.length} thumbnails.`
                     : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
                 addToast(msg, "success");
-                await refreshCollectionThumbnails();
+                await refreshCollectionThumbnails(false, true);
             }
         } catch (e) {
             console.error("Regeneration error", e);

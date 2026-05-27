@@ -101,6 +101,36 @@ describe('collectionRepo filter normalization', () => {
         expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_thumbnail_is_sensitive INTEGER');
         expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_thumbnail_cached_at INTEGER');
     });
+
+    it('clears dynamic thumbnail cache after resetting a custom thumbnail', async () => {
+        const { setCollectionCustomThumbnail } = await import('../collectionRepo');
+
+        await setCollectionCustomThumbnail('c1', null);
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            'UPDATE collections SET custom_thumbnail = ?, updated_at = ? WHERE id = ?',
+            [null, expect.any(Number), 'c1']
+        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            expect.stringContaining('dynamic_thumbnail_path = NULL'),
+            ['c1']
+        );
+    });
+
+    it('keeps dynamic thumbnail cache when setting a custom thumbnail', async () => {
+        const { setCollectionCustomThumbnail } = await import('../collectionRepo');
+
+        await setCollectionCustomThumbnail('c1', 'img-custom');
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            'UPDATE collections SET custom_thumbnail = ?, updated_at = ? WHERE id = ?',
+            ['img-custom', expect.any(Number), 'c1']
+        );
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(
+            expect.stringContaining('dynamic_thumbnail_path = NULL'),
+            expect.anything()
+        );
+    });
 });
 
 describe('collectionRepo thumbnail hydration', () => {
@@ -119,7 +149,7 @@ describe('collectionRepo thumbnail hydration', () => {
                 return [makeCollectionRow({ name: 'Custom', custom_thumbnail: 'img1' })];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 return [{
                     collection_id: 'c1',
                     dynamic_thumb: 'C:/images/full.png',
@@ -172,12 +202,12 @@ describe('collectionRepo thumbnail hydration', () => {
             imageIds: []
         }));
         expect(collections[0].thumbnail).toBeUndefined();
-        expect(queries.join('\n')).not.toContain('c.id as collection_id');
+        expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(queries.join('\n')).not.toContain('WHERE id IN');
         expect(queries.join('\n')).not.toContain('WHERE path IN');
     });
 
-    it('maps cached dynamic thumbnails without running thumbnail hydration queries', async () => {
+    it('maps cached dynamic thumbnails without running thumbnail hydration queries when thumbnails are included', async () => {
         const queries: string[] = [];
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
@@ -186,16 +216,15 @@ describe('collectionRepo thumbnail hydration', () => {
                     name: 'Cached',
                     dynamic_thumbnail_path: 'C:/thumbs/cached.webp',
                     dynamic_safe_thumbnail_path: 'C:/thumbs/cached-safe.webp',
-                    dynamic_thumbnail_is_sensitive: 1,
-                    filter_state: JSON.stringify({ dateRange: 'today' })
+                    dynamic_thumbnail_is_sensitive: 1
                 })];
             }
-            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 0 }];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
             return [];
         });
 
         const { getAllCollectionsWithStats } = await import('../collectionRepo');
-        const collections = await getAllCollectionsWithStats({ includeThumbnails: false });
+        const collections = await getAllCollectionsWithStats();
 
         expect(collections[0]).toEqual(expect.objectContaining({
             thumbnail: 'asset://C:/thumbs/cached.webp',
@@ -203,7 +232,8 @@ describe('collectionRepo thumbnail hydration', () => {
             thumbnailIsSensitive: true,
             thumbnailSourceKind: 'dynamic'
         }));
-        expect(queries.join('\n')).not.toContain('c.id as collection_id');
+        expect(queries.join('\n')).not.toContain('ranked_thumbnails');
+        expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
     it('keeps cached smart thumbnails during full collection reloads until smart hydration runs', async () => {
@@ -235,7 +265,7 @@ describe('collectionRepo thumbnail hydration', () => {
             thumbnailIsSensitive: false,
             thumbnailSourceKind: 'dynamic'
         }));
-        expect(queries.join('\n')).not.toContain('c.id as collection_id');
+        expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
@@ -268,7 +298,7 @@ describe('collectionRepo thumbnail hydration', () => {
                 return [makeCollectionRow({ custom_thumbnail: 'C:/images/source.png' })];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 return [{ collection_id: 'c1', dynamic_thumb: null, dynamic_privacy: null, safe_thumb: null }];
             }
             if (query.includes('WHERE id IN')) return [];
@@ -297,7 +327,7 @@ describe('collectionRepo thumbnail hydration', () => {
                 return [makeCollectionRow({ custom_thumbnail: 'https://example.com/thumb.webp' })];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 return [{ collection_id: 'c1', dynamic_thumb: 'C:/thumbs/dynamic.webp', dynamic_privacy: 1, safe_thumb: null }];
             }
             if (query.includes('WHERE id IN') || query.includes('WHERE path IN')) return [];
@@ -318,7 +348,7 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('SELECT * FROM collections')) return [makeCollectionRow()];
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 2 }];
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 dynamicQuery = query;
                 return [{
                     collection_id: 'c1',
@@ -337,13 +367,15 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(collections[0].safeThumbnail).toBe('asset://C:/thumbs/safe.webp');
         expect(collections[0].thumbnailIsSensitive).toBe(true);
         expect(collections[0].thumbnailSourceKind).toBe('dynamic');
+        expect(dynamicQuery).toContain('WITH ranked_thumbnails');
         expect(dynamicQuery.match(/ORDER BY i\.is_pinned DESC, i\.timestamp DESC/g)?.length).toBeGreaterThanOrEqual(2);
-        expect(dynamicQuery).toContain('AND i.privacy_hidden = 0');
+        expect(dynamicQuery).toContain('privacy_hidden = 0 AND privacy_rank = 1');
+        expect(dynamicQuery).not.toContain('SELECT i.thumbnail_path');
     });
 
     it('writes raw dynamic thumbnail paths to the collection cache after static hydration', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 return [{
                     collection_id: 'c1',
                     dynamic_thumb: 'C:/thumbs/unsafe.webp',
@@ -372,7 +404,7 @@ describe('collectionRepo thumbnail hydration', () => {
 
     it('clears the dynamic thumbnail cache when static hydration finds no thumbnail', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
-            if (query.includes('c.id as collection_id')) {
+            if (query.includes('ranked_thumbnails')) {
                 return [{
                     collection_id: 'c1',
                     dynamic_thumb: null,
