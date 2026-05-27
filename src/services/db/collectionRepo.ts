@@ -93,6 +93,10 @@ interface CollectionThumbnailInput {
     custom_thumbnail?: string | null;
 }
 
+interface CollectionMembershipRow {
+    collection_id: string;
+}
+
 interface CollectionSchemaColumn {
     name: string;
 }
@@ -194,56 +198,115 @@ const writeDynamicThumbnailCache = async (
     }
 };
 
+const clearDynamicThumbnailCacheForCollections = async (
+    db: Awaited<ReturnType<typeof getDb>>,
+    collectionIds: string[]
+) => {
+    const uniqueIds = [...new Set(collectionIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+
+    for (const idBatch of chunk(uniqueIds, 900)) {
+        const placeholders = idBatch.map(() => '?').join(',');
+        await db.execute(
+            `UPDATE collections
+             SET dynamic_thumbnail_path = NULL,
+                 dynamic_safe_thumbnail_path = NULL,
+                 dynamic_thumbnail_is_sensitive = NULL,
+                 dynamic_thumbnail_cached_at = NULL
+             WHERE id IN (${placeholders})
+               AND (custom_thumbnail IS NULL OR custom_thumbnail = '')`,
+            idBatch
+        );
+    }
+};
+
+export const clearCollectionThumbnailCacheForCollections = async (collectionIds: string[]) => {
+    if (isBrowserMockMode() || collectionIds.length === 0) return;
+
+    const db = await getDb();
+    await clearDynamicThumbnailCacheForCollections(db, collectionIds);
+};
+
+export const clearCollectionThumbnailCacheForImages = async (imageIds: string[]) => {
+    if (isBrowserMockMode() || imageIds.length === 0) return;
+
+    const db = await getDb();
+    const normalizedIds = [...new Set(imageIds.map(normalizePath).filter(Boolean))];
+    const collectionIds: string[] = [];
+    for (const idBatch of chunk(normalizedIds, 900)) {
+        const placeholders = idBatch.map(() => '?').join(',');
+        const rows = await db.select<CollectionMembershipRow[]>(
+            `SELECT DISTINCT collection_id
+             FROM collection_images
+             WHERE image_id IN (${placeholders})`,
+            idBatch
+        );
+        if (Array.isArray(rows)) {
+            collectionIds.push(...rows.map(row => row.collection_id));
+        }
+    }
+
+    await clearDynamicThumbnailCacheForCollections(db, collectionIds);
+};
+
+export const clearAllCollectionThumbnailCaches = async () => {
+    if (isBrowserMockMode()) return;
+
+    const db = await getDb();
+    await db.execute(
+        `UPDATE collections
+         SET dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL,
+             dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE custom_thumbnail IS NULL OR custom_thumbnail = ''`
+    );
+};
+
 const buildCollectionThumbnailSummaries = async (
     db: Awaited<ReturnType<typeof getDb>>,
     collections: CollectionThumbnailInput[]
 ): Promise<CollectionThumbnailBuildResult> => {
     if (collections.length === 0) return { summaries: {}, cacheUpdates: [] };
 
-    const ids = [...new Set(collections.map((collection) => collection.id).filter(Boolean))];
+    const ids = [...new Set(
+        collections
+            .filter((collection) => !collection.custom_thumbnail)
+            .map((collection) => collection.id)
+            .filter(Boolean)
+    )];
     const thumbnailRows: CollectionThumbnailRow[] = [];
 
     for (const idBatch of chunk(ids, 900)) {
         const placeholders = idBatch.map(() => '?').join(',');
         const rows = await db.select<CollectionThumbnailRow[]>(`
+            WITH ranked_thumbnails AS (
+                SELECT
+                    ci.collection_id,
+                    i.thumbnail_path,
+                    i.privacy_hidden,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ci.collection_id
+                        ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    ) as dynamic_rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ci.collection_id, i.privacy_hidden
+                        ORDER BY i.is_pinned DESC, i.timestamp DESC
+                    ) as privacy_rank
+                FROM collection_images ci
+                INNER JOIN images i ON ci.image_id = i.id
+                WHERE ci.collection_id IN (${placeholders})
+                    AND i.is_deleted = 0
+                    AND i.thumbnail_path IS NOT NULL
+                    AND i.thumbnail_path != ''
+            )
             SELECT
-                c.id as collection_id,
-                (
-                    SELECT i.thumbnail_path
-                    FROM collection_images cii
-                    INNER JOIN images i ON cii.image_id = i.id
-                    WHERE cii.collection_id = c.id
-                        AND i.is_deleted = 0
-                        AND i.thumbnail_path IS NOT NULL
-                        AND i.thumbnail_path != ''
-                    ORDER BY i.is_pinned DESC, i.timestamp DESC
-                    LIMIT 1
-                ) as dynamic_thumb,
-                (
-                    SELECT i.privacy_hidden
-                    FROM collection_images cii
-                    INNER JOIN images i ON cii.image_id = i.id
-                    WHERE cii.collection_id = c.id
-                        AND i.is_deleted = 0
-                        AND i.thumbnail_path IS NOT NULL
-                        AND i.thumbnail_path != ''
-                    ORDER BY i.is_pinned DESC, i.timestamp DESC
-                    LIMIT 1
-                ) as dynamic_privacy,
-                (
-                    SELECT i.thumbnail_path
-                    FROM collection_images cii
-                    INNER JOIN images i ON cii.image_id = i.id
-                    WHERE cii.collection_id = c.id
-                        AND i.is_deleted = 0
-                        AND i.privacy_hidden = 0
-                        AND i.thumbnail_path IS NOT NULL
-                        AND i.thumbnail_path != ''
-                    ORDER BY i.is_pinned DESC, i.timestamp DESC
-                    LIMIT 1
-                ) as safe_thumb
-            FROM collections c
-            WHERE c.id IN (${placeholders})
+                collection_id,
+                MAX(CASE WHEN dynamic_rank = 1 THEN thumbnail_path END) as dynamic_thumb,
+                MAX(CASE WHEN dynamic_rank = 1 THEN privacy_hidden END) as dynamic_privacy,
+                MAX(CASE WHEN privacy_hidden = 0 AND privacy_rank = 1 THEN thumbnail_path END) as safe_thumb
+            FROM ranked_thumbnails
+            GROUP BY collection_id
         `, idBatch);
 
         thumbnailRows.push(...rows);
@@ -441,6 +504,9 @@ export const setCollectionCustomThumbnail = async (collectionId: string, imageId
             'UPDATE collections SET custom_thumbnail = ?, updated_at = ? WHERE id = ?',
             [imageId, Date.now(), collectionId]
         );
+        if (imageId === null) {
+            await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
+        }
     });
 };
 
@@ -471,6 +537,7 @@ export const addImagesToCollection = async (collectionId: string, imageIds: stri
         }
         // Update collection timestamp
         await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [now, collectionId]);
+        await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
     });
 };
 
@@ -488,6 +555,7 @@ export const removeImagesFromCollection = async (collectionId: string, imageIds:
     );
     // Update collection timestamp
     await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [Date.now(), collectionId]);
+    await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
 };
 
 export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
@@ -531,7 +599,13 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     if (includeThumbnails) {
         const thumbnailStartedAt = nowMs();
         const thumbnailInputs = mappedCollections
-            .filter(collection => !collection.filters || !!collection.customThumbnail)
+            .filter(collection => {
+                if (collection.customThumbnail) return true;
+                if (collection.filters || collection.thumbnail) return false;
+
+                const imageCount = collection.count ?? collection.imageIds.length;
+                return imageCount > 0;
+            })
             .map(collection => ({
                 id: collection.id,
                 custom_thumbnail: collection.customThumbnail ?? null

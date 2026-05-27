@@ -39,12 +39,20 @@ const chunk = <T,>(items: T[], size: number): T[][] => {
     return chunks;
 };
 
-const shouldShowThumbnailHydrationPending = (collection: Collection): boolean => {
-    if (collection.filters || collection.thumbnail) return false;
+const shouldShowThumbnailHydrationPending = (collection: Collection, force = false): boolean => {
+    if (collection.filters) return false;
+    if (collection.customThumbnail) return true;
 
     const imageCount = collection.count ?? collection.imageIds.length;
-    return imageCount > 0 || !!collection.customThumbnail;
+    if (force) return imageCount > 0;
+    if (collection.thumbnail) return false;
+
+    return imageCount > 0;
 };
+
+const shouldHydrateCollectionThumbnail = (collection: Collection, force = false): boolean => (
+    shouldShowThumbnailHydrationPending(collection, force)
+);
 
 const sortForThumbnailHydration = (collections: Collection[]): Collection[] => (
     [...collections].sort((a, b) => {
@@ -53,10 +61,10 @@ const sortForThumbnailHydration = (collections: Collection[]): Collection[] => (
     })
 );
 
-const buildPendingThumbnailMap = (collections: Collection[]): Record<string, true> => (
+const buildPendingThumbnailMap = (collections: Collection[], force = false): Record<string, true> => (
     Object.fromEntries(
         collections
-            .filter(shouldShowThumbnailHydrationPending)
+            .filter(collection => shouldShowThumbnailHydrationPending(collection, force))
             .map(collection => [collection.id, true] as const)
     )
 );
@@ -81,7 +89,7 @@ interface CollectionState {
     // Actions
     initialize: () => Promise<void>;
     refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean) => Promise<void>;
     refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
@@ -127,14 +135,14 @@ export const useCollectionStore = create<CollectionState>()(
                 }
             },
 
-            refreshCollectionThumbnails: async (debounced = false) => {
+            refreshCollectionThumbnails: async (debounced = false, force = false) => {
                 const run = async () => {
                     const runId = ++thumbnailRefreshRunId;
                     try {
                         const currentCollections = sortForThumbnailHydration(
-                            get().collections.filter(collection => !collection.filters)
+                            get().collections.filter(collection => shouldHydrateCollectionThumbnail(collection, force))
                         );
-                        set({ thumbnailHydrationPendingIds: buildPendingThumbnailMap(currentCollections) });
+                        set({ thumbnailHydrationPendingIds: buildPendingThumbnailMap(currentCollections, force) });
 
                         if (currentCollections.length === 0) return;
 

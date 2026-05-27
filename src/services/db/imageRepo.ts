@@ -15,6 +15,11 @@ import {
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { clearLibraryStatsCache } from './searchRepo';
+import {
+    clearAllCollectionThumbnailCaches,
+    clearCollectionThumbnailCacheForCollections,
+    clearCollectionThumbnailCacheForImages,
+} from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
 
 type PersistableImageRecord = {
@@ -157,6 +162,7 @@ const persistImageRecords = async (
         cleanupCandidates: defaultVisibleIds.length,
         cleanupMs: elapsedMs(cleanupStartedAt)
     });
+    await clearCollectionThumbnailCacheForImages(records.map(record => record.id));
 };
 
 const clearFacetRelatedStatsCache = async () => {
@@ -223,6 +229,7 @@ export const insertImage = async (image: AIImage) => {
                 'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
                 [image.boardId, record.id]
             );
+            await clearCollectionThumbnailCacheForCollections([image.boardId]);
         }
     });
 };
@@ -434,6 +441,11 @@ export const syncCollectionImages = async (ids?: string[]) => {
         }
 
         await db.execute(query, params);
+        if (ids && ids.length > 0) {
+            await clearCollectionThumbnailCacheForImages(ids);
+        } else {
+            await clearAllCollectionThumbnailCaches();
+        }
         console.log('[DB] Bulk collection sync complete.');
     });
 };
@@ -752,6 +764,7 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    await clearCollectionThumbnailCacheForImages([normalizedId]);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
 
@@ -779,6 +792,7 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     if (userMasked === false) value = 0;
 
     await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
 export const toggleImageIntermediate = async (id: string, isIntermediate: boolean) => {
@@ -810,6 +824,7 @@ export const deleteImage = async (id: string) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
+    await clearCollectionThumbnailCacheForImages([normalizedId]);
     await db.execute('DELETE FROM collection_images WHERE image_id = $1', [normalizedId]);
     await db.execute('DELETE FROM image_loras WHERE image_id = $1', [normalizedId]);
     await db.execute('DELETE FROM image_embeddings WHERE image_id = $1', [normalizedId]);
@@ -909,6 +924,7 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
         }
 
         console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: normalizedIds.length });
+        await clearCollectionThumbnailCacheForImages(normalizedIds);
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, chunk);
@@ -952,6 +968,7 @@ export const restoreRemovedImages = async (ids: string[]) => {
             totalMs: elapsedMs(restoreStartedAt)
         });
 
+        const restoredCollectionIds: string[] = [];
         for (const row of rows) {
             if (!row.collection_ids_json) continue;
 
@@ -964,12 +981,14 @@ export const restoreRemovedImages = async (ids: string[]) => {
                          WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?)`,
                         [collectionId, row.id, collectionId]
                     );
+                    restoredCollectionIds.push(collectionId);
                 }
             } catch (error) {
                 console.warn('[DB] Failed to restore collection membership for removed image', row.id, error);
             }
         }
 
+        await clearCollectionThumbnailCacheForCollections(restoredCollectionIds);
         await removeTombstones(db, normalizedIds);
     });
 };
@@ -1088,6 +1107,7 @@ export const markAsDeleted = async (ids: string[], deleted: boolean) => {
     const db = await getDb();
     const placeholders = normalizedIds.map(() => '?').join(',');
     await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [deleted ? 1 : 0, ...normalizedIds]);
+    await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
 export const updateImageWorkflow = async (id: string, workflowJson: string): Promise<void> => {
@@ -1163,6 +1183,7 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
     const db = await getDb();
     const normalizedId = normalizePath(id);
     await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, normalizedId]);
+    await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 export const updateImagesBoard = async (ids: string[], boardId: string | null) => {
     if (ids.length === 0) return;
@@ -1187,6 +1208,7 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
         // but since board_id was 1:N, we should probably remove it from any 'invoke' source collections?
         // Actually, a simpler approach is to use the dedicated collection removal tools for manual changes.
     }
+    await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
 /**
@@ -1249,6 +1271,9 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
                     'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
+                if (result.rowsAffected > 0) {
+                    await clearAllCollectionThumbnailCaches();
+                }
                 return result.rowsAffected;
             } catch (e: unknown) {
                 const errorMsg = e instanceof Error ? e.message : String(e);
@@ -1283,6 +1308,7 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
         'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?',
         [normalizedThumb, 'ambit', normalizedId]
     );
+    await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
 /**
@@ -1359,6 +1385,7 @@ export const updateThumbnailPathsBatch = async (updates: {
     if (failCount > 0) {
         console.warn(`[DB] ${failCount} thumbnail updates failed`);
     }
+    await clearCollectionThumbnailCacheForImages(updates.map(update => update.id));
 };
 
 

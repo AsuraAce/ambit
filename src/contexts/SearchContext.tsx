@@ -13,6 +13,7 @@ import {
     rebuildThumbnailFacetCache,
     updatePinned,
 } from '../services/db/imageRepo';
+import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo';
 import { useImagesQuery } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -126,6 +127,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
+                    await clearAllCollectionThumbnailCaches();
                     await rebuildThumbnailFacetCache();
                     console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();

@@ -807,6 +807,112 @@ describe('collectionStore smart count refresh', () => {
         }));
     });
 
+    it('skips cached dynamic collection thumbnails during refresh', async () => {
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    makeStaticCollection({
+                        id: 'cached-static',
+                        count: 4,
+                        thumbnail: 'asset://cached.webp',
+                        safeThumbnail: 'asset://cached-safe.webp',
+                        thumbnailIsSensitive: true,
+                        thumbnailSourceKind: 'dynamic'
+                    })
+                ],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshCollectionThumbnails();
+
+        expect(mockGetCollectionThumbnailSummaries).not.toHaveBeenCalled();
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({});
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            thumbnail: 'asset://cached.webp',
+            safeThumbnail: 'asset://cached-safe.webp',
+            thumbnailIsSensitive: true,
+            thumbnailSourceKind: 'dynamic'
+        }));
+    });
+
+    it('can force refresh cached dynamic thumbnails after thumbnail mutations', async () => {
+        mockGetCollectionThumbnailSummaries.mockResolvedValue({
+            'cached-static': {
+                thumbnail: 'asset://fresh.webp',
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    makeStaticCollection({
+                        id: 'cached-static',
+                        count: 4,
+                        thumbnail: 'asset://cached.webp',
+                        thumbnailSourceKind: 'dynamic'
+                    })
+                ],
+                isLoaded: true
+            });
+        });
+
+        const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails(false, true);
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
+            'cached-static': true
+        });
+        await refreshPromise;
+
+        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
+            expect.objectContaining({ id: 'cached-static' })
+        ]);
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            thumbnail: 'asset://fresh.webp',
+            thumbnailSourceKind: 'dynamic'
+        }));
+    });
+
+    it('refreshes custom thumbnails even when a display thumbnail already exists', async () => {
+        mockGetCollectionThumbnailSummaries.mockResolvedValue({
+            'custom-static': {
+                thumbnail: 'asset://custom-fresh.webp',
+                thumbnailSourceKind: 'customImage'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    makeStaticCollection({
+                        id: 'custom-static',
+                        count: 0,
+                        customThumbnail: 'img-custom',
+                        thumbnail: 'asset://custom-stale.webp',
+                        thumbnailSourceKind: 'customImage'
+                    })
+                ],
+                isLoaded: true
+            });
+        });
+
+        const refreshPromise = useCollectionStore.getState().refreshCollectionThumbnails();
+
+        expect(useCollectionStore.getState().thumbnailHydrationPendingIds).toEqual({
+            'custom-static': true
+        });
+        await refreshPromise;
+
+        expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledWith([
+            expect.objectContaining({ id: 'custom-static', customThumbnail: 'img-custom' })
+        ]);
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            thumbnail: 'asset://custom-fresh.webp',
+            thumbnailSourceKind: 'customImage'
+        }));
+    });
+
     it('hydrates Invoke board collection thumbnails from derived summaries', async () => {
         mockGetCollectionThumbnailSummaries.mockResolvedValue({
             'invoke-board-1': {
@@ -908,6 +1014,17 @@ describe('collectionStore smart count refresh', () => {
                         source: 'ambit',
                         count: 1,
                         imageIds: []
+                    },
+                    {
+                        id: 'cached-static',
+                        name: 'Cached Static',
+                        createdAt: 3,
+                        updatedAt: 3,
+                        source: 'ambit',
+                        count: 1,
+                        imageIds: [],
+                        thumbnail: 'asset://cached.webp',
+                        thumbnailSourceKind: 'dynamic'
                     }
                 ],
                 isLoaded: true
