@@ -249,6 +249,7 @@ export interface InvokeDbSnapshotState {
   importIntermediates: boolean;
   importOrphans: boolean;
   syncBoardsToCollections: boolean;
+  pathRepairVersion: number;
   files: InvokeDbSnapshotFile[];
 }
 

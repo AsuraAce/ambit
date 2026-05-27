@@ -23,6 +23,23 @@ pub struct PrivacyMaskRefreshResult {
     pub updated: usize,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePathIdentityMove {
+    pub old_id: String,
+    pub new_id: String,
+    pub thumbnail_path: Option<String>,
+    pub thumbnail_source: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImagePathIdentityMoveResult {
+    pub moved: usize,
+    pub skipped_target_exists: usize,
+    pub skipped_source_missing: usize,
+}
+
 fn normalize_privacy_keywords(masked_keywords: &[String]) -> Vec<String> {
     masked_keywords
         .iter()
@@ -390,6 +407,227 @@ fn save_images_batch_inner(
     Ok(images.len())
 }
 
+fn normalize_image_identity_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn move_image_path_identities_inner(
+    conn: &rusqlite::Connection,
+    moves: &[ImagePathIdentityMove],
+) -> Result<ImagePathIdentityMoveResult, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")
+        .map_err(|e| e.to_string())?;
+
+    let mut result = ImagePathIdentityMoveResult {
+        moved: 0,
+        skipped_target_exists: 0,
+        skipped_source_missing: 0,
+    };
+
+    {
+        let mut target_exists = tx
+            .prepare_cached("SELECT 1 FROM images WHERE id = ?1 LIMIT 1")
+            .map_err(|e| e.to_string())?;
+        let mut source_identity = tx
+            .prepare_cached("SELECT path, thumbnail_path FROM images WHERE id = ?1 LIMIT 1")
+            .map_err(|e| e.to_string())?;
+        let mut update_image = tx
+            .prepare_cached(
+                "UPDATE images
+                 SET id = ?1,
+                     path = ?1,
+                     thumbnail_path = COALESCE(NULLIF(?2, ''), thumbnail_path),
+                     thumbnail_source = ?3,
+                     is_missing = 0
+                 WHERE id = ?4",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_collections = tx
+            .prepare_cached("UPDATE collection_images SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_loras = tx
+            .prepare_cached("UPDATE image_loras SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_embeddings = tx
+            .prepare_cached("UPDATE image_embeddings SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_hypernetworks = tx
+            .prepare_cached("UPDATE image_hypernetworks SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_controlnets = tx
+            .prepare_cached("UPDATE image_controlnets SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_ipadapters = tx
+            .prepare_cached("UPDATE image_ipadapters SET image_id = ?1 WHERE image_id = ?2")
+            .map_err(|e| e.to_string())?;
+        let mut update_facet_thumbnail_image = tx
+            .prepare_cached(
+                "UPDATE facet_cache SET thumbnail_image_id = ?1 WHERE thumbnail_image_id = ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_facet_thumbnail_path = tx
+            .prepare_cached(
+                "UPDATE facet_cache
+                 SET thumbnail_path = ?1
+                 WHERE thumbnail_path = ?2
+                    OR thumbnail_path = ?3
+                    OR (?4 IS NOT NULL AND thumbnail_path = ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_facet_safe_thumbnail_path = tx
+            .prepare_cached(
+                "UPDATE facet_cache
+                 SET safe_thumbnail_path = ?1
+                 WHERE safe_thumbnail_path = ?2
+                    OR safe_thumbnail_path = ?3
+                    OR (?4 IS NOT NULL AND safe_thumbnail_path = ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_collection_dynamic_thumbnail_path = tx
+            .prepare_cached(
+                "UPDATE collections
+                 SET dynamic_thumbnail_path = ?1
+                 WHERE dynamic_thumbnail_path = ?2
+                    OR dynamic_thumbnail_path = ?3
+                    OR (?4 IS NOT NULL AND dynamic_thumbnail_path = ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_collection_dynamic_safe_thumbnail_path = tx
+            .prepare_cached(
+                "UPDATE collections
+                 SET dynamic_safe_thumbnail_path = ?1
+                 WHERE dynamic_safe_thumbnail_path = ?2
+                    OR dynamic_safe_thumbnail_path = ?3
+                    OR (?4 IS NOT NULL AND dynamic_safe_thumbnail_path = ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut update_model_thumbnail_path = tx
+            .prepare_cached(
+                "UPDATE models
+                 SET thumbnail_path = ?1
+                 WHERE thumbnail_path = ?2
+                    OR thumbnail_path = ?3
+                    OR (?4 IS NOT NULL AND thumbnail_path = ?4)",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for item in moves {
+            let old_id = normalize_image_identity_path(&item.old_id);
+            let new_id = normalize_image_identity_path(&item.new_id);
+            if old_id == new_id {
+                continue;
+            }
+
+            let has_target = target_exists
+                .exists(params![&new_id])
+                .map_err(|e| e.to_string())?;
+            if has_target {
+                result.skipped_target_exists += 1;
+                continue;
+            }
+
+            let source_row = source_identity
+                .query_row(params![&old_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                })
+                .optional()
+                .map_err(|e| e.to_string())?;
+            let Some((source_path, source_thumbnail_path)) = source_row else {
+                result.skipped_source_missing += 1;
+                continue;
+            };
+            let old_path = normalize_image_identity_path(&source_path);
+            let old_thumbnail_path = source_thumbnail_path
+                .as_deref()
+                .map(normalize_image_identity_path);
+
+            let thumbnail_path = item
+                .thumbnail_path
+                .as_deref()
+                .map(normalize_image_identity_path);
+
+            update_image
+                .execute(params![
+                    &new_id,
+                    thumbnail_path,
+                    item.thumbnail_source.as_deref(),
+                    &old_id
+                ])
+                .map_err(|e| e.to_string())?;
+            update_collections
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_loras
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_embeddings
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_hypernetworks
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_controlnets
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_ipadapters
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+            update_facet_thumbnail_image
+                .execute(params![&new_id, &old_id])
+                .map_err(|e| e.to_string())?;
+
+            if let Some(new_thumbnail_path) = thumbnail_path.as_deref() {
+                update_model_thumbnail_path
+                    .execute(params![
+                        new_thumbnail_path,
+                        &old_id,
+                        &old_path,
+                        old_thumbnail_path.as_deref()
+                    ])
+                    .map_err(|e| e.to_string())?;
+                update_facet_thumbnail_path
+                    .execute(params![
+                        new_thumbnail_path,
+                        &old_id,
+                        &old_path,
+                        old_thumbnail_path.as_deref()
+                    ])
+                    .map_err(|e| e.to_string())?;
+                update_facet_safe_thumbnail_path
+                    .execute(params![
+                        new_thumbnail_path,
+                        &old_id,
+                        &old_path,
+                        old_thumbnail_path.as_deref()
+                    ])
+                    .map_err(|e| e.to_string())?;
+                update_collection_dynamic_thumbnail_path
+                    .execute(params![
+                        new_thumbnail_path,
+                        &old_id,
+                        &old_path,
+                        old_thumbnail_path.as_deref()
+                    ])
+                    .map_err(|e| e.to_string())?;
+                update_collection_dynamic_safe_thumbnail_path
+                    .execute(params![
+                        new_thumbnail_path,
+                        &old_id,
+                        &old_path,
+                        old_thumbnail_path.as_deref()
+                    ])
+                    .map_err(|e| e.to_string())?;
+            }
+
+            result.moved += 1;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn refresh_privacy_mask_index(
@@ -424,6 +662,35 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
             }
         }
         Err("Failed to save images after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn move_image_path_identities(
+    app: AppHandle,
+    moves: Vec<ImagePathIdentityMove>,
+) -> Result<ImagePathIdentityMoveResult, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = move_image_path_identities_inner(conn, &moves);
+
+            match result {
+                Ok(result) => return Ok(result),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to move image paths after max retries".to_string())
     })
     .await
 }
@@ -904,6 +1171,390 @@ mod tests {
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn move_image_path_identities_moves_image_and_preserves_relationships() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let old_id = "D:/Invoke/outputs/images/old.png";
+        let old_path = "D:/Invoke/outputs/images/legacy/old.png";
+        let old_thumbnail_path = "D:/Invoke/outputs/images/thumbnails/old.webp";
+        let new_id = "D:/Invoke/outputs/images/2026/05/old.png";
+        let mut image = create_image_record(old_id, 100, 200, "{}");
+        image.path = old_path.to_string();
+        image.thumbnail_path = old_thumbnail_path.to_string();
+        image.thumbnail_source = Some("invokeai".to_string());
+        super::save_images_batch_inner(&conn, &[image]).expect("initial save");
+
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, source) VALUES ('board-1', 'Board', 1, 'invoke')",
+            [],
+        )
+        .expect("collection");
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id) VALUES ('board-1', ?1)",
+            params![old_id],
+        )
+        .expect("collection image");
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES (?1, 'DetailBoost')",
+            params![old_id],
+        )
+        .expect("lora");
+        conn.execute(
+            "INSERT INTO image_embeddings (image_id, embedding_name) VALUES (?1, 'EasyNegative')",
+            params![old_id],
+        )
+        .expect("embedding");
+        conn.execute(
+            "INSERT INTO image_hypernetworks (image_id, hypernetwork_name) VALUES (?1, 'Hyper')",
+            params![old_id],
+        )
+        .expect("hypernetwork");
+        conn.execute(
+            "INSERT INTO image_controlnets (image_id, controlnet_name) VALUES (?1, 'Depth')",
+            params![old_id],
+        )
+        .expect("controlnet");
+        conn.execute(
+            "INSERT INTO image_ipadapters (image_id, ipadapter_name) VALUES (?1, 'Face')",
+            params![old_id],
+        )
+        .expect("ipadapter");
+        conn.execute(
+            "INSERT INTO facet_cache (
+                facet_type,
+                resource_name,
+                thumbnail_path,
+                safe_thumbnail_path,
+                thumbnail_image_id
+             ) VALUES (
+                'checkpoints',
+                'Model A',
+                ?1,
+                ?2,
+                ?3
+             )",
+            params![old_path, old_thumbnail_path, old_id],
+        )
+        .expect("facet cache");
+        conn.execute(
+            "UPDATE collections
+             SET dynamic_thumbnail_path = ?1,
+                 dynamic_safe_thumbnail_path = ?2,
+                 dynamic_thumbnail_is_sensitive = 0,
+                 dynamic_thumbnail_cached_at = 123
+             WHERE id = 'board-1'",
+            params![old_path, old_thumbnail_path],
+        )
+        .expect("collection thumbnail cache");
+        for (hash, name, thumbnail_path) in [
+            ("model-old-id", "Model Old Id", old_id),
+            ("model-old-path", "Model Old Path", old_path),
+            (
+                "model-old-thumbnail",
+                "Model Old Thumbnail",
+                old_thumbnail_path,
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO models (
+                    hash,
+                    name,
+                    lookup_source,
+                    scanned_at,
+                    thumbnail_path,
+                    resource_type
+                 ) VALUES (?1, ?2, 'manual_thumbnail', 1, ?3, 'checkpoint')",
+                params![hash, name, thumbnail_path],
+            )
+            .expect("manual model thumbnail");
+        }
+
+        let result = super::move_image_path_identities_inner(
+            &conn,
+            &[super::ImagePathIdentityMove {
+                old_id: old_id.to_string(),
+                new_id: new_id.to_string(),
+                thumbnail_path: Some(new_id.to_string()),
+                thumbnail_source: None,
+            }],
+        )
+        .expect("move paths");
+
+        assert_eq!(result.moved, 1);
+        assert_eq!(result.skipped_target_exists, 0);
+        assert_eq!(result.skipped_source_missing, 0);
+
+        let row = conn
+            .query_row(
+                "SELECT id, path, thumbnail_path, thumbnail_source, is_missing FROM images WHERE id = ?1",
+                params![new_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .expect("moved image");
+        assert_eq!(row.0, new_id);
+        assert_eq!(row.1, new_id);
+        assert_eq!(row.2, new_id);
+        assert_eq!(row.3, None);
+        assert_eq!(row.4, 0);
+
+        let relation_tables = [
+            ("collection_images", "image_id"),
+            ("image_loras", "image_id"),
+            ("image_embeddings", "image_id"),
+            ("image_hypernetworks", "image_id"),
+            ("image_controlnets", "image_id"),
+            ("image_ipadapters", "image_id"),
+        ];
+        for (table, column) in relation_tables {
+            let count: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE {column} = ?1"),
+                    params![new_id],
+                    |row| row.get(0),
+                )
+                .expect("relation count");
+            assert_eq!(count, 1, "{table} should point at moved image id");
+        }
+
+        let facet_row = conn
+            .query_row(
+                "SELECT thumbnail_path, safe_thumbnail_path, thumbnail_image_id
+                 FROM facet_cache
+                 WHERE facet_type = 'checkpoints' AND resource_name = 'Model A'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .expect("facet cache row");
+        assert_eq!(facet_row.0.as_deref(), Some(new_id));
+        assert_eq!(facet_row.1.as_deref(), Some(new_id));
+        assert_eq!(facet_row.2.as_deref(), Some(new_id));
+
+        let collection_thumb_row = conn
+            .query_row(
+                "SELECT dynamic_thumbnail_path,
+                        dynamic_safe_thumbnail_path,
+                        dynamic_thumbnail_is_sensitive,
+                        dynamic_thumbnail_cached_at
+                 FROM collections
+                 WHERE id = 'board-1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                },
+            )
+            .expect("collection thumbnail cache row");
+        assert_eq!(collection_thumb_row.0.as_deref(), Some(new_id));
+        assert_eq!(collection_thumb_row.1.as_deref(), Some(new_id));
+        assert_eq!(collection_thumb_row.2, Some(0));
+        assert_eq!(collection_thumb_row.3, Some(123));
+
+        let repaired_model_thumbnails: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM models
+                 WHERE hash IN ('model-old-id', 'model-old-path', 'model-old-thumbnail')
+                   AND thumbnail_path = ?1",
+                params![new_id],
+                |row| row.get(0),
+            )
+            .expect("repaired model thumbnails");
+        assert_eq!(
+            repaired_model_thumbnails, 3,
+            "manual model thumbnail sources should follow moved image identities"
+        );
+    }
+
+    #[test]
+    fn move_image_path_identities_skips_existing_target() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let old_id = "D:/Invoke/outputs/images/old.png";
+        let new_id = "D:/Invoke/outputs/images/2026/05/old.png";
+        let old_thumbnail_path = "D:/Invoke/outputs/images/thumbnails/old.webp";
+        let mut old_image = create_image_record(old_id, 100, 200, "{}");
+        old_image.path = old_id.to_string();
+        old_image.thumbnail_path = old_thumbnail_path.to_string();
+        let mut new_image = create_image_record(new_id, 101, 201, "{}");
+        new_image.path = new_id.to_string();
+        super::save_images_batch_inner(&conn, &[old_image, new_image]).expect("initial save");
+        conn.execute(
+            "INSERT INTO facet_cache (
+                facet_type,
+                resource_name,
+                thumbnail_path,
+                safe_thumbnail_path,
+                thumbnail_image_id
+             ) VALUES (
+                'checkpoints',
+                'Model A',
+                ?1,
+                ?2,
+                ?3
+             )",
+            params![old_id, old_thumbnail_path, old_id],
+        )
+        .expect("facet cache");
+        conn.execute(
+            "INSERT INTO models (
+                hash,
+                name,
+                lookup_source,
+                scanned_at,
+                thumbnail_path,
+                resource_type
+             ) VALUES ('model-skip-target', 'Model A', 'manual_thumbnail', 1, ?1, 'checkpoint')",
+            params![old_id],
+        )
+        .expect("manual model thumbnail");
+
+        let result = super::move_image_path_identities_inner(
+            &conn,
+            &[super::ImagePathIdentityMove {
+                old_id: old_id.to_string(),
+                new_id: new_id.to_string(),
+                thumbnail_path: Some(new_id.to_string()),
+                thumbnail_source: None,
+            }],
+        )
+        .expect("skip target");
+
+        assert_eq!(result.moved, 0);
+        assert_eq!(result.skipped_target_exists, 1);
+        assert_eq!(result.skipped_source_missing, 0);
+
+        let facet_row = conn
+            .query_row(
+                "SELECT thumbnail_path, safe_thumbnail_path, thumbnail_image_id
+                 FROM facet_cache
+                 WHERE facet_type = 'checkpoints' AND resource_name = 'Model A'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .expect("facet cache row");
+        assert_eq!(facet_row.0.as_deref(), Some(old_id));
+        assert_eq!(facet_row.1.as_deref(), Some(old_thumbnail_path));
+        assert_eq!(facet_row.2.as_deref(), Some(old_id));
+
+        let model_thumbnail_path: Option<String> = conn
+            .query_row(
+                "SELECT thumbnail_path FROM models WHERE hash = 'model-skip-target'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("model thumbnail");
+        assert_eq!(model_thumbnail_path.as_deref(), Some(old_id));
+    }
+
+    #[test]
+    fn move_image_path_identities_skips_missing_source_without_repairing_caches() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let old_id = "D:/Invoke/outputs/images/missing.png";
+        let old_thumbnail_path = "D:/Invoke/outputs/images/thumbnails/missing.webp";
+        let new_id = "D:/Invoke/outputs/images/2026/05/missing.png";
+        conn.execute(
+            "INSERT INTO facet_cache (
+                facet_type,
+                resource_name,
+                thumbnail_path,
+                safe_thumbnail_path,
+                thumbnail_image_id
+             ) VALUES (
+                'checkpoints',
+                'Model A',
+                ?1,
+                ?2,
+                ?3
+             )",
+            params![old_id, old_thumbnail_path, old_id],
+        )
+        .expect("facet cache");
+        conn.execute(
+            "INSERT INTO models (
+                hash,
+                name,
+                lookup_source,
+                scanned_at,
+                thumbnail_path,
+                resource_type
+             ) VALUES ('model-missing-source', 'Model A', 'manual_thumbnail', 1, ?1, 'checkpoint')",
+            params![old_id],
+        )
+        .expect("manual model thumbnail");
+
+        let result = super::move_image_path_identities_inner(
+            &conn,
+            &[super::ImagePathIdentityMove {
+                old_id: old_id.to_string(),
+                new_id: new_id.to_string(),
+                thumbnail_path: Some(new_id.to_string()),
+                thumbnail_source: None,
+            }],
+        )
+        .expect("skip missing source");
+
+        assert_eq!(result.moved, 0);
+        assert_eq!(result.skipped_target_exists, 0);
+        assert_eq!(result.skipped_source_missing, 1);
+
+        let facet_row = conn
+            .query_row(
+                "SELECT thumbnail_path, safe_thumbnail_path, thumbnail_image_id
+                 FROM facet_cache
+                 WHERE facet_type = 'checkpoints' AND resource_name = 'Model A'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .expect("facet cache row");
+        assert_eq!(facet_row.0.as_deref(), Some(old_id));
+        assert_eq!(facet_row.1.as_deref(), Some(old_thumbnail_path));
+        assert_eq!(facet_row.2.as_deref(), Some(old_id));
+
+        let model_thumbnail_path: Option<String> = conn
+            .query_row(
+                "SELECT thumbnail_path FROM models WHERE hash = 'model-missing-source'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("model thumbnail");
+        assert_eq!(model_thumbnail_path.as_deref(), Some(old_id));
     }
 
     #[test]

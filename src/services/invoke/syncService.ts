@@ -22,8 +22,17 @@ import {
     TouchedFacetResources
 } from '../../utils/touchedFacetTypes';
 import { insertImagesBatch } from '../db';
-import { getImagesByIds, syncCollectionImages } from '../db/imageRepo';
+import {
+    getFlatInvokeImageIdsForRoot,
+    getImagesByIds,
+    ImagePathIdentityMove,
+    moveImagePathIdentities,
+    moveImagePathIdentity,
+    syncCollectionImages
+} from '../db/imageRepo';
 import { upsertCollection } from '../db/collectionRepo';
+import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
+import { getFilename, normalizePath } from '../../utils/pathUtils';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
@@ -41,6 +50,7 @@ interface CountRow {
 
 interface InvokeImageRow {
     image_name: string;
+    image_subfolder?: string | null;
     metadata_blob: string | null;
     created_at: string;
     updated_at?: string | null;
@@ -51,6 +61,12 @@ interface InvokeImageRow {
     thumbnail_name?: string | null;
     has_workflow?: number | boolean | null;
     is_intermediate?: number | boolean | null;
+}
+
+interface InvokeRepairCandidate {
+    legacyFlatPath: string;
+    targetPath: string;
+    thumbnailPath: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -126,6 +142,7 @@ export const syncImages = async (
     const hasThumbnailName = columns.includes('thumbnail_name');
     const hasHasWorkflow = columns.includes('has_workflow');
     const hasUpdatedAt = columns.includes('updated_at');
+    const hasImageSubfolder = columns.includes('image_subfolder');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -196,15 +213,268 @@ export const syncImages = async (
     const touchedFacetTypes = new Set<FacetType>();
     let touchedFacetResources = createEmptyTouchedFacetResources();
 
+    onProgress(0, 0, `Scanning ${APP_NAME} library...`);
+    const pathResolver = createInvokeImagePathResolver(imagesRoot, async () =>
+        unwrap(commands.listInvokeaiImages(imagesRoot))
+    );
+
+    const resolveThumbnailPathsForRows = async (
+        rows: InvokeImageRow[],
+        resolvedPaths: ResolvedInvokeImagePath[]
+    ): Promise<string[]> => {
+        const candidatesByRow = rows.map((row, index) =>
+            pathResolver.getThumbnailPathCandidates(
+                hasThumbnailName ? row.thumbnail_name : undefined,
+                resolvedPaths[index]
+            )
+        );
+        const allCandidates = Array.from(new Set(candidatesByRow.flat()));
+        let existingThumbnailPaths: Set<string> | undefined;
+
+        if (allCandidates.length > 0) {
+            try {
+                const missingPaths = await unwrap(commands.verifyImagePaths(allCandidates));
+                const missingSet = new Set(missingPaths.map(path => path.replace(/\\/g, '/')));
+                existingThumbnailPaths = new Set(
+                    allCandidates.filter(path => !missingSet.has(path.replace(/\\/g, '/')))
+                );
+            } catch (error) {
+                console.warn('[InvokeAI Sync] Failed to verify InvokeAI thumbnail paths; using source image fallback.', error);
+                existingThumbnailPaths = new Set();
+            }
+        }
+
+        return resolvedPaths.map((resolvedPath, index) =>
+            pathResolver.resolveThumbnailPath(
+                hasThumbnailName ? rows[index].thumbnail_name : undefined,
+                resolvedPath,
+                existingThumbnailPaths
+            ) || resolvedPath.absolutePath || ''
+        );
+    };
+
+    const repairStaleInvokeImagePaths = async (): Promise<number> => {
+        onProgress(0, 0, 'Repairing existing InvokeAI image paths...');
+        const staleFlatPaths = await getFlatInvokeImageIdsForRoot(imagesRoot);
+        if (staleFlatPaths.length === 0) return 0;
+
+        const stalePathByName = new Map<string, string>();
+        staleFlatPaths.forEach((path) => {
+            const filename = getFilename(path);
+            if (filename) stalePathByName.set(filename.toLowerCase(), path);
+        });
+
+        const repairConditions: string[] = [];
+        if (!options.importIntermediates && hasIsIntermediate) {
+            repairConditions.push('i.is_intermediate = 0');
+        }
+        const REPAIR_NAME_BATCH_SIZE = 500;
+        const REPAIR_MOVE_BATCH_SIZE = 250;
+        let repairedCount = 0;
+        let matchedRows = 0;
+        let relativeRowsScanned = 0;
+        let skippedTargetMissing = 0;
+        let skippedTargetExists = 0;
+        let skippedSourceMissing = 0;
+        let skippedAmbiguous = 0;
+        let skippedUnresolved = 0;
+        const staleNames = Array.from(stalePathByName.keys());
+        const repairSelectFields = `i.image_name${hasImageSubfolder ? ', i.image_subfolder' : ''}${hasThumbnailName ? ', i.thumbnail_name' : ''}`;
+        const normalizedImageNameExpr = "LOWER(REPLACE(i.image_name, '\\', '/'))";
+        const repairRowsByKey = new Map<string, InvokeImageRow>();
+        const matchedStaleNames = new Set<string>();
+        const addRepairRows = (rows: InvokeImageRow[]) => {
+            rows.forEach((row) => {
+                const staleName = getFilename(row.image_name).toLowerCase();
+                if (!stalePathByName.has(staleName)) return;
+                matchedStaleNames.add(staleName);
+
+                const key = [
+                    normalizePath(row.image_name).toLowerCase(),
+                    normalizePath(row.image_subfolder || '').toLowerCase()
+                ].join('|');
+                repairRowsByKey.set(key, row);
+            });
+        };
+
+        for (let offset = 0; offset < staleNames.length; offset += REPAIR_NAME_BATCH_SIZE) {
+            if (signal?.aborted) throw new Error('Aborted');
+
+            const nameChunk = staleNames.slice(offset, offset + REPAIR_NAME_BATCH_SIZE);
+            const placeholders = nameChunk.map(() => '?').join(',');
+            const repairWhereClause = [
+                `${normalizedImageNameExpr} IN (${placeholders})`,
+                ...repairConditions
+            ].join(' AND ');
+            const repairRows = await invokeDb.select<InvokeImageRow[]>(`
+                SELECT ${repairSelectFields}
+                FROM images i
+                WHERE ${repairWhereClause}
+                ORDER BY i.created_at ASC, i.image_name ASC
+            `, nameChunk);
+            addRepairRows(repairRows);
+        }
+
+        if (matchedStaleNames.size < staleNames.length) {
+            const relativeRepairWhereClause = [
+                "instr(REPLACE(i.image_name, '\\', '/'), '/') > 0",
+                ...repairConditions
+            ].join(' AND ');
+            const relativeRepairRows = await invokeDb.select<InvokeImageRow[]>(`
+                SELECT ${repairSelectFields}
+                FROM images i
+                WHERE ${relativeRepairWhereClause}
+                ORDER BY i.created_at ASC, i.image_name ASC
+            `);
+            relativeRowsScanned = relativeRepairRows.length;
+            addRepairRows(relativeRepairRows);
+        }
+
+        const repairCandidates = Array.from(repairRowsByKey.values());
+        matchedRows = repairCandidates.length;
+
+        for (let offset = 0; offset < repairCandidates.length; offset += REPAIR_MOVE_BATCH_SIZE) {
+            if (signal?.aborted) throw new Error('Aborted');
+
+            const repairRows = repairCandidates.slice(offset, offset + REPAIR_MOVE_BATCH_SIZE);
+            if (repairRows.length === 0) continue;
+
+            const resolvedPaths = await Promise.all(
+                repairRows.map(row => pathResolver.resolveImagePath(row.image_name, row.image_subfolder))
+            );
+            const targetPaths = resolvedPaths
+                .map(resolved => resolved.absolutePath)
+                .filter((path): path is string => !!path);
+            const legacyFlatPaths = repairRows.map(row =>
+                stalePathByName.get(getFilename(row.image_name).toLowerCase()) || pathResolver.getLegacyFlatImagePath(row.image_name)
+            );
+            const lookupPaths = Array.from(new Set([
+                ...targetPaths,
+                ...legacyFlatPaths.filter((path): path is string => !!path)
+            ]));
+
+            let sizes: number[] = [];
+            try {
+                sizes = await unwrap(commands.getFileSizesBulk(targetPaths));
+            } catch (error) {
+                console.warn('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', error);
+                sizes = new Array(targetPaths.length).fill(0);
+            }
+            const existingImagesInBatch = await getImagesByIds(lookupPaths);
+            const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+            const sizeByPath = new Map(targetPaths.map((path, index) => [path, sizes[index] || 0]));
+            const thumbnailPaths = await resolveThumbnailPathsForRows(repairRows, resolvedPaths);
+            const moves: ImagePathIdentityMove[] = [];
+            const candidatesBySource = new Map<string, InvokeRepairCandidate[]>();
+
+            for (let i = 0; i < repairRows.length; i++) {
+                const resolvedPath = resolvedPaths[i];
+                const targetPath = resolvedPath.absolutePath;
+                const legacyFlatPath = legacyFlatPaths[i];
+                if (resolvedPath.ambiguous) {
+                    skippedAmbiguous++;
+                    continue;
+                }
+                if (!targetPath || !legacyFlatPath) {
+                    skippedUnresolved++;
+                    continue;
+                }
+                if (legacyFlatPath === targetPath) {
+                    skippedUnresolved++;
+                    continue;
+                }
+                if ((sizeByPath.get(targetPath) || 0) <= 0) {
+                    skippedTargetMissing++;
+                    continue;
+                }
+                if (existingMap.has(targetPath)) {
+                    skippedTargetExists++;
+                    continue;
+                }
+                if (!existingMap.has(legacyFlatPath)) {
+                    skippedSourceMissing++;
+                    continue;
+                }
+
+                const thumbnailPath = thumbnailPaths[i] || targetPath;
+                const candidates = candidatesBySource.get(legacyFlatPath) || [];
+                candidates.push({ legacyFlatPath, targetPath, thumbnailPath });
+                candidatesBySource.set(legacyFlatPath, candidates);
+            }
+
+            for (const candidates of candidatesBySource.values()) {
+                const targetPathsForSource = new Set(candidates.map(candidate => candidate.targetPath));
+                if (targetPathsForSource.size > 1) {
+                    skippedAmbiguous += candidates.length;
+                    continue;
+                }
+
+                const candidate = candidates[0];
+                moves.push({
+                    oldId: candidate.legacyFlatPath,
+                    newId: candidate.targetPath,
+                    thumbnailPath: candidate.thumbnailPath,
+                    thumbnailSource: candidate.thumbnailPath === candidate.targetPath ? null : 'invokeai'
+                });
+            }
+
+            if (moves.length > 0) {
+                const moveResult = await moveImagePathIdentities(moves);
+                repairedCount += moveResult.moved;
+                skippedTargetExists += moveResult.skippedTargetExists;
+                skippedSourceMissing += moveResult.skippedSourceMissing;
+
+                for (const move of moves.slice(0, moveResult.moved)) {
+                    const legacyExisting = existingMap.get(move.oldId);
+                    existingMap.delete(move.oldId);
+                    if (legacyExisting) existingMap.set(move.newId, { ...legacyExisting, id: move.newId });
+                }
+            }
+
+            console.info('[InvokeAI Sync] Stale InvokeAI path repair batch complete.', {
+                staleFlatRows: staleFlatPaths.length,
+                matchedRows,
+                relativeRowsScanned,
+                queuedMoves: moves.length,
+                repairedCount,
+                skippedTargetExists,
+                skippedTargetMissing,
+                skippedSourceMissing,
+                skippedAmbiguous,
+                skippedUnresolved
+            });
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        console.info('[InvokeAI Sync] Stale InvokeAI path repair complete.', {
+            staleFlatRows: staleFlatPaths.length,
+            matchedRows,
+            relativeRowsScanned,
+            repairedCount,
+            skippedTargetExists,
+            skippedTargetMissing,
+            skippedSourceMissing,
+            skippedAmbiguous,
+            skippedUnresolved
+        });
+        return repairedCount;
+    };
+
+    let repairedExistingCount = 0;
+    const shouldRepairExistingPaths = (options.mode ?? 'manual') === 'manual';
+    if (shouldRepairExistingPaths) {
+        repairedExistingCount = await repairStaleInvokeImagePaths();
+    }
+
     if (totalToImport === 0) {
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
-            updatedCount: 0,
+            updatedCount: repairedExistingCount,
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: 0, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let hasBoardsTable = false;
@@ -227,11 +497,9 @@ export const syncImages = async (
         });
     }
 
-    onProgress(0, 0, `Scanning ${APP_NAME} library...`);
-
     let processed = 0;
     let newImportedCount = 0;
-    let totalUpdated = 0;
+    let totalUpdated = repairedExistingCount;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -241,6 +509,7 @@ export const syncImages = async (
     const hasWfCol = hasHasWorkflow ? ', i.has_workflow' : '';
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
     const intermediateCol = hasIsIntermediate ? ', i.is_intermediate' : '';
+    const imageSubfolderCol = hasImageSubfolder ? ', i.image_subfolder' : '';
 
     const createdBoardIds = new Set<string>();
     let batchCount = 0;
@@ -252,7 +521,7 @@ export const syncImages = async (
         const batchIndex = batchCount + 1;
         const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol}
             FROM images i
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
@@ -265,10 +534,16 @@ export const syncImages = async (
         if (rows.length === 0) break;
         batchCount++;
 
-        const batchPaths = rows.map((row) => {
-            const rawPath = `${imagesRoot}/outputs/images/${row.image_name}`;
-            return rawPath.replace(/\\/g, '/').replace(/\/+/g, '/');
-        });
+        const resolvedPaths = await Promise.all(rows.map((row) => pathResolver.resolveImagePath(row.image_name, row.image_subfolder)));
+        const thumbnailPaths = await resolveThumbnailPathsForRows(rows, resolvedPaths);
+        const batchPaths = resolvedPaths
+            .map((resolved) => resolved.absolutePath)
+            .filter((path): path is string => !!path);
+        const legacyFlatPaths = rows.map((row) => pathResolver.getLegacyFlatImagePath(row.image_name));
+        const lookupPaths = Array.from(new Set([
+            ...batchPaths,
+            ...legacyFlatPaths.filter((path): path is string => !!path)
+        ]));
 
         let sizes: number[] = [];
         const fileSizeProbeStartedAt = liveWatchNow();
@@ -280,16 +555,25 @@ export const syncImages = async (
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(batchPaths);
+        const existingImagesInBatch = await getImagesByIds(lookupPaths);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+        const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
         const batchBuildStartedAt = liveWatchNow();
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const fullPath = batchPaths[i];
-            const fileSize = sizes[i] || 0;
+            const resolvedPath: ResolvedInvokeImagePath = resolvedPaths[i];
+            if (!resolvedPath.absolutePath) {
+                processed++;
+                continue;
+            }
+
+            const fullPath = resolvedPath.absolutePath;
+            const fileSize = sizeByPath.get(fullPath) || 0;
+            const legacyFlatPath = legacyFlatPaths[i];
+            let pathRepaired = false;
 
             try {
                 const timeRaw = row.created_at.includes('Z') ? row.created_at : row.created_at + ' Z';
@@ -310,7 +594,32 @@ export const syncImages = async (
                 let isPinned = false;
 
                 // Sync protection: If we already have this image, and sync options are OFF, keep the old values
-                const existing = existingMap.get(fullPath);
+                let existing = existingMap.get(fullPath);
+                if (!existing && legacyFlatPath && legacyFlatPath !== fullPath) {
+                    const legacyExisting = existingMap.get(legacyFlatPath);
+                    if (legacyExisting) {
+                        const repairedThumbnailPath = thumbnailPaths[i] || fullPath;
+                        pathRepaired = await moveImagePathIdentity(
+                            legacyFlatPath,
+                            fullPath,
+                            repairedThumbnailPath,
+                            repairedThumbnailPath === fullPath ? null : 'invokeai'
+                        );
+
+                        if (pathRepaired) {
+                            existing = {
+                                ...legacyExisting,
+                                id: fullPath,
+                                url: convertFileSrc(fullPath),
+                                thumbnailUrl: repairedThumbnailPath,
+                                thumbnailSource: repairedThumbnailPath === fullPath ? undefined : 'invokeai',
+                                filename: row.image_name.split(/[\\/]/).pop() ?? row.image_name,
+                                isMissing: false
+                            };
+                            existingMap.set(fullPath, existing);
+                        }
+                    }
+                }
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
                     const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
@@ -422,14 +731,14 @@ export const syncImages = async (
                 }
 
                 if (!needsUpdate) {
+                    if (pathRepaired) totalUpdated++;
                     processed++;
                     syncedIds.add(row.image_name);
+                    if (resolvedPath.relativePath) syncedIds.add(resolvedPath.relativePath);
                     continue;
                 }
 
-                let thumbnailPath = (hasThumbnailName && row.thumbnail_name)
-                    ? `${imagesRoot}/outputs/images/thumbnails/${row.thumbnail_name}`
-                    : `${imagesRoot}/outputs/images/thumbnails/${row.image_name.replace(/\.[^/.]+$/, "") + ".webp"}`;
+                const thumbnailPath = thumbnailPaths[i] || fullPath;
 
                 // Capture originalState for new images (InvokeAI import-time values)
                 const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
@@ -459,8 +768,8 @@ export const syncImages = async (
                     id: fullPath,
                     url: convertFileSrc(fullPath),
                     thumbnailUrl: thumbnailPath,
-                    thumbnailSource: 'invokeai',
-                    filename: row.image_name,
+                    thumbnailSource: thumbnailPath === fullPath ? undefined : 'invokeai',
+                    filename: row.image_name.split(/[\\/]/).pop() ?? row.image_name,
                     fileSize: fileSize,
                     timestamp: timestamp || Date.now(),
                     width: row.width || 0,
@@ -495,6 +804,7 @@ export const syncImages = async (
 
                 currentBatch.push(newImg);
                 syncedIds.add(row.image_name);
+                if (resolvedPath.relativePath) syncedIds.add(resolvedPath.relativePath);
                 processed++;
             } catch (e) { }
         }

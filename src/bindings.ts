@@ -37,6 +37,14 @@ async saveImagesBatch(images: ImageRecord[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<ImagePathIdentityMoveResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_image_path_identities", { moves }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };
@@ -539,6 +547,8 @@ export type FileEntry = { path: string; modified: number; size: number }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean; hasWorkflowHint?: boolean }
+export type ImagePathIdentityMove = { oldId: string; newId: string; thumbnailPath: string | null; thumbnailSource: string | null }
+export type ImagePathIdentityMoveResult = { moved: number; skippedTargetExists: number; skippedSourceMissing: number }
 export type ImageRecord = { id: string; path: string; width: number; height: number; fileSize: number; fileHash: string | null; timestamp: number; metadataJson: string; thumbnailPath: string; 
 /**
  * Base64 encoded 32px WebP micro-thumbnail for instant previews

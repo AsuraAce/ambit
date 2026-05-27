@@ -6,6 +6,8 @@ import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
+import type { InvokeDbSnapshotState } from '../../types';
+import { INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../../services/invoke/dbSnapshot';
 
 // --- Extensive Mocks for Integration ---
 
@@ -329,7 +331,8 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => {
             hook.setSettings({
                 invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
-                lastSyncedAt: 100
+                lastSyncedAt: 100,
+                importOrphans: false
             });
         });
 
@@ -348,6 +351,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
+        mocks.appRepository.save.mockClear();
 
         await act(async () => {
             await hook.startInvokeSync({ mode: 'startup' });
@@ -361,6 +365,17 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+        expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                invokeDbSnapshot: expect.objectContaining({
+                    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION
+                })
+            })
+        }));
+
+        await act(async () => {
+            hook.setSettings({ invokeDbSnapshot: undefined });
+        });
     });
 
     it('uses startup resource-incremental facet refresh for a small known Invoke catch-up', async () => {
@@ -800,6 +815,7 @@ describe('Library Integration (Provider Stack)', () => {
                     importIntermediates: false,
                     importOrphans: false,
                     syncBoardsToCollections: false,
+                    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
                     files
                 }
             });
@@ -817,6 +833,76 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('runs startup Invoke SQLite sync once when the saved DB snapshot predates path repair', async () => {
+        let hook: any;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook.isLoaded).toBe(true));
+
+        const files = [
+            {
+                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                exists: true,
+                size: 10,
+                modifiedMs: 100
+            }
+        ];
+        const legacySnapshot = {
+            dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+            lastSyncedAt: 100,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false,
+            files
+        } satisfies Omit<InvokeDbSnapshotState, 'pathRepairVersion'>;
+
+        mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                files
+            }
+        });
+        mocks.syncImages.mockResolvedValueOnce({
+            imported: 0,
+            updated: 0,
+            maxTimestamp: 100,
+            syncedIds: new Set(),
+            boardMapping: new Map(),
+            touchedFacetTypes: [],
+            touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] }
+        });
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                invokeDbSnapshot: legacySnapshot as InvokeDbSnapshotState
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockClear();
+
+        await act(async () => {
+            await hook.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'startup' })
+        );
     });
 
     it('skips startup Invoke SQLite sync when the DB file is missing', async () => {
@@ -853,6 +939,7 @@ describe('Library Integration (Provider Stack)', () => {
                     importIntermediates: false,
                     importOrphans: false,
                     syncBoardsToCollections: false,
+                    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
                     files: [
                         {
                             path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildInvokeDbSnapshotState, isInvokeDbSnapshotCurrent } from '../dbSnapshot';
+import type { InvokeDbSnapshotState } from '../../../types';
+import {
+    buildInvokeDbSnapshotState,
+    INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+    isInvokeDbSnapshotCurrent
+} from '../dbSnapshot';
 
 const baseSnapshot = {
     dbPath: 'D:/Invoke/databases/invokeai.db',
@@ -45,6 +50,7 @@ describe('Invoke DB startup snapshot matching', () => {
         });
 
         expect(isInvokeDbSnapshotCurrent(saved, current)).toBe(true);
+        expect(current.pathRepairVersion).toBe(INVOKE_PATH_REPAIR_SNAPSHOT_VERSION);
     });
 
     it('invalidates when sync cursor or import flags change', () => {
@@ -101,5 +107,33 @@ describe('Invoke DB startup snapshot matching', () => {
         });
 
         expect(isInvokeDbSnapshotCurrent(saved, current)).toBe(false);
+    });
+
+    it('invalidates saved snapshots that predate the Invoke path repair marker', () => {
+        const current = buildInvokeDbSnapshotState(baseSnapshot, {
+            lastSyncedAt: 1000,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false
+        });
+        const legacySaved = { ...current } as Partial<InvokeDbSnapshotState>;
+        delete legacySaved.pathRepairVersion;
+
+        expect(isInvokeDbSnapshotCurrent(legacySaved as InvokeDbSnapshotState, current)).toBe(false);
+    });
+
+    it('invalidates saved snapshots with an older path repair marker', () => {
+        const current = buildInvokeDbSnapshotState(baseSnapshot, {
+            lastSyncedAt: 1000,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false
+        });
+        const oldRepairSnapshot = {
+            ...current,
+            pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION - 1
+        };
+
+        expect(isInvokeDbSnapshotCurrent(oldRepairSnapshot, current)).toBe(false);
     });
 });

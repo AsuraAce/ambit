@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('../../../bindings', () => ({
     commands: {
         saveImagesBatch: vi.fn(),
+        moveImagePathIdentities: vi.fn(),
         moveToTrash: vi.fn(),
         deleteThumbnail: vi.fn(),
         rebuildFacetCache: vi.fn(),
@@ -186,6 +187,25 @@ describe('imageRepo batch removal', () => {
         expect(images[0].originalMetadata?.positivePrompt).toBe('original prompt');
         expect(images[0].originalChunks?.invokeai_metadata).toBe(JSON.stringify({ positive_prompt: 'raw prompt' }));
         expect(images[0].originalState).toEqual(originalState);
+    });
+
+    it('finds only flat InvokeAI image rows for stale path repair', async () => {
+        const db = {
+            select: vi.fn(async () => [
+                { id: 'D:/Invoke/outputs/images/old.png' }
+            ]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { getFlatInvokeImageIdsForRoot } = await import('../imageRepo');
+        const ids = await getFlatInvokeImageIdsForRoot('D:/Invoke');
+
+        expect(ids).toEqual(['D:/Invoke/outputs/images/old.png']);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining("instr(substr(id, ?), '/') = 0"),
+            ['D:/Invoke/outputs/images/%', 'D:/Invoke/outputs/images/'.length + 1]
+        );
     });
 
     it('chunks multi-image library removal so large selections do not exceed sqlite parameter limits', async () => {

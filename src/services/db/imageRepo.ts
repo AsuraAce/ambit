@@ -248,6 +248,87 @@ export const insertImagesBatch = async (images: AIImage[]) => {
     // It should be called once at the end of the sync/import process.
 };
 
+export interface ImagePathIdentityMove {
+    oldId: string;
+    newId: string;
+    thumbnailPath?: string | null;
+    thumbnailSource?: string | null;
+}
+
+export interface ImagePathIdentityMoveResult {
+    moved: number;
+    skippedTargetExists: number;
+    skippedSourceMissing: number;
+}
+
+export const moveImagePathIdentities = async (
+    moves: ImagePathIdentityMove[]
+): Promise<ImagePathIdentityMoveResult> => {
+    if (moves.length === 0) {
+        return { moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 };
+    }
+
+    if (isBrowserMockMode()) {
+        let moved = 0;
+        let skippedTargetExists = 0;
+        let skippedSourceMissing = 0;
+
+        for (const move of moves) {
+            const oldImage = getBrowserMockImages().find(image => image.id === move.oldId);
+            if (!oldImage) {
+                skippedSourceMissing++;
+                continue;
+            }
+
+            if (getBrowserMockImages().some(image => image.id === move.newId)) {
+                skippedTargetExists++;
+                continue;
+            }
+
+            updateBrowserMockImage(move.oldId, {
+                id: move.newId,
+                url: move.newId,
+                thumbnailUrl: move.thumbnailPath || move.newId,
+                thumbnailSource: move.thumbnailSource || undefined,
+                isMissing: false
+            });
+            moved++;
+        }
+
+        return { moved, skippedTargetExists, skippedSourceMissing };
+    }
+
+    const normalizedMoves = moves
+        .map(move => ({
+            oldId: normalizePath(move.oldId),
+            newId: normalizePath(move.newId),
+            thumbnailPath: move.thumbnailPath ? normalizePath(move.thumbnailPath) : null,
+            thumbnailSource: move.thumbnailSource || null
+        }))
+        .filter(move => move.oldId !== move.newId);
+
+    if (normalizedMoves.length === 0) {
+        return { moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 };
+    }
+
+    return unwrap(commands.moveImagePathIdentities(normalizedMoves));
+};
+
+export const moveImagePathIdentity = async (
+    oldId: string,
+    newId: string,
+    thumbnailPath?: string | null,
+    thumbnailSource?: string | null
+): Promise<boolean> => {
+    const result = await moveImagePathIdentities([{
+        oldId,
+        newId,
+        thumbnailPath,
+        thumbnailSource
+    }]);
+    return result.moved === 1;
+};
+
 /**
  * Rebuilds the facet_cache table with pre-computed counts for all resources.
  * This runs the expensive queries once per import, so getFacets becomes instant.
@@ -583,6 +664,28 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     }
 
     return allImages;
+};
+
+export const getFlatInvokeImageIdsForRoot = async (invokeRoot: string): Promise<string[]> => {
+    const normalizedRoot = normalizePath(invokeRoot).replace(/\/$/, '');
+    const imagesPrefix = `${normalizedRoot}/outputs/images/`;
+
+    if (isBrowserMockMode()) {
+        return getBrowserMockImages()
+            .map(image => normalizePath(image.id))
+            .filter(id => id.startsWith(imagesPrefix) && !id.slice(imagesPrefix.length).includes('/'));
+    }
+
+    const db = await getDb();
+    const rows = await db.select<Array<{ id: string }>>(
+        `SELECT id
+         FROM images
+         WHERE id LIKE ?
+           AND instr(substr(id, ?), '/') = 0`,
+        [`${imagesPrefix}%`, imagesPrefix.length + 1]
+    );
+
+    return rows.map(row => normalizePath(row.id));
 };
 
 export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> => {

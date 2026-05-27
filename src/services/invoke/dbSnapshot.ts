@@ -14,6 +14,8 @@ interface InvokeDbSnapshotConfig {
     syncBoardsToCollections?: boolean;
 }
 
+export const INVOKE_PATH_REPAIR_SNAPSHOT_VERSION = 1;
+
 const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>
     [...files].sort((a, b) => a.path.localeCompare(b.path));
 
@@ -32,6 +34,7 @@ export const buildInvokeDbSnapshotState = (
     importIntermediates: config.importIntermediates ?? false,
     importOrphans: config.importOrphans ?? false,
     syncBoardsToCollections: config.syncBoardsToCollections ?? false,
+    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     files: sortedFiles(snapshot.files).map(file => ({
         path: file.path,
         exists: file.exists,
@@ -50,6 +53,7 @@ export const isInvokeDbSnapshotCurrent = (
     if ((saved.importIntermediates ?? false) !== current.importIntermediates) return false;
     if ((saved.importOrphans ?? false) !== current.importOrphans) return false;
     if ((saved.syncBoardsToCollections ?? false) !== current.syncBoardsToCollections) return false;
+    if ((saved.pathRepairVersion ?? 0) !== current.pathRepairVersion) return false;
 
     const savedFiles = sortedFiles(saved.files ?? []);
     const currentFiles = sortedFiles(current.files);
