@@ -293,7 +293,17 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         lastSyncedAt
                     }
                 );
-                setSettings(prev => ({ ...prev, invokeDbSnapshot: snapshot }));
+                const nextSettings = {
+                    ...useSettingsStore.getState().settings,
+                    invokeDbSnapshot: snapshot
+                };
+                setSettings(nextSettings);
+
+                const appState = await appRepository.load();
+                await appRepository.save({
+                    ...appState,
+                    settings: nextSettings
+                });
             } catch (snapshotError) {
                 console.warn('[Startup Catch-up] Failed to persist Invoke DB snapshot.', snapshotError);
             }

@@ -1,10 +1,47 @@
 import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands, ScanResult } from '../../bindings';
+import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { getDb } from '../db/connection';
 import { insertImagesBatch } from '../db/imageRepo';
 import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
+import { getFilename, normalizePath } from '../../utils/pathUtils';
+
+const normalizeRelativePath = (path: string): string =>
+    normalizePath(path).replace(/^\/+/, '');
+
+const buildPathMatchKeys = (path: string): string[] => {
+    const normalized = normalizeRelativePath(path);
+    const withoutOutputPrefix = normalized.replace(/^outputs\/images\//i, '');
+
+    return Array.from(new Set([
+        normalized,
+        withoutOutputPrefix
+    ].filter(Boolean)));
+};
+
+const buildInvokeRowPath = (imageName: string, imageSubfolder?: string | null): string => {
+    const normalizedName = normalizeRelativePath(imageName);
+    const normalizedSubfolder = normalizeRelativePath(imageSubfolder || '');
+    if (!normalizedSubfolder) return normalizedName;
+
+    const filename = getFilename(normalizedName) || normalizedName;
+    const subfolder = normalizedSubfolder.replace(/^outputs\/images\//i, '');
+    return `outputs/images/${subfolder}/${filename}`;
+};
+
+const buildIntermediateMatchKeys = (imageName: string, imageSubfolder?: string | null): string[] => {
+    const normalizedName = normalizeRelativePath(imageName);
+    const normalizedSubfolder = normalizeRelativePath(imageSubfolder || '');
+    const hasPathTruth = !!normalizedSubfolder || /[\\/]/.test(normalizedName);
+
+    if (hasPathTruth) {
+        return buildPathMatchKeys(buildInvokeRowPath(imageName, imageSubfolder));
+    }
+
+    const filename = getFilename(normalizedName);
+    return filename ? [filename] : [];
+};
 
 export const scanForOrphans = async (
     rootPath: string,
@@ -31,8 +68,14 @@ export const scanForOrphans = async (
         try {
             const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
             const invokeDb = await Database.load(`sqlite:${dbPath.replace(/\\/g, '/')}`);
-            const interRows = await invokeDb.select<Array<{ image_name: string }>>("SELECT image_name FROM images WHERE is_intermediate = 1");
-            knownIntermediates = new Set(interRows.map((r) => r.image_name));
+            const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
+            const hasImageSubfolder = tableInfo.some(column => column.name === 'image_subfolder');
+            const interRows = await invokeDb.select<Array<{ image_name: string, image_subfolder?: string | null }>>(
+                `SELECT image_name ${hasImageSubfolder ? ', image_subfolder' : ''} FROM images WHERE is_intermediate = 1`
+            );
+            knownIntermediates = new Set(interRows.flatMap((r) =>
+                buildIntermediateMatchKeys(r.image_name, r.image_subfolder)
+            ));
         } catch (e) {
             console.error("[Hybrid Sync] ERROR loading intermediates:", e);
         }
@@ -51,8 +94,13 @@ export const scanForOrphans = async (
     }
 
     const orphans = allFiles.filter(f => {
-        const filename = f.split('/').pop();
-        if (!options.importIntermediates && filename && knownIntermediates.has(filename)) return false;
+        const pathMatchKeys = buildPathMatchKeys(f);
+        const filename = getFilename(f);
+        if (!options.importIntermediates && (
+            pathMatchKeys.some(key => knownIntermediates.has(key)) ||
+            (filename && knownIntermediates.has(filename))
+        )) return false;
+        if (pathMatchKeys.some(key => syncedIds.has(key))) return false;
 
         // f is relative to root (e.g. "outputs/images/uuid.png")
         // So we just join it with root.

@@ -27,6 +27,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         security::delete_api_key,
         // db commands
         db::commands::image_commands::save_images_batch,
+        db::commands::image_commands::move_image_path_identities,
         db::commands::maintenance::get_db_diagnostics,
         db::commands::maintenance::backfill_image_file_hashes,
         db::commands::maintenance::cancel_image_file_hash_backfill,
