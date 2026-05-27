@@ -37,6 +37,7 @@ describe('SettingsStore', () => {
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
                 enableAI: false,
+                libraryLayoutMode: 'masonry',
                 hideImportModal: false
             }
         });
@@ -67,6 +68,22 @@ describe('SettingsStore', () => {
 
         expect(useSettingsStore.getState().settings.enableAutoThumbnailHealing).toBe(true);
         expect(useSettingsStore.getState().settings.enforceHighQualityThumbnails).toBe(false);
+    });
+
+    it('should default gallery layout mode to masonry', async () => {
+        (appRepository.load as any).mockResolvedValue({ settings: {} });
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.libraryLayoutMode).toBe('masonry');
+    });
+
+    it('should preserve persisted gallery layout mode on initialize', async () => {
+        (appRepository.load as any).mockResolvedValue({ settings: { libraryLayoutMode: 'justified' } });
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.libraryLayoutMode).toBe('justified');
     });
 
     it('should migrate legacy API key from library.json to keyring', async () => {
