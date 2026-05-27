@@ -45,7 +45,6 @@ export default function App() {
 
     // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
-    const [layoutMode, setLayoutMode] = useState<LayoutMode>('masonry');
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
     const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
@@ -97,6 +96,7 @@ export default function App() {
     // const setRecentSearches = useSearchStore(s => s.setRecentSearches);
 
     const isLoaded = isSettingsLoaded && isCollectionsLoaded;
+    const layoutMode = settings.libraryLayoutMode ?? 'masonry';
     const updater = useAppUpdater({
         addToast,
         autoCheckEnabled: settings.autoCheckForUpdates !== false,
@@ -238,6 +238,10 @@ export default function App() {
         setViewMode(newMode);
         clearSelection();
     }, [viewMode, clearSelection]);
+
+    const setLayoutMode = useCallback((mode: LayoutMode) => {
+        setSettings(prev => ({ ...prev, libraryLayoutMode: mode }));
+    }, [setSettings]);
 
     const handleLayoutChange = useCallback((c: number, h: number) => {
         setGridLayout(prev => {

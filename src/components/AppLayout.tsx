@@ -66,7 +66,7 @@ interface AppLayoutProps {
     changeViewMode: (mode: ViewMode) => void;
     searchProps: React.ComponentProps<typeof AppHeader>['searchProps'];
     layoutMode: LayoutMode;
-    setLayoutMode: React.Dispatch<React.SetStateAction<LayoutMode>>;
+    setLayoutMode: (mode: LayoutMode) => void;
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
     totalImages: number;

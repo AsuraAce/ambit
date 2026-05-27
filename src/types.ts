@@ -278,6 +278,7 @@ export interface AppSettings {
   importOrphans?: boolean; // New: Option to scan for files not in DB
   invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
+  libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)

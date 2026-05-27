@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     syncBoardsToCollections: false,
     importOrphans: true,
     starredAs: 'favorite',
+    libraryLayoutMode: 'masonry',
     resourceViewModes: {},
     hideImportModal: false,
     enableAutoThumbnailHealing: true,
