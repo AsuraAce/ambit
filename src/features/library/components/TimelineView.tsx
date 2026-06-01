@@ -48,6 +48,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 }) => {
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const { groups } = useTimeline(images, sortOption);
+    const timelineSourceIndexes = React.useMemo(() => {
+        const sourceIndexById = new Map(images.map((image, index) => [image.id, index]));
+
+        return groups.flatMap(group =>
+            group.images.map(image => sourceIndexById.get(image.id) ?? -1)
+        );
+    }, [groups, images]);
     const containerRef = useRef<HTMLDivElement>(null);
     const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
@@ -74,11 +81,21 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         activeHeaderIdRef
     } = useTimelineLayout({ groups, width, thumbnailSize, scrollTop });
 
+    const handleTimelineRangeSelection = React.useCallback((selectedIndexes: number[], isAdditive: boolean) => {
+        if (!onRangeSelection) return;
+
+        const sourceIndexes = selectedIndexes
+            .map(index => timelineSourceIndexes[index])
+            .filter((index): index is number => index !== undefined && index >= 0);
+
+        onRangeSelection(sourceIndexes, isAdditive);
+    }, [onRangeSelection, timelineSourceIndexes]);
+
     // Selection Hook
     const { dragBox, handleMouseDown } = useTimelineSelection({
         containerRef,
         layoutItems: visibleItems, // We can use visible items or all items, visible is enough for overlap check if we search correctly
-        onRangeSelection,
+        onRangeSelection: handleTimelineRangeSelection,
         onBackgroundClick
     });
 
@@ -171,7 +188,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                         console.error('[TimelineView] Failed to set drag data:', err);
                                                     }
                                                 }}
-                                                onClick={(e) => onImageClick(e, subItem.image.id, subItem.globalIndex)}
+                                                onClick={(e) => onImageClick(e, subItem.image.id, timelineSourceIndexes[subItem.globalIndex] ?? subItem.globalIndex)}
                                                 onToggleSelection={(e) => onSelectionToggle(e, subItem.image.id)}
                                                 onToggleFavorite={(e) => onToggleFavorite(e, subItem.image.id)}
                                                 onTogglePin={onTogglePin ? (e) => onTogglePin(e, subItem.image.id) : undefined}
