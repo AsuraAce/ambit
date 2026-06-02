@@ -165,7 +165,7 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('Scanning C:/old-folder...')).toBeNull();
     });
 
-    it('renders running smart thumbnail progress without repeated checked counts', () => {
+    it('renders running smart thumbnail progress with cancel controls and without repeated checked counts', () => {
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
             backgroundHealingProgress: {
@@ -184,7 +184,7 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('340 / 340')).toBeNull();
         expect(screen.queryByText('0%')).toBeNull();
         expect(screen.queryByText('100%')).toBeNull();
-        expect(screen.queryByText('Cancel')).toBeNull();
+        expect(screen.getByText('Cancel')).toBeTruthy();
     });
 
     it('renders completed smart thumbnail progress without generic count or percent chrome', () => {

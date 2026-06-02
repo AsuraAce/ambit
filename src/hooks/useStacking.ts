@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AIImage } from '../types';
 import MetadataWorker from '../workers/metadata.worker.ts?worker';
+import { startBackgroundDiagnostic } from '../utils/backgroundDiagnostics';
 
 export interface StackGroup {
     id: string;
@@ -33,10 +34,13 @@ export const useStacking = (images: AIImage[]) => {
 
     // Debounce ref
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const activeWorkerCleanupRef = useRef<(() => void) | null>(null);
     const lastImagesRef = useRef<number>(0);
 
     useEffect(() => {
         if (images.length === 0) {
+            activeWorkerCleanupRef.current?.();
+            activeWorkerCleanupRef.current = null;
             setSuggestedStacks([]);
             setIsCalculating(false);
             return;
@@ -48,11 +52,24 @@ export const useStacking = (images: AIImage[]) => {
         lastImagesRef.current = currentSig;
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        activeWorkerCleanupRef.current?.();
+        activeWorkerCleanupRef.current = null;
 
         setIsCalculating(true);
         timeoutRef.current = setTimeout(() => {
             const worker = getWorker();
             const requestId = `stack_${Date.now()}`;
+            const diagnostic = startBackgroundDiagnostic('worker', 'Stack suggestion analysis', {
+                requestId,
+                imageCount: images.length
+            });
+            let finished = false;
+
+            const finish = (status: 'finished' | 'cancelled' | 'failed') => {
+                if (finished) return;
+                finished = true;
+                diagnostic.finish(status);
+            };
 
             const handler = (e: MessageEvent) => {
                 if (e.data.requestId === requestId) {
@@ -61,9 +78,19 @@ export const useStacking = (images: AIImage[]) => {
                     }
                     setIsCalculating(false);
                     worker.removeEventListener('message', handler);
+                    if (activeWorkerCleanupRef.current === cleanupWorkerListener) {
+                        activeWorkerCleanupRef.current = null;
+                    }
+                    finish(e.data.error ? 'failed' : 'finished');
                 }
             };
 
+            const cleanupWorkerListener = () => {
+                worker.removeEventListener('message', handler);
+                finish('cancelled');
+            };
+
+            activeWorkerCleanupRef.current = cleanupWorkerListener;
             worker.addEventListener('message', handler);
 
             // Send lightweight payload
@@ -90,6 +117,8 @@ export const useStacking = (images: AIImage[]) => {
 
         return () => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            activeWorkerCleanupRef.current?.();
+            activeWorkerCleanupRef.current = null;
         };
     }, [images]);
 

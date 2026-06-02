@@ -117,6 +117,7 @@ export const ActivityDock: React.FC = () => {
         progress = backgroundHealingProgress;
         label = "Smart Thumbnails";
         isLowPriority = true;
+        supportsCancel = true;
         footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
@@ -320,6 +321,7 @@ export const ActivityDock: React.FC = () => {
                                             if (isScanningDiscovery) cancelDiscoveryScan();
                                             if (isScanningDuplicates) cancelDuplicateScan();
                                             if (isScanningMissingFiles) cancelMissingScan();
+                                            if (isBackgroundActive) void commands.cancelThumbnailOptimizationJob().catch(console.error);
                                             if (isRefreshActive) cancelRefresh();
                                         }}
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"

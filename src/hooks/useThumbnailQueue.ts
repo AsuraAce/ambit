@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
-import { listen } from '@tauri-apps/api/event';
 import {
     commands,
     type ThumbnailOptimizationProfile,
@@ -17,6 +16,8 @@ import {
 } from './thumbnailQueueProgress';
 import { rebuildThumbnailFacetCache } from '../services/db/imageRepo';
 import { getThumbnailDir } from '../services/thumbnailService';
+import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
+import { listenWithCleanup } from '../utils/tauriListener';
 
 const STARTUP_DELAY_MS = 30000;
 const RESUME_DELAY_MS = 5000;
@@ -65,6 +66,9 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const restartRequestedRef = useRef(false);
     const retryAfterCurrentRunRef = useRef(false);
     const isImageQueryFetchingRef = useRef(false);
+    const mountedRef = useRef(true);
+    const scheduledIdleCancelRef = useRef<(() => void) | null>(null);
+    const jobDiagnosticRef = useRef<BackgroundDiagnosticHandle | null>(null);
     const browserMockMode = isBrowserMockMode();
     const [resumeSignal, setResumeSignal] = useState(0);
     const [postRunRetrySignal, setPostRunRetrySignal] = useState(0);
@@ -119,23 +123,82 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             || store.isRefreshingMetadata;
     }, []);
 
-    const scheduleIdleCallback = useCallback((callback: () => void, delay: number = 0) => {
-        const schedule = () => {
-            if ('requestIdleCallback' in window) {
-                (window as typeof window & { requestIdleCallback: (cb: () => void, options?: { timeout: number }) => number })
-                    .requestIdleCallback(callback, { timeout: 2000 });
-            } else {
-                setTimeout(callback, 50);
+    const cancelScheduledIdleCallback = useCallback(() => {
+        scheduledIdleCancelRef.current?.();
+        scheduledIdleCancelRef.current = null;
+    }, []);
+
+    const scheduleIdleCallback = useCallback((label: string, callback: () => void, delay: number = 0) => {
+        cancelScheduledIdleCallback();
+
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let idleId: number | null = null;
+        let finished = false;
+        const diagnostic = startBackgroundDiagnostic('timer', `Smart Thumbnail ${label}`, { delayMs: delay });
+
+        const finish = (status: 'finished' | 'cancelled') => {
+            if (finished) return;
+            finished = true;
+            diagnostic.finish(status);
+        };
+
+        const clearScheduledHandles = () => {
+            if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (idleId !== null) {
+                window.cancelIdleCallback?.(idleId);
+                idleId = null;
             }
         };
 
+        const fire = () => {
+            clearScheduledHandles();
+
+            if (!mountedRef.current) {
+                finish('cancelled');
+                return;
+            }
+
+            if (scheduledIdleCancelRef.current === cancel) {
+                scheduledIdleCancelRef.current = null;
+            }
+            finish('finished');
+            callback();
+        };
+
+        const schedule = () => {
+            if (!mountedRef.current) {
+                finish('cancelled');
+                return;
+            }
+
+            if (typeof window.requestIdleCallback === 'function') {
+                idleId = window.requestIdleCallback(fire, { timeout: 2000 });
+            } else {
+                timeoutId = setTimeout(fire, 50);
+            }
+        };
+
+        const cancel = () => {
+            clearScheduledHandles();
+            if (scheduledIdleCancelRef.current === cancel) {
+                scheduledIdleCancelRef.current = null;
+            }
+            finish('cancelled');
+        };
+
+        scheduledIdleCancelRef.current = cancel;
+
         if (delay > 0) {
-            setTimeout(schedule, delay);
-            return;
+            timeoutId = setTimeout(schedule, delay);
+        } else {
+            schedule();
         }
 
-        schedule();
-    }, []);
+        return cancel;
+    }, [cancelScheduledIdleCallback]);
 
     const setBackendThrottled = useCallback((throttled: boolean) => {
         if (browserMockMode) return;
@@ -173,6 +236,14 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const handleCompletion = useCallback(async (result: ThumbnailOptimizationResult) => {
         if (completionHandledRef.current) return;
         completionHandledRef.current = true;
+        jobDiagnosticRef.current?.finish(result.wasCancelled ? 'cancelled' : 'finished', {
+            checked: result.checked,
+            optimized: result.optimized,
+            failed: result.failed,
+            skipped: result.skipped,
+            durationMs: result.durationMs
+        });
+        jobDiagnosticRef.current = null;
         const completedConfig = runningConfigRef.current;
         isRunningRef.current = false;
         runningConfigRef.current = null;
@@ -223,7 +294,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
         await sleep(COMPLETE_VISIBLE_MS);
 
-        if (!completionHandledRef.current || isRunningRef.current || useLibraryStore.getState().backgroundHealingPaused) {
+        if (!mountedRef.current || !completionHandledRef.current || isRunningRef.current || useLibraryStore.getState().backgroundHealingPaused) {
             return;
         }
 
@@ -249,11 +320,19 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     useEffect(() => {
         if (browserMockMode) return;
 
-        const unlistenProgress = listen<ThumbnailOptimizationProgress>(
+        const progressListener = listenWithCleanup<ThumbnailOptimizationProgress>(
             'thumbnail-optimization-progress',
             (event) => {
                 if (cancelRequestedRef.current) return;
 
+                jobDiagnosticRef.current?.update({
+                    checked: event.payload.checked,
+                    optimized: event.payload.optimized,
+                    failed: event.payload.failed,
+                    skipped: event.payload.skipped,
+                    phase: event.payload.phase,
+                    isThrottled: event.payload.isThrottled
+                });
                 setBackgroundHealingActive(true);
                 setBackgroundHealingPaused(false);
                 setBackgroundHealingProgress({
@@ -283,19 +362,21 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 if (event.payload.checked > 0) {
                     console.debug('[ThumbnailQueue] Backend progress', event.payload);
                 }
-            }
+            },
+            'Thumbnail optimization progress'
         );
 
-        const unlistenComplete = listen<ThumbnailOptimizationResult>(
+        const completeListener = listenWithCleanup<ThumbnailOptimizationResult>(
             'thumbnail-optimization-complete',
             (event) => {
                 void handleCompletion(event.payload);
-            }
+            },
+            'Thumbnail optimization complete'
         );
 
         return () => {
-            unlistenProgress.then(unlisten => unlisten());
-            unlistenComplete.then(unlisten => unlisten());
+            progressListener.cleanup();
+            completeListener.cleanup();
         };
     }, [
         browserMockMode,
@@ -309,6 +390,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const cancelBackendJob = useCallback(async (clearDock: boolean) => {
         if (browserMockMode) return;
 
+        cancelScheduledIdleCallback();
         cancelRequestedRef.current = true;
 
         try {
@@ -323,6 +405,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             runningConfigRef.current = null;
             lastThrottleRef.current = null;
             restartRequestedRef.current = false;
+            jobDiagnosticRef.current?.finish('cancelled', { clearDock });
+            jobDiagnosticRef.current = null;
             setBackgroundHealingActive(false);
             setBackgroundHealingPaused(false);
             setBackgroundHealingProgress(null);
@@ -330,6 +414,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         }
     }, [
         browserMockMode,
+        cancelScheduledIdleCallback,
         setBackgroundHealingActive,
         setBackgroundHealingDetails,
         setBackgroundHealingPaused,
@@ -338,6 +423,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
     const runQueue = useCallback(async () => {
         if (browserMockMode) return;
+        if (!mountedRef.current) return;
 
         const settings = useSettingsStore.getState().settings;
         if (!settings.enableAutoThumbnailHealing) return;
@@ -395,6 +481,12 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             includeUpgradeable: optimizerConfig.includeUpgradeable,
             profile: optimizerConfig.profile
         });
+        jobDiagnosticRef.current?.finish('cancelled', { reason: 'superseded' });
+        jobDiagnosticRef.current = startBackgroundDiagnostic('job', 'Smart Thumbnail optimization', {
+            includeUpgradeable: optimizerConfig.includeUpgradeable,
+            profile: optimizerConfig.profile,
+            throttledAtStart: shouldStartThrottled
+        });
 
         try {
             const jobPromise = unwrap(commands.startThumbnailOptimizationJob({
@@ -409,10 +501,23 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             cancelRequestedRef.current = false;
             await handleCompletion(result);
         } catch (error) {
-            if (cancelRequestedRef.current) return;
+            if (cancelRequestedRef.current) {
+                isRunningRef.current = false;
+                runningConfigRef.current = null;
+                lastThrottleRef.current = null;
+                jobDiagnosticRef.current?.finish('cancelled', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+                jobDiagnosticRef.current = null;
+                return;
+            }
 
             console.error('[ThumbnailQueue] Backend thumbnail optimization failed', error);
             addToast?.(`Smart thumbnail optimization failed: ${String(error)}`, 'error');
+            jobDiagnosticRef.current?.finish('failed', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            jobDiagnosticRef.current = null;
             completionHandledRef.current = true;
             isRunningRef.current = false;
             runningConfigRef.current = null;
@@ -451,14 +556,18 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
         if (enableAutoThumbnailHealing) {
             if (!isRunningRef.current && !shouldPauseForActivity() && !useLibraryStore.getState().backgroundHealingPaused) {
-                scheduleIdleCallback(() => runQueue());
+                scheduleIdleCallback('auto-start', () => {
+                    void runQueue();
+                });
             }
             return;
         }
 
+        cancelScheduledIdleCallback();
         void cancelBackendJob(true);
     }, [
         browserMockMode,
+        cancelScheduledIdleCallback,
         cancelBackendJob,
         enableAutoThumbnailHealing,
         enforceHighQualityThumbnails,
@@ -552,8 +661,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             return;
         }
 
-        scheduleIdleCallback(() => {
-            runQueue();
+        scheduleIdleCallback('retry', () => {
+            void runQueue();
         });
     }, [
         browserMockMode,
@@ -575,13 +684,9 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             console.log('[ThumbnailQueue] Resuming after blocking activity...');
             setBackgroundHealingPaused(false);
 
-            const resumeTimer = setTimeout(() => {
-                scheduleIdleCallback(() => {
-                    runQueue();
-                });
+            return scheduleIdleCallback('resume', () => {
+                void runQueue();
             }, RESUME_DELAY_MS);
-
-            return () => clearTimeout(resumeTimer);
         }
     }, [
         browserMockMode,
@@ -595,12 +700,21 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
     useEffect(() => {
         return () => {
+            mountedRef.current = false;
+            cancelScheduledIdleCallback();
             if (isRunningRef.current) {
                 void commands.cancelThumbnailOptimizationJob().catch(console.error);
             }
+            jobDiagnosticRef.current?.finish('cancelled', { reason: 'unmount' });
+            jobDiagnosticRef.current = null;
             setBackgroundHealingActive(false);
             setBackgroundHealingProgress(null);
             setBackgroundHealingDetails(null);
         };
-    }, [setBackgroundHealingActive, setBackgroundHealingDetails, setBackgroundHealingProgress]);
+    }, [
+        cancelScheduledIdleCallback,
+        setBackgroundHealingActive,
+        setBackgroundHealingDetails,
+        setBackgroundHealingProgress
+    ]);
 }

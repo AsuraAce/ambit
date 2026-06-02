@@ -8,6 +8,7 @@ import {
     infoLiveWatchPerf,
     liveWatchNow,
 } from '../utils/liveWatchPerf';
+import { startBackgroundDiagnostic } from '../utils/backgroundDiagnostics';
 
 // Initializing the worker
 // Using ?worker&inline might be needed depending on Vite config, 
@@ -59,31 +60,65 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
 
         // Let's implement a simple Request ID system.
         const requestId = Math.random().toString(36).substring(7);
-        let timeoutId: ReturnType<typeof setTimeout>;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let settled = false;
+        const diagnostic = startBackgroundDiagnostic('worker', 'Metadata parse', {
+            requestId,
+            filename,
+            path
+        });
+
+        const cleanup = () => {
+            worker.removeEventListener('message', handler);
+            if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+        };
+
+        const settle = (
+            status: 'finished' | 'failed',
+            action: () => void,
+            detail?: Record<string, unknown>
+        ) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            diagnostic.finish(status, detail);
+            action();
+        };
 
         const handler = (e: MessageEvent) => {
             const data = e.data as WorkerParseResponse;
             if (data.requestId === requestId) {
-                worker.removeEventListener('message', handler);
-                clearTimeout(timeoutId);
-                if (data.error) reject(new Error(data.error));
-                else resolve({
+                if (data.error) {
+                    settle('failed', () => reject(new Error(data.error)), { error: data.error });
+                    return;
+                }
+
+                settle('finished', () => resolve({
                     metadata: data.metadata ?? {},
                     extra: data.extra ?? {},
                     isIntermediate: data.isIntermediate
-                });
+                }));
             }
         };
 
         const payload = toWorkerInput(chunks);
         worker.addEventListener('message', handler);
-        worker.postMessage({ chunks: payload.chunks, buffer: payload.buffer, filename, requestId, path, defaultTool });
 
         // Timeout safety
         timeoutId = setTimeout(() => {
-            worker.removeEventListener('message', handler);
-            reject(new Error("Worker timed out"));
+            settle('failed', () => reject(new Error("Worker timed out")), { error: 'Worker timed out' });
         }, 5000);
+
+        try {
+            worker.postMessage({ chunks: payload.chunks, buffer: payload.buffer, filename, requestId, path, defaultTool });
+        } catch (error) {
+            settle('failed', () => reject(error), {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
     });
 };
 
