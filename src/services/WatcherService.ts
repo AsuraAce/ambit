@@ -1,8 +1,10 @@
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
 import { isBrowserMockMode } from './runtime';
+import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
+import { listenWithCleanup } from '../utils/tauriListener';
 
 type WatcherCallback = (paths?: string[]) => void;
 
@@ -10,6 +12,8 @@ export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
     private isWatching = false;
     private lastPaths: string[] = [];
+    private generation = 0;
+    private diagnostic: BackgroundDiagnosticHandle | null = null;
 
     async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
         if (isBrowserMockMode()) {
@@ -27,22 +31,54 @@ export class WatcherService {
 
         if (paths.length === 0) return;
 
+        const startGeneration = ++this.generation;
+
         try {
             // Start the native rust watcher which handles multiple paths
             await unwrap(commands.startNativeFolderWatcher(paths));
+            if (startGeneration !== this.generation) {
+                await unwrap(commands.startNativeFolderWatcher([]));
+                return;
+            }
+
             console.log(`[WatcherService] Native watcher started for ${paths.length} paths`);
 
             this.isWatching = true;
             this.lastPaths = [...paths];
+            this.diagnostic = startBackgroundDiagnostic('job', 'Native folder watcher', {
+                pathCount: paths.length,
+                paths
+            });
 
             // Listen for the debounced event from Rust
-            this.unlistenFn = await listen<string[]>('folder-change-event', (event) => {
-                console.log(`[WatcherService] Folder change detected with ${event.payload?.length || 0} paths`);
-                onChangeEvent(event.payload);
-            });
+            const listener = listenWithCleanup<string[]>(
+                'folder-change-event',
+                (event) => {
+                    const pathCount = event.payload?.length || 0;
+                    console.log(`[WatcherService] Folder change detected with ${pathCount} paths`);
+                    this.diagnostic?.update({ lastEventAt: Date.now(), lastPathCount: pathCount });
+                    onChangeEvent(event.payload);
+                },
+                'Native folder watcher events'
+            );
+            this.unlistenFn = listener.cleanup;
+
+            const listenerReady = await listener.ready;
+            if (startGeneration !== this.generation) {
+                listener.cleanup();
+                return;
+            }
+
+            if (!listenerReady) {
+                await this.stopWatching();
+            }
 
         } catch (err) {
             console.error(`[WatcherService] Failed to start native watcher:`, err);
+            this.diagnostic?.finish('failed', { error: err instanceof Error ? err.message : String(err) });
+            this.diagnostic = null;
+            this.isWatching = false;
+            this.lastPaths = [];
             // Optionally throw here so the UI can display a Toast, or just leave `isWatching = false` 
             // so we can try again later.
         }
@@ -55,14 +91,20 @@ export class WatcherService {
             return;
         }
 
-        if (!this.unlistenFn && !this.isWatching) return;
+        const hadActiveWatcher = Boolean(this.unlistenFn) || this.isWatching;
+        this.generation++;
+
+        if (!hadActiveWatcher) return;
 
         this.isWatching = false;
+        this.lastPaths = [];
 
         if (this.unlistenFn) {
             this.unlistenFn();
             this.unlistenFn = null;
         }
+        this.diagnostic?.finish('cancelled');
+        this.diagnostic = null;
 
         try {
             // Send empty list to stop the rust watcher

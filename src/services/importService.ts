@@ -2,7 +2,6 @@
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { getExistingMetadata, insertImage, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
@@ -24,6 +23,7 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
+import { listenWithCleanup } from '../utils/tauriListener';
 
 /**
  * Queries the database for paths that already exist.
@@ -292,16 +292,22 @@ async function processFileEntries(
             const batchStartedAt = liveWatchNow();
             const nativeProgressRunId = createNativeProgressRunId();
             // Setup listener for native progress stream for silky smooth UI loading bars
-            unlisten = await listen<NativeImportProgressPayload>('import_progress', (e) => {
-                if (e.payload.progressRunId !== nativeProgressRunId) {
-                    return;
-                }
+            const progressListener = listenWithCleanup<NativeImportProgressPayload>(
+                'import_progress',
+                (e) => {
+                    if (e.payload.progressRunId !== nativeProgressRunId) {
+                        return;
+                    }
 
-                if (onProgress) {
-                    const absCurrent = Math.min(i + e.payload.current, totalToProcess);
-                    onProgress(absCurrent, totalToProcess, e.payload.message);
-                }
-            });
+                    if (onProgress) {
+                        const absCurrent = Math.min(i + e.payload.current, totalToProcess);
+                        onProgress(absCurrent, totalToProcess, e.payload.message);
+                    }
+                },
+                'Native import progress'
+            );
+            unlisten = progressListener.cleanup;
+            await progressListener.ready;
 
             // true for extractWorkflow (always want full metadata)
             const scanStartedAt = liveWatchNow();

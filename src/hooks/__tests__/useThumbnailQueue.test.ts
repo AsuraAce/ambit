@@ -90,8 +90,21 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('thumbnailOptimizationRetrySignal');
         expect(content).toContain('retryAfterCurrentRunRef');
         expect(content).toContain('postRunRetrySignal');
-        expect(content).toContain('scheduleIdleCallback(() => {');
-        expect(content).toContain('runQueue();');
+        expect(content).toContain("scheduleIdleCallback('retry'");
+        expect(content).toContain('void runQueue();');
+    });
+
+    it('should cancel pending idle starts on disable and unmount', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        expect(content).toContain('scheduledIdleCancelRef');
+        expect(content).toContain('cancelScheduledIdleCallback();');
+        expect(content).toContain("scheduleIdleCallback('auto-start'");
+        expect(content).toContain("scheduleIdleCallback('resume'");
+        expect(content).toContain('mountedRef.current = false');
     });
 
     it('should pause only for high-priority blocking work', async () => {

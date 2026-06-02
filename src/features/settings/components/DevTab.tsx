@@ -8,11 +8,11 @@ import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
+import { listenWithCleanup } from '../../../utils/tauriListener';
 import type { LogLevel } from '../../../types';
 
 type DevTabId = 'prompts' | 'tools';
@@ -82,18 +82,16 @@ export const DevTab: React.FC = () => {
 
     // Event listener for reset progress
     React.useEffect(() => {
-        let unlisten: (() => void) | undefined;
-
-        const setupListener = async () => {
-            unlisten = await listen<string>('reset-progress', (event) => {
+        const resetProgressListener = listenWithCleanup<string>(
+            'reset-progress',
+            (event) => {
                 addToast(event.payload, 'info');
-            });
-        };
-
-        setupListener();
+            },
+            'Database reset progress'
+        );
 
         return () => {
-            if (unlisten) unlisten();
+            resetProgressListener.cleanup();
         };
     }, [addToast]);
 

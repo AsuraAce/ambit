@@ -6,11 +6,11 @@
  */
 
 import { useEffect, useCallback } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
+import { listenWithCleanup } from '../utils/tauriListener';
 
 interface RefreshProgress {
     current: number;
@@ -39,35 +39,43 @@ export function useMetadataRefresh() {
     useEffect(() => {
         if (browserMockMode) return;
 
-        const unlistenProgress = listen<RefreshProgress>('refresh-progress', (event) => {
-            setRefreshProgress({
-                current: event.payload.current,
-                total: event.payload.total,
-                message: event.payload.message,
-            });
-        });
+        const progressListener = listenWithCleanup<RefreshProgress>(
+            'refresh-progress',
+            (event) => {
+                setRefreshProgress({
+                    current: event.payload.current,
+                    total: event.payload.total,
+                    message: event.payload.message,
+                });
+            },
+            'Metadata refresh progress'
+        );
 
-        const unlistenComplete = listen<RefreshResult>('refresh-complete', (event) => {
-            const { processed, updated, errors, wasCancelled } = event.payload;
+        const completeListener = listenWithCleanup<RefreshResult>(
+            'refresh-complete',
+            (event) => {
+                const { processed, updated, errors, wasCancelled } = event.payload;
 
-            setIsRefreshingMetadata(false);
-            setRefreshProgress(null);
+                setIsRefreshingMetadata(false);
+                setRefreshProgress(null);
 
-            if (wasCancelled) {
-                addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
-            } else if (processed > 0) {
-                addToast(
-                    `Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`,
-                    errors > 0 ? 'warning' : 'success'
-                );
-            }
+                if (wasCancelled) {
+                    addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
+                } else if (processed > 0) {
+                    addToast(
+                        `Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`,
+                        errors > 0 ? 'warning' : 'success'
+                    );
+                }
 
-            console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
-        });
+                console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
+            },
+            'Metadata refresh complete'
+        );
 
         return () => {
-            unlistenProgress.then(f => f());
-            unlistenComplete.then(f => f());
+            progressListener.cleanup();
+            completeListener.cleanup();
         };
     }, [setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode]);
 
