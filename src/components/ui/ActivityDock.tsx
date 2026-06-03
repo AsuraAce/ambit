@@ -1,7 +1,12 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
-import { useLibraryStore, type SyncProgress } from '../../stores/libraryStore';
+import {
+    useLibraryStore,
+    type LiveWatchSessionSource,
+    type LiveWatchSessionState,
+    type SyncProgress
+} from '../../stores/libraryStore';
 import { commands } from '../../bindings';
 import {
     THUMBNAIL_QUEUE_COMPLETE_FOOTER,
@@ -10,6 +15,20 @@ import {
 } from '../../hooks/thumbnailQueueProgress';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
+const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
+const LIVE_WATCH_DOCK_MIN_VISIBLE_MS = 2200;
+const LIVE_WATCH_DOCK_CLOSE_GRACE_MS = 1500;
+const LIVE_WATCH_ACTIVE_MESSAGE = 'Updating your library...';
+const LIVE_WATCH_SOURCE_CHIP_CLASS = 'inline-flex h-5 w-[4.75rem] shrink-0 items-center justify-center rounded-md bg-sage-500/10 px-1.5 text-[10px] font-black uppercase tracking-wider text-sage-600 dark:text-sage-300';
+
+interface LiveWatchPresentation {
+    mode: 'hidden' | 'expanded-active';
+    message: string;
+    sourceLabel: 'InvokeAI' | 'Folders' | 'Mixed' | null;
+    presentationKey: string | null;
+    isActiveWork: boolean;
+    isExpanded: boolean;
+}
 
 const formatElapsed = (elapsedMs: number): string | null => {
     if (elapsedMs < ELAPSED_VISIBLE_AFTER_MS) {
@@ -31,6 +50,106 @@ const splitDetailItems = (detail?: string): string[] => (
         ? detail.split('|').map(item => item.trim()).filter(Boolean)
         : []
 );
+
+const getLiveWatchSourceLabel = (source: LiveWatchSessionSource | null): LiveWatchPresentation['sourceLabel'] => {
+    if (source === 'invoke') return 'InvokeAI';
+    if (source === 'generic') return 'Folders';
+    if (source === 'mixed') return 'Mixed';
+    return null;
+};
+
+const isLiveWatchDockWorkPhase = (session: LiveWatchSessionState): boolean => (
+    session.phase === 'syncing' || session.phase === 'importing'
+);
+
+const useLiveWatchPresentation = (
+    session: LiveWatchSessionState,
+    isLiveWatchActive: boolean,
+    dismissedPresentationKey: string | null
+): LiveWatchPresentation => {
+    const isActiveWork = isLiveWatchActive && isLiveWatchDockWorkPhase(session);
+    const [presentation, setPresentation] = React.useState<{
+        key: string | null;
+        visible: boolean;
+        revealedAt: number | null;
+    }>({
+        key: null,
+        visible: false,
+        revealedAt: null
+    });
+
+    React.useEffect(() => {
+        if (!isLiveWatchActive) {
+            setPresentation({ key: null, visible: false, revealedAt: null });
+            return;
+        }
+
+        if (!isActiveWork) {
+            if (!presentation.visible) {
+                setPresentation(prev => (
+                    prev.key === null ? prev : { key: null, visible: false, revealedAt: null }
+                ));
+                return;
+            }
+
+            const now = Date.now();
+            const revealedAt = presentation.revealedAt ?? now;
+            const minVisibleRemainingMs = Math.max(0, LIVE_WATCH_DOCK_MIN_VISIBLE_MS - (now - revealedAt));
+            const closeDelayMs = Math.max(LIVE_WATCH_DOCK_CLOSE_GRACE_MS, minVisibleRemainingMs);
+            const timer = window.setTimeout(() => {
+                setPresentation({ key: null, visible: false, revealedAt: null });
+            }, closeDelayMs);
+            return () => window.clearTimeout(timer);
+        }
+
+        const presentationKey = presentation.key ?? `${session.source ?? 'watch'}:${Date.now()}`;
+
+        if (!presentation.key) {
+            setPresentation({ key: presentationKey, visible: false, revealedAt: null });
+            return;
+        }
+
+        if (presentationKey === dismissedPresentationKey) {
+            if (presentation.visible) {
+                setPresentation(prev => ({ ...prev, visible: false, revealedAt: null }));
+            }
+            return;
+        }
+
+        if (presentation.visible) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setPresentation(prev => (
+                prev.key === presentationKey && presentationKey !== dismissedPresentationKey
+                    ? { key: presentationKey, visible: true, revealedAt: Date.now() }
+                    : prev
+            ));
+        }, LIVE_WATCH_DOCK_REVEAL_MS);
+        return () => window.clearTimeout(timer);
+    }, [
+        dismissedPresentationKey,
+        isActiveWork,
+        isLiveWatchActive,
+        presentation.key,
+        presentation.revealedAt,
+        presentation.visible,
+        session.source
+    ]);
+
+    const sourceLabel = getLiveWatchSourceLabel(session.source);
+    const mode: LiveWatchPresentation['mode'] = presentation.visible ? 'expanded-active' : 'hidden';
+
+    return {
+        mode,
+        message: LIVE_WATCH_ACTIVE_MESSAGE,
+        sourceLabel,
+        presentationKey: presentation.key,
+        isActiveWork: isActiveWork && presentation.visible,
+        isExpanded: mode === 'expanded-active'
+    };
+};
 
 export const ActivityDock: React.FC = () => {
     const {
@@ -59,6 +178,7 @@ export const ActivityDock: React.FC = () => {
         cancelSync,
         cancelRefresh
     } = useLibraryStore();
+    const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
     const isManualSyncing = syncStatus === 'syncing';
 
@@ -69,10 +189,11 @@ export const ActivityDock: React.FC = () => {
     const isRefreshActive = isRefreshingMetadata && !isHighPriorityActive && !isBackgroundActive;
 
     const isLiveWatchActive = liveWatchSession.active && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive;
-    const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
-    const isLiveWatchTone = isLiveWatchActive;
+    const liveWatchPresentation = useLiveWatchPresentation(liveWatchSession, isLiveWatchActive, dismissedLiveWatchPresentationKey);
+    const isLiveWatchVisible = isLiveWatchActive && liveWatchPresentation.mode !== 'hidden';
+    const isLiveWatchTone = isLiveWatchVisible;
 
-    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchActive;
+    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible;
 
     let progress: SyncProgress | null = null;
     let label = "";
@@ -124,13 +245,13 @@ export const ActivityDock: React.FC = () => {
         label = "Refreshing Metadata";
         isLowPriority = false;
         supportsCancel = true;
-    } else if (isLiveWatchActive) {
+    } else if (isLiveWatchVisible) {
         progress = liveWatchSession.progress || {
             current: 0,
             total: 0,
             message: liveWatchSession.message
         };
-        label = "Live Watch";
+        label = 'Live Watch';
         isLowPriority = true;
         footerMessage = 'Live Watch stays active in the background.';
     }
@@ -143,7 +264,8 @@ export const ActivityDock: React.FC = () => {
     const total = progress?.total ?? 0;
     const mode = progress?.mode;
     const isCompleteProgress = mode === 'complete';
-    const showIndeterminateProgress = mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && (!isLiveWatchActive || !isLiveWatchSummary));
+    const showIndeterminateProgress = liveWatchPresentation.isActiveWork || mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible);
+    const showProgressBar = !isLiveWatchVisible || liveWatchPresentation.isExpanded;
 
     const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
 
@@ -157,9 +279,11 @@ export const ActivityDock: React.FC = () => {
         return () => window.clearInterval(interval);
     }, [active, progress?.startedAt, showIndeterminateProgress]);
 
-    const message = progress?.message || progress?.phase || (isLiveWatchActive ? liveWatchSession.message || '' : '');
-    const percent = isLiveWatchSummary || isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
-    const showCounts = total > 0 && !isLiveWatchActive && !isBackgroundActive && !showIndeterminateProgress && !isCompleteProgress;
+    const message = isLiveWatchVisible
+        ? liveWatchPresentation.message
+        : (progress?.message || progress?.phase || '');
+    const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
+    const showCounts = total > 0 && !isLiveWatchVisible && !isBackgroundActive && !showIndeterminateProgress && !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
@@ -168,12 +292,24 @@ export const ActivityDock: React.FC = () => {
     const elapsedLabel = progress?.startedAt && active && showIndeterminateProgress && !isCompleteProgress
         ? formatElapsed(elapsedNow - progress.startedAt)
         : null;
-    const secondaryDetails = [
-        ...splitDetailItems(progress?.detail),
-        elapsedLabel
-    ].filter((item): item is string => Boolean(item));
+    const secondaryDetails = isLiveWatchVisible
+        ? []
+        : [
+            ...splitDetailItems(progress?.detail),
+            elapsedLabel
+        ].filter((item): item is string => Boolean(item));
     const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
-    const accentClasses = isLiveWatchTone || isLowPriority
+    const shouldUseSparkles = isLiveWatchTone || isLowPriority;
+    const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
+    const accentClasses = isLiveWatchTone
+        ? {
+            iconText: 'text-sage-600 dark:text-sage-400',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.32)]',
+            pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.2)]',
+            percentText: 'text-sage-600 dark:text-sage-400'
+        }
+        : isLowPriority
         ? {
             iconText: 'text-violet-600 dark:text-violet-400',
             iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
@@ -189,7 +325,16 @@ export const ActivityDock: React.FC = () => {
             percentText: 'text-sage-600 dark:text-sage-400'
         };
 
-    const shouldShow = active && !isActivityDockDismissed;
+    const dismissDock = React.useCallback(() => {
+        if (isLiveWatchVisible) {
+            setDismissedLiveWatchPresentationKey(liveWatchPresentation.presentationKey);
+            return;
+        }
+
+        setIsActivityDockDismissed(true);
+    }, [isLiveWatchVisible, liveWatchPresentation.presentationKey, setIsActivityDockDismissed]);
+
+    const shouldShow = active && (isLiveWatchVisible || !isActivityDockDismissed);
 
     return (
         <AnimatePresence>
@@ -210,11 +355,11 @@ export const ActivityDock: React.FC = () => {
                             title="Click to expand details"
                         >
                             <motion.div layout="position" className={accentClasses.iconText}>
-                                {isLiveWatchTone || isLowPriority ? <Sparkles className="w-5 h-5 animate-pulse" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                                {shouldUseSparkles ? <Sparkles className={`w-5 h-5 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-5 h-5 animate-spin" />}
                             </motion.div>
                             <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
                                 <div
-                                    className={`h-full ${isLiveWatchTone || isLowPriority ? 'bg-violet-500' : 'bg-sage-500'}`}
+                                    className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-violet-500'}`}
                                     style={{ width: `${percent}%` }}
                                 />
                             </motion.div>
@@ -227,13 +372,28 @@ export const ActivityDock: React.FC = () => {
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
-                                        {isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isScanningMissingFiles ? <Search className="w-4 h-4" /> : isLiveWatchTone || isLowPriority ? <Sparkles className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                                        {isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isScanningMissingFiles ? <Search className="w-4 h-4" /> : shouldUseSparkles ? <Sparkles className={`w-4 h-4 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                     </motion.div>
                                     <motion.div layout="position">
-                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">Background Activity</h4>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">{isLiveWatchVisible ? 'Live Watch' : 'Background Activity'}</h4>
                                         <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                            {label}
-                                            {showCounts && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
+                                            {isLiveWatchVisible ? (
+                                                liveWatchPresentation.sourceLabel && (
+                                                    <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>
+                                                        {liveWatchPresentation.sourceLabel}
+                                                    </span>
+                                                )
+                                            ) : (
+                                                <>
+                                                    {label}
+                                                    {showCounts && <span className="text-xs font-medium text-gray-400 font-mono tracking-tight">{current.toLocaleString()} / {total.toLocaleString()}</span>}
+                                                </>
+                                            )}
+                                            {isLiveWatchVisible && !liveWatchPresentation.sourceLabel && (
+                                                <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>
+                                                    Watch
+                                                </span>
+                                            )}
                                         </p>
                                     </motion.div>
                                 </div>
@@ -246,7 +406,7 @@ export const ActivityDock: React.FC = () => {
                                         <Minus className="w-3.5 h-3.5" />
                                     </button>
                                     <button
-                                        onClick={() => setIsActivityDockDismissed(true)}
+                                        onClick={dismissDock}
                                         className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:scale-105 active:scale-95"
                                         title="Dismiss"
                                     >
@@ -256,22 +416,24 @@ export const ActivityDock: React.FC = () => {
                             </div>
 
                             <motion.div layout="position" className="space-y-1.5">
-                                <div className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${percent}%` }}
-                                        transition={{ duration: 0.5, ease: "easeOut" }}
-                                        className={`h-full ${accentClasses.fill}`}
-                                    />
-                                    {showIndeterminateProgress && (
+                                {showProgressBar && (
+                                    <div data-testid="activity-dock-progress-rail" className="w-full h-2 bg-gray-100 dark:bg-black/40 rounded-full overflow-hidden relative">
                                         <motion.div
-                                            initial={{ x: "-100%" }}
-                                            animate={{ x: "200%" }}
-                                            transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-                                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-full"
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${percent}%` }}
+                                            transition={{ duration: 0.5, ease: "easeOut" }}
+                                            className={`h-full ${accentClasses.fill}`}
                                         />
-                                    )}
-                                </div>
+                                        {showIndeterminateProgress && (
+                                            <motion.div
+                                                initial={{ x: "-100%" }}
+                                                animate={{ x: "200%" }}
+                                                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-full"
+                                            />
+                                        )}
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center px-0.5">
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}

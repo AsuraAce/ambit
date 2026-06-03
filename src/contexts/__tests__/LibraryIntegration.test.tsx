@@ -6,6 +6,7 @@ import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import type { InvokeDbSnapshotState } from '../../types';
 import { INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../../services/invoke/dbSnapshot';
 
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     getLibraryStatsSummary: vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] }),
     getKeywordStats: vi.fn().mockResolvedValue([]),
     syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] } }),
+    scanForOrphans: vi.fn().mockResolvedValue(0),
     rebuildFacetCache: vi.fn().mockResolvedValue(0),
     rebuildFacetCacheStrict: vi.fn().mockResolvedValue(0),
     rebuildFacetCacheIncrementalBatchStrict: vi.fn().mockResolvedValue(0),
@@ -138,7 +140,7 @@ vi.mock('../../services/invoke/syncService', () => ({
 }));
 
 vi.mock('../../services/invoke/orphanScanner', () => ({
-    scanForOrphans: vi.fn().mockResolvedValue(0)
+    scanForOrphans: (...args: unknown[]) => mocks.scanForOrphans(...args)
 }));
 
 vi.mock('../../services/importService', () => ({
@@ -155,6 +157,24 @@ const createDeferred = <T,>() => {
 
     return { promise, resolve, reject };
 };
+
+const createNoopInvokeSyncResult = () => ({
+    imported: 0,
+    updated: 0,
+    maxTimestamp: 100,
+    syncedIds: new Set<string>(),
+    boardMapping: new Map<string, { name: string; createdAt: number }>(),
+    touchedFacetTypes: [],
+    touchedFacetResources: {
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: []
+    }
+});
 
 // --- Test Consumer ---
 const TestConsumer = ({ onHook }: { onHook: (hook: any) => void }) => {
@@ -179,6 +199,7 @@ describe('Library Integration (Provider Stack)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
+        useSettingsStore.setState(useSettingsStore.getInitialState(), true);
         // Reset location reload to prevent errors
         Object.defineProperty(window, 'location', {
             configurable: true,
@@ -224,7 +245,9 @@ describe('Library Integration (Provider Stack)', () => {
 
         // Initial state (Privacy Enabled by default)
         expect(hook.privacyEnabled).toBe(true);
-        expect(hook.activeSqlWhere).toContain("privacy_hidden = 0");
+        await waitFor(() => {
+            expect(hook.activeSqlWhere).toContain("privacy_hidden = 0");
+        });
 
         // Disable Privacy
         await act(async () => {
@@ -318,8 +341,218 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(AbortSignal),
             expect.objectContaining({ mode: 'live' })
         );
+        expect(mocks.scanForOrphans).not.toHaveBeenCalled();
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+    });
+
+    it('runs a one-shot Invoke live catch-up after Live Watch attaches for Invoke-only paths', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+        mocks.syncImages.mockClear();
+        mocks.watcherStartWatching.mockClear();
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+            });
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
+                ['D:/AI/art/webUI/invokeai/databases'],
+                expect.any(Function)
+            );
+        }, { timeout: 3000 });
+
+        await waitFor(() => {
+            expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+        }, { timeout: 3000 });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            'D:/AI/art/webUI/invokeai',
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'live' })
+        );
+    });
+
+    it('skips the Invoke activation catch-up when a manual sync is already running', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+            });
+        });
+
+        const deferred = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();
+        mocks.syncImages.mockReturnValueOnce(deferred.promise);
+        mocks.syncImages.mockClear();
+        mocks.watcherStartWatching.mockClear();
+
+        let manualSyncPromise!: Promise<void> | undefined;
+        await act(async () => {
+            manualSyncPromise = hook?.startInvokeSync({ mode: 'manual' });
+            await Promise.resolve();
+        });
+
+        await waitFor(() => {
+            expect(useLibraryStore.getState().syncStatus).toBe('syncing');
+        });
+
+        await act(async () => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
+                ['D:/AI/art/webUI/invokeai/databases'],
+                expect.any(Function)
+            );
+        }, { timeout: 3000 });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            deferred.resolve(createNoopInvokeSyncResult());
+            await manualSyncPromise;
+        });
+    });
+
+    it('keeps generic live imports working while running the Invoke activation catch-up', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        let watcherCallback: ((paths?: string[]) => void) | null = null;
+        mocks.watcherStartWatching.mockImplementationOnce(async (_paths: string[], onChange: (paths?: string[]) => void) => {
+            watcherCallback = onChange;
+        });
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+        mocks.syncImages.mockClear();
+        mocks.processTargetedFiles.mockClear();
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai',
+                monitoredFolders: [
+                    { id: 'watch-1', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 10 }
+                ]
+            });
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
+                ['C:/watch', 'D:/AI/art/webUI/invokeai/databases'],
+                expect.any(Function)
+            );
+            expect(watcherCallback).not.toBeNull();
+        }, { timeout: 3000 });
+
+        await waitFor(() => {
+            expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+        }, { timeout: 3000 });
+
+        await act(async () => {
+            watcherCallback?.(['C:/watch/new.png']);
+        });
+
+        await waitFor(() => {
+            expect(mocks.processTargetedFiles).toHaveBeenCalledWith(
+                ['C:/watch/new.png'],
+                expect.objectContaining({
+                    forceRescan: true,
+                    waitForStableFiles: true
+                })
+            );
+        });
+    });
+
+    it('does not repeat the Invoke activation catch-up for unrelated watcher restarts', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+        mocks.syncImages.mockClear();
+        mocks.watcherStartWatching.mockClear();
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+            });
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+        }, { timeout: 3000 });
+
+        await act(async () => {
+            hook?.setSettings({
+                monitoredFolders: [
+                    { id: 'watch-1', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 10 }
+                ]
+            });
+        });
+
+        await waitFor(() => {
+            expect(mocks.watcherStartWatching).toHaveBeenCalledTimes(2);
+        }, { timeout: 3000 });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a new Invoke activation catch-up after Live Watch is turned off and back on', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+        mocks.syncImages.mockClear();
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+            });
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+        }, { timeout: 3000 });
+
+        await act(async () => {
+            useLibraryStore.getState().setIsLiveWatching(false);
+            await Promise.resolve();
+        });
+
+        await act(async () => {
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => {
+            expect(mocks.syncImages).toHaveBeenCalledTimes(2);
+        }, { timeout: 3000 });
     });
 
     it('does not refresh image queries after a no-op startup Invoke catch-up', async () => {
@@ -352,6 +585,7 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
         mocks.appRepository.save.mockClear();
+        mocks.scanForOrphans.mockClear();
 
         await act(async () => {
             await hook.startInvokeSync({ mode: 'startup' });
@@ -365,6 +599,7 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+        expect(mocks.scanForOrphans).not.toHaveBeenCalled();
         expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
             settings: expect.objectContaining({
                 invokeDbSnapshot: expect.objectContaining({
@@ -376,6 +611,73 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => {
             hook.setSettings({ invokeDbSnapshot: undefined });
         });
+    });
+
+    it('does not scan for orphans during startup Invoke catch-up by default', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                lastSyncedAt: 100,
+                importOrphans: true
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook?.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+        mocks.scanForOrphans.mockClear();
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'startup' })
+        );
+        expect(mocks.scanForOrphans).not.toHaveBeenCalled();
+    });
+
+    it('honors explicit orphan recovery for manual Invoke sync', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                importIntermediates: false,
+                importOrphans: true
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook?.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+        });
+
+        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+        mocks.scanForOrphans.mockClear();
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'manual', importOrphans: true });
+        });
+
+        expect(mocks.scanForOrphans).toHaveBeenCalledWith(
+            'D:/AI/art/webUI/invokeai/databases',
+            expect.any(Set),
+            expect.any(Function),
+            expect.objectContaining({ importIntermediates: expect.anything() })
+        );
     });
 
     it('uses startup resource-incremental facet refresh for a small known Invoke catch-up', async () => {
@@ -629,6 +931,19 @@ describe('Library Integration (Provider Stack)', () => {
 
         await waitFor(() => expect(hook.isLoaded).toBe(true));
 
+        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+
+        await act(async () => {
+            hook.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+            });
+            useLibraryStore.getState().setIsLiveWatching(true);
+        });
+
+        await waitFor(() => expect(watcherCallback).not.toBeNull());
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(1));
+        mocks.syncImages.mockClear();
+
         const deferred = createDeferred<{
             imported: number;
             updated: number;
@@ -647,15 +962,6 @@ describe('Library Integration (Provider Stack)', () => {
             };
         }>();
         mocks.syncImages.mockReturnValueOnce(deferred.promise);
-
-        await act(async () => {
-            hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
-            });
-            useLibraryStore.getState().setIsLiveWatching(true);
-        });
-
-        await waitFor(() => expect(watcherCallback).not.toBeNull());
 
         await act(async () => {
             watcherCallback?.(['D:/AI/art/webUI/invokeai/databases/invokeai.db-wal']);
@@ -768,7 +1074,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
     });
 
-    it('skips startup Invoke SQLite sync when the saved DB snapshot is unchanged', async () => {
+    it('skips startup Invoke SQLite sync when the saved DB snapshot is unchanged and orphan recovery is only enabled for manual sync', async () => {
         let hook: any;
         renderStack(h => hook = h);
 
@@ -807,7 +1113,7 @@ describe('Library Integration (Provider Stack)', () => {
                 invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
                 lastSyncedAt: 100,
                 importIntermediates: false,
-                importOrphans: false,
+                importOrphans: true,
                 syncBoardsToCollections: false,
                 invokeDbSnapshot: {
                     dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',

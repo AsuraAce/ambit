@@ -86,7 +86,7 @@ const mergeInvokePerfContext = (
 
 export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onNewImageDetected }) => {
     const { settings, isLoaded } = useSettings();
-    const { startInvokeSync, startTargetedLiveSync } = useSync();
+    const { startInvokeSync, startTargetedLiveSync, syncStatus } = useSync();
 
     // Zustand State
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
@@ -123,15 +123,16 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync });
+    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const pendingInvokePerfRef = useRef<InvokeLiveWatchPerfContext | null>(null);
     const genericLiveDrainPromiseRef = useRef<Promise<void> | null>(null);
+    const invokeActivationCatchupRootRef = useRef<string | null>(null);
 
     useEffect(() => {
-        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync };
+        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
@@ -198,6 +199,9 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
     useEffect(() => {
         if (!isLoaded) return;
+        if (!isLiveWatching) {
+            invokeActivationCatchupRootRef.current = null;
+        }
 
         const initWatcher = async () => {
             if (!isLiveWatching) {
@@ -207,6 +211,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
             const currentSettings = callbacksRef.current.settings;
             const pathsToWatch: string[] = [];
+            const activeInvokeRoot = normalizeInvokeRoot(currentSettings.invokeAiPath);
 
             if (currentSettings.monitoredFolders) {
                 currentSettings.monitoredFolders.forEach(f => {
@@ -214,9 +219,10 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 });
             }
 
-            if (currentSettings.invokeAiPath) {
-                const root = normalizeInvokeRoot(currentSettings.invokeAiPath);
-                if (root) pathsToWatch.push(`${root}/databases`);
+            if (activeInvokeRoot) {
+                pathsToWatch.push(`${activeInvokeRoot}/databases`);
+            } else {
+                invokeActivationCatchupRootRef.current = null;
             }
 
             if (pathsToWatch.length === 0) {
@@ -264,7 +270,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 if (genericPaths.length > 0) {
                     startLiveWatchSession('generic', {
                         phase: 'watching',
-                        message: 'Detected new files. Preparing live import...'
+                        message: 'Checking monitored folders...'
                     });
                     pendingGenericPerfRef.current = mergeTargetedPerfContext(
                         pendingGenericPerfRef.current,
@@ -287,7 +293,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 if (invokePaths.length > 0 && cb.settings.invokeAiPath) {
                     startLiveWatchSession('invoke', {
                         phase: 'watching',
-                        message: 'Detected InvokeAI activity. Waiting for completed images...'
+                        message: 'Checking InvokeAI for completed images...'
                     });
                     pendingInvokePerfRef.current = mergeInvokePerfContext(
                         pendingInvokePerfRef.current,
@@ -352,6 +358,27 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 watchedPathCount: pathsToWatch.length,
                 invokeDebounceMs: INVOKE_LIVE_DEBOUNCE_MS
             });
+
+            if (activeInvokeRoot) {
+                const activationKey = activeInvokeRoot.toLowerCase();
+                const cb = callbacksRef.current;
+
+                if (invokeActivationCatchupRootRef.current !== activationKey) {
+                    invokeActivationCatchupRootRef.current = activationKey;
+
+                    if (cb.syncStatus === 'syncing') {
+                        debugLiveWatchPerf('Invoke activation catch-up skipped', {
+                            reason: 'sync-already-active',
+                            root: activeInvokeRoot
+                        });
+                    } else {
+                        debugLiveWatchPerf('Invoke activation catch-up started', {
+                            root: activeInvokeRoot
+                        });
+                        void cb.startInvokeSync({ mode: 'live' });
+                    }
+                }
+            }
 
         };
 

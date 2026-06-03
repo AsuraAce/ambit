@@ -73,31 +73,27 @@ export const AppHeader = React.memo(({
 
     const isManualSyncing = syncStatus === 'syncing';
     const isLiveWatchActive = liveWatchSession.active;
-    const isLiveWatchSummary = isLiveWatchActive && liveWatchSession.phase === 'summary';
+    const isLiveWatchWorkActive = isLiveWatchActive && (liveWatchSession.phase === 'syncing' || liveWatchSession.phase === 'importing');
     const isNonLiveTaskActive = isImporting || isManualSyncing || isResolvingModels || isScanningDiscovery;
-    const isHighPriority = isNonLiveTaskActive || isLiveWatchActive;
-    const active = isHighPriority || isBackgroundHealingActive;
+    const active = isNonLiveTaskActive || isBackgroundHealingActive;
 
     const progress = (isImporting && importProgress)
         ? importProgress
         : (isManualSyncing
             ? syncProgress
-            : (isLiveWatchActive
-                ? (liveWatchSession.progress || {
-                    current: isLiveWatchSummary ? 1 : 0,
-                    total: isLiveWatchSummary ? 1 : 0,
-                    message: liveWatchSession.message
-                })
-                : (isResolvingModels
-                    ? modelResolutionProgress
-                    : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null)))));
+            : (isResolvingModels
+                ? modelResolutionProgress
+                : (isScanningDiscovery ? discoveryScanProgress : (isBackgroundHealingActive ? backgroundHealingProgress : null))));
 
     // Determine color
-    const isBackgroundOnly = isBackgroundHealingActive && !isHighPriority;
-    const progressColorInfo = isLiveWatchActive || isBackgroundOnly
+    const isBackgroundOnly = isBackgroundHealingActive && !isNonLiveTaskActive;
+    const progressColorInfo = isBackgroundOnly
         ? { bar: 'bg-violet-500', shadow: 'shadow-[0_0_10px_rgba(139,92,246,0.3)]', bg: 'bg-violet-500/10' }
         : { bar: 'bg-sage-500', shadow: 'shadow-[0_0_10px_rgba(110,121,107,0.5)]', bg: 'bg-sage-500/10' };
     const shouldHighlightImport = isNonLiveTaskActive || isBackgroundHealingActive;
+    const liveWatchButtonClass = isLiveWatching
+        ? `bg-sage-500/10 border-sage-500/30 text-sage-600 shadow-sm shadow-sage-500/10 hover:border-red-500/30 hover:text-red-500 dark:bg-sage-500/15 dark:border-sage-400/30 dark:text-sage-300 ${isLiveWatchWorkActive ? 'ring-1 ring-sage-500/20' : ''}`
+        : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-sage-600 hover:border-sage-500/30 dark:hover:text-sage-300';
 
     // Determine visibility of middle controls
     const showLayoutSwitcher = viewMode === 'grid';
@@ -109,7 +105,7 @@ export const AppHeader = React.memo(({
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (
-                        <div className={`absolute top-0 left-0 right-0 h-1 ${progressColorInfo.bg} overflow-hidden`}>
+                        <div data-testid="app-header-progress-rail" className={`absolute top-0 left-0 right-0 h-1 ${progressColorInfo.bg} overflow-hidden`}>
                             <div
                                 className={`h-full ${progressColorInfo.bar} ${progressColorInfo.shadow} transition-all duration-300 ease-out`}
                                 style={{
@@ -154,8 +150,8 @@ export const AppHeader = React.memo(({
                                 }
                                 setIsLiveWatching(!isLiveWatching);
                             }}
-                            className={`p-2 rounded-xl transition-all border relative group ${isLiveWatching ? 'bg-red-500 text-white border-red-600 shadow-md shadow-red-500/20 animate-pulse' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500'}`}
-                            title={isLiveWatching ? "Live Sync Active – Watching for new images in monitored folders" : "Enable Live Sync – Automatically detect and import new images from your generator output folders"}
+                            className={`p-2 rounded-xl transition-all border relative group ${liveWatchButtonClass}`}
+                            title={isLiveWatching ? "Live Watch enabled - Watching monitored folders" : "Enable Live Watch - Automatically detect and import new images from generator output folders"}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
                         </button>

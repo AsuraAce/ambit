@@ -59,4 +59,20 @@ describe('SyncSection', () => {
             afterTimestamp: 123456
         }));
     });
+
+    it('treats orphan recovery as opt-in when the setting is missing', () => {
+        const settings = createSettings();
+        delete settings.importOrphans;
+
+        render(<SyncSection settings={settings} setSettings={vi.fn()} />);
+
+        expect((screen.getByLabelText(/orphan recovery/i) as HTMLInputElement).checked).toBe(false);
+        expect(screen.queryByText(/manual full output-folder recovery sweep/i)).not.toBeNull();
+    });
+
+    it('checks orphan recovery only when explicitly enabled', () => {
+        render(<SyncSection settings={{ ...createSettings(), importOrphans: true }} setSettings={vi.fn()} />);
+
+        expect((screen.getByLabelText(/orphan recovery/i) as HTMLInputElement).checked).toBe(true);
+    });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSettingsStore } from '../settingsStore';
 import { appRepository } from '../../services/repository';
 import { commands } from '../../bindings';
+import type { AppSettings } from '../../types';
 
 // --- Mocks ---
 vi.mock('../../services/repository', () => ({
@@ -76,6 +77,20 @@ describe('SettingsStore', () => {
         await useSettingsStore.getState().initialize();
 
         expect(useSettingsStore.getState().settings.libraryLayoutMode).toBe('masonry');
+    });
+
+    it('should default orphan recovery to off', async () => {
+        vi.mocked(appRepository.load).mockResolvedValue({
+            images: [],
+            collections: [],
+            smartCollections: [],
+            settings: {} as AppSettings,
+            recentSearches: []
+        });
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().settings.importOrphans).toBe(false);
     });
 
     it('should preserve persisted gallery layout mode on initialize', async () => {

@@ -4,7 +4,8 @@ import { commands, type FileHashBackfillResult } from '../bindings';
 import type { MissingFileAuditResult } from '../types';
 
 let liveWatchTimeout: ReturnType<typeof setTimeout> | null = null;
-const LIVE_WATCH_IDLE_TIMEOUT_MS = 60000;
+// Internal aggregation window for related Live Watch events, not dock visibility.
+const LIVE_WATCH_SESSION_IDLE_MS = 60000;
 let importRunCounter = 0;
 
 const createImportRunId = (owner: string): string => {
@@ -112,12 +113,12 @@ const mergeLiveWatchSource = (
 
 export const getLiveWatchSummaryMessage = (receivedCount: number): string => {
     if (receivedCount <= 0) {
-        return 'Watching for completed images...';
+        return 'Watching for new images...';
     }
 
     return receivedCount === 1
-        ? '1 image received this session. Watching for more...'
-        : `${receivedCount} images received this session. Watching for more...`;
+        ? '1 image added this session.'
+        : `${receivedCount} images added this session.`;
 };
 
 export const createInitialLiveWatchSessionState = (): LiveWatchSessionState => ({
@@ -139,7 +140,7 @@ const scheduleLiveWatchSessionEnd = () => {
     liveWatchTimeout = setTimeout(async () => {
         const endSession = useLibraryStore.getState().endLiveImageSession;
         await endSession();
-    }, LIVE_WATCH_IDLE_TIMEOUT_MS);
+    }, LIVE_WATCH_SESSION_IDLE_MS);
 };
 
 const clearLiveWatchSessionEnd = () => {
@@ -588,8 +589,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     startedAt: currentSession.active ? currentSession.startedAt : now,
                     lastActivityAt: now
                 },
-                liveWatchSessionCloseRequested: state.liveWatchSessionCloseRequested && isActiveLiveWatchPhase(nextPhase),
-                isActivityDockDismissed: false
+                liveWatchSessionCloseRequested: state.liveWatchSessionCloseRequested && isActiveLiveWatchPhase(nextPhase)
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
@@ -620,8 +620,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     receivedCount: currentSession.receivedCount,
                     startedAt: currentSession.startedAt ?? now,
                     lastActivityAt: now
-                },
-                isActivityDockDismissed: false
+                }
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
@@ -652,8 +651,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
                     receivedCount,
                     startedAt: currentSession.startedAt ?? now,
                     lastActivityAt: now
-                },
-                isActivityDockDismissed: false
+                }
             };
         });
         if (useLibraryStore.getState().isLiveWatching) {
