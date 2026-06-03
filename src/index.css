@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@config "../tailwind.config.js";
 
 @layer base {
   :root {
@@ -86,7 +87,21 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 dark:bg-white/10 rounded-full transition-colors hover:bg-gray-400 dark:hover:bg-white/20;
+    background-color: rgb(209 213 219);
+    border-radius: 9999px;
+    transition: background-color 150ms ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(156 163 175);
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 0.1);
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.2);
   }
 
   ::-webkit-scrollbar-corner {
