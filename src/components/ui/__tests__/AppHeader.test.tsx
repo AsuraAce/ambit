@@ -91,19 +91,65 @@ describe('AppHeader', () => {
         resetLibraryStore();
     });
 
-    it('uses the purple header strip and leaves the import button neutral during live watch', () => {
+    it('uses calm Live Watch enabled styling without constant header activity', () => {
+        useLibraryStore.getState().setIsLiveWatching(true);
+
+        const { container } = render(<AppHeader {...defaultProps} />);
+        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
+        const importButton = screen.getByTitle(/Import images\./);
+
+        expect(liveWatchButton.className).toContain('bg-sage-500/10');
+        expect(liveWatchButton.className).toContain('text-sage-600');
+        expect(liveWatchButton.className).not.toContain('signal');
+        expect(liveWatchButton.className).not.toContain('violet');
+        expect(liveWatchButton.className).not.toContain('amethyst');
+        expect(liveWatchButton.className).not.toContain('bg-red-500');
+        expect(liveWatchButton.className).not.toContain('animate-pulse');
+        expect(importButton.className).not.toContain('bg-sage-500/20');
+        expect(screen.queryByTestId('app-header-progress-rail')).toBeNull();
+        expect(container.querySelector('.bg-violet-500')).toBeNull();
+    });
+
+    it('keeps Live Watch work out of the header progress rail while adding only a calm button ring', () => {
+        useLibraryStore.getState().setIsLiveWatching(true);
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Preparing live InvokeAI sync...',
+            message: 'Syncing completed InvokeAI images...',
             progress: { current: 0, total: 0, message: undefined }
         });
 
         const { container } = render(<AppHeader {...defaultProps} />);
         const importButton = screen.getByTitle(/Import images\./);
+        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
 
-        expect(container.querySelector('.bg-violet-500')).toBeTruthy();
+        expect(screen.queryByTestId('app-header-progress-rail')).toBeNull();
+        expect(container.querySelector('.bg-violet-500')).toBeNull();
+        expect(liveWatchButton.className).toContain('ring-sage-500/20');
+        expect(liveWatchButton.className).not.toContain('animate-pulse');
+        expect(liveWatchButton.className).not.toContain('signal');
+        expect(liveWatchButton.className).not.toContain('violet');
+        expect(liveWatchButton.className).not.toContain('amethyst');
+        expect(liveWatchButton.className).not.toContain('bg-red-500');
         expect(importButton.className).not.toContain('bg-sage-500/20');
         expect(importButton.className).toContain('bg-gray-100');
+    });
+
+    it('also keeps Live Watch importing work out of the header progress rail', () => {
+        useLibraryStore.getState().setIsLiveWatching(true);
+        useLibraryStore.getState().startLiveWatchSession('generic', {
+            phase: 'importing',
+            message: 'Importing new images...',
+            progress: { current: 1, total: 3, message: undefined }
+        });
+
+        render(<AppHeader {...defaultProps} />);
+        const importButton = screen.getByTitle(/Import images\./);
+        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
+
+        expect(screen.queryByTestId('app-header-progress-rail')).toBeNull();
+        expect(liveWatchButton.className).toContain('ring-sage-500/20');
+        expect(liveWatchButton.className).not.toContain('signal');
+        expect(importButton.className).not.toContain('bg-sage-500/20');
     });
 
     it('keeps manual sync on the existing non-live-watch styling', () => {
@@ -115,8 +161,32 @@ describe('AppHeader', () => {
         const { container } = render(<AppHeader {...defaultProps} />);
         const importButton = screen.getByTitle(/Import images\./);
 
+        expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
         expect(container.querySelector('.bg-sage-500')).toBeTruthy();
         expect(importButton.className).toContain('bg-sage-500/20');
+    });
+
+    it('keeps import and discovery scans on the header progress rail', () => {
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: { current: 1, total: 4, message: 'Importing...' }
+        });
+
+        const { rerender } = render(<AppHeader {...defaultProps} />);
+
+        expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
+        expect(screen.getByTitle(/Import images\./).className).toContain('bg-sage-500/20');
+
+        useLibraryStore.setState({
+            isImporting: false,
+            importProgress: null,
+            isScanningDiscovery: true,
+            discoveryScanProgress: { current: 0, total: 0, message: 'Scanning resources...', mode: 'indeterminate' }
+        });
+        rerender(<AppHeader {...defaultProps} />);
+
+        expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
+        expect(screen.getByTitle(/Import images\./).className).toContain('bg-sage-500/20');
     });
 
     it('opens the import flow from the header import button', () => {

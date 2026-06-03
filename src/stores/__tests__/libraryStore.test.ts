@@ -38,7 +38,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
-                message: 'Detected InvokeAI activity.'
+                message: 'Checking InvokeAI for completed images.'
             });
             useLibraryStore.getState().reportLiveImagesReceived(1, { source: 'invoke' });
         });
@@ -54,7 +54,7 @@ describe('libraryStore live watch session', () => {
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'watching',
-                message: 'Detected new files.'
+                message: 'Checking monitored folders.'
             });
         });
 
@@ -79,7 +79,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'summary',
-                message: '1 image received this session. Watching for more...'
+                message: '1 image added this session.'
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -94,7 +94,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Synchronizing InvokeAI images...'
+                message: 'Syncing completed InvokeAI images...'
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -107,7 +107,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().updateLiveWatchSession({
                 source: 'invoke',
                 phase: 'summary',
-                message: '1 image received this session. Watching for more...',
+                message: '1 image added this session.',
                 progress: null
             });
         });
@@ -121,7 +121,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('invoke', {
                 phase: 'watching',
-                message: 'Detected InvokeAI activity. Waiting for completed images...'
+                message: 'Checking InvokeAI for completed images...'
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -134,7 +134,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().updateLiveWatchSession({
                 source: 'invoke',
                 phase: 'summary',
-                message: 'Watching for completed images...',
+                message: 'Watching for new images...',
                 progress: null
             });
         });
@@ -148,7 +148,7 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().setIsLiveWatching(true);
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'importing',
-                message: 'Importing live images...'
+                message: 'Importing new images...'
             });
             useLibraryStore.getState().setIsLiveWatching(false);
         });
@@ -178,6 +178,34 @@ describe('libraryStore live watch session', () => {
 
         expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
         expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
+    });
+
+    it('keeps a dismissed Live Watch dock dismissed for routine live session updates', () => {
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'Syncing completed InvokeAI images...'
+            });
+            useLibraryStore.getState().setIsActivityDockDismissed(true);
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'syncing',
+                message: 'Still syncing...',
+                progress: { current: 1, total: 2, message: undefined }
+            });
+        });
+
+        expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'New live activity...'
+            });
+            useLibraryStore.getState().reportLiveImagesReceived(1, { source: 'invoke' });
+        });
+
+        expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
     });
 
     it('cancels duplicate hashing when an import starts', () => {

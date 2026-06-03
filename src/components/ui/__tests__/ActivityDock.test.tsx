@@ -1,6 +1,6 @@
 ﻿import * as React from 'react';
 import { act, fireEvent, render, screen } from '../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
 
@@ -51,6 +51,10 @@ describe('ActivityDock', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetLibraryStore();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('renders the manual syncing card with cancel controls', () => {
@@ -349,51 +353,430 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('100%')).toBeNull();
     });
 
-    it('renders a unified Live Watch card without cancel controls during active live work', () => {
+    it('keeps Live Watch watching phase out of the dock', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'watching',
+            message: 'Checking InvokeAI for completed images...'
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+
+        act(() => {
+            vi.advanceTimersByTime(5000);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        expect(screen.queryByText('Checking InvokeAI for completed images...')).toBeNull();
+        expect(screen.queryByTestId('activity-dock-progress-rail')).toBeNull();
+    });
+
+    it('keeps quick InvokeAI live sync hidden when it settles before the reveal delay', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
         useLibraryStore.getState().startLiveWatchSession('invoke', {
             phase: 'syncing',
-            message: 'Preparing live InvokeAI sync...',
+            message: 'Syncing completed InvokeAI images...',
+            progress: { current: 0, total: 0, message: undefined }
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2499);
+        });
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for new images...',
+                progress: null
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(5000);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        expect(screen.queryByText('Updating your library...')).toBeNull();
+        expect(screen.queryByText('Watching for new images...')).toBeNull();
+    });
+
+    it('keeps zero-result and image-result summaries out of the dock', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...'
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for new images...',
+                progress: null
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(5000);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        expect(screen.queryByText('Watching for new images...')).toBeNull();
+
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'Syncing completed InvokeAI images...'
+            });
+            useLibraryStore.getState().reportLiveImagesReceived(2, { source: 'invoke' });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(5000);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+        expect(screen.queryByText('2 images added this session.')).toBeNull();
+        expect(screen.queryByTestId('live-watch-compact-result')).toBeNull();
+        expect(screen.queryByTestId('activity-dock-progress-rail')).toBeNull();
+        expect(screen.queryByText('100%')).toBeNull();
+    });
+
+    it('reveals sustained InvokeAI Live Watch sync with stable user-facing copy', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...',
             progress: { current: 0, total: 0, message: undefined }
         });
 
         const { container } = render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2499);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
         const card = container.querySelector('[layoutid="dock-content"]');
-        const progressFill = container.querySelector('.bg-violet-400');
 
         expect(screen.getByText('Live Watch')).toBeTruthy();
-        expect(screen.getByText('Preparing live InvokeAI sync...')).toBeTruthy();
+        expect(screen.getByText('InvokeAI')).toBeTruthy();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
         expect(screen.queryByText('Syncing')).toBeNull();
+        expect(screen.queryByText('Checking')).toBeNull();
+        expect(screen.queryByText('Importing')).toBeNull();
+        expect(screen.queryByText('Syncing completed InvokeAI images...')).toBeNull();
+        expect(screen.queryByText('Background Activity')).toBeNull();
         expect(screen.queryByText('Cancel')).toBeNull();
         expect(screen.queryByText('0 / 0')).toBeNull();
         expect(card?.className).toContain('w-[min(400px,calc(100vw-2rem))]');
-        expect(progressFill).toBeTruthy();
-        expect(container.querySelector('.text-sage-600')).toBeNull();
+        expect(screen.getByTestId('activity-dock-progress-rail')).toBeTruthy();
+        expect(container.querySelector('.bg-gradient-to-r')).toBeTruthy();
+        expect(container.querySelector('.bg-sage-500')).toBeTruthy();
+        expect(container.querySelector('.text-sage-600')).toBeTruthy();
+        expect(container.innerHTML).not.toContain('signal');
+        expect(container.querySelector('.bg-violet-400')).toBeNull();
+        expect(container.innerHTML).not.toContain('amethyst');
     });
 
-    it('keeps the same Live Watch card through summary updates', () => {
+    it('reveals sustained folder Live Watch import and keeps source context stable', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         const { container } = render(<ActivityDock />);
 
         act(() => {
             useLibraryStore.getState().startLiveWatchSession('generic', {
                 phase: 'importing',
-                message: 'Importing live images...',
-                progress: { current: 1, total: 2, message: undefined }
+                message: 'Importing new images...',
+                progress: { current: 1, total: 3, message: undefined }
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+        expect(screen.getByText('Folders')).toBeTruthy();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'Syncing completed InvokeAI images...',
+                progress: { current: 0, total: 0, message: undefined }
+            });
+        });
+
+        expect(screen.getByText('Mixed')).toBeTruthy();
+        expect(screen.queryByText('Folders')).toBeNull();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+        expect(container.querySelector('.bg-sage-500')).toBeTruthy();
+        expect(container.innerHTML).not.toContain('signal');
+        expect(container.innerHTML).not.toContain('violet');
+        expect(container.innerHTML).not.toContain('amethyst');
+    });
+
+    it('keeps visible Live Watch copy stable across active sync and import phase changes', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...'
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'syncing',
+                message: 'Syncing completed InvokeAI images...',
+                progress: { current: 0, total: 0, message: undefined }
+            });
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'importing',
+                message: 'Importing new images...',
+                progress: { current: 1, total: 3, message: undefined }
             });
         });
 
         expect(screen.getByText('Live Watch')).toBeTruthy();
-        expect(screen.getByText('Importing live images...')).toBeTruthy();
+        expect(screen.getByText('InvokeAI')).toBeTruthy();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+        expect(screen.queryByText('Checking InvokeAI for completed images...')).toBeNull();
+        expect(screen.queryByText('Syncing completed InvokeAI images...')).toBeNull();
+        expect(screen.queryByText('Importing new images...')).toBeNull();
+        expect(screen.queryByText('Syncing')).toBeNull();
+        expect(screen.queryByText('Importing')).toBeNull();
+    });
+
+    it('keeps Live Watch visible through close grace after sustained work settles', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...'
+        });
+
+        render(<ActivityDock />);
 
         act(() => {
-            useLibraryStore.getState().reportLiveImagesReceived(2, { source: 'generic' });
+            vi.advanceTimersByTime(2500);
         });
 
         expect(screen.getByText('Live Watch')).toBeTruthy();
-        expect(screen.getByText('2 images received this session. Watching for more...')).toBeTruthy();
-        expect(screen.queryByText('Syncing')).toBeNull();
-        expect(screen.queryByText('Cancel')).toBeNull();
-        expect(screen.getByText('Live Watch stays active in the background.')).toBeTruthy();
-        expect(container.querySelector('.bg-violet-400')).toBeTruthy();
-        expect(container.querySelector('.bg-gradient-to-r')).toBeNull();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+
+        act(() => {
+            vi.advanceTimersByTime(2200);
+        });
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for new images...',
+                progress: null
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(1499);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+    });
+
+    it('respects the minimum visible time when sustained work settles immediately after reveal', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...',
+            progress: { current: 0, total: 0, message: undefined }
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for new images...',
+                progress: null
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(2199);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+    });
+
+    it('keeps dismissed Live Watch hidden for the current presentation but allows a later sustained batch', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...'
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        fireEvent.click(screen.getByTitle('Dismiss'));
+        expect(screen.queryByText('Live Watch')).toBeNull();
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'syncing',
+                message: 'Still syncing...',
+                progress: { current: 1, total: 2, message: undefined }
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(5000);
+        });
+
+        expect(screen.queryByText('Live Watch')).toBeNull();
+
+        act(() => {
+            useLibraryStore.getState().updateLiveWatchSession({
+                source: 'invoke',
+                phase: 'summary',
+                message: 'Watching for new images...',
+                progress: null
+            });
+        });
+
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('invoke', {
+                phase: 'syncing',
+                message: 'Syncing completed InvokeAI images...'
+            });
+        });
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+        expect(screen.getByText('Updating your library...')).toBeTruthy();
+    });
+
+    it('lets higher-priority work replace visible Live Watch immediately', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'syncing',
+            message: 'Syncing completed InvokeAI images...'
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            vi.advanceTimersByTime(2500);
+        });
+
+        expect(screen.getByText('Live Watch')).toBeTruthy();
+
+        act(() => {
+            useLibraryStore.setState({
+                isImporting: true,
+                importProgress: {
+                    current: 1,
+                    total: 2,
+                    message: 'Importing selected files...'
+                }
+            });
+        });
+
+        expect(screen.getByText('Background Activity')).toBeTruthy();
+        expect(screen.getByText('Importing selected files...')).toBeTruthy();
+        expect(screen.queryByText('InvokeAI')).toBeNull();
+        expect(screen.queryByText('Updating your library...')).toBeNull();
+    });
+
+    it('keeps higher-priority work in control while Live Watch watching remains ambient', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        useLibraryStore.getState().startLiveWatchSession('invoke', {
+            phase: 'watching',
+            message: 'Checking InvokeAI for completed images...'
+        });
+
+        render(<ActivityDock />);
+
+        act(() => {
+            useLibraryStore.setState({
+                isImporting: true,
+                importProgress: {
+                    current: 1,
+                    total: 2,
+                    message: 'Importing selected files...'
+                }
+            });
+        });
+
+        expect(screen.getByText('Background Activity')).toBeTruthy();
+        expect(screen.getByText('Importing selected files...')).toBeTruthy();
+        expect(screen.queryByText('InvokeAI')).toBeNull();
+        expect(screen.queryByText('Updating your library...')).toBeNull();
     });
 });

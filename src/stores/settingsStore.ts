@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enableAI: false,
     hasCompletedOnboarding: false,
     syncBoardsToCollections: false,
-    importOrphans: true,
+    importOrphans: false,
     starredAs: 'favorite',
     libraryLayoutMode: 'masonry',
     resourceViewModes: {},

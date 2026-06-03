@@ -144,13 +144,13 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         </label>
 
                         <label className="flex items-start gap-3 cursor-pointer group/toggle">
-                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans !== false ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans !== false} onChange={e => handleImportOrphansToggle(e.target.checked)} />
-                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans !== false ? 'translate-x-5' : 'translate-x-0'}`} />
+                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans === true ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans === true} onChange={e => handleImportOrphansToggle(e.target.checked)} />
+                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans === true ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>
                                 <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Orphan Recovery</span>
-                                <span className="text-[9px] text-gray-500 leading-tight">Find untracked files in output folder.</span>
+                                <span className="text-[9px] text-gray-500 leading-tight">Manual full output-folder recovery sweep.</span>
                             </div>
                         </label>
                     </div>

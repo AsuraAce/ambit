@@ -198,8 +198,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             ? options.importIntermediates
             : settingsRef.current.importIntermediates;
         const shouldImportOrphans = options.importOrphans !== undefined
-            ? options.importOrphans
-            : settingsRef.current.importOrphans;
+            ? options.importOrphans === true
+            : options.mode === 'manual' && settingsRef.current.importOrphans === true;
         const effectiveSnapshotConfig = {
             lastSyncedAt: effectiveTimestamp,
             importIntermediates: effectiveImportIntermediates,
@@ -265,7 +265,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             setSyncProgress({ current: 0, total: 0, message: undefined });
             startLiveWatchSession('invoke', {
                 phase: 'syncing',
-                message: 'Preparing live InvokeAI sync...',
+                message: 'Syncing completed InvokeAI images...',
                 progress: { current: 0, total: 0, message: undefined }
             });
             debugLiveWatchPerf('Invoke sync started', {
@@ -283,7 +283,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         const ctrl = new AbortController();
         setSyncAbortController(ctrl);
         const persistInvokeSnapshot = async (lastSyncedAt: number | null | undefined) => {
-            if (!settingsRef.current.invokeAiPath || options.mode === 'live' || shouldImportOrphans !== false) return;
+            if (!settingsRef.current.invokeAiPath || options.mode === 'live' || shouldImportOrphans) return;
 
             try {
                 const snapshot = await readInvokeDbSnapshotState(
@@ -319,7 +319,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         updateLiveWatchSession({
                             source: 'invoke',
                             phase: 'syncing',
-                            message: msg || 'Synchronizing InvokeAI images...',
+                            message: msg || 'Syncing completed InvokeAI images...',
                             progress: { current: c, total: t, message: undefined }
                         });
                     } else {
@@ -372,9 +372,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
 
             // Orphan scanning
             let orphansImported = 0;
-            const shouldImportOrphans = options.importOrphans !== undefined ? options.importOrphans : settingsRef.current.importOrphans;
 
-            if (options.mode !== 'live' && shouldImportOrphans !== false) {
+            if (options.mode !== 'live' && shouldImportOrphans) {
                 orphansImported = await scanForOrphans(
                     settingsRef.current.invokeAiPath!,
                     syncedIds,
@@ -461,7 +460,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                                 totalProcessed,
                                 touchedFacetTypes,
                                 touchedFacetResources,
-                                orphanScanEnabled: shouldImportOrphans !== false,
+                                orphanScanEnabled: shouldImportOrphans,
                                 onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
                             });
                         } else {
@@ -514,7 +513,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             totalProcessed,
                             touchedFacetTypes,
                             touchedFacetResources,
-                            orphanScanEnabled: shouldImportOrphans !== false,
+                            orphanScanEnabled: shouldImportOrphans,
                             onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
                         });
                     }
@@ -619,7 +618,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 const targetedSyncStartedAt = liveWatchNow();
                 startLiveWatchSession('generic', {
                     phase: 'importing',
-                    message: 'Preparing live import...',
+                    message: 'Importing new images...',
                     progress: { current: 0, total: nextBatch.length, message: undefined }
                 });
 
@@ -640,7 +639,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             updateLiveWatchSession({
                                 source: 'generic',
                                 phase: 'importing',
-                                message: message || 'Importing live images...',
+                                message: message || 'Importing new images...',
                                 progress: { current, total, message: undefined }
                             });
                         },
