@@ -96,20 +96,21 @@ export const useImagesQuery = ({
             // parallelize count and search for the first page
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
-                console.time('[Perf] useImagesQuery: initial fetch');
+                const startedAt = performance.now();
                 const [images, totalCount, globalCount] = await Promise.all([
                     searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
                     countImages(where, params, collectionId, loraName),
                     countGlobalImages() // Fast path: no JOIN, simple indexed count
                 ]);
-                console.timeEnd('[Perf] useImagesQuery: initial fetch');
-                console.log(`[Perf] useImagesQuery returned ${images.length} images`);
+                const elapsedMs = Math.round(performance.now() - startedAt);
+                console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
                 return { images, totalCount, globalCount };
             } else {
                 const cursor = pageParam as PaginationCursor;
-                console.time('[Perf] useImagesQuery: load more');
+                const startedAt = performance.now();
                 const images = await searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, cursor);
-                console.timeEnd('[Perf] useImagesQuery: load more');
+                const elapsedMs = Math.round(performance.now() - startedAt);
+                console.log(`[Perf] useImagesQuery: load more ${elapsedMs}ms`);
                 return { images, totalCount: -1, globalCount: -1 };
             }
         },
