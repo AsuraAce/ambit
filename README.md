@@ -70,7 +70,7 @@ Development prerequisites:
     ```bash
     pnpm run app:dev
     ```
-5.  Run focused checks before opening a pull request:
+5.  Run focused checks before sharing or publishing local changes:
     ```bash
     pnpm run typecheck
     pnpm run test:run
@@ -78,7 +78,9 @@ Development prerequisites:
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and pull request expectations.
+Ambit is currently maintainer-led. Bug reports, security reports, documentation corrections, and feature requests are welcome, but code contributions and pull requests are not being accepted at this stage.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local development notes and the current contribution policy.
 
 For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 

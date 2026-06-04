@@ -1,6 +1,10 @@
 # Contributing To Ambit
 
-Thanks for helping improve Ambit. The project is in public beta, so changes should stay focused, reviewable, and easy to validate.
+Thanks for helping improve Ambit. The project is in public beta and is currently maintainer-led.
+
+Bug reports, security reports, reproducible issue details, documentation corrections, and feature requests are welcome. Code contributions and pull requests are not being accepted at this stage, and unsolicited pull requests may be closed without review.
+
+If Ambit begins accepting outside code contributions in the future, contributor terms may be required before a change is reviewed or merged.
 
 ## Development Setup
 
@@ -22,11 +26,11 @@ pnpm run app:dev
 
 - Use a focused feature or fix branch.
 - Use Conventional Commits, such as `fix: repair metadata import` or `feat: add collection action`.
-- Keep pull requests scoped to one concern.
+- Keep changes scoped to one concern.
 
 ## Checks
 
-Run the narrowest relevant checks for your change before opening a pull request:
+For local development or maintainer changes, run the narrowest relevant checks for your change:
 
 ```bash
 pnpm run typecheck
