@@ -458,6 +458,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const isAllMode = filters.matchModes?.[filterKey] === 'all';
+    const supportsMatchMode = type !== 'checkpoints';
 
     return (
         <div className="space-y-2">
@@ -493,28 +494,29 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         >
                             {viewMode === 'list' ? <LayoutGrid className="w-3.5 h-3.5" /> : <ListIcon className="w-3.5 h-3.5" />}
                         </button>
-                        {/* Match Mode Toggle - Icon Only */}
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const nextMode = isAllMode ? 'any' : 'all';
-                                setFilters(prev => ({
-                                    ...prev,
-                                    matchModes: {
-                                        ...prev.matchModes,
-                                        [filterKey]: nextMode
-                                    }
-                                }));
-                            }}
-                            className={`transition-colors p-1.5 rounded-lg border ${isAllMode
-                                ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30'
-                                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
-                            title={isAllMode
-                                ? "Match All: Show images that have EVERY selected item"
-                                : "Match Any: Show images with AT LEAST ONE selected item"}
-                        >
-                            {isAllMode ? <CircleDot className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
-                        </button>
+                        {supportsMatchMode && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const nextMode = isAllMode ? 'any' : 'all';
+                                    setFilters(prev => ({
+                                        ...prev,
+                                        matchModes: {
+                                            ...prev.matchModes,
+                                            [filterKey]: nextMode
+                                        }
+                                    }));
+                                }}
+                                className={`transition-colors p-1.5 rounded-lg border ${isAllMode
+                                    ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30'
+                                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
+                                title={isAllMode
+                                    ? "Match All: Show images that have EVERY selected item"
+                                    : "Match Any: Show images with AT LEAST ONE selected item"}
+                            >
+                                {isAllMode ? <CircleDot className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                            </button>
+                        )}
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
                             className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}

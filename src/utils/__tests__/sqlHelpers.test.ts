@@ -43,6 +43,18 @@ describe('sqlHelpers', () => {
             expect(params).toEqual(['SDXL', 'Flux']);
         });
 
+        it('should always OR checkpoint models even if stale matchModes requests ALL', () => {
+            const { where, params } = buildSqlWhereClause({
+                ...defaultFilters,
+                models: ['SDXL', 'Flux'],
+                matchModes: { models: 'all' }
+            }, false, 'blur', []);
+
+            expect(where).toContain("resolved_model_name = ? COLLATE NOCASE OR resolved_model_name = ? COLLATE NOCASE");
+            expect(where).not.toContain("resolved_model_name = ? COLLATE NOCASE AND resolved_model_name = ? COLLATE NOCASE");
+            expect(params).toEqual(['SDXL', 'Flux']);
+        });
+
         it('should filter model aliases as one selected asset', () => {
             const { where, params } = buildSqlWhereClause({
                 ...defaultFilters,

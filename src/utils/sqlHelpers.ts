@@ -334,7 +334,6 @@ export const buildSqlWhereClause = (
 
     // 5. Models (Array)
     if (filters.models.length > 0 && !excludeCategories.includes('models')) {
-        const matchMode = filters.matchModes?.models || 'any';
         const modelConditions = getAssetAliasGroups(filters, 'models', filters.models).map(aliases => (
             buildAliasGroupCondition(aliases, alias => {
                 if (alias === 'Unknown') {
@@ -343,7 +342,7 @@ export const buildSqlWhereClause = (
                 return `resolved_model_name = ? COLLATE NOCASE`;
             }, params)
         ));
-        conditions.push(`(${modelConditions.join(matchMode === 'all' ? ' AND ' : ' OR ')})`);
+        conditions.push(`(${modelConditions.join(' OR ')})`);
     }
 
     // 5. Tools (Array)

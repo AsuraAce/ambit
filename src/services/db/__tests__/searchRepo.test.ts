@@ -409,6 +409,83 @@ describe('searchRepo getFacets', () => {
         expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(true);
     });
 
+    it('uses self-excluded scoped count overrides to keep Match Any lora alternatives visible', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'LoraA',
+                    resource_hash: 'hash-a',
+                    count: 10
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'LoraB',
+                    resource_hash: 'hash-b',
+                    count: 8
+                }
+            ],
+            [],
+            {
+                loras: [{ name: 'LoraA', count: 1 }]
+            }
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('WHERE is_deleted = 0', [], ['loras'], {
+            assetScope: 'used',
+            loraName: 'LoraA',
+            scopedCountOverrides: {
+                loras: {
+                    whereClause: '',
+                    params: []
+                }
+            }
+        });
+
+        expect(facets.loras).toEqual([
+            expect.objectContaining({ name: 'LoraA', count: 10 }),
+            expect.objectContaining({ name: 'LoraB', count: 8 })
+        ]);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(false);
+    });
+
+    it('keeps narrowed scoped lora counts when Match All does not provide an override', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'LoraA',
+                    resource_hash: 'hash-a',
+                    count: 10
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'LoraB',
+                    resource_hash: 'hash-b',
+                    count: 8
+                }
+            ],
+            [],
+            {
+                loras: [{ name: 'LoraA', count: 1 }]
+            }
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('WHERE is_deleted = 0', [], ['loras'], {
+            assetScope: 'used',
+            loraName: 'LoraA'
+        });
+
+        expect(facets.loras).toEqual([
+            expect.objectContaining({ name: 'LoraA', count: 1 })
+        ]);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(true);
+    });
+
     it('normalizes scoped checkpoint counts across merged aliases in used scope', async () => {
         const db = createFacetDb(
             [

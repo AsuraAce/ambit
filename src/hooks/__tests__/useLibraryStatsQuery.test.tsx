@@ -551,6 +551,7 @@ describe('useLibraryStatsQuery valid facets', () => {
         renderStatsHook(createDefaultFilters({ loras: ['CollectionLora'] }));
 
         await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(1));
 
         const calls = searchRepoMocks.getValidFacetNames.mock.calls as Array<
             [string, unknown[], string | undefined, string | undefined]
@@ -561,6 +562,40 @@ describe('useLibraryStatsQuery valid facets', () => {
         expect(baseCall[3]).toBe('CollectionLora');
         expect(loraSelfExcludedCall[1]).not.toContain('CollectionLora');
         expect(loraSelfExcludedCall[3]).toBeUndefined();
+
+        const facetCalls = searchRepoMocks.getFacets.mock.calls as Array<
+            [string, unknown[], unknown[], { loraName?: string; scopedCountOverrides?: Record<string, { params: unknown[]; loraName?: string }> }]
+        >;
+        const facetOptions = facetCalls[0][3];
+
+        expect(facetOptions.loraName).toBe('CollectionLora');
+        expect(facetOptions.scopedCountOverrides?.loras?.params).not.toContain('CollectionLora');
+        expect(facetOptions.scopedCountOverrides?.loras?.loraName).toBeUndefined();
+    });
+
+    it('self-excludes checkpoints even if stale matchModes requests ALL', async () => {
+        renderStatsHook(createDefaultFilters({
+            models: ['Model A', 'Model B'],
+            matchModes: { models: 'all' }
+        }));
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalledTimes(1));
+
+        const validFacetCalls = searchRepoMocks.getValidFacetNames.mock.calls as Array<
+            [string, unknown[], string | undefined, string | undefined]
+        >;
+        const checkpointSelfExcludedCall = validFacetCalls[1];
+
+        expect(checkpointSelfExcludedCall[1]).not.toContain('Model A');
+        expect(checkpointSelfExcludedCall[1]).not.toContain('Model B');
+
+        const facetCalls = searchRepoMocks.getFacets.mock.calls as Array<
+            [string, unknown[], unknown[], { scopedCountOverrides?: Record<string, { params: unknown[] }> }]
+        >;
+
+        expect(facetCalls[0][3].scopedCountOverrides?.checkpoints?.params).not.toContain('Model A');
+        expect(facetCalls[0][3].scopedCountOverrides?.checkpoints?.params).not.toContain('Model B');
     });
 
     it('debounces search-only stats updates and collapses rapid corrections', async () => {
