@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
-import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames } from '../services/db/searchRepo';
+import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames, type ScopedFacetCountInput } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
@@ -36,6 +36,25 @@ const INITIAL_FACETS: Facets = {
     controlNets: [],
     ipAdapters: [],
     tools: []
+};
+
+const getSelfExcludedFacetTypes = (filters: FilterState): FacetType[] => {
+    const facetTypes: FacetType[] = [];
+
+    if (filters.loras.length > 0 && filters.matchModes?.loras !== 'all') facetTypes.push('loras');
+    if (filters.embeddings.length > 0 && filters.matchModes?.embeddings !== 'all') facetTypes.push('embeddings');
+    if (filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') facetTypes.push('hypernetworks');
+    if (filters.tools.length > 0 && filters.matchModes?.tools !== 'all') facetTypes.push('tools');
+    if (filters.models.length > 0) facetTypes.push('checkpoints');
+    if (filters.controlNets.length > 0 && filters.matchModes?.controlNets !== 'all') facetTypes.push('controlNets');
+    if (filters.ipAdapters.length > 0 && filters.matchModes?.ipAdapters !== 'all') facetTypes.push('ipAdapters');
+
+    return facetTypes;
+};
+
+const getExcludeKeyForFacetType = (facetType: FacetType): string => {
+    if (facetType === 'checkpoints') return 'models';
+    return facetType;
 };
 
 const hasRangeFilter = (value: number | null | undefined): boolean =>
@@ -125,6 +144,49 @@ export const useLibraryStatsQuery = ({
         useBrowserMocks
     ]);
 
+    const selfExcludedFacetTypes = useMemo(
+        () => getSelfExcludedFacetTypes(sideQueryFilters),
+        [sideQueryFilters]
+    );
+
+    const scopedCountOverrides = useMemo<Partial<Record<FacetType, ScopedFacetCountInput>> | undefined>(() => {
+        if (useBrowserMocks || !settingsLoaded || selfExcludedFacetTypes.length === 0) return undefined;
+
+        const overrides: Partial<Record<FacetType, ScopedFacetCountInput>> = {};
+
+        for (const facetType of selfExcludedFacetTypes) {
+            if (facetType === 'tools') continue;
+
+            const partial = buildSqlWhereClause(
+                sideQueryFilters,
+                privacyEnabled,
+                settings.maskingMode,
+                settings.maskedKeywords,
+                allCollections,
+                false,
+                [getExcludeKeyForFacetType(facetType)]
+            );
+
+            overrides[facetType] = {
+                whereClause: partial.where,
+                params: partial.params,
+                collectionId: partial.collectionId,
+                loraName: partial.loraName
+            };
+        }
+
+        return Object.keys(overrides).length > 0 ? overrides : undefined;
+    }, [
+        allCollections,
+        privacyEnabled,
+        selfExcludedFacetTypes,
+        settings.maskedKeywords,
+        settings.maskingMode,
+        settingsLoaded,
+        sideQueryFilters,
+        useBrowserMocks
+    ]);
+
     const facetsQuery = useQuery({
         queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
         queryFn: async () => {
@@ -137,7 +199,8 @@ export const useLibraryStatsQuery = ({
             return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, {
                 assetScope,
                 collectionId: queryInput.collectionId,
-                loraName: queryInput.loraName
+                loraName: queryInput.loraName,
+                scopedCountOverrides
             });
         },
         placeholderData: (previousData) => previousData,
@@ -197,31 +260,10 @@ export const useLibraryStatsQuery = ({
 
             const baseValidNames = await getValidFacetNames(where, params, collectionId, loraName);
 
-            const disjunctiveCategories: FacetType[] = [];
-            if (activeCollectionId) {
-                // Collections are single select, no disjunctive logic needed currently.
-            }
-            if (sideQueryFilters.loras.length > 0 && sideQueryFilters.matchModes?.loras !== 'all') disjunctiveCategories.push('loras');
-            if (sideQueryFilters.embeddings.length > 0 && sideQueryFilters.matchModes?.embeddings !== 'all') disjunctiveCategories.push('embeddings');
-            if (sideQueryFilters.hypernetworks.length > 0 && sideQueryFilters.matchModes?.hypernetworks !== 'all') disjunctiveCategories.push('hypernetworks');
-            if (sideQueryFilters.tools.length > 0 && sideQueryFilters.matchModes?.tools !== 'all') disjunctiveCategories.push('tools');
-            if (sideQueryFilters.models.length > 0 && sideQueryFilters.matchModes?.models !== 'all') disjunctiveCategories.push('checkpoints');
-            if (sideQueryFilters.controlNets.length > 0 && sideQueryFilters.matchModes?.controlNets !== 'all') disjunctiveCategories.push('controlNets');
-            if (sideQueryFilters.ipAdapters.length > 0 && sideQueryFilters.matchModes?.ipAdapters !== 'all') disjunctiveCategories.push('ipAdapters');
-
             let finalValidNames = baseValidNames ? { ...baseValidNames } : null;
 
-            if (finalValidNames && disjunctiveCategories.length > 0 && fetchValidFacets) {
-                const extraQueries = disjunctiveCategories.map(async (cat) => {
-                    let excludeKey = '';
-                    if (cat === 'loras') excludeKey = 'loras';
-                    if (cat === 'embeddings') excludeKey = 'embeddings';
-                    if (cat === 'hypernetworks') excludeKey = 'hypernetworks';
-                    if (cat === 'tools') excludeKey = 'tools';
-                    if (cat === 'checkpoints') excludeKey = 'models';
-                    if (cat === 'controlNets') excludeKey = 'controlNets';
-                    if (cat === 'ipAdapters') excludeKey = 'ipAdapters';
-
+            if (finalValidNames && selfExcludedFacetTypes.length > 0 && fetchValidFacets) {
+                const extraQueries = selfExcludedFacetTypes.map(async (cat) => {
                     const partial = buildSqlWhereClause(
                         sideQueryFilters,
                         privacyEnabled,
@@ -229,7 +271,7 @@ export const useLibraryStatsQuery = ({
                         settings.maskedKeywords,
                         allCollections,
                         false,
-                        [excludeKey]
+                        [getExcludeKeyForFacetType(cat)]
                     );
 
                     const result = await getValidFacetNames(

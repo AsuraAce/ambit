@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-05-03
+Last reviewed: 2026-06-04
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -374,6 +374,46 @@ Status: Deferred
 - `src/services/db/searchRepo.ts`
 - `src-tauri/src/db/facets.rs`
 - `src-tauri/src/db/migrations/`
+
+## Facet Semantics Centralization
+Status: Deferred
+
+### Why Cleanup Is Needed
+- Asset filter semantics now intentionally differ by facet type:
+  - Checkpoints are multi-select but Any-only because each image has one checkpoint/model.
+  - LoRAs, embeddings, hypernetworks, ControlNets, and IP-Adapters support Match Any and Match All because images can contain multiple values in each category.
+  - Generator tools remain Any-only in the UI.
+- The current implementation keeps this behavior correct, but the taxonomy is expressed across `useLibraryStatsQuery`, `sqlHelpers`, `browserMockData`, and `ResourceSection`.
+- Future asset categories or smart-collection changes could drift if one layer learns a different match-mode rule than the others.
+
+### Current Pain Points
+- The same category-to-filter-key mapping is repeated in hook logic and mock filtering.
+- UI support for Match Any/All is component-local, while backend compatibility rules live in SQL helper code.
+- Tools still have internal stale `matchModes.tools` compatibility even though the visible UI does not generate a tool Match toggle.
+
+### Safe-Change Warning
+- Do not replace the current disjunctive faceting behavior with a broad abstraction unless the product semantics stay identical.
+- Checkpoints must remain OR-only even if persisted filters or smart collections contain `matchModes.models = 'all'`.
+- Categories should continue to combine with AND across categories; only same-category selected values use Any/All semantics.
+
+### Suggested Future Direction
+- Add a small shared facet taxonomy helper that declares the filter key, display facet type, whether Match All is supported, and whether stale Match All should be ignored.
+- Reuse that helper in:
+  - `useLibraryStatsQuery` self-excluded facet count selection,
+  - `buildSqlWhereClause` match-mode handling,
+  - browser mock filtering and mock facet generation,
+  - resource-section UI controls and tests.
+- Keep tools Any-only unless a future product decision treats generator tools as genuinely multi-valued per image.
+
+### Acceptance Direction
+- Adding or changing an asset facet updates one taxonomy definition instead of four independent logic paths.
+- Tests still prove Match Any sibling alternatives remain visible, Match All narrows to co-occurrence, and checkpoints cannot become impossible AND filters.
+
+### Related Code
+- `src/hooks/useLibraryStatsQuery.ts`
+- `src/utils/sqlHelpers.ts`
+- `src/services/browserMockData.ts`
+- `src/features/filters/components/ResourceSection.tsx`
 
 ## Resource Discovery Taxonomy Phase 2
 Status: Deferred

@@ -261,10 +261,17 @@ const getCollectionCount = (collection: Collection): number => {
 
 const isSmartCollection = (collection: Collection): collection is SmartCollection => !!collection.filters;
 
-const matchesEverySelected = (values: string[] | undefined, selected: string[] | undefined): boolean => {
+const matchesSelectedValues = (
+    values: string[] | undefined,
+    selected: string[] | undefined,
+    matchMode: 'any' | 'all' = 'any'
+): boolean => {
     if (!selected || selected.length === 0) return true;
     const lowerValues = new Set((values ?? []).map((value) => value.toLowerCase()));
-    return selected.some((value) => lowerValues.has(value.toLowerCase()));
+    const matches = (value: string) => lowerValues.has(value.toLowerCase());
+    return matchMode === 'all'
+        ? selected.every(matches)
+        : selected.some(matches);
 };
 
 interface BrowserSearchToken {
@@ -429,15 +436,15 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         if (!timestampMatchesDateBounds(image.timestamp, dateBounds)) return false;
         if (collectionIds && !collectionIds.has(image.id)) return false;
         if (smartMatches && !smartMatches.has(image.id)) return false;
-        if (filters.models.length > 0 && !filters.models.includes(image.metadata.model)) return false;
-        if (filters.tools.length > 0 && !filters.tools.includes(image.metadata.tool)) return false;
-        if (!matchesEverySelected(image.metadata.loras, filters.loras)) return false;
-        if (!matchesEverySelected(image.metadata.embeddings, filters.embeddings)) return false;
-        if (!matchesEverySelected(image.metadata.hypernetworks, filters.hypernetworks)) return false;
-        if (!matchesEverySelected(image.metadata.controlNets, filters.controlNets)) return false;
-        if (!matchesEverySelected(image.metadata.ipAdapters, filters.ipAdapters)) return false;
-        if (!matchesEverySelected([image.metadata.sampler], filters.samplers)) return false;
-        if (!matchesEverySelected([image.metadata.generationType ?? 'unknown'], filters.generationTypes)) return false;
+        if (!matchesSelectedValues([image.metadata.model], filters.models)) return false;
+        if (!matchesSelectedValues([image.metadata.tool], filters.tools)) return false;
+        if (!matchesSelectedValues(image.metadata.loras, filters.loras, filters.matchModes?.loras)) return false;
+        if (!matchesSelectedValues(image.metadata.embeddings, filters.embeddings, filters.matchModes?.embeddings)) return false;
+        if (!matchesSelectedValues(image.metadata.hypernetworks, filters.hypernetworks, filters.matchModes?.hypernetworks)) return false;
+        if (!matchesSelectedValues(image.metadata.controlNets, filters.controlNets, filters.matchModes?.controlNets)) return false;
+        if (!matchesSelectedValues(image.metadata.ipAdapters, filters.ipAdapters, filters.matchModes?.ipAdapters)) return false;
+        if (!matchesSelectedValues([image.metadata.sampler], filters.samplers)) return false;
+        if (!matchesSelectedValues([image.metadata.generationType ?? 'unknown'], filters.generationTypes)) return false;
         if (filters.minSteps !== undefined && image.metadata.steps < filters.minSteps) return false;
         if (filters.maxSteps !== undefined && image.metadata.steps > filters.maxSteps) return false;
         if (filters.minCfg !== undefined && image.metadata.cfg < filters.minCfg) return false;
@@ -505,18 +512,47 @@ const buildFacetItems = (images: AIImage[], type: FacetType) => {
         .map(([name, count]) => ({ name, count, lastUsedAt: Date.now() - count * 1000 }));
 };
 
+const getFacetSourceFilters = (filters: FilterState, type: FacetType): FilterState => {
+    if (type === 'checkpoints' && filters.models.length > 0) {
+        return { ...filters, models: [] };
+    }
+    if (type === 'tools' && filters.tools.length > 0 && filters.matchModes?.tools !== 'all') {
+        return { ...filters, tools: [] };
+    }
+    if (type === 'loras' && filters.loras.length > 0 && filters.matchModes?.loras !== 'all') {
+        return { ...filters, loras: [] };
+    }
+    if (type === 'embeddings' && filters.embeddings.length > 0 && filters.matchModes?.embeddings !== 'all') {
+        return { ...filters, embeddings: [] };
+    }
+    if (type === 'hypernetworks' && filters.hypernetworks.length > 0 && filters.matchModes?.hypernetworks !== 'all') {
+        return { ...filters, hypernetworks: [] };
+    }
+    if (type === 'controlNets' && filters.controlNets.length > 0 && filters.matchModes?.controlNets !== 'all') {
+        return { ...filters, controlNets: [] };
+    }
+    if (type === 'ipAdapters' && filters.ipAdapters.length > 0 && filters.matchModes?.ipAdapters !== 'all') {
+        return { ...filters, ipAdapters: [] };
+    }
+
+    return filters;
+};
+
 export const getBrowserMockFacets = (filters?: FilterState): Facets => {
     const current = loadStoredState();
-    const sourceImages = filters ? filterImages(current.images, filters, getBrowserMockCollections()) : current.images;
-    const tools = buildFacetItems(sourceImages, 'tools').map((item) => item.name);
+    const collections = getBrowserMockCollections();
+    const sourceFor = (type: FacetType) => (
+        filters ? filterImages(current.images, getFacetSourceFilters(filters, type), collections) : current.images
+    );
+    const tools = buildFacetItems(sourceFor('tools'), 'tools').map((item) => item.name);
 
     return {
-        checkpoints: buildFacetItems(sourceImages, 'checkpoints'),
-        loras: buildFacetItems(sourceImages, 'loras'),
-        embeddings: buildFacetItems(sourceImages, 'embeddings'),
-        hypernetworks: buildFacetItems(sourceImages, 'hypernetworks'),
-        controlNets: buildFacetItems(sourceImages, 'controlNets'),
-        ipAdapters: buildFacetItems(sourceImages, 'ipAdapters'),
+        checkpoints: buildFacetItems(sourceFor('checkpoints'), 'checkpoints'),
+        loras: buildFacetItems(sourceFor('loras'), 'loras'),
+        embeddings: buildFacetItems(sourceFor('embeddings'), 'embeddings'),
+        hypernetworks: buildFacetItems(sourceFor('hypernetworks'), 'hypernetworks'),
+        controlNets: buildFacetItems(sourceFor('controlNets'), 'controlNets'),
+        ipAdapters: buildFacetItems(sourceFor('ipAdapters'), 'ipAdapters'),
         tools,
     };
 };

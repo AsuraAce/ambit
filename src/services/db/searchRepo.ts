@@ -118,6 +118,14 @@ export interface GetFacetsOptions {
     assetScope?: AssetScope;
     collectionId?: string;
     loraName?: string;
+    scopedCountOverrides?: Partial<Record<FacetType, ScopedFacetCountInput>>;
+}
+
+export interface ScopedFacetCountInput {
+    whereClause: string;
+    params: unknown[];
+    collectionId?: string;
+    loraName?: string;
 }
 
 interface ScopedImageQueryParts {
@@ -976,11 +984,46 @@ export const getFacets = async (
                 .filter((type): type is string => type !== null)
         ));
         const diskPlaceholders = diskResourceTypes.map(() => '?').join(',');
-        const shouldUseScopedFacetOverlay = assetScope !== 'local'
-            && !isDefaultGlobalScope(whereClause, params, options.collectionId, options.loraName);
-        const scopedCountMaps = shouldUseScopedFacetOverlay
-            ? await getScopedFacetCountMaps(whereClause, params, cacheTypes, options.collectionId, options.loraName)
-            : new Map<string, Map<string, number>>();
+        const defaultScopedCountInput: ScopedFacetCountInput = {
+            whereClause,
+            params,
+            collectionId: options.collectionId,
+            loraName: options.loraName
+        };
+        const scopedCountInputsByCacheType = new Map<string, ScopedFacetCountInput>();
+        const shouldUseScopedFacetOverlayByCacheType = new Map<string, boolean>();
+
+        for (const facetType of types) {
+            if (facetType === 'tools') continue;
+
+            const cacheType = cacheTypeMap[facetType];
+            const scopedInput = options.scopedCountOverrides?.[facetType] ?? defaultScopedCountInput;
+            scopedCountInputsByCacheType.set(cacheType, scopedInput);
+            shouldUseScopedFacetOverlayByCacheType.set(
+                cacheType,
+                assetScope !== 'local'
+                    && !isDefaultGlobalScope(
+                        scopedInput.whereClause,
+                        scopedInput.params,
+                        scopedInput.collectionId,
+                        scopedInput.loraName
+                    )
+            );
+        }
+
+        const scopedCountMaps = new Map<string, Map<string, number>>();
+        await Promise.all(Array.from(scopedCountInputsByCacheType.entries()).map(async ([cacheType, scopedInput]) => {
+            if (!shouldUseScopedFacetOverlayByCacheType.get(cacheType)) return;
+
+            const countMaps = await getScopedFacetCountMaps(
+                scopedInput.whereClause,
+                scopedInput.params,
+                [cacheType],
+                scopedInput.collectionId,
+                scopedInput.loraName
+            );
+            scopedCountMaps.set(cacheType, countMaps.get(cacheType) ?? new Map<string, number>());
+        }));
 
         const [cacheRows, diskRows] = await Promise.all([
             db.select<FacetCacheRow[]>(`
@@ -1072,6 +1115,7 @@ export const getFacets = async (
 
         const finalizeGroups = (facetType: keyof typeof mergedResources): FacetItem[] => {
             const scopedCountMap = scopedCountMaps.get(facetType);
+            const shouldUseScopedFacetOverlay = shouldUseScopedFacetOverlayByCacheType.get(facetType) ?? false;
 
             return sortFacetItems(
                 Array.from(mergedResources[facetType].values()).map(group => ({

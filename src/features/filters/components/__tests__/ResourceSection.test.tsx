@@ -287,6 +287,53 @@ describe('ResourceSection asset scope filtering', () => {
     });
 });
 
+describe('ResourceSection match mode controls', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('does not render the Match Any/All toggle for checkpoints', () => {
+        render(
+            <ResourceSection
+                title="Checkpoints"
+                type="checkpoints"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'Flux',
+                    hash: 'model_Flux',
+                    count: 3
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByTitle(/Match Any/)).toBeNull();
+        expect(screen.queryByTitle(/Match All/)).toBeNull();
+    });
+
+    it('keeps the Match Any/All toggle for multi-valued resources', () => {
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'Detailer',
+                    hash: 'lora_Detailer',
+                    count: 3
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
+
+        expect(screen.getByTitle(/Match Any/)).toBeTruthy();
+    });
+});
+
 describe('ResourceSection asset sorting', () => {
     beforeEach(() => {
         vi.clearAllMocks();
