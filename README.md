@@ -47,6 +47,8 @@ Official public beta builds are currently available for **Windows only** while m
 
 The Windows installer includes the packaged app. You do not need Node.js, pnpm, Rust, or VS Code unless you want to build Ambit from source.
 
+For a step-by-step product guide, see the [Ambit User Manual](docs/manual/index.md).
+
 ### Development Installation
 
 Development prerequisites:

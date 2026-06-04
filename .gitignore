@@ -39,3 +39,5 @@ docs/*
 !docs/progress.md
 !docs/refactor.md
 !docs/support.md
+!docs/manual/
+!docs/manual/**
