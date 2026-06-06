@@ -62,7 +62,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-indigo-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-indigo-500/20">
+                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-sage-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-sage-500/20">
                     <Workflow className="w-4 h-4" /> Output Configuration
                 </h4>
 
@@ -79,9 +79,9 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         value={settings.comfyUiPath || ''}
                                         onChange={(e) => setSettings(prev => ({ ...prev, comfyUiPath: e.target.value }))}
                                         placeholder="e.g. C:\\ComfyUI\\output"
-                                        className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
+                                        className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
                                     />
-                                    <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                                    <Folder className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-sage-500 transition-colors" />
                                 </div>
                                 <button
                                     type="button"
@@ -114,7 +114,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 disabled={isScanning || !settings.comfyUiPath}
                                 className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.comfyUiPath
                                     ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
-                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-500/20 active:scale-95'
+                                    : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
                                     }`}
                             >
                                 {isScanning ? (

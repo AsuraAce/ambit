@@ -37,7 +37,7 @@ interface GlobalModalsProps {
     isRecoveringMetadata: boolean;
     isExporting: boolean;
     slideshowShuffle: boolean;
-    initialSettingsTab: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+    initialSettingsTab: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
     shortcutsModalTab: 'shortcuts' | 'search';
     commandPaletteProps: {
         onNavigate: (mode: ViewMode) => void;
@@ -64,6 +64,7 @@ interface GlobalModalsProps {
     updateStatus: AppUpdaterStatus;
     onCheckForUpdates: () => Promise<void>;
     onOpenUpdatePrompt: () => void;
+    onNavigateToMaintenance: () => void;
 }
 
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
@@ -105,7 +106,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     updateErrorMessage,
     updateStatus,
     onCheckForUpdates,
-    onOpenUpdatePrompt
+    onOpenUpdatePrompt,
+    onNavigateToMaintenance
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
 
@@ -128,6 +130,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         updateStatus={updateStatus}
                         onCheckForUpdates={onCheckForUpdates}
                         onOpenUpdatePrompt={onOpenUpdatePrompt}
+                        onNavigateToMaintenance={onNavigateToMaintenance}
                     />
                 )}
 

@@ -32,7 +32,7 @@ export const useModalManager = () => {
 
     const [pendingViewerDeleteId, setPendingViewerDeleteId] = useState<string | null>(null);
     const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
-    const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'experiments' | 'intelligence' | 'invokeai' | 'comfyui' | 'a1111' | 'folders' | 'dev'>('general');
+    const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'experiments' | 'intelligence' | 'invokeai' | 'comfyui' | 'a1111' | 'folders' | 'resources' | 'dev'>('general');
     const [shortcutsModalTab, setShortcutsModalTab] = useState<'shortcuts' | 'search'>('shortcuts');
     const [slideshowShuffle, setSlideshowShuffle] = useState(false);
     const [isPinnedShelfCollapsed, setIsPinnedShelfCollapsed] = useState(true);

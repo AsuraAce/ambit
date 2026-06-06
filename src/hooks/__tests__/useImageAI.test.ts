@@ -35,7 +35,7 @@ describe('useImageAI', () => {
             await result.current.analyzePrompt('a cat', mockOnOpenSettings);
         });
 
-        expect(mockAnalyze).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined);
+        expect(mockAnalyze).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined, undefined);
         expect(result.current.result).toBe('Suggested prompt');
         expect(result.current.modalOpen).toBe(true);
         expect(result.current.modalType).toBe('analysis');
@@ -61,9 +61,29 @@ describe('useImageAI', () => {
             await result.current.generateVariations('a cat', mockOnOpenSettings);
         });
 
-        expect(mockVariations).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined);
+        expect(mockVariations).toHaveBeenCalledWith('a cat', 'key123', undefined, undefined, undefined);
         expect(result.current.result).toEqual(['Var 1', 'Var 2']);
         expect(result.current.modalType).toBe('variations');
+    });
+
+    it('forwards the effective thinking mode to image AI requests', async () => {
+        const { result } = renderHook(() => useImageAI({
+            enableAI: true,
+            aiModel: 'gemini-3.5-flash',
+            aiThinkingMode: 'low',
+        }));
+
+        await act(async () => {
+            await result.current.analyzePrompt('a cat', mockOnOpenSettings);
+        });
+
+        expect(mockAnalyze).toHaveBeenCalledWith(
+            'a cat',
+            'key123',
+            'gemini-3.5-flash',
+            undefined,
+            'low'
+        );
     });
 
     it('should handle loading state', async () => {

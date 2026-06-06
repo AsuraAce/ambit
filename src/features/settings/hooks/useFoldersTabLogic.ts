@@ -4,107 +4,14 @@ import { AppSettings, MonitoredFolder, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useLibraryStore } from '../../../stores/libraryStore';
-import { commands, type ThumbnailScanResult } from '../../../bindings';
+import { commands } from '../../../bindings';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { formatStableImportProgress } from '../../../utils/importProgress';
-import { scanResourceThumbnails, processNativePaths, type ImportResult } from '../../../services/importService';
+import { processNativePaths, type ImportResult } from '../../../services/importService';
 import { isBrowserMockMode } from '../../../services/runtime';
-import { refreshFacetCacheForResourcesStrict } from '../../../services/db/imageRepo';
 import { getThumbnailDir } from '../../../services/thumbnailService';
-import {
-    createEmptyTouchedFacetResources,
-    hasTouchedFacetResources,
-    type TouchedFacetResources
-} from '../../../utils/touchedFacetTypes';
-
-const RESOURCE_TOUCH_KEYS = [
-    'checkpoints',
-    'loras',
-    'embeddings',
-    'hypernetworks',
-    'controlNets',
-    'ipAdapters'
-] as const;
-
-type ResourceTouchKey = typeof RESOURCE_TOUCH_KEYS[number];
-
-const RESOURCE_INDEX_LABELS: Record<ResourceTouchKey, string> = {
-    checkpoints: 'checkpoint',
-    loras: 'LoRA',
-    embeddings: 'embedding',
-    hypernetworks: 'hypernetwork',
-    controlNets: 'ControlNet',
-    ipAdapters: 'IP-Adapter'
-};
-
-const RESOURCE_FILE_LABELS: Record<ResourceTouchKey, string> = {
-    checkpoints: 'checkpoint files',
-    loras: 'LoRA files',
-    embeddings: 'embedding files',
-    hypernetworks: 'hypernetwork files',
-    controlNets: 'ControlNet files',
-    ipAdapters: 'IP-Adapter files'
-};
-
-const RESOURCE_SCAN_COMPLETE_VISIBLE_MS = 1200;
-
-const resourcesForScanResult = (result: ThumbnailScanResult): TouchedFacetResources =>
-    result.resources ?? createEmptyTouchedFacetResources();
-
-const touchedResourceKeys = (resources: TouchedFacetResources): ResourceTouchKey[] =>
-    RESOURCE_TOUCH_KEYS.filter(key => resources[key].length > 0);
-
-const resourceFileLabel = (result: ThumbnailScanResult): string => {
-    const keys = touchedResourceKeys(resourcesForScanResult(result));
-    return keys.length === 1 ? RESOURCE_FILE_LABELS[keys[0]] : 'model files';
-};
-
-const formatResourceScanDetail = (result: ThumbnailScanResult, indexedRows?: number): string => {
-    const parts = [`${result.found} ${resourceFileLabel(result)} found`];
-    if (indexedRows != null) {
-        parts.push(`${indexedRows} indexed`);
-    }
-    if (result.newOrChangedFiles > 0) {
-        parts.push(`${result.newOrChangedFiles} new/changed`);
-    }
-    if (result.cachedFiles > 0) {
-        parts.push(`${result.cachedFiles} unchanged`);
-    }
-    parts.push(`${result.updated} thumbnails linked`);
-    return parts.join(' | ');
-};
-
-const formatResourceScanToast = (result: ThumbnailScanResult, indexedRows: number): string => {
-    const indexedDetail = indexedRows > 0 ? `, ${indexedRows} indexed` : '';
-    return `Resource scan complete: ${result.found} ${resourceFileLabel(result)} found${indexedDetail}`;
-};
-
-const formatResourceIndexMessage = (resources: TouchedFacetResources): string => {
-    const keys = touchedResourceKeys(resources);
-    if (keys.length === 1) {
-        return `Updating ${RESOURCE_INDEX_LABELS[keys[0]]} index...`;
-    }
-    return 'Updating local asset index...';
-};
-
-const formatResourceIndexPhase = (resources: TouchedFacetResources): string => {
-    const keys = touchedResourceKeys(resources);
-    if (keys.length === 1) {
-        return `Updating ${RESOURCE_INDEX_LABELS[keys[0]]} index`;
-    }
-    return 'Updating local asset index';
-};
-
-const waitForResourceScanCompletionState = () =>
-    new Promise<void>(resolve => setTimeout(resolve, RESOURCE_SCAN_COMPLETE_VISIBLE_MS));
-
-const getErrorMessage = (error: unknown): string =>
-    error instanceof Error ? error.message : String(error);
-
-const isCancellationError = (error: unknown): boolean =>
-    getErrorMessage(error).toLowerCase().includes('cancel');
 
 const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported images were kept; rescan to continue.';
 
@@ -140,64 +47,13 @@ export const useFoldersTabLogic = ({
 }: UseFoldersTabLogicProps) => {
     const { addToast } = useToast();
     const [newFolderPath, setNewFolderPath] = useState('');
-    const [newResourcePath, setNewResourcePath] = useState('');
     const [scanningIds, setScanningIds] = useState<Set<string>>(new Set());
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const resourceInputRef = useRef<HTMLInputElement>(null);
     const pendingScansRef = useRef<{ id: string, path: string, variant?: string }[]>([]);
     const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const updateFolderLastScanned = useSettingsStore(s => s.updateFolderLastScanned);
-    const {
-        isScanningDiscovery, setIsScanningDiscovery,
-        discoveryScanProgress, setDiscoveryScanProgress, isPopulatingThumbnails
-    } = useLibraryStore();
-
-    const refreshResourceFacetCache = useCallback(async (scanResult: ThumbnailScanResult): Promise<number> => {
-        const resources = resourcesForScanResult(scanResult);
-        if (!hasTouchedFacetResources(resources)) {
-            if (scanResult.found > 0) {
-                addToast('Resource scan found model files, but none could be classified for indexing', 'warning');
-            }
-            useLibraryStore.getState().incrementFacetCacheVersion();
-            return 0;
-        }
-
-        const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
-        setDiscoveryScanProgress({
-            current: scanResult.found,
-            total: 0,
-            message: formatResourceIndexMessage(resources),
-            phase: formatResourceIndexPhase(resources),
-            mode: 'indeterminate',
-            detail: formatResourceScanDetail(scanResult),
-            startedAt
-        });
-        const indexedRows = await refreshFacetCacheForResourcesStrict(resources);
-        useLibraryStore.getState().incrementFacetCacheVersion();
-        return indexedRows;
-    }, [addToast, setDiscoveryScanProgress]);
-
-    const showResourceScanComplete = useCallback(async (scanResult: ThumbnailScanResult, indexedRows: number) => {
-        const startedAt = useLibraryStore.getState().discoveryScanProgress?.startedAt ?? Date.now();
-        setDiscoveryScanProgress({
-            current: scanResult.found,
-            total: scanResult.found,
-            message: 'Resource scan complete',
-            phase: 'Complete',
-            mode: 'complete',
-            detail: formatResourceScanDetail(scanResult, indexedRows),
-            startedAt
-        });
-        await waitForResourceScanCompletionState();
-    }, [setDiscoveryScanProgress]);
-
-    const runResourceDiscoveryScan = useCallback(async (paths: string[]) => {
-        const result = await scanResourceThumbnails(paths);
-        const indexedRows = await refreshResourceFacetCache(result);
-        return { result, indexedRows };
-    }, [refreshResourceFacetCache]);
 
     const isCompleteImport = (result: ImportResult | void): boolean =>
         !!result && !result.wasCancelled && result.failedPaths.length === 0;
@@ -580,97 +436,14 @@ export const useFoldersTabLogic = ({
         }
     };
 
-    const handleBrowseResource = async () => {
-        try {
-            const { open } = await import('@tauri-apps/plugin-dialog');
-            const selected = await open({ directory: true, multiple: false });
-            if (selected && typeof selected === 'string') {
-                setNewResourcePath(normalizePath(selected));
-            }
-        } catch (e) {
-            resourceInputRef.current?.click();
-        }
-    };
-
-    const handleAddResourceFolder = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newResourcePath.trim()) return;
-
-        const pathToAdd = normalizePath(newResourcePath.trim());
-        const existing = (settings.resourceFolders || []).some(path => normalizePath(path) === pathToAdd);
-        if (existing) {
-            addToast('Resource folder is already added', 'info');
-            setNewResourcePath('');
-            return;
-        }
-
-        const nextResourceFolders = [...(settings.resourceFolders || []), pathToAdd];
-        setSettings(prev => ({
-            ...prev,
-            resourceFolders: nextResourceFolders
-        }));
-        setNewResourcePath('');
-        addToast(`Added resource folder`, 'success');
-        setIsScanningDiscovery(true);
-        try {
-            const { result, indexedRows } = await runResourceDiscoveryScan([pathToAdd]);
-            await showResourceScanComplete(result, indexedRows);
-            addToast(formatResourceScanToast(result, indexedRows), 'success');
-        } catch (e) {
-            console.error('Resource scan failed', e);
-            addToast(
-                isCancellationError(e) ? 'Resource scan cancelled' : 'Resource scan failed',
-                isCancellationError(e) ? 'info' : 'error'
-            );
-        } finally {
-            setIsScanningDiscovery(false);
-            setDiscoveryScanProgress(null);
-        }
-    };
-
-    const handleRemoveResourceFolder = (path: string) => {
-        setSettings(prev => ({
-            ...prev,
-            resourceFolders: (prev.resourceFolders || []).filter(p => p !== path)
-        }));
-    };
-
-    const handleScanNow = async () => {
-        if (!settings.resourceFolders?.length) return;
-        setIsScanningDiscovery(true);
-        try {
-            const { result, indexedRows } = await runResourceDiscoveryScan(settings.resourceFolders);
-            await showResourceScanComplete(result, indexedRows);
-            addToast(formatResourceScanToast(result, indexedRows), 'success');
-        } catch (e) {
-            console.error('Resource scan failed', e);
-            addToast(
-                isCancellationError(e) ? 'Resource scan cancelled' : 'Resource scan failed',
-                isCancellationError(e) ? 'info' : 'error'
-            );
-        } finally {
-            setIsScanningDiscovery(false);
-            setDiscoveryScanProgress(null);
-        }
-    };
-
     return {
         newFolderPath, setNewFolderPath,
-        newResourcePath, setNewResourcePath,
         scanningIds,
         combinedFolders,
         fileInputRef,
-        resourceInputRef,
-        isScanningDiscovery,
-        discoveryScanProgress,
-        isPopulatingThumbnails,
         handleRescan,
         handleAddFolder,
         removeFolder,
         handleBrowse,
-        handleBrowseResource,
-        handleAddResourceFolder,
-        handleRemoveResourceFolder,
-        handleScanNow
     };
 };

@@ -386,10 +386,10 @@ export const useImportOps = ({
                 },
                 abortCtrl.signal,
                 {
-                    syncFavorites: true,
-                    syncBoards: true,
+                    syncFavorites: settings.invokeSyncFavorites !== false,
+                    syncBoards: settings.invokeSyncBoards !== false,
                     importIntermediates: settings.importIntermediates ?? false,
-                    starredAs: 'favorite',
+                    starredAs: settings.starredAs || 'favorite',
                     afterTimestamp: 0
                 }
             );
@@ -410,7 +410,18 @@ export const useImportOps = ({
         } finally {
             finishImportRun(importRunId);
         }
-    }, [settings.invokeAiPath, settings.importIntermediates, addToast, beginImportRun, setImportProgressForRun, finishImportRun, refreshCollections]);
+    }, [
+        settings.invokeAiPath,
+        settings.invokeSyncFavorites,
+        settings.invokeSyncBoards,
+        settings.importIntermediates,
+        settings.starredAs,
+        addToast,
+        beginImportRun,
+        setImportProgressForRun,
+        finishImportRun,
+        refreshCollections
+    ]);
 
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,

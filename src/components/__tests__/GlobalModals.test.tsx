@@ -72,6 +72,7 @@ describe('GlobalModals', () => {
                 updateStatus={'idle' as any}
                 onCheckForUpdates={vi.fn()}
                 onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
             />
         );
 

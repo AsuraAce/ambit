@@ -82,6 +82,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
     const isPopulatingThumbnails = useLibraryStore(s => s.isPopulatingThumbnails);
     const isRefreshingMetadata = useLibraryStore(s => s.isRefreshingMetadata);
+    const thumbnailMaintenanceOperation = useLibraryStore(s => s.thumbnailMaintenanceOperation);
     const thumbnailOptimizationRetrySignal = useLibraryStore(s => s.thumbnailOptimizationRetrySignal);
 
     const setBackgroundHealingActive = useLibraryStore(s => s.setBackgroundHealingActive);
@@ -104,7 +105,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         || isScanningDuplicates
         || isScanningMissingFiles
         || isPopulatingThumbnails
-        || isRefreshingMetadata;
+        || isRefreshingMetadata
+        || thumbnailMaintenanceOperation !== null;
 
     useEffect(() => {
         isImageQueryFetchingRef.current = isImageQueryFetching;
@@ -120,7 +122,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             || store.isScanningDuplicates
             || store.isScanningMissingFiles
             || store.isPopulatingThumbnails
-            || store.isRefreshingMetadata;
+            || store.isRefreshingMetadata
+            || store.thumbnailMaintenanceOperation !== null;
     }, []);
 
     const cancelScheduledIdleCallback = useCallback(() => {
@@ -449,6 +452,11 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             profile: settings.thumbnailOptimizationProfile ?? 'balanced'
         };
         const shouldStartThrottled = isImageQueryFetchingRef.current;
+
+        if (shouldPauseForActivity()) {
+            setBackgroundHealingPaused(true);
+            return;
+        }
 
         isRunningRef.current = true;
         completionHandledRef.current = false;

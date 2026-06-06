@@ -9,12 +9,12 @@ interface MaintenanceTabsProps {
 }
 
 export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onTabChange, intermediatesCount = 0 }) => {
-    // Thumbnails tab removed - background healing handles thumbnail regeneration automatically
     const allTabs = [
+        { id: 'missing', label: 'Missing', color: 'text-orange-500' },
+        { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
         { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
         { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
         { id: 'intermediates', label: 'Intermediates', color: 'text-blue-500' },
-        { id: 'missing', label: 'Missing', color: 'text-orange-500' },
         { id: 'trash', label: 'Removed', color: 'text-red-500' },
     ];
 

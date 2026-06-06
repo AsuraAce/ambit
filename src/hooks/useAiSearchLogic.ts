@@ -4,6 +4,11 @@ import { useState, useRef, useEffect } from 'react';
 import { FilterState, AppSettings } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
+import {
+  getEffectiveAiModel,
+  getEffectiveAiThinkingMode,
+  getEffectiveSystemPrompts
+} from '../utils/settingsUtils';
 
 interface UseSearchProps {
   filters: FilterState;
@@ -77,7 +82,13 @@ export const useAiSearchLogic = ({
       addToast("Gemini is analyzing your request...", "info");
       try {
         const { generateFiltersFromQuery } = await import('../services/geminiService');
-        const aiFilters = await generateFiltersFromQuery(trimmed, apiKey!, settings.aiModel);
+        const aiFilters = await generateFiltersFromQuery(
+          trimmed,
+          apiKey!,
+          getEffectiveAiModel(settings),
+          getEffectiveSystemPrompts(settings),
+          getEffectiveAiThinkingMode(settings)
+        );
         const aiDateRange = aiFilters.dateFrom || aiFilters.dateTo
           ? 'custom'
           : aiFilters.dateRange || 'all';

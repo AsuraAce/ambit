@@ -182,8 +182,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         }
 
         const options: StartInvokeSyncOptions = {
-            syncFavorites: true,
-            syncBoards: true,
+            syncFavorites: settingsRef.current.invokeSyncFavorites !== false,
+            syncBoards: settingsRef.current.invokeSyncBoards !== false,
             starredAs: settingsRef.current.starredAs || 'favorite',
             mode: 'manual' as const,
             ...optionsInput

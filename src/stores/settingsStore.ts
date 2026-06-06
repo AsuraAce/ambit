@@ -6,12 +6,12 @@ import { commands } from '../bindings';
 import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from '../services/assetScope';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
 import { isBrowserMockMode } from '../services/runtime';
+import { createDefaultAppSettings } from '../constants/defaultSettings';
 
 interface SettingsState {
     settings: AppSettings;
     privacyEnabled: boolean;
     isLoaded: boolean;
-    devModeEnabled: boolean;
     geminiApiKey: string | null;
 
     // Actions
@@ -19,32 +19,10 @@ interface SettingsState {
     setGeminiApiKey: (key: string | null) => Promise<void>;
     setPrivacyEnabled: (enabled: boolean) => void;
     updateFolderLastScanned: (id: string, timestamp: number) => void;
-    toggleDevMode: () => void;
     initialize: () => Promise<void>;
 }
 
-const DEFAULT_SETTINGS: AppSettings = {
-    theme: 'dark',
-    thumbnailSize: 200,
-    autoCheckForUpdates: true,
-    confirmDelete: true,
-    defaultTheaterMode: false,
-    monitoredFolders: [],
-    maskedKeywords: [],
-    maskingMode: 'blur',
-    enableAI: false,
-    hasCompletedOnboarding: false,
-    syncBoardsToCollections: false,
-    importOrphans: false,
-    starredAs: 'favorite',
-    libraryLayoutMode: 'masonry',
-    resourceViewModes: {},
-    hideImportModal: false,
-    enableAutoThumbnailHealing: true,
-    enforceHighQualityThumbnails: false,
-    thumbnailOptimizationProfile: 'balanced',
-    logLevel: 'info'
-};
+const DEFAULT_SETTINGS = createDefaultAppSettings();
 
 // Debounce timer for auto-save
 let saveTimeout: NodeJS.Timeout | null = null;
@@ -55,10 +33,7 @@ export const useSettingsStore = create<SettingsState>()(
             settings: DEFAULT_SETTINGS,
             privacyEnabled: true,
             isLoaded: false,
-            devModeEnabled: false,
             geminiApiKey: null,
-
-            toggleDevMode: () => set(s => ({ devModeEnabled: !s.devModeEnabled })),
 
             setGeminiApiKey: async (key: string | null) => {
                 if (isBrowserMockMode()) {
@@ -174,7 +149,7 @@ export const useSettingsStore = create<SettingsState>()(
                     if (state.settings) {
                         // Merge with defaults to ensure new settings have defined values
                         // even if user's saved settings file is from an older version
-                        const mergedSettings = { ...DEFAULT_SETTINGS, ...state.settings };
+                        const mergedSettings = createDefaultAppSettings(state.settings);
 
                         // 2. Handle Migration: If legacy key exists in JSON but not in keyring
                         if (!isBrowserMockMode() && mergedSettings.googleGeminiApiKey && !apiKey) {
@@ -195,8 +170,7 @@ export const useSettingsStore = create<SettingsState>()(
                         }
 
                         // Ensure API key from env takes precedence if present
-                        const env = import.meta.env as Record<string, string | boolean | undefined>;
-                        const envKey = typeof env.API_KEY === 'string' ? env.API_KEY : undefined;
+                        const envKey = typeof process.env.API_KEY === 'string' ? process.env.API_KEY : undefined;
                         if (envKey && envKey !== 'undefined') apiKey = envKey;
 
                         // NEW: Enable devMode by default in development environment if not already set

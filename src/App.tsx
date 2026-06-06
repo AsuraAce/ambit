@@ -537,6 +537,7 @@ export default function App() {
                     await updater.checkForUpdates({ manual: true });
                 }}
                 onOpenUpdatePrompt={updater.openUpdateDialog}
+                onNavigateToMaintenance={() => changeViewMode('maintenance')}
             />
 
             {updater.update && (

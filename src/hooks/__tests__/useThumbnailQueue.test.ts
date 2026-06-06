@@ -122,6 +122,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('isScanningMissingFiles');
         expect(content).toContain('isPopulatingThumbnails');
         expect(content).toContain('isRefreshingMetadata');
+        expect(content).toContain('thumbnailMaintenanceOperation');
         expect(content).toContain('isHardBlocked');
         expect(content).toContain('setThumbnailOptimizationThrottled');
         expect(content).toContain('isImageQueryFetching');
@@ -143,6 +144,26 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(runQueueBlock).toContain('isImageQueryFetchingRef.current');
         expect(runQueueDependencies).not.toContain('isImageQueryFetching');
         expect(content).toContain('setBackendThrottled(isImageQueryFetching)');
+    });
+
+    it('should recheck blocking activity after async setup before claiming the queue', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        const runQueueStart = content.indexOf('const runQueue = useCallback');
+        const runQueueEnd = content.indexOf('const [isStartupDelayComplete', runQueueStart);
+        const runQueueBlock = content.slice(runQueueStart, runQueueEnd);
+        const directoryResolution = runQueueBlock.indexOf('const thumbnailDir = await getThumbnailDir();');
+        const finalBlockerCheck = runQueueBlock.indexOf('if (shouldPauseForActivity())', directoryResolution);
+        const queueClaim = runQueueBlock.indexOf('isRunningRef.current = true;', directoryResolution);
+
+        expect(directoryResolution).toBeGreaterThan(-1);
+        expect(finalBlockerCheck).toBeGreaterThan(directoryResolution);
+        expect(finalBlockerCheck).toBeLessThan(queueClaim);
+        expect(runQueueBlock.slice(finalBlockerCheck, queueClaim)).toContain('setBackgroundHealingPaused(true)');
+        expect(runQueueBlock.slice(finalBlockerCheck, queueClaim)).toContain('return;');
     });
 
     it('should restart once for profile or quality setting changes', async () => {

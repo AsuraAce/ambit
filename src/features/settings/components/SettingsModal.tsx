@@ -1,13 +1,18 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Monitor, Shield, FlaskConical, Terminal, Link, Sparkles } from 'lucide-react';
+import { X, Monitor, Shield, Terminal, Link, Sparkles } from 'lucide-react';
 import { AppSettings, AppSettingsUpdate } from '../../../types';
-import { GeneralTab, PrivacyTab, IntelligenceTab, DevTab, AdvancedTab, ConnectionsTab } from './';
+import { GeneralTab, PrivacyTab, IntelligenceTab, AdvancedTab, ConnectionsTab } from './';
 import { APP_NAME } from '../../../constants/app';
 import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import type { ImportResult } from '../../../services/importService';
+import { isDevelopmentBuild } from '../../../utils/settingsUtils';
+
+const DevTab = import.meta.env.DEV
+  ? React.lazy(() => import('./DevTab').then(module => ({ default: module.DevTab })))
+  : null;
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,7 +20,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onSave: (settings: AppSettingsUpdate) => void;
   canCheckForUpdates: boolean;
-  initialTab?: 'general' | 'folders' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+  initialTab?: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
   onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
   onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
   hasPendingUpdate: boolean;
@@ -24,13 +29,14 @@ interface SettingsModalProps {
   updateStatus: AppUpdaterStatus;
   onCheckForUpdates: () => Promise<void>;
   onOpenUpdatePrompt: () => void;
+  onNavigateToMaintenance: () => void;
 }
 
 type SettingsTab = 'general' | 'connections' | 'intelligence' | 'privacy' | 'dev' | 'advanced';
-type ConnectionSubTab = 'folders' | 'invokeai' | 'a1111' | 'comfyui';
+type ConnectionSubTab = 'folders' | 'resources' | 'invokeai' | 'a1111' | 'comfyui';
 type DirectSettingsTab = Exclude<SettingsTab, 'connections' | 'advanced'>;
 
-const CONNECTION_SUB_TABS: readonly ConnectionSubTab[] = ['folders', 'invokeai', 'a1111', 'comfyui'];
+const CONNECTION_SUB_TABS: readonly ConnectionSubTab[] = ['folders', 'resources', 'invokeai', 'a1111', 'comfyui'];
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
@@ -79,9 +85,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   updateErrorMessage,
   updateStatus,
   onCheckForUpdates,
-  onOpenUpdatePrompt
+  onOpenUpdatePrompt,
+  onNavigateToMaintenance
 }) => {
   const appVersion = useAppVersion();
+  const showDevTools = isDevelopmentBuild();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
 
@@ -94,12 +102,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
       } else if (initialTab === 'experiments') {
         setActiveTab('intelligence');
         setConnectionSubTab(undefined);
+      } else if (initialTab === 'dev' && !showDevTools) {
+        setActiveTab('advanced');
+        setConnectionSubTab(undefined);
       } else {
         setActiveTab(initialTab as DirectSettingsTab);
         setConnectionSubTab(undefined);
       }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, showDevTools]);
 
   // Auto-save wrapper: calls onSave directly on any change
   const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
@@ -163,7 +174,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   <div>
                     <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-4 mb-2">Advanced</h4>
                     <TabButton id="advanced" label="Advanced" icon={<Shield className="w-4 h-4" />} isActive={activeTab === 'advanced'} onClick={setActiveTab} />
-                    <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
+                    {showDevTools && (
+                      <TabButton id="dev" label="Dev Tools" icon={<Terminal className="w-4 h-4" />} isActive={activeTab === 'dev'} onClick={setActiveTab} />
+                    )}
                   </div>
                 </nav>
               </div>
@@ -212,9 +225,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     updateStatus={updateStatus}
                     onCheckForUpdates={onCheckForUpdates}
                     onOpenUpdatePrompt={onOpenUpdatePrompt}
+                    onNavigateToMaintenance={onNavigateToMaintenance}
+                    onClose={onClose}
                   />
                 )}
-                {activeTab === 'dev' && <DevTab />}
+                {activeTab === 'dev' && showDevTools && DevTab && (
+                  <React.Suspense fallback={null}>
+                    <DevTab />
+                  </React.Suspense>
+                )}
               </div>
 
             </div>

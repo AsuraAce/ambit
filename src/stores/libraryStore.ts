@@ -77,6 +77,7 @@ export interface ThumbnailOptimizationRunSummary {
 export type SyncStatus = 'idle' | 'syncing' | 'complete' | 'error';
 export type LiveWatchSessionSource = 'generic' | 'invoke' | 'mixed';
 export type LiveWatchSessionPhase = 'watching' | 'syncing' | 'importing' | 'summary';
+export type ThumbnailMaintenanceOperation = 'repair' | 'cleanup' | 'sync';
 
 export interface LiveWatchSessionState {
     active: boolean;
@@ -219,6 +220,7 @@ interface LibraryState {
     lastBackgroundHealingRun: ThumbnailOptimizationRunSummary | null;
     backgroundHealingPaused: boolean;
     thumbnailOptimizationRetrySignal: number;
+    thumbnailMaintenanceOperation: ThumbnailMaintenanceOperation | null;
 
     // Background Metadata Refresh State
     isRefreshingMetadata: boolean;
@@ -280,6 +282,7 @@ interface LibraryState {
     setLastBackgroundHealingRun: (summary: ThumbnailOptimizationRunSummary | null) => void;
     setBackgroundHealingPaused: (val: boolean) => void;
     requestThumbnailOptimizationRun: () => void;
+    setThumbnailMaintenanceOperation: (operation: ThumbnailMaintenanceOperation | null) => void;
 
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val: boolean) => void;
@@ -343,6 +346,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     lastBackgroundHealingRun: null,
     backgroundHealingPaused: false,
     thumbnailOptimizationRetrySignal: 0,
+    thumbnailMaintenanceOperation: null,
 
     // Background Metadata Refresh State
     isRefreshingMetadata: false,
@@ -562,6 +566,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     requestThumbnailOptimizationRun: () => set((state) => ({
         thumbnailOptimizationRetrySignal: state.thumbnailOptimizationRetrySignal + 1
     })),
+    setThumbnailMaintenanceOperation: (operation) => set({ thumbnailMaintenanceOperation: operation }),
 
     // Background Metadata Refresh Actions
     setIsRefreshingMetadata: (val) => set({ isRefreshingMetadata: val, isActivityDockDismissed: val ? false : undefined }),

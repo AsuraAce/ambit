@@ -269,10 +269,13 @@ export interface AppSettings {
   /** @deprecated Moved to OS Secure Keyring. See geminiApiKey in SettingsState. */
   googleGeminiApiKey?: string;
   aiModel?: string;
+  aiThinkingMode?: AiThinkingMode;
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   a1111Path?: string; // New: Root path to Stable Diffusion WebUI (A1111)
   comfyUiPath?: string; // New: Root path to ComfyUI output (used for output discovery)
   syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
+  invokeSyncFavorites?: boolean; // Persisted sync choice for importing favorited InvokeAI images
+  invokeSyncBoards?: boolean; // Persisted sync choice for importing InvokeAI board membership
   lastSyncedAt?: number | null; // Timestamp of the last successful sync
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
@@ -292,6 +295,8 @@ export interface AppSettings {
   thumbnailOptimizationProfile?: 'quiet' | 'balanced' | 'fast'; // Background thumbnail worker profile
   logLevel?: LogLevel; // Console log severity level
 }
+
+export type AiThinkingMode = 'default' | 'minimal' | 'low' | 'medium' | 'high' | 'off' | 'dynamic';
 
 export type AppSettingsUpdate = Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>);
 

@@ -33,6 +33,20 @@ describe('libraryStore live watch session', () => {
         vi.useRealTimers();
     });
 
+    it('tracks the active thumbnail maintenance operation', () => {
+        expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBeNull();
+
+        act(() => {
+            useLibraryStore.getState().setThumbnailMaintenanceOperation('repair');
+        });
+        expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBe('repair');
+
+        act(() => {
+            useLibraryStore.getState().setThumbnailMaintenanceOperation(null);
+        });
+        expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBeNull();
+    });
+
     it('resets the idle timer when new live activity arrives', async () => {
         act(() => {
             useLibraryStore.getState().setIsLiveWatching(true);

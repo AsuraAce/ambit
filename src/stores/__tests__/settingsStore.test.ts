@@ -69,6 +69,7 @@ describe('SettingsStore', () => {
 
         expect(useSettingsStore.getState().settings.enableAutoThumbnailHealing).toBe(true);
         expect(useSettingsStore.getState().settings.enforceHighQualityThumbnails).toBe(false);
+        expect(useSettingsStore.getState().settings.aiThinkingMode).toBe('default');
     });
 
     it('should default gallery layout mode to masonry', async () => {
@@ -91,6 +92,37 @@ describe('SettingsStore', () => {
         await useSettingsStore.getState().initialize();
 
         expect(useSettingsStore.getState().settings.importOrphans).toBe(false);
+    });
+
+    it('should merge base defaults into old saved settings without dropping user values', async () => {
+        const savedFolder = {
+            id: 'folder-1',
+            path: 'D:/AI/Library',
+            isActive: true,
+            imageCount: 42,
+        };
+
+        vi.mocked(appRepository.load).mockResolvedValue({
+            images: [],
+            collections: [],
+            smartCollections: [],
+            settings: {
+                theme: 'light',
+                monitoredFolders: [savedFolder],
+                invokeSyncBoards: false,
+            } as AppSettings,
+            recentSearches: []
+        });
+
+        await useSettingsStore.getState().initialize();
+
+        const settings = useSettingsStore.getState().settings;
+        expect(settings.theme).toBe('light');
+        expect(settings.monitoredFolders).toEqual([savedFolder]);
+        expect(settings.invokeSyncBoards).toBe(false);
+        expect(settings.invokeSyncFavorites).toBe(true);
+        expect(settings.autoCheckForUpdates).toBe(true);
+        expect(settings.thumbnailOptimizationProfile).toBe('balanced');
     });
 
     it('should preserve persisted gallery layout mode on initialize', async () => {

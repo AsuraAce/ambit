@@ -1,20 +1,20 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { Folder, DatabaseZap, Palette, FlaskConical } from 'lucide-react';
+import { Folder, DatabaseZap, Palette, FlaskConical, Boxes } from 'lucide-react';
 import { AppSettings } from '../../../types';
-import { FoldersTab, InvokeAITab, A1111Tab, ComfyUITab } from './';
+import { FoldersTab, InvokeAITab, A1111Tab, ComfyUITab, ResourcesTab } from './';
 import type { ImportResult } from '../../../services/importService';
 
 interface ConnectionsTabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-    initialSubTab?: 'folders' | 'invokeai' | 'a1111' | 'comfyui';
+    initialSubTab?: 'folders' | 'resources' | 'invokeai' | 'a1111' | 'comfyui';
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     onClose?: () => void;
 }
 
-type ConnectionSubTab = 'folders' | 'invokeai' | 'a1111' | 'comfyui';
+type ConnectionSubTab = 'folders' | 'resources' | 'invokeai' | 'a1111' | 'comfyui';
 
 export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
     settings,
@@ -35,6 +35,7 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
 
     const tabs: { id: ConnectionSubTab; label: string; icon: React.ReactNode }[] = [
         { id: 'folders', label: 'Folders', icon: <Folder className="w-4 h-4" /> },
+        { id: 'resources', label: 'Resources', icon: <Boxes className="w-4 h-4" /> },
         { id: 'invokeai', label: 'InvokeAI', icon: <DatabaseZap className="w-4 h-4" /> },
         { id: 'a1111', label: 'SD WebUI', icon: <Palette className="w-4 h-4" /> },
         { id: 'comfyui', label: 'ComfyUI', icon: <FlaskConical className="w-4 h-4" /> },
@@ -66,6 +67,12 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                         setSettings={setSettings}
                         onScanFolder={onScanFolder}
                         onInvokeSync={onInvokeSync}
+                    />
+                )}
+                {activeTab === 'resources' && (
+                    <ResourcesTab
+                        settings={settings}
+                        setSettings={setSettings}
                     />
                 )}
                 {activeTab === 'invokeai' && (

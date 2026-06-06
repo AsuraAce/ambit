@@ -19,7 +19,9 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     refreshHiddenAvailability: vi.fn(),
     refreshMetadata: vi.fn(),
-    rebuildFacetCache: vi.fn()
+    rebuildFacetCache: vi.fn(),
+    syncCollectionImages: vi.fn(),
+    syncImages: vi.fn()
 }));
 
 vi.mock('../../bindings', () => ({
@@ -40,7 +42,12 @@ vi.mock('../../services/thumbnailService', () => ({
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
-    rebuildFacetCache: mocks.rebuildFacetCache
+    rebuildFacetCache: mocks.rebuildFacetCache,
+    syncCollectionImages: mocks.syncCollectionImages
+}));
+
+vi.mock('../../services/invoke/syncService', () => ({
+    syncImages: mocks.syncImages
 }));
 
 vi.mock('../../contexts/SearchContext', () => ({
@@ -112,13 +119,16 @@ describe('useImportOps', () => {
         hasCompletedOnboarding: true
     } as AppSettings;
 
-    const renderImportOps = () => {
+    const renderImportOps = (settingsOverrides: Partial<AppSettings> = {}) => {
         const setImages = vi.fn() as Dispatch<SetStateAction<AIImage[]>>;
         return renderHook(() => useImportOps({
             images: [],
             setImages,
             refreshCollections: vi.fn().mockResolvedValue(undefined),
-            settings
+            settings: {
+                ...settings,
+                ...settingsOverrides
+            }
         }));
     };
 
@@ -136,6 +146,51 @@ describe('useImportOps', () => {
         mocks.processNativePaths.mockResolvedValue(emptyImportResult());
         mocks.processFoldersUnified.mockResolvedValue(emptyImportResult());
         mocks.rebuildFacetCache.mockResolvedValue(1);
+        mocks.syncCollectionImages.mockResolvedValue(undefined);
+        mocks.syncImages.mockResolvedValue({
+            imported: 0,
+            updated: 0,
+            maxTimestamp: 0,
+            syncedIds: new Set(),
+            boardMapping: new Map(),
+            touchedFacetTypes: [],
+            touchedFacetResources: {
+                checkpoints: [],
+                loras: [],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: []
+            }
+        });
+    });
+
+    it('uses persisted InvokeAI preferences for managed resyncs', async () => {
+        const { result } = renderImportOps({
+            invokeAiPath: 'D:/InvokeAI',
+            invokeSyncFavorites: false,
+            invokeSyncBoards: false,
+            importIntermediates: true,
+            starredAs: 'both'
+        });
+
+        await act(async () => {
+            await result.current.handleInvokeSync();
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            'D:/InvokeAI',
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                syncFavorites: false,
+                syncBoards: false,
+                importIntermediates: true,
+                starredAs: 'both',
+                afterTimestamp: 0
+            })
+        );
     });
 
     it('shows a cancellation toast for manual path imports', async () => {

@@ -443,6 +443,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onBackgroundClick={handleBackgroundClick}
                                 includeUpgradeable={includeUpgradeable}
                                 onIncludeUpgradeableChange={handleIncludeUpgradeableChange}
+                                onRepairComplete={() => refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable })}
                             />
                         </motion.div>
                     )}
