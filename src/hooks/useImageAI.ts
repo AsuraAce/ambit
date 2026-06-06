@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
+import type { AiThinkingMode } from '../types';
 
 /**
  * Parses a Gemini API error into a user-friendly message.
@@ -30,12 +31,13 @@ function parseGeminiError(error: unknown): string {
 
 interface UseImageAIOptions {
   aiModel?: string;
+  aiThinkingMode?: AiThinkingMode;
   enableAI?: boolean;
   prompts?: Record<string, string>; // New: System prompt overrides
   onError?: (message: string) => void;
 }
 
-export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOptions) => {
+export const useImageAI = ({ aiModel, aiThinkingMode, enableAI, prompts, onError }: UseImageAIOptions) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'analysis' | 'variations'>('analysis');
@@ -51,7 +53,7 @@ export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOp
     setIsAnalyzing(true);
     try {
       const { analyzePromptAndSuggest } = await import('../services/geminiService');
-      const insight = await analyzePromptAndSuggest(prompt, apiKey, aiModel, prompts);
+      const insight = await analyzePromptAndSuggest(prompt, apiKey, aiModel, prompts, aiThinkingMode);
       setResult(insight);
       setModalType('analysis');
       setModalOpen(true);
@@ -73,7 +75,7 @@ export const useImageAI = ({ aiModel, enableAI, prompts, onError }: UseImageAIOp
     setIsAnalyzing(true);
     try {
       const { generatePromptVariations } = await import('../services/geminiService');
-      const vars = await generatePromptVariations(prompt, apiKey, aiModel, prompts);
+      const vars = await generatePromptVariations(prompt, apiKey, aiModel, prompts, aiThinkingMode);
       setResult(vars);
       setModalType('variations');
       setModalOpen(true);

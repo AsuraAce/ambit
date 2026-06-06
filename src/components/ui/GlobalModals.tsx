@@ -63,7 +63,8 @@ interface GlobalModalsProps {
   updateStatus?: AppUpdaterStatus;
   onCheckForUpdates?: () => Promise<void>;
   onOpenUpdatePrompt?: () => void;
-  initialSettingsTab: 'general' | 'experiments' | 'intelligence';
+  initialSettingsTab: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
+  onNavigateToMaintenance?: () => void;
   shortcutsModalTab: 'shortcuts' | 'search';
 
   // Command Palette Specifics
@@ -109,6 +110,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
   onCheckForUpdates = async () => { },
   onOpenUpdatePrompt = () => { },
   initialSettingsTab,
+  onNavigateToMaintenance,
   shortcutsModalTab,
   commandPaletteProps
 }) => {
@@ -136,6 +138,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         onCheckForUpdates={onCheckForUpdates}
         onOpenUpdatePrompt={onOpenUpdatePrompt}
         initialTab={initialSettingsTab}
+        onNavigateToMaintenance={onNavigateToMaintenance ?? (() => commandPaletteProps.onNavigate('maintenance'))}
       />
 
       <ConfirmDialog

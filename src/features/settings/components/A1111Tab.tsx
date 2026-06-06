@@ -9,6 +9,7 @@ import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import type { ImportResult } from '../../../services/importService';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
+import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 
 interface TabProps {
     settings: AppSettings;
@@ -60,6 +61,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
     const [showAllFolders, setShowAllFolders] = useState(false);
     const [forceVariant, setForceVariant] = useState<WebUIVariant | 'Auto'>('Auto');
+    const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
 
     const handleDiscover = async () => {
         if (!settings.a1111Path) return;
@@ -485,7 +487,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                         </div>
                     )}
 
-                    {settings.devMode && scanLogs.length > 0 && (
+                    {developerFeaturesEnabled && scanLogs.length > 0 && (
                         <div className="mt-4 mb-4">
                             <details className="group">
                                 <summary className="text-[10px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none hover:text-sage-500 transition-colors list-none flex items-center gap-2">

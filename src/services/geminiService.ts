@@ -1,7 +1,13 @@
 
 
-import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
-import { FilterState, RecoveryStyle, ImageMetadata, GeneratorTool } from "../types";
+import {
+    GoogleGenAI,
+    GenerateContentResponse,
+    ThinkingLevel,
+    Type,
+    type ThinkingConfig
+} from "@google/genai";
+import { FilterState, RecoveryStyle, ImageMetadata, GeneratorTool, type AiThinkingMode } from "../types";
 import { AI_PROMPTS, AIPromptKey, RECOVERY_STYLES } from "../constants/aiPrompts";
 import {
     GeminiFilterResponseSchema,
@@ -11,13 +17,43 @@ import {
     isValidGeneratorTool
 } from "../utils/validation";
 
-import { DEFAULT_AI_MODEL } from "../constants/aiModels";
+import {
+    DEFAULT_AI_MODEL,
+    DEFAULT_AI_THINKING_MODE,
+    normalizeAiThinkingMode
+} from "../constants/aiModels";
 import { formatDateInputValue } from "../utils/dateFilters";
 
 const getAIClient = (apiKey: string) => {
     const key = apiKey || process.env.API_KEY;
     if (!key) throw new Error("API Key is missing. Please add it in Settings > Intelligence.");
     return new GoogleGenAI({ apiKey: key });
+};
+
+export const getGeminiThinkingConfig = (
+    modelId: string,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
+): ThinkingConfig | undefined => {
+    const normalizedMode = normalizeAiThinkingMode(modelId, thinkingMode);
+    if (normalizedMode === 'default') return undefined;
+
+    if (modelId.startsWith('gemini-3')) {
+        const thinkingLevels: Partial<Record<AiThinkingMode, ThinkingLevel>> = {
+            minimal: ThinkingLevel.MINIMAL,
+            low: ThinkingLevel.LOW,
+            medium: ThinkingLevel.MEDIUM,
+            high: ThinkingLevel.HIGH,
+        };
+        const thinkingLevel = thinkingLevels[normalizedMode];
+        return thinkingLevel ? { thinkingLevel } : undefined;
+    }
+
+    if (modelId === 'gemini-2.5-flash' || modelId === 'gemini-2.5-flash-lite') {
+        if (normalizedMode === 'off') return { thinkingBudget: 0 };
+        if (normalizedMode === 'dynamic') return { thinkingBudget: -1 };
+    }
+
+    return undefined;
 };
 
 /**
@@ -79,19 +115,19 @@ export const analyzePromptAndSuggest = async (
     currentPrompt: string,
     apiKey: string,
     modelId: string = DEFAULT_AI_MODEL,
-    prompts?: Record<string, string>
+    prompts?: Record<string, string>,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
 ): Promise<string> => {
     try {
         const ai = getAIClient(apiKey);
         const template = resolvePrompt('ANALYSIS', prompts);
         const prompt = template.replace('{{prompt}}', currentPrompt);
+        const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
-            config: {
-                thinkingConfig: { thinkingBudget: 0 }
-            }
+            config: thinkingConfig ? { thinkingConfig } : undefined
         });
 
         return response.text || "No suggestions available.";
@@ -108,12 +144,14 @@ export const generatePromptVariations = async (
     currentPrompt: string,
     apiKey: string,
     modelId: string = DEFAULT_AI_MODEL,
-    prompts?: Record<string, string>
+    prompts?: Record<string, string>,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
 ): Promise<string[]> => {
     try {
         const ai = getAIClient(apiKey);
         const template = resolvePrompt('VARIATIONS', prompts);
         const prompt = template.replace('{{prompt}}', currentPrompt);
+        const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
         const response = await ai.models.generateContent({
             model: modelId,
@@ -123,7 +161,8 @@ export const generatePromptVariations = async (
                 responseSchema: {
                     type: Type.ARRAY,
                     items: { type: Type.STRING }
-                }
+                },
+                ...(thinkingConfig ? { thinkingConfig } : {})
             }
         });
 
@@ -145,16 +184,19 @@ export const generateTitleFromPrompt = async (
     promptText: string,
     apiKey: string,
     modelId: string = DEFAULT_AI_MODEL,
-    prompts?: Record<string, string>
+    prompts?: Record<string, string>,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
 ): Promise<string> => {
     try {
         const ai = getAIClient(apiKey);
         const template = resolvePrompt('TITLE', prompts);
         const prompt = template.replace('{{prompt}}', promptText);
+        const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
         const response: GenerateContentResponse = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
+            config: thinkingConfig ? { thinkingConfig } : undefined
         });
         return response.text?.trim() || "Untitled Creation";
     } catch (error) {
@@ -169,7 +211,8 @@ export const generateFiltersFromQuery = async (
     query: string,
     apiKey: string,
     modelId: string = DEFAULT_AI_MODEL,
-    prompts?: Record<string, string>
+    prompts?: Record<string, string>,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
 ): Promise<Partial<FilterState>> => {
     try {
         const ai = getAIClient(apiKey);
@@ -178,6 +221,7 @@ export const generateFiltersFromQuery = async (
         const prompt = template
             .replace('{{query}}', query)
             .replace('{{today}}', formatDateInputValue(new Date()));
+        const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
         const response = await ai.models.generateContent({
             model: modelId,
@@ -198,7 +242,8 @@ export const generateFiltersFromQuery = async (
                         minSteps: { type: Type.NUMBER },
                         minCfg: { type: Type.NUMBER }
                     }
-                }
+                },
+                ...(thinkingConfig ? { thinkingConfig } : {})
             }
         });
 
@@ -223,7 +268,8 @@ export const recoverImageMetadata = async (
     style: RecoveryStyle,
     apiKey: string,
     modelId: string = DEFAULT_AI_MODEL,
-    prompts?: Record<string, string>
+    prompts?: Record<string, string>,
+    thinkingMode: AiThinkingMode = DEFAULT_AI_THINKING_MODE
 ): Promise<Partial<ImageMetadata>> => {
     const ai = getAIClient(apiKey);
 
@@ -240,6 +286,7 @@ export const recoverImageMetadata = async (
 
     // Remove data:image/png;base64, prefix if present
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
     const response = await ai.models.generateContent({
         model: modelId,
@@ -263,7 +310,8 @@ export const recoverImageMetadata = async (
                     tool: { type: Type.STRING }
                 },
                 required: ["positivePrompt"]
-            }
+            },
+            ...(thinkingConfig ? { thinkingConfig } : {})
         }
     });
 

@@ -13,8 +13,6 @@ import {
 import { AppSettings } from '../../../types';
 import { unwrap } from '../../../utils/spectaUtils';
 
-const LibraryHealth = React.lazy(() => import('../../maintenance/components/LibraryHealth').then(module => ({ default: module.LibraryHealth })));
-
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
@@ -382,13 +380,6 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
                 </div>
 
-                <div className="pt-6 border-t border-gray-100 dark:border-white/5 mt-6">
-                    {settings.devMode && (
-                        <React.Suspense fallback={null}>
-                            <LibraryHealth mode="compact" onNavigateToMaintenance={() => window.location.hash = '#maintenance'} />
-                        </React.Suspense>
-                    )}
-                </div>
             </section >
         </div >
     );

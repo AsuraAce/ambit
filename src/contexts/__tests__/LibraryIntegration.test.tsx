@@ -346,6 +346,79 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.getFacets).not.toHaveBeenCalled();
     });
 
+    it.each(['startup', 'live'] as const)('uses persisted Invoke sync choices for %s sync', async (mode) => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeSyncFavorites: false,
+                invokeSyncBoards: false
+            });
+        });
+
+        await waitFor(() => {
+            expect(hook?.settings.invokeSyncFavorites).toBe(false);
+            expect(hook?.settings.invokeSyncBoards).toBe(false);
+        });
+
+        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                mode,
+                syncFavorites: false,
+                syncBoards: false
+            })
+        );
+    });
+
+    it('lets explicit Invoke sync options override persisted choices', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeSyncFavorites: false,
+                invokeSyncBoards: false
+            });
+        });
+
+        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+
+        await act(async () => {
+            await hook?.startInvokeSync({
+                mode: 'manual',
+                syncFavorites: true,
+                syncBoards: true
+            });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                mode: 'manual',
+                syncFavorites: true,
+                syncBoards: true
+            })
+        );
+    });
+
     it('runs a one-shot Invoke live catch-up after Live Watch attaches for Invoke-only paths', async () => {
         let hook: ReturnType<typeof useLibraryContext> | undefined;
         renderStack(h => hook = h);

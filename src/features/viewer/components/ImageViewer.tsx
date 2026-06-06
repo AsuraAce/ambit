@@ -16,6 +16,11 @@ import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
 import { isOsOpenUnavailable, openFileInDefaultApp } from '../../../services/osOpen';
+import {
+    getEffectiveAiModel,
+    getEffectiveAiThinkingMode,
+    getEffectiveSystemPrompts
+} from '../../../utils/settingsUtils';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -184,9 +189,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const { palette, isLoading: isPaletteLoading } = usePalette(displayImage.url);
     const { addToast } = useToast();
     const ai = useImageAI({
-        aiModel: settings.aiModel,
+        aiModel: getEffectiveAiModel(settings),
+        aiThinkingMode: getEffectiveAiThinkingMode(settings),
         enableAI: settings.enableAI,
-        prompts: settings.systemPrompts,
+        prompts: getEffectiveSystemPrompts(settings),
         onError: (msg) => addToast(msg, 'error')
     });
 

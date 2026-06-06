@@ -1,10 +1,10 @@
 import * as React from 'react';
-import { useState } from 'react';
-import { RefreshCw, Zap, ZapOff, XCircle, Loader2, Globe, CheckCircle2, Boxes } from 'lucide-react';
+import { RefreshCw, Zap, ZapOff, XCircle } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { AppSettings } from '../../../types';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { useToast } from '../../../hooks/useToast';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 
 
 interface SyncSectionProps {
@@ -17,13 +17,14 @@ const STARRED_AS_VALUES = ['favorite', 'pin', 'both', 'none'] as const satisfies
 const isStarredAs = (value: string): value is StarredAs => (STARRED_AS_VALUES as readonly string[]).includes(value);
 
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
-    const { syncState, startInvokeSync, cancelSync } = useLibrary();
-    const { status, progress } = syncState;
+    const { syncState, startInvokeSync, cancelSync, isLiveSyncing } = useLibrary();
+    const { status } = syncState;
     const { addToast } = useToast();
+    const [isFullResyncConfirmOpen, setIsFullResyncConfirmOpen] = React.useState(false);
 
-    // Local state for sync options
-    const [syncFavorites, setSyncFavorites] = useState(true);
-    const [syncBoards, setSyncBoards] = useState(true);
+    const syncFavorites = settings.invokeSyncFavorites !== false;
+    const syncBoards = settings.invokeSyncBoards !== false;
+    const isInvokeSyncActive = status === 'syncing' || isLiveSyncing;
 
     const handleStarredAsChange = (value: string) => {
         if (!isStarredAs(value)) return;
@@ -34,6 +35,16 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
     const handleSyncBoardsToggle = (checked: boolean) => {
         setSettings(prev => ({ ...prev, syncBoardsToCollections: checked }));
         addToast(checked ? 'Boards will sync to collections' : 'Board sync disabled', 'success');
+    };
+
+    const handleInvokeSyncFavoritesToggle = (checked: boolean) => {
+        setSettings(prev => ({ ...prev, invokeSyncFavorites: checked }));
+        addToast(checked ? 'Invoke favorites will sync' : 'Invoke favorites sync disabled', 'success');
+    };
+
+    const handleInvokeSyncBoardsToggle = (checked: boolean) => {
+        setSettings(prev => ({ ...prev, invokeSyncBoards: checked }));
+        addToast(checked ? 'Invoke boards will sync' : 'Invoke boards sync disabled', 'success');
     };
 
     const handleImportIntermediatesToggle = (checked: boolean) => {
@@ -60,9 +71,22 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
         });
     };
 
+    const handleForceFullResync = () => {
+        if (isInvokeSyncActive) {
+            setIsFullResyncConfirmOpen(false);
+            addToast('Wait for the current InvokeAI sync to finish before forcing a full resync.', 'warning');
+            return;
+        }
+
+        setSettings(prev => ({ ...prev, lastSyncedAt: null }));
+        setIsFullResyncConfirmOpen(false);
+        addToast('InvokeAI full resync queued. Start sync to scan from the beginning.', 'success');
+    };
+
     if (!settings.invokeAiPath) return null;
 
     return (
+        <>
         <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
             <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
                 <RefreshCw className="w-4 h-4" /> Synchronization
@@ -79,7 +103,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
                             <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncFavorites ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                                 {syncFavorites && <div className="w-2 h-2 bg-white rounded-sm" />}
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncFavorites} onChange={e => setSyncFavorites(e.target.checked)} />
+                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncFavorites} onChange={e => handleInvokeSyncFavoritesToggle(e.target.checked)} />
                             </div>
                             <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Favorites</span>
                         </label>
@@ -108,7 +132,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
                             <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncBoards ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                                 {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncBoards} onChange={e => setSyncBoards(e.target.checked)} />
+                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncBoards} onChange={e => handleInvokeSyncBoardsToggle(e.target.checked)} />
                             </div>
                             <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Boards</span>
                         </label>
@@ -154,6 +178,27 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                             </div>
                         </label>
                     </div>
+
+                    <div className="mt-6 pt-5 border-t border-black/10 dark:border-white/10">
+                        <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-4">
+                            Sync Recovery
+                        </div>
+                        <div className="flex items-center justify-between gap-6">
+                            <div>
+                                <div className="text-[11px] font-bold text-gray-700 dark:text-gray-200">Force Full InvokeAI Resync</div>
+                                <div className="text-[9px] text-gray-500 leading-tight mt-1">Clear the sync cursor so the next manual sync checks the full InvokeAI database.</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsFullResyncConfirmOpen(true)}
+                                disabled={isInvokeSyncActive}
+                                title={isInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Clear the sync cursor for the next manual sync'}
+                                className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-[10px] font-black transition-all flex items-center gap-2 border border-amber-500/20 whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500/10"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" /> Force Full Resync
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -185,5 +230,15 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
             </div>
         </section>
+        <ConfirmDialog
+            isOpen={isFullResyncConfirmOpen}
+            title="Force Full InvokeAI Resync?"
+            message="This clears the InvokeAI sync cursor. The next sync will scan the full InvokeAI database. Existing Ambit records, files, and InvokeAI snapshots stay untouched."
+            confirmLabel="Force Full Resync"
+            onConfirm={handleForceFullResync}
+            onCancel={() => setIsFullResyncConfirmOpen(false)}
+            zIndex={220}
+        />
+        </>
     );
 });

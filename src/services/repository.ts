@@ -3,6 +3,7 @@ import { AIImage, Collection, SmartCollection, AppSettings } from '../types';
 import { generateMockImages, INITIAL_COLLECTIONS } from '../constants';
 import { BrowserMockRepository } from './browserMockData';
 import { isTauriRuntime } from './runtime';
+import { createDefaultAppSettings } from '../constants/defaultSettings';
 
 // Define the shape of our entire persisted application state
 export interface AppState {
@@ -32,19 +33,13 @@ export class LocalStorageRepository implements IRepository {
           // Migration/Merge logic to ensure settings shape is always valid
           resolve({
             ...saved,
-            settings: {
-              theme: 'dark',
-              thumbnailSize: 200,
-              confirmDelete: true,
-              defaultTheaterMode: false,
-              monitoredFolders: [],
-              maskedKeywords: [],
-              enableAI: false,
+            settings: createDefaultAppSettings({
               hasCompletedOnboarding: true,
+              maskedKeywords: [],
               libraryShowGrids: false,
               resourceFolders: [],
               ...saved.settings
-            }
+            })
           });
           return;
         }
@@ -74,20 +69,13 @@ export class LocalStorageRepository implements IRepository {
       images: generateMockImages(150),
       collections: INITIAL_COLLECTIONS,
       smartCollections: [],
-      settings: {
-        hasCompletedOnboarding: false,
-        theme: 'dark',
-        thumbnailSize: 200,
-        confirmDelete: true,
-        defaultTheaterMode: false,
+      settings: createDefaultAppSettings({
         monitoredFolders: [
           { id: 'f1', path: 'C:/Users/Creator/ComfyUI/output', isActive: true, imageCount: 1450 },
           { id: 'f2', path: 'D:/SD_Outputs/Best', isActive: true, imageCount: 54 }
         ],
         maskedKeywords: ['nsfw', 'blood', 'gore'],
-        maskingMode: 'blur',
-        enableAI: false
-      },
+      }),
       recentSearches: []
     };
   }

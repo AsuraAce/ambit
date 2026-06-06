@@ -34,7 +34,7 @@ export const ScanPlaceholder: React.FC<ScanPlaceholderProps> = ({
             hasScope: true
         },
         missing: {
-            title: "Missing Files Integrity",
+            title: "Missing Files",
             description: "Verify that all database records point to actual files on your disk. This will scan your entire collection.",
             icon: <Search className="w-12 h-12" />,
             hasScope: false

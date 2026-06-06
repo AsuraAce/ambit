@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { SyncSection } from './SyncSection';
+import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 
 interface TabProps {
     settings: AppSettings;
@@ -40,6 +41,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
+    const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
 
     const runDiagnostics = async () => {
         if (!settings.invokeAiPath) return;
@@ -166,7 +168,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                 </div>
             </section>
 
-            {settings.devMode && (
+            {developerFeaturesEnabled && (
                 <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                     <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -222,7 +224,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                         There are <strong>{Math.abs(diagData.totalInDb - diagData.folder.imageFiles).toLocaleString()}</strong> {diagData.totalInDb > diagData.folder.imageFiles ? 'extra records in the database' : 'extra files in the outputs folder'}.
                                     </p>
                                     {diagData.totalInDb > diagData.folder.imageFiles && (
-                                        <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: Run "Reset Cursor" to re-validate image availability.</p>
+                                        <p className="mt-2 text-[10px] font-medium opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-lg">Recommended: use "Force Full Resync" to re-validate image availability.</p>
                                     )}
                                 </div>
                             )}

@@ -1,11 +1,15 @@
 import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AppSettings, AppSettingsUpdate } from '../../../../types';
 import { SettingsModal } from '../SettingsModal';
 
 vi.mock('../../../../hooks/useAppVersion', () => ({
     useAppVersion: () => 'test'
+}));
+
+vi.mock('../DevTab', () => ({
+    DevTab: () => <div>Dev panel</div>
 }));
 
 vi.mock('..', () => ({
@@ -50,8 +54,7 @@ vi.mock('..', () => ({
     ),
     PrivacyTab: () => null,
     IntelligenceTab: () => null,
-    DevTab: () => null,
-    AdvancedTab: () => null,
+    AdvancedTab: () => <div>Advanced panel</div>,
     ConnectionsTab: () => null
 }));
 
@@ -68,6 +71,10 @@ const createSettings = (): AppSettings => ({
 });
 
 describe('SettingsModal', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     it('forwards functional settings updates so async follow-up updates use latest settings', () => {
         const onSave = vi.fn<(update: AppSettingsUpdate) => void>();
         const initialSettings = createSettings();
@@ -85,6 +92,7 @@ describe('SettingsModal', () => {
                 updateStatus="idle"
                 onCheckForUpdates={vi.fn()}
                 onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
             />
         );
 
@@ -107,5 +115,78 @@ describe('SettingsModal', () => {
             initialScanPending: false,
             lastScanned: 123
         });
+    });
+
+    it('loads the Dev Tools panel only after selecting it in dev builds', async () => {
+        vi.stubEnv('DEV', true);
+
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /dev tools/i }));
+
+        expect(await screen.findByText('Dev panel')).not.toBeNull();
+    });
+
+    it('hides the Dev Tools tab in production builds', () => {
+        vi.stubEnv('DEV', false);
+
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={true}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: /dev tools/i })).toBeNull();
+    });
+
+    it('falls back to Advanced when initialTab is dev in production builds', () => {
+        vi.stubEnv('DEV', false);
+
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={true}
+                initialTab="dev"
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        expect(screen.getByText('Advanced panel')).not.toBeNull();
+        expect(screen.queryByText('Dev panel')).toBeNull();
     });
 });

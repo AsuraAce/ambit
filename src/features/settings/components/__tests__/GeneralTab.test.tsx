@@ -13,7 +13,7 @@ vi.mock('../../../../hooks/useToast', () => ({
     })
 }));
 
-const createSettings = (): AppSettings => ({
+const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     hasCompletedOnboarding: true,
     theme: 'dark',
     thumbnailSize: 200,
@@ -27,7 +27,8 @@ const createSettings = (): AppSettings => ({
     enableAutoThumbnailHealing: true,
     enforceHighQualityThumbnails: false,
     thumbnailOptimizationProfile: 'balanced',
-    logLevel: 'info'
+    logLevel: 'info',
+    ...overrides
 });
 
 describe('GeneralTab Smart Thumbnail details', () => {
@@ -67,6 +68,13 @@ describe('GeneralTab Smart Thumbnail details', () => {
         expect(screen.getByText(/Failed\s+2/)).toBeTruthy();
         expect(screen.getByText(/Skipped\s+11/)).toBeTruthy();
         expect(screen.queryByText(/eta/i)).toBeNull();
+    });
+
+    it('does not expose File Link Audit even when developer mode is enabled', () => {
+        render(<GeneralTab settings={createSettings({ devMode: true })} setSettings={vi.fn()} />);
+
+        expect(screen.queryByText(/file link audit/i)).toBeNull();
+        expect(screen.queryByRole('button', { name: /run audit/i })).toBeNull();
     });
 
     it('keeps the last completed run visible when the optimizer is idle', () => {

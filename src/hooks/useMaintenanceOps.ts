@@ -13,6 +13,11 @@ import {
     rebuildFacetCache,
     removeImagesFromLibrary,
 } from '../services/db/imageRepo';
+import {
+    getEffectiveAiModel,
+    getEffectiveAiThinkingMode,
+    getEffectiveSystemPrompts
+} from '../utils/settingsUtils';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
@@ -30,6 +35,9 @@ export const useMaintenanceOps = ({
     const { addToast } = useToast();
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
+    const effectiveAiModel = getEffectiveAiModel(settings);
+    const effectiveAiThinkingMode = getEffectiveAiThinkingMode(settings);
+    const effectiveSystemPrompts = getEffectiveSystemPrompts(settings);
 
     const deleteImages = useCallback(async (ids: string[], permanent = false) => {
         const logPrefix = permanent ? '[MaintenanceOps] deleteFiles' : '[MaintenanceOps] removeFromLibrary';
@@ -94,7 +102,14 @@ export const useMaintenanceOps = ({
             if (!apiKey) throw new Error("No API Key");
 
             const { recoverImageMetadata } = await import('../services/geminiService');
-            const recoveredMeta = await recoverImageMetadata(base64, style, apiKey, settings.aiModel, settings.systemPrompts);
+            const recoveredMeta = await recoverImageMetadata(
+                base64,
+                style,
+                apiKey,
+                effectiveAiModel,
+                effectiveSystemPrompts,
+                effectiveAiThinkingMode
+            );
             const recoveredPrompt = recoveredMeta.positivePrompt ?? '';
 
             const updatedImg = {
@@ -118,7 +133,7 @@ export const useMaintenanceOps = ({
         } finally {
             setIsRecoveringMetadata(false);
         }
-    }, [images, settings.systemPrompts, settings.aiModel, setImages, addToast]);
+    }, [images, effectiveAiModel, effectiveAiThinkingMode, effectiveSystemPrompts, setImages, addToast]);
 
     return {
         isRecoveringMetadata,

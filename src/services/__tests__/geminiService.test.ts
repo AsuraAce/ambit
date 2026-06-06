@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { verifyApiKey } from '../geminiService';
-import { GoogleGenAI } from '@google/genai';
+import {
+    analyzePromptAndSuggest,
+    generateFiltersFromQuery,
+    generatePromptVariations,
+    generateTitleFromPrompt,
+    getGeminiThinkingConfig,
+    recoverImageMetadata,
+    verifyApiKey,
+} from '../geminiService';
 
 const mockGenerateContent = vi.fn();
 
@@ -18,7 +25,13 @@ vi.mock('@google/genai', () => {
             ARRAY: 'ARRAY',
             NUMBER: 'NUMBER',
             BOOLEAN: 'BOOLEAN',
-        }
+        },
+        ThinkingLevel: {
+            MINIMAL: 'MINIMAL',
+            LOW: 'LOW',
+            MEDIUM: 'MEDIUM',
+            HIGH: 'HIGH',
+        },
     };
 });
 
@@ -35,7 +48,7 @@ describe('geminiService: verifyApiKey', () => {
         expect(result.valid).toBe(true);
         // Verify we are calling with the default model
         expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gemini-2.5-flash-lite'
+            model: 'gemini-3.1-flash-lite'
         }));
     });
 
@@ -81,5 +94,57 @@ describe('geminiService: verifyApiKey', () => {
         const result = await verifyApiKey('');
         expect(result.valid).toBe(false);
         expect(result.error).toBe('API Key is required');
+    });
+});
+
+describe('geminiService: thinking configuration', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('maps Gemini 3 effort levels to thinkingLevel', () => {
+        expect(getGeminiThinkingConfig('gemini-3.5-flash', 'minimal')).toEqual({
+            thinkingLevel: 'MINIMAL',
+        });
+        expect(getGeminiThinkingConfig('gemini-3.1-pro-preview', 'high')).toEqual({
+            thinkingLevel: 'HIGH',
+        });
+    });
+
+    it('maps supported Gemini 2.5 presets to thinkingBudget', () => {
+        expect(getGeminiThinkingConfig('gemini-2.5-flash', 'off')).toEqual({
+            thinkingBudget: 0,
+        });
+        expect(getGeminiThinkingConfig('gemini-2.5-flash-lite', 'dynamic')).toEqual({
+            thinkingBudget: -1,
+        });
+    });
+
+    it('omits default and incompatible thinking overrides', () => {
+        expect(getGeminiThinkingConfig('gemini-3.5-flash', 'default')).toBeUndefined();
+        expect(getGeminiThinkingConfig('gemini-3.1-pro-preview', 'minimal')).toBeUndefined();
+        expect(getGeminiThinkingConfig('gemini-2.5-pro', 'off')).toBeUndefined();
+    });
+
+    it('applies Gemini 3 thinking effort to every Ambit AI workflow', async () => {
+        mockGenerateContent
+            .mockResolvedValueOnce({ text: 'analysis' })
+            .mockResolvedValueOnce({ text: '["variation"]' })
+            .mockResolvedValueOnce({ text: 'Title' })
+            .mockResolvedValueOnce({ text: '{}' })
+            .mockResolvedValueOnce({ text: '{"positivePrompt":"recovered"}' });
+
+        await analyzePromptAndSuggest('prompt', 'key', 'gemini-3.5-flash', undefined, 'low');
+        await generatePromptVariations('prompt', 'key', 'gemini-3.5-flash', undefined, 'low');
+        await generateTitleFromPrompt('prompt', 'key', 'gemini-3.5-flash', undefined, 'low');
+        await generateFiltersFromQuery('query', 'key', 'gemini-3.5-flash', undefined, 'low');
+        await recoverImageMetadata('data:image/png;base64,abc', 'generic', 'key', 'gemini-3.5-flash', undefined, 'low');
+
+        expect(mockGenerateContent).toHaveBeenCalledTimes(5);
+        for (const [request] of mockGenerateContent.mock.calls) {
+            expect(request.config).toEqual(expect.objectContaining({
+                thinkingConfig: { thinkingLevel: 'LOW' },
+            }));
+        }
     });
 });

@@ -4,6 +4,7 @@ import { Minus, Square, X } from "lucide-react";
 import { APP_NAME } from "../../constants/app";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { isTauriRuntime } from "../../services/runtime";
+import { areDeveloperFeaturesEnabled } from "../../utils/settingsUtils";
 
 const BRAND_GLYPH_SRC = "/branding/ambit-glyph.svg";
 const BRAND_WINDOW_ICON_SRC = "/branding/ambit-window-icon.png";
@@ -13,7 +14,7 @@ export const TitleBar = () => {
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showOnHover, setShowOnHover] = useState(false);
-    const devModeEnabled = useSettingsStore(s => s.devModeEnabled);
+    const developerFeaturesEnabled = useSettingsStore(s => areDeveloperFeaturesEnabled(s.settings));
 
     useEffect(() => {
         if (!isTauriRuntime()) return;
@@ -107,7 +108,7 @@ export const TitleBar = () => {
                     <span className="text-[13px] font-semibold tracking-[0.18em] text-zinc-700 dark:text-zinc-300">
                         {APP_NAME.toUpperCase()}
                     </span>
-                    {devModeEnabled && (
+                    {developerFeaturesEnabled && (
                         <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] font-bold rounded animate-pulse">
                             DEV
                         </span>

@@ -47,7 +47,7 @@ const auditResult = (missingIds: string[], wasCancelled = false): MissingFileAud
 });
 
 const startAudit = async () => {
-    fireEvent.click(screen.getByText('Start Full Audit'));
+    fireEvent.click(screen.getByText('Start File Audit'));
     await waitFor(() => {
         expect(healthMocks.verifyLibraryIntegrity).toHaveBeenCalled();
     });

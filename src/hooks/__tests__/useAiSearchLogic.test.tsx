@@ -1,8 +1,9 @@
 
 import { renderHook, act } from '../../test/testUtils';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiSearchLogic } from '../useAiSearchLogic';
 import { AppSettings, FilterState } from '../../types';
+import { DEFAULT_AI_MODEL } from '../../constants/aiModels';
 
 // --- Mocks ---
 const mockAddToast = vi.fn();
@@ -70,6 +71,10 @@ describe('useAiSearchLogic', () => {
         vi.clearAllMocks();
     });
 
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     it('should toggle AI search enabled state', () => {
         const { result } = renderHook(() => useAiSearchLogic(props));
 
@@ -122,7 +127,13 @@ describe('useAiSearchLogic', () => {
             await result.current.submitSearch('find sunsets');
         });
 
-        expect(mockGenerateFilters).toHaveBeenCalledWith('find sunsets', 'test-key', undefined);
+        expect(mockGenerateFilters).toHaveBeenCalledWith(
+            'find sunsets',
+            'test-key',
+            DEFAULT_AI_MODEL,
+            undefined,
+            'default'
+        );
         expect(mockSetFilters).toHaveBeenCalledTimes(2); // Local set + AI results set
         const aiUpdate = mockSetFilters.mock.calls[1][0] as (prev: FilterState) => FilterState;
         expect(aiUpdate(mockFilters)).toMatchObject({
@@ -133,6 +144,40 @@ describe('useAiSearchLogic', () => {
             dateTo: '2026-04-30'
         });
         expect(mockAddToast).toHaveBeenCalledWith('Filters updated by AI', 'success');
+    });
+
+    it('should forward the FILTERS prompt override when developer features are enabled', async () => {
+        vi.stubEnv('DEV', true);
+        const systemPrompts = {
+            FILTERS: 'Custom filter instructions for {{query}} on {{today}}.',
+        };
+        const developerSettings: AppSettings = {
+            ...mockSettings,
+            devMode: true,
+            systemPrompts,
+        };
+        const { result } = renderHook(() => useAiSearchLogic({
+            ...props,
+            settings: developerSettings,
+        }));
+
+        act(() => {
+            result.current.toggleAiSearch();
+        });
+
+        mockGenerateFilters.mockResolvedValue({});
+
+        await act(async () => {
+            await result.current.submitSearch('find portraits');
+        });
+
+        expect(mockGenerateFilters).toHaveBeenCalledWith(
+            'find portraits',
+            'test-key',
+            DEFAULT_AI_MODEL,
+            systemPrompts,
+            'default'
+        );
     });
 
     it('should handle AI search failure gracefully', async () => {

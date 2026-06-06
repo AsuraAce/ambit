@@ -92,7 +92,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                             {status === 'running' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
                         </div>
                         <div>
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-white">Verify Setup</h4>
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white">File Link Audit</h4>
                             <p className="text-xs text-gray-500">Run an audit to check for broken file links.</p>
                         </div>
                     </div>
@@ -102,7 +102,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                             <div className="flex items-center gap-3">
                                 <div className="text-right">
                                     <div className={`text-xs font-black ${result.missingIds.length > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                        {result.missingIds.length > 0 ? `${result.missingIds.length} Broken` : 'Library Healthy'}
+                                        {result.missingIds.length > 0 ? `${result.missingIds.length} Missing` : 'File Links Healthy'}
                                     </div>
                                     <div className="text-[10px] text-gray-400">{result.scanned} Scanned</div>
                                 </div>
@@ -137,7 +137,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                         <Shield className="w-6 h-6" />
                     </div>
                     <div>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">Library Health Scan</h3>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">File Link Audit</h3>
                         <p className="text-sm text-gray-500">Deep-scan the database to identify images whose source files are no longer on disk.</p>
                     </div>
                 </div>
@@ -160,7 +160,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                             className="flex items-center gap-3 px-6 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black shadow-xl shadow-sage-500/20 transition-all active:scale-95 disabled:opacity-50"
                         >
                             {status === 'done' ? <RefreshCw className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                            {status === 'done' ? 'Re-Scan Library' : 'Start Full Audit'}
+                            {status === 'done' ? 'Re-Scan Files' : 'Start File Audit'}
                         </button>
                     )}
                 </div>
@@ -186,7 +186,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         <div className={`text-2xl font-black tabular-nums ${result.missingIds.length > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                                             {result.missingIds.length.toLocaleString()}
                                         </div>
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase">Broken Links</div>
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase">Missing Files</div>
                                     </div>
                                 </div>
                             </div>
@@ -220,10 +220,10 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                 <div className="p-6 bg-red-500/5 rounded-2xl border border-red-500/10 space-y-4">
                                     <div className="flex items-center gap-3 text-red-500">
                                         <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                                        <span className="text-xs font-black uppercase tracking-widest">Action Required</span>
+                                        <span className="text-xs font-black uppercase tracking-widest">Missing Files</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
-                                        Purging these records will hide them from your library. This is recommended to maintain database consistency.
+                                        Purging these records removes database entries whose source image files are no longer on disk.
                                     </p>
                                     <button
                                         onClick={handlePrune}
@@ -257,7 +257,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         <CheckCircle2 className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Library Perfect</div>
+                                        <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">File Links Healthy</div>
                                         <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">All database links point to valid files on your disk.</p>
                                     </div>
                                 </div>

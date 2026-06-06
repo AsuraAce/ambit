@@ -2,34 +2,23 @@ import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
+import { createDefaultAppSettings } from '../constants/defaultSettings';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
 
-const DEFAULT_SETTINGS: AppSettings = {
+const DEFAULT_SETTINGS: AppSettings = createDefaultAppSettings({
     hasCompletedOnboarding: true,
-    theme: 'dark',
-    thumbnailSize: 200,
     autoCheckForUpdates: false,
-    confirmDelete: true,
-    defaultTheaterMode: false,
     monitoredFolders: [
         { id: 'mock-folder-1', path: 'C:/Mock/ComfyUI/output', isActive: true, imageCount: MOCK_COUNT, variant: GeneratorTool.COMFYUI },
         { id: 'mock-folder-2', path: 'D:/Mock/A1111/outputs', isActive: true, imageCount: 42, variant: GeneratorTool.AUTOMATIC1111 },
     ],
     maskedKeywords: ['nsfw', 'blood', 'gore'],
-    maskingMode: 'blur',
-    enableAI: false,
-    syncBoardsToCollections: false,
     importOrphans: true,
-    starredAs: 'favorite',
-    resourceViewModes: {},
-    hideImportModal: false,
     enableAutoThumbnailHealing: false,
-    enforceHighQualityThumbnails: false,
-    logLevel: 'info',
     devMode: true,
-};
+});
 
 const MODELS = ['Flux.1 Dev', 'SDXL 1.0 Base', 'Pony Diffusion V6', 'Illustrious XL', 'DreamShaper 8'];
 const LORAS = ['detail_tweaker_v1', 'cinematic_lighting', 'soft_portrait', 'isometric_world', 'lineart_boost'];

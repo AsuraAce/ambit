@@ -13,11 +13,9 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
 import { listenWithCleanup } from '../../../utils/tauriListener';
-import type { LogLevel } from '../../../types';
+import { rebuildFacetCache } from '../../../services/db/imageRepo';
 
 type DevTabId = 'prompts' | 'tools';
-const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'none'] as const satisfies readonly LogLevel[];
-const isLogLevel = (value: string): value is LogLevel => (LOG_LEVELS as readonly string[]).includes(value);
 
 export const DevTab: React.FC = () => {
     const { fetchData } = useLibraryContext();
@@ -27,6 +25,8 @@ export const DevTab: React.FC = () => {
     const [activeTab, setActiveTab] = useState<DevTabId>('prompts');
 
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isOptimizing, setIsOptimizing] = useState(false);
+    const [isRebuilding, setIsRebuilding] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [targetCount, setTargetCount] = useState(10000);
 
@@ -80,6 +80,36 @@ export const DevTab: React.FC = () => {
         setSettings((prev) => ({ ...prev, devMode: !prev.devMode }));
     };
 
+    const handleOptimize = async () => {
+        setIsOptimizing(true);
+        try {
+            const result = await commands.optimizeDatabase();
+            if (result.status === 'ok') {
+                addToast(result.data, 'success');
+            } else {
+                console.error(result.error);
+                addToast('Failed to optimize database', 'error');
+            }
+        } catch (e) {
+            addToast('Error communicating with backend', 'error');
+        } finally {
+            setIsOptimizing(false);
+        }
+    };
+
+    const handleRebuildCache = async () => {
+        setIsRebuilding(true);
+        try {
+            await rebuildFacetCache();
+            addToast('Facet cache rebuilt successfully', 'success');
+        } catch (e) {
+            console.error(e);
+            addToast('Failed to rebuild facet cache', 'error');
+        } finally {
+            setIsRebuilding(false);
+        }
+    };
+
     // Event listener for reset progress
     React.useEffect(() => {
         const resetProgressListener = listenWithCleanup<string>(
@@ -101,37 +131,59 @@ export const DevTab: React.FC = () => {
         { id: 'prompts', label: 'AI Prompts', icon: BrainCircuit },
         { id: 'tools', label: 'Tools', icon: Wrench },
     ];
+    const developerModeEnabled = settings.devMode === true;
 
     return (
         <>
             <div className="h-full flex flex-col pt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
                 {/* Tab Navigation - Fixed Header */}
-                <div className="shrink-0 px-8 pb-4">
-                    <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-zinc-800/50 rounded-lg">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon;
-                            const isActive = activeTab === tab.id;
-                            return (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={cn(
-                                        "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all",
-                                        isActive
-                                            ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm"
-                                            : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
-                                    )}
-                                >
-                                    <Icon className="w-4 h-4" />
-                                    {tab.label}
-                                </button>
-                            );
-                        })}
+                <div className="shrink-0 px-8 pb-4 space-y-4">
+                    <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                        <div
+                            onClick={handleDevModeToggle}
+                            className="flex items-center justify-between cursor-pointer group"
+                        >
+                            <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Developer Mode</div>
+                                <div className="text-xs text-gray-500">Enable prompt overrides, diagnostics, and low-level tooling for this development build.</div>
+                            </div>
+                            <button
+                                type="button"
+                                className={`w-10 h-6 rounded-full relative transition-colors ${developerModeEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                            >
+                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${developerModeEnabled ? 'left-5' : 'left-1'}`} />
+                            </button>
+                        </div>
                     </div>
+
+                    {developerModeEnabled && (
+                        <div className="flex items-center gap-1 p-1 bg-gray-100 dark:bg-zinc-800/50 rounded-lg">
+                            {tabs.map((tab) => {
+                                const Icon = tab.icon;
+                                const isActive = activeTab === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={cn(
+                                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all",
+                                            isActive
+                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm"
+                                                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
+                                        )}
+                                    >
+                                        <Icon className="w-4 h-4" />
+                                        {tab.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 {/* Scrollable Content Area */}
+                {developerModeEnabled ? (
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-6">
                     {/* System Prompts Section */}
                     {activeTab === 'prompts' && (
@@ -244,46 +296,39 @@ export const DevTab: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4 mb-6">
-                                <div
-                                    onClick={handleDevModeToggle}
-                                    className="flex items-center justify-between cursor-pointer group"
-                                >
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4">
                                     <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Developer Mode</div>
-                                        <div className="text-xs text-gray-500">Enable detailed debug logs and system audits</div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Optimize Database</div>
+                                        <div className="text-xs text-gray-500 mt-1">Run VACUUM and ANALYZE for local database maintenance.</div>
                                     </div>
                                     <button
                                         type="button"
-                                        className={`w-10 h-6 rounded-full relative transition-colors ${settings.devMode ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                                        onClick={handleOptimize}
+                                        disabled={isOptimizing}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                                     >
-                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.devMode ? 'left-5' : 'left-1'}`} />
+                                        {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+                                        {isOptimizing ? 'Optimizing...' : 'Optimize Now'}
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4 mb-6">
-                                <div className="flex items-center justify-between">
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4">
                                     <div>
-                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Console Log Level</div>
-                                        <div className="text-xs text-gray-500">Filter console logs based on severity</div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
+                                        <div className="text-xs text-gray-500 mt-1">Recalculate metadata facets if filters look stale after low-level changes.</div>
                                     </div>
-                                    <select
-                                        value={settings.logLevel || 'info'}
-                                        onChange={(e) => {
-                                            const nextLevel = e.target.value;
-                                            if (isLogLevel(nextLevel)) {
-                                                setSettings(prev => ({ ...prev, logLevel: nextLevel }));
-                                            }
-                                        }}
-                                        className="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-bold font-mono text-gray-700 dark:text-gray-300 outline-none focus:ring-2 focus:ring-sage-500/50 cursor-pointer"
+                                    <button
+                                        type="button"
+                                        onClick={handleRebuildCache}
+                                        disabled={isRebuilding}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
                                     >
-                                        <option value="debug">DEBUG</option>
-                                        <option value="info">INFO</option>
-                                        <option value="warn">WARN</option>
-                                        <option value="error">ERROR</option>
-                                        <option value="none">NONE</option>
-                                    </select>
+                                        {isRebuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                        {isRebuilding ? 'Rebuilding...' : 'Rebuild Cache'}
+                                    </button>
                                 </div>
                             </div>
 
@@ -353,6 +398,21 @@ export const DevTab: React.FC = () => {
                     )}
 
                 </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8">
+                        <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6">
+                            <div className="flex gap-4">
+                                <Wrench className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-900 dark:text-gray-200">Developer tools are off</h4>
+                                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                                        Enable Developer Mode to access prompt overrides, diagnostics, database tools, and stress testing.
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
             </div>
         </>
     );

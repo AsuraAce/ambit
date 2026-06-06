@@ -1,6 +1,7 @@
 import { BaseDirectory, readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs';
 import { AppState, IRepository } from './repository';
-import { generateMockImages, INITIAL_COLLECTIONS } from '../constants';
+import { INITIAL_COLLECTIONS } from '../constants';
+import { createDefaultAppSettings } from '../constants/defaultSettings';
 
 export class TauriFsRepository implements IRepository {
     private fileName = 'library.json';
@@ -41,21 +42,13 @@ export class TauriFsRepository implements IRepository {
                 return {
                     ...saved,
                     images: [], // Always return empty images from JSON, we rely on SQLite
-                    settings: {
-                        theme: 'dark',
-                        thumbnailSize: 200,
-                        confirmDelete: true,
-                        defaultTheaterMode: false,
-                        monitoredFolders: [],
-                        maskedKeywords: [],
-                        enableAI: false,
+                    settings: createDefaultAppSettings({
                         hasCompletedOnboarding: true,
+                        maskedKeywords: [],
                         libraryShowGrids: false,
                         resourceFolders: [],
-                        resourceViewModes: {},
-                        hideImportModal: false,
                         ...saved.settings
-                    }
+                    })
                 };
             }
         } catch (err) {
@@ -88,18 +81,7 @@ export class TauriFsRepository implements IRepository {
             images: [], // Start fresh
             collections: INITIAL_COLLECTIONS,
             smartCollections: [],
-            settings: {
-                hasCompletedOnboarding: false,
-                theme: 'dark',
-                thumbnailSize: 200,
-                confirmDelete: true,
-                defaultTheaterMode: false,
-                monitoredFolders: [], // Start fresh
-                maskedKeywords: ['nsfw', 'blood', 'gore'],
-                maskingMode: 'blur',
-                enableAI: false,
-                hideImportModal: false
-            },
+            settings: createDefaultAppSettings(),
             recentSearches: []
         };
     }
