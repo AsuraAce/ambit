@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - name: install pnpm
         uses: pnpm/action-setup@v6.0.8
