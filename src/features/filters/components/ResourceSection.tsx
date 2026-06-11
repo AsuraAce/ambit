@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { Search, Puzzle, Check, LayoutGrid, List as ListIcon, SortAsc, SortDesc, Clock, Calendar, ArrowDownWideNarrow, ArrowUpWideNarrow, Pin, Circle, CircleDot, Eye, EyeOff, RotateCcw, HardDrive, ImageOff } from 'lucide-react';
 import type { AssetScope, FacetSortOption, FilterState } from '../../../types';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { SectionHeader, SearchInput, SortDropdown } from './FilterPrimitives';
@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 import { commands } from '../../../bindings';
 import { uniqueAssetAliases } from '../../../utils/assetIdentity';
+import type { ResourceThumbnailSource } from '../../../services/db/searchRepo';
 
 export type { AssetScope };
 
@@ -32,6 +33,7 @@ interface ResourceItem {
     thumbnailImageId?: string;
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
+    thumbnailSource?: ResourceThumbnailSource;
     isLocalDisk?: boolean;
     assetMatchKey?: string;
     filterAliases?: string[];
@@ -333,6 +335,13 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const isSelected = isItemSelected(item);
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
+        const hasSidecarPreview = item.thumbnailSource === 'sidecar';
+        const unusedTitle = hasSidecarPreview
+            ? 'Unused: local asset has no matching library images. Preview from sidecar image.'
+            : 'Unused: local asset has no matching library images.';
+        const localTitle = hasSidecarPreview
+            ? 'Local asset on disk. Preview from sidecar image.'
+            : 'Local asset on disk';
 
         return (
             <div
@@ -382,15 +391,25 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 {/* Count Badge - Hover Only for ALL items, always Top Right */}
                 {!isSelected && (
                     <div className={`absolute top-1.5 right-1.5 transition-opacity z-10 ${isInventoryOnly ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                        <div className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-blue-500/80 text-white' : 'bg-black/40 text-white/90'}`}>
-                            {isInventoryOnly ? 'Unused' : formatCountCompact(item.count)}
+                        <div
+                            role={isInventoryOnly ? 'img' : undefined}
+                            aria-label={isInventoryOnly ? unusedTitle : undefined}
+                            title={isInventoryOnly ? unusedTitle : `${item.count.toLocaleString()} total images`}
+                            className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-blue-500/80 text-white' : 'bg-black/40 text-white/90'}`}
+                        >
+                            {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
                         </div>
                     </div>
                 )}
 
                 {item.isLocalDisk && !isInventoryOnly && (
-                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-black/50 backdrop-blur-sm text-[9px] font-bold text-blue-700 dark:text-blue-200 shadow-sm">
-                        Local
+                    <div
+                        role="img"
+                        aria-label={localTitle}
+                        title={localTitle}
+                        className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-black/50 backdrop-blur-sm text-blue-700 dark:text-blue-200 shadow-sm"
+                    >
+                        <HardDrive className="h-3 w-3" aria-hidden="true" />
                     </div>
                 )}
 
@@ -403,6 +422,13 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const isSelected = isItemSelected(item);
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
+        const hasSidecarPreview = item.thumbnailSource === 'sidecar';
+        const unusedTitle = hasSidecarPreview
+            ? 'Unused: local asset has no matching library images. Preview from sidecar image.'
+            : 'Unused: local asset has no matching library images.';
+        const localTitle = hasSidecarPreview
+            ? 'Local asset on disk. Preview from sidecar image.'
+            : 'Local asset on disk';
 
         return (
             <div
@@ -442,14 +468,21 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <span
+                        role={isInventoryOnly ? 'img' : undefined}
+                        aria-label={isInventoryOnly ? unusedTitle : undefined}
                         className={`text-[10px] px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${isInventoryOnly ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 opacity-100' : `bg-gray-100 dark:bg-white/10 ${validNames != null ? 'opacity-30' : 'opacity-60'}`}`}
-                        title={isInventoryOnly ? 'Local asset with no matching images yet' : `${item.count.toLocaleString()} total images`}
+                        title={isInventoryOnly ? unusedTitle : `${item.count.toLocaleString()} total images`}
                     >
-                        {isInventoryOnly ? 'Unused' : formatCountCompact(item.count)}
+                        {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
                     </span>
                     {item.isLocalDisk && !isInventoryOnly && (
-                        <span className="text-[9px] bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wide">
-                            Local
+                        <span
+                            role="img"
+                            aria-label={localTitle}
+                            title={localTitle}
+                            className="bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md"
+                        >
+                            <HardDrive className="h-3 w-3" aria-hidden="true" />
                         </span>
                     )}
                 </div>

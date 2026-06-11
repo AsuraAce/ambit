@@ -184,6 +184,88 @@ describe('searchRepo getFacets', () => {
         });
     });
 
+    it('keeps thumbnail provenance paired with the thumbnail selected during alias merging', async () => {
+        const db = createFacetDb([
+            {
+                facet_type: 'loras',
+                resource_name: 'Detailer Style',
+                resource_hash: 'used-hash',
+                count: 4,
+                thumbnail_path: null,
+                preview_url: null
+            },
+            {
+                facet_type: 'loras',
+                resource_name: 'detailer_style',
+                resource_hash: 'file:C:/models/detailer_style.safetensors',
+                count: 0,
+                thumbnail_path: 'manual.webp',
+                has_sidecar: 1,
+                is_manual: 1,
+                is_user_override: 1
+            }
+        ], [
+            {
+                resource_type: 'loras',
+                name: 'detailer_style',
+                hash: 'file:C:/models/detailer_style.safetensors'
+            }
+        ]);
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
+
+        expect(facets.loras[0]).toMatchObject({
+            name: 'Detailer Style',
+            thumbnailPath: 'manual.webp',
+            thumbnailSource: 'manual',
+            hasSidecar: 1
+        });
+    });
+
+    it('identifies a selected sidecar separately from sidecar availability', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'SidecarSelected',
+                    resource_hash: 'file:C:/models/SidecarSelected.safetensors',
+                    count: 0,
+                    thumbnail_path: 'sidecar.webp',
+                    has_sidecar: 1,
+                    is_manual: 1,
+                    is_user_override: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'LibrarySelected',
+                    resource_hash: 'library-hash',
+                    count: 1,
+                    thumbnail_path: 'library.webp',
+                    thumbnail_image_id: 'image-1',
+                    has_sidecar: 1,
+                    is_manual: 0,
+                    is_user_override: 0
+                }
+            ],
+            [
+                {
+                    resource_type: 'loras',
+                    name: 'SidecarSelected',
+                    hash: 'file:C:/models/SidecarSelected.safetensors'
+                }
+            ]
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
+
+        expect(facets.loras.find(item => item.name === 'SidecarSelected')?.thumbnailSource).toBe('sidecar');
+        expect(facets.loras.find(item => item.name === 'LibrarySelected')?.thumbnailSource).toBe('library');
+    });
+
     it('combines image-used aliases under one local-aware row', async () => {
         const db = createFacetDb(
             [

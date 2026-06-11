@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AppSettings } from '../../../types';
-import { commands, type ThumbnailScanResult } from '../../../bindings';
+import { commands, type ResourcePurgeResult, type ThumbnailScanResult } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { scanResourceThumbnails } from '../../../services/importService';
 import { refreshFacetCacheForResourcesStrict, rebuildFacetCacheIncremental } from '../../../services/db/imageRepo';
+import { isBrowserMockMode } from '../../../services/runtime';
 import { normalizePath } from '../../../utils/pathUtils';
 import { unwrap } from '../../../utils/spectaUtils';
 import {
@@ -78,6 +79,20 @@ const formatResourceScanToast = (result: ThumbnailScanResult, indexedRows: numbe
     return `Resource scan complete: ${result.found} ${resourceFileLabel(result)} found${indexedDetail}`;
 };
 
+const formatResourcePurgeToast = (result: ResourcePurgeResult): string => {
+    const details: string[] = [];
+    if (result.removedModels > 0) {
+        details.push(`${result.removedModels} local ${result.removedModels === 1 ? 'asset' : 'assets'} purged`);
+    }
+    if (result.preservedModels > 0) {
+        details.push(`${result.preservedModels} customized ${result.preservedModels === 1 ? 'asset' : 'assets'} preserved`);
+    }
+
+    return details.length > 0
+        ? `Removed resource folder: ${details.join(', ')}`
+        : 'Removed resource folder; no indexed local assets needed cleanup';
+};
+
 const formatResourceIndexMessage = (resources: TouchedFacetResources): string => {
     const keys = touchedResourceKeys(resources);
     if (keys.length === 1) {
@@ -129,8 +144,10 @@ export const useResourcesTabLogic = ({
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const [newResourcePath, setNewResourcePath] = React.useState('');
+    const [removingResourcePath, setRemovingResourcePath] = React.useState<string | null>(null);
     const [isResolveConfirmOpen, setIsResolveConfirmOpen] = React.useState(false);
     const resourceInputRef = React.useRef<HTMLInputElement>(null);
+    const removingResourcePathRef = React.useRef<string | null>(null);
 
     const {
         isResolvingModels: isResolving,
@@ -207,6 +224,8 @@ export const useResourcesTabLogic = ({
     }, [refreshResourceFacetCache]);
 
     const handleBrowseResource = React.useCallback(async () => {
+        if (removingResourcePathRef.current) return;
+
         try {
             const { open } = await import('@tauri-apps/plugin-dialog');
             const selected = await open({ directory: true, multiple: false });
@@ -220,6 +239,7 @@ export const useResourcesTabLogic = ({
 
     const handleAddResourceFolder = React.useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
+        if (removingResourcePathRef.current) return;
         if (!newResourcePath.trim()) return;
 
         const pathToAdd = normalizePath(newResourcePath.trim());
@@ -263,14 +283,49 @@ export const useResourcesTabLogic = ({
         showResourceScanComplete
     ]);
 
-    const handleRemoveResourceFolder = React.useCallback((path: string) => {
-        setSettings(prev => ({
-            ...prev,
-            resourceFolders: (prev.resourceFolders || []).filter(p => p !== path)
-        }));
-    }, [setSettings]);
+    const handleRemoveResourceFolder = React.useCallback(async (path: string) => {
+        if (isScanningDiscovery || isPopulatingThumbnails || removingResourcePathRef.current) return;
+
+        const normalizedPath = normalizePath(path);
+        const remainingPaths = (settings.resourceFolders || [])
+            .map(normalizePath)
+            .filter(configuredPath => configuredPath !== normalizedPath);
+
+        removingResourcePathRef.current = normalizedPath;
+        setRemovingResourcePath(path);
+
+        try {
+            let purgeResult: ResourcePurgeResult | null = null;
+            if (!isBrowserMockMode()) {
+                purgeResult = await unwrap(commands.purgeResourceFolderAssets(path, remainingPaths));
+                incrementFacetCacheVersion();
+            }
+
+            setSettings(prev => ({
+                ...prev,
+                resourceFolders: (prev.resourceFolders || []).filter(
+                    configuredPath => normalizePath(configuredPath) !== normalizedPath
+                )
+            }));
+            addToast(purgeResult ? formatResourcePurgeToast(purgeResult) : 'Removed resource folder', 'success');
+        } catch (error) {
+            console.error('Failed to remove resource folder', error);
+            addToast('Failed to remove resource folder', 'error');
+        } finally {
+            removingResourcePathRef.current = null;
+            setRemovingResourcePath(null);
+        }
+    }, [
+        addToast,
+        incrementFacetCacheVersion,
+        isPopulatingThumbnails,
+        isScanningDiscovery,
+        setSettings,
+        settings.resourceFolders
+    ]);
 
     const handleScanNow = React.useCallback(async () => {
+        if (removingResourcePathRef.current) return;
         if (!settings.resourceFolders?.length) return;
         setIsScanningDiscovery(true);
         try {
@@ -394,6 +449,7 @@ export const useResourcesTabLogic = ({
         isScanningDiscovery,
         discoveryScanProgress,
         isPopulatingThumbnails,
+        removingResourcePath,
         newResourcePath,
         setNewResourcePath,
         resourceInputRef,

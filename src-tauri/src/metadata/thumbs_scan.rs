@@ -1,8 +1,9 @@
-use crate::db::facets::FacetResourceTouches;
+use crate::db::facets::{refresh_live_facet_resources_in_transaction, FacetResourceTouches};
 use crate::db::resolve_db_path;
 use crate::metadata::models::{ModelDiscoveryState, ThumbnailScanResult};
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -80,6 +81,17 @@ struct ModelRegistrationOutcome {
     cached: bool,
     registered_models: usize,
     filename: String,
+    hash: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourcePurgeResult {
+    pub removed_models: usize,
+    pub preserved_models: usize,
+    pub removed_scanned_files: usize,
+    pub refreshed_facets: usize,
+    pub resources: FacetResourceTouches,
 }
 
 fn file_size_and_modified(path: &Path) -> (i64, i64) {
@@ -143,8 +155,18 @@ fn register_discovered_model_file(
         .execute(
             "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename, resource_type = excluded.resource_type WHERE filename IS NULL OR filename = ''",
-            params![hash, stem, filename, "disk_scan", now, resource_type],
+             ON CONFLICT(hash) DO UPDATE SET
+                filename = CASE
+                    WHEN models.filename IS NULL OR models.filename = '' THEN excluded.filename
+                    ELSE models.filename
+                END,
+                lookup_source = excluded.lookup_source,
+                scanned_at = excluded.scanned_at,
+                resource_type = excluded.resource_type
+             WHERE models.lookup_source != 'disk_scan'
+                OR models.filename IS NULL
+                OR models.filename = ''",
+            params![&hash, stem, filename, "disk_scan", now, resource_type],
         )
         .map_err(|e| e.to_string())?;
 
@@ -152,6 +174,7 @@ fn register_discovered_model_file(
         cached,
         registered_models,
         filename,
+        hash,
     })
 }
 
@@ -257,6 +280,269 @@ fn touch_resource(resources: &mut FacetResourceTouches, resource_type: &str, nam
         "ip_adapters" => push_unique_resource_name(&mut resources.ip_adapters, name),
         _ => {}
     }
+}
+
+fn normalize_scan_path(value: &str) -> String {
+    let normalized = value
+        .trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_string();
+
+    if cfg!(windows) {
+        normalized.to_lowercase()
+    } else {
+        normalized
+    }
+}
+
+fn is_same_or_child_path(path: &str, folder: &str) -> bool {
+    let path = normalize_scan_path(path);
+    let folder = normalize_scan_path(folder);
+    if path.is_empty() || folder.is_empty() {
+        return false;
+    }
+
+    path == folder
+        || path
+            .strip_prefix(&folder)
+            .map(|rest| rest.starts_with('/'))
+            .unwrap_or(false)
+}
+
+fn file_hash_path(hash: &str) -> Option<&str> {
+    hash.strip_prefix("file:")
+}
+
+fn link_sidecar_thumbnail_for_model(
+    conn: &Connection,
+    model_path: &str,
+    model_hash: &str,
+    images: &HashSet<String>,
+) -> Result<bool, String> {
+    let model_path_buf = std::path::PathBuf::from(model_path);
+
+    let parent = match model_path_buf.parent() {
+        Some(p) => p,
+        None => return Ok(false),
+    };
+
+    let stem = match model_path_buf.file_stem().and_then(|s| s.to_str()) {
+        Some(s) => s,
+        None => return Ok(false),
+    };
+
+    let filename = match model_path_buf.file_name().and_then(|s| s.to_str()) {
+        Some(n) => n,
+        None => return Ok(false),
+    };
+
+    let candidates = [
+        format!("{}.preview.png", stem),
+        format!("{}.preview.jpg", stem),
+        format!("{}.preview.webp", stem),
+        format!("{}.png", stem),
+        format!("{}.jpg", stem),
+        format!("{}.webp", stem),
+        format!("{}.jpeg", stem),
+        format!("{}.png", filename),
+        format!("{}.jpg", filename),
+        format!("{}.webp", filename),
+    ];
+
+    for cand_name in candidates {
+        let candidate_path = parent.join(&cand_name).to_string_lossy().to_string();
+        if images.contains(&candidate_path) {
+            let rows = conn
+                .execute(
+                    "UPDATE models
+                     SET sidecar_thumbnail_path = ?1
+                     WHERE hash = ?2
+                       AND (sidecar_thumbnail_path IS NULL OR sidecar_thumbnail_path = '')",
+                    params![candidate_path, model_hash],
+                )
+                .map_err(|e| e.to_string())?;
+            return Ok(rows > 0);
+        }
+    }
+
+    Ok(false)
+}
+
+fn purge_resource_folder_assets_inner(
+    conn: &mut Connection,
+    folder_path: &str,
+    remaining_paths: &[String],
+) -> Result<ResourcePurgeResult, String> {
+    purge_resource_folder_assets_with_refresh(
+        conn,
+        folder_path,
+        remaining_paths,
+        refresh_live_facet_resources_in_transaction,
+    )
+}
+
+fn purge_resource_folder_assets_with_refresh<F>(
+    conn: &mut Connection,
+    folder_path: &str,
+    remaining_paths: &[String],
+    refresh_facets: F,
+) -> Result<ResourcePurgeResult, String>
+where
+    F: FnOnce(&Connection, &FacetResourceTouches) -> Result<usize, String>,
+{
+    if normalize_scan_path(folder_path).is_empty() {
+        return Err("Resource folder path is required".to_string());
+    }
+
+    let remaining_paths: Vec<&str> = remaining_paths
+        .iter()
+        .map(String::as_str)
+        .filter(|path| !normalize_scan_path(path).is_empty())
+        .collect();
+    let is_covered_by_remaining_path = |path: &str| {
+        remaining_paths
+            .iter()
+            .any(|folder| is_same_or_child_path(path, folder))
+    };
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut resources = FacetResourceTouches::default();
+    let mut model_candidates = Vec::new();
+
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT hash, name, resource_type, thumbnail_path, thumbnail_mode,
+                        thumbnail_sensitivity_override
+                 FROM models
+                 WHERE lookup_source = 'disk_scan'
+                   AND hash LIKE 'file:%'",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (hash, name, resource_type, thumbnail_path, thumbnail_mode, sensitivity_override) =
+                row.map_err(|e| e.to_string())?;
+            let Some(path) = file_hash_path(&hash) else {
+                continue;
+            };
+            if !is_same_or_child_path(path, folder_path) || is_covered_by_remaining_path(path) {
+                continue;
+            }
+
+            let path_buf = Path::new(path);
+            let fallback_name = path_buf.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let resource_name = name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(fallback_name);
+            let resource_type = resource_type
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| resource_type_for_model_path(path));
+            touch_resource(&mut resources, resource_type, resource_name);
+            let has_thumbnail_override = thumbnail_path
+                .as_deref()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false);
+            let uses_dynamic_thumbnail = thumbnail_mode.as_deref() == Some("dynamic");
+            let preserved_source = if has_thumbnail_override || uses_dynamic_thumbnail {
+                Some("manual_thumbnail")
+            } else if sensitivity_override.is_some() {
+                Some("manual_thumbnail_privacy")
+            } else {
+                None
+            };
+            model_candidates.push((hash, preserved_source));
+        }
+    }
+
+    let mut scanned_file_paths = Vec::new();
+    {
+        let mut stmt = tx
+            .prepare("SELECT DISTINCT path FROM scanned_files")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let path = row.map_err(|e| e.to_string())?;
+            if is_same_or_child_path(&path, folder_path) && !is_covered_by_remaining_path(&path) {
+                scanned_file_paths.push(path);
+            }
+        }
+    }
+
+    let mut removed_models = 0;
+    let mut preserved_models = 0;
+    for (hash, preserved_source) in model_candidates {
+        if let Some(lookup_source) = preserved_source {
+            preserved_models += tx
+                .execute(
+                    "UPDATE models
+                     SET lookup_source = ?2, sidecar_thumbnail_path = NULL
+                     WHERE lookup_source = 'disk_scan' AND hash = ?1",
+                    params![hash, lookup_source],
+                )
+                .map_err(|e| e.to_string())?;
+        } else {
+            removed_models += tx
+                .execute(
+                    "DELETE FROM models WHERE lookup_source = 'disk_scan' AND hash = ?1",
+                    params![hash],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    let mut removed_scanned_files = 0;
+    for path in scanned_file_paths {
+        removed_scanned_files += tx
+            .execute("DELETE FROM scanned_files WHERE path = ?1", params![path])
+            .map_err(|e| e.to_string())?;
+    }
+    let refreshed_facets = refresh_facets(&tx, &resources)?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(ResourcePurgeResult {
+        removed_models,
+        preserved_models,
+        removed_scanned_files,
+        refreshed_facets,
+        resources,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn purge_resource_folder_assets(
+    app: tauri::AppHandle,
+    path: String,
+    remaining_paths: Vec<String>,
+) -> Result<ResourcePurgeResult, String> {
+    let db_path = resolve_db_path(&app)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
+        purge_resource_folder_assets_inner(&mut conn, &path, &remaining_paths)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -396,6 +682,7 @@ pub async fn scan_model_thumbnails(
     let mut cached_files = 0;
     let mut new_or_changed_files = 0;
     let mut registered_models = 0;
+    let mut registered_hashes: HashMap<String, String> = HashMap::new();
 
     {
         emit_progress(
@@ -448,6 +735,7 @@ pub async fn scan_model_thumbnails(
                 new_or_changed_files += 1;
             }
             registered_models += outcome.registered_models;
+            registered_hashes.insert(model_path.to_string(), outcome.hash.clone());
 
             if last_emit.elapsed().as_millis() > 200 || i == models_found.len() - 1 {
                 if state.is_cancelled.load(Ordering::SeqCst) {
@@ -482,57 +770,16 @@ pub async fn scan_model_thumbnails(
             ),
         );
 
-        let mut update_stmt = conn.prepare_cached(
-            "UPDATE models SET sidecar_thumbnail_path = ?1 WHERE (filename = ?2 COLLATE NOCASE OR name = ?3 COLLATE NOCASE OR name = ?4 COLLATE NOCASE) AND (sidecar_thumbnail_path IS NULL OR sidecar_thumbnail_path = '')"
-        ).map_err(|e| e.to_string())?;
-
         for (i, model_path) in models_found.iter().enumerate() {
-            let model_path_buf = std::path::PathBuf::from(&model_path);
-
-            let parent = match model_path_buf.parent() {
-                Some(p) => p,
-                None => continue,
-            };
-
-            let stem = match model_path_buf.file_stem().and_then(|s| s.to_str()) {
-                Some(s) => s,
-                None => continue,
-            };
-
+            let model_path_buf = Path::new(model_path);
             let filename = match model_path_buf.file_name().and_then(|s| s.to_str()) {
-                Some(n) => n,
-                None => continue,
+                Some(n) => n.to_string(),
+                None => model_path.to_string(),
             };
 
-            let candidates = [
-                format!("{}.preview.png", stem),
-                format!("{}.preview.jpg", stem),
-                format!("{}.preview.webp", stem),
-                format!("{}.png", stem),
-                format!("{}.jpg", stem),
-                format!("{}.webp", stem),
-                format!("{}.jpeg", stem),
-                format!("{}.png", filename),
-                format!("{}.jpg", filename),
-                format!("{}.webp", filename),
-            ];
-
-            let mut best_thumb: Option<String> = None;
-
-            for cand_name in candidates {
-                let candidate_path = parent.join(&cand_name).to_string_lossy().to_string();
-                if images_map.contains(&candidate_path) {
-                    best_thumb = Some(candidate_path);
-                    break;
-                }
-            }
-
-            if let Some(thumb_path) = best_thumb {
-                if let Ok(rows) = update_stmt.execute(params![thumb_path, filename, stem, filename])
-                {
-                    if rows > 0 {
-                        updated_count += 1;
-                    }
+            if let Some(hash) = registered_hashes.get(model_path) {
+                if link_sidecar_thumbnail_for_model(&conn, model_path, hash, &images_map)? {
+                    updated_count += 1;
                 }
             }
 
@@ -754,7 +1001,11 @@ mod tests {
                 filename TEXT,
                 lookup_source TEXT,
                 scanned_at INTEGER,
-                resource_type TEXT
+                resource_type TEXT,
+                sidecar_thumbnail_path TEXT,
+                thumbnail_path TEXT,
+                thumbnail_mode TEXT,
+                thumbnail_sensitivity_override INTEGER
             )",
             [],
         )
@@ -762,6 +1013,35 @@ mod tests {
         conn.execute("CREATE TABLE images (metadata_json TEXT)", [])
             .unwrap();
         conn
+    }
+
+    fn insert_test_model(
+        conn: &Connection,
+        hash: &str,
+        name: &str,
+        lookup_source: &str,
+        resource_type: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
+             VALUES (?1, ?2, ?3, ?4, 100, ?5)",
+            params![
+                hash,
+                name,
+                format!("{name}.safetensors"),
+                lookup_source,
+                resource_type
+            ],
+        )
+        .unwrap();
+    }
+
+    fn insert_test_scanned_file(conn: &Connection, path: &str, hash: &str) {
+        conn.execute(
+            "INSERT INTO scanned_files (path, size, modified, hash) VALUES (?1, 10, 20, ?2)",
+            params![path, hash],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -910,6 +1190,372 @@ mod tests {
         assert_eq!(disk_rows, 1);
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn purge_resource_folder_assets_removes_only_disk_scan_rows_inside_folder() {
+        let mut conn = registration_test_conn();
+        let inside_path = "C:/AI/models/loras/Foo.safetensors";
+        let sibling_path = "C:/AI/models/loras-old/Bar.safetensors";
+        let manual_path = "C:/AI/models/loras/Manual.safetensors";
+
+        insert_test_model(
+            &conn,
+            &format!("file:{inside_path}"),
+            "Foo",
+            "disk_scan",
+            "loras",
+        );
+        insert_test_model(
+            &conn,
+            &format!("file:{sibling_path}"),
+            "Bar",
+            "disk_scan",
+            "loras",
+        );
+        insert_test_model(
+            &conn,
+            &format!("file:{manual_path}"),
+            "Manual",
+            "manual_thumbnail",
+            "loras",
+        );
+        insert_test_scanned_file(&conn, inside_path, &format!("file:{inside_path}"));
+        insert_test_scanned_file(&conn, sibling_path, &format!("file:{sibling_path}"));
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, _| Ok(1),
+        )
+        .unwrap();
+
+        assert_eq!(result.removed_models, 1);
+        assert_eq!(result.preserved_models, 0);
+        assert_eq!(result.removed_scanned_files, 1);
+        assert_eq!(result.refreshed_facets, 1);
+        assert_eq!(result.resources.loras, vec!["Foo"]);
+
+        let remaining_models: i64 = conn
+            .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
+            .unwrap();
+        let remaining_scanned_files: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scanned_files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining_models, 2);
+        assert_eq!(remaining_scanned_files, 1);
+
+        let manual_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM models WHERE name = 'Manual'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(manual_exists, 1);
+    }
+
+    #[test]
+    fn purge_resource_folder_assets_returns_touched_resources_by_type() {
+        let mut conn = registration_test_conn();
+        let rows = [
+            (
+                "C:/AI/models/checkpoints/Pony.safetensors",
+                "Pony",
+                "checkpoint",
+            ),
+            (
+                "C:/AI/models/controlnet/Canny.safetensors",
+                "Canny",
+                "control_nets",
+            ),
+            ("C:/AI/models/ipadapter/FaceID.bin", "FaceID", "ip_adapters"),
+        ];
+
+        for (path, name, resource_type) in rows {
+            insert_test_model(
+                &conn,
+                &format!("file:{path}"),
+                name,
+                "disk_scan",
+                resource_type,
+            );
+        }
+
+        let result =
+            purge_resource_folder_assets_with_refresh(&mut conn, "C:/AI/models", &[], |_, _| Ok(3))
+                .unwrap();
+
+        assert_eq!(result.removed_models, 3);
+        assert_eq!(result.refreshed_facets, 3);
+        assert_eq!(result.resources.checkpoints, vec!["Pony"]);
+        assert_eq!(result.resources.control_nets, vec!["Canny"]);
+        assert_eq!(result.resources.ip_adapters, vec!["FaceID"]);
+    }
+
+    #[test]
+    fn purge_preserves_assets_covered_by_remaining_child_folder() {
+        let mut conn = registration_test_conn();
+        let lora_path = "C:/AI/models/loras/Foo.safetensors";
+        let checkpoint_path = "C:/AI/models/checkpoints/Bar.safetensors";
+
+        insert_test_model(
+            &conn,
+            &format!("file:{lora_path}"),
+            "Foo",
+            "disk_scan",
+            "loras",
+        );
+        insert_test_model(
+            &conn,
+            &format!("file:{checkpoint_path}"),
+            "Bar",
+            "disk_scan",
+            "checkpoint",
+        );
+        insert_test_scanned_file(&conn, lora_path, &format!("file:{lora_path}"));
+        insert_test_scanned_file(&conn, checkpoint_path, &format!("file:{checkpoint_path}"));
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models",
+            &["C:/AI/models/loras".to_string()],
+            |_, _| Ok(1),
+        )
+        .unwrap();
+
+        assert_eq!(result.removed_models, 1);
+        assert_eq!(result.resources.checkpoints, vec!["Bar"]);
+        assert!(result.resources.loras.is_empty());
+        let lora_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM models WHERE hash = ?1",
+                [format!("file:{lora_path}")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(lora_exists, 1);
+    }
+
+    #[test]
+    fn purge_preserves_assets_covered_by_remaining_parent_folder() {
+        let mut conn = registration_test_conn();
+        let lora_path = "C:/AI/models/loras/Foo.safetensors";
+        insert_test_model(
+            &conn,
+            &format!("file:{lora_path}"),
+            "Foo",
+            "disk_scan",
+            "loras",
+        );
+        insert_test_scanned_file(&conn, lora_path, &format!("file:{lora_path}"));
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &["C:/AI/models".to_string()],
+            |_, _| Ok(0),
+        )
+        .unwrap();
+
+        assert_eq!(result.removed_models, 0);
+        assert_eq!(result.removed_scanned_files, 0);
+        assert!(result.resources.loras.is_empty());
+    }
+
+    #[test]
+    fn purge_preserves_manual_thumbnail_state_as_non_local_metadata() {
+        let mut conn = registration_test_conn();
+        let path = "C:/AI/models/loras/Customized.safetensors";
+        let hash = format!("file:{path}");
+        insert_test_model(&conn, &hash, "Customized", "disk_scan", "loras");
+        insert_test_scanned_file(&conn, path, &hash);
+        conn.execute(
+            "UPDATE models
+             SET thumbnail_path = 'C:/thumbs/custom.webp',
+                 thumbnail_sensitivity_override = 1,
+                 sidecar_thumbnail_path = 'C:/AI/models/loras/Customized.preview.png'
+             WHERE hash = ?1",
+            [&hash],
+        )
+        .unwrap();
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, _| Ok(1),
+        )
+        .unwrap();
+
+        assert_eq!(result.removed_models, 0);
+        assert_eq!(result.preserved_models, 1);
+        assert_eq!(result.removed_scanned_files, 1);
+        let preserved: (String, Option<String>, Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT lookup_source, thumbnail_path, sidecar_thumbnail_path,
+                        thumbnail_sensitivity_override
+                 FROM models WHERE hash = ?1",
+                [&hash],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(preserved.0, "manual_thumbnail");
+        assert_eq!(preserved.1.as_deref(), Some("C:/thumbs/custom.webp"));
+        assert_eq!(preserved.2, None);
+        assert_eq!(preserved.3, Some(1));
+    }
+
+    #[test]
+    fn purge_preserves_dynamic_and_privacy_only_customizations() {
+        let mut conn = registration_test_conn();
+        let dynamic_path = "C:/AI/models/loras/Dynamic.safetensors";
+        let privacy_path = "C:/AI/models/loras/Private.safetensors";
+        let dynamic_hash = format!("file:{dynamic_path}");
+        let privacy_hash = format!("file:{privacy_path}");
+        insert_test_model(&conn, &dynamic_hash, "Dynamic", "disk_scan", "loras");
+        insert_test_model(&conn, &privacy_hash, "Private", "disk_scan", "loras");
+        insert_test_scanned_file(&conn, dynamic_path, &dynamic_hash);
+        insert_test_scanned_file(&conn, privacy_path, &privacy_hash);
+        conn.execute(
+            "UPDATE models SET thumbnail_mode = 'dynamic' WHERE hash = ?1",
+            [&dynamic_hash],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE models SET thumbnail_sensitivity_override = 0 WHERE hash = ?1",
+            [&privacy_hash],
+        )
+        .unwrap();
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, _| Ok(1),
+        )
+        .unwrap();
+
+        assert_eq!(result.removed_models, 0);
+        assert_eq!(result.preserved_models, 2);
+        let dynamic_source: String = conn
+            .query_row(
+                "SELECT lookup_source FROM models WHERE hash = ?1",
+                [&dynamic_hash],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let privacy_source: String = conn
+            .query_row(
+                "SELECT lookup_source FROM models WHERE hash = ?1",
+                [&privacy_hash],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(dynamic_source, "manual_thumbnail");
+        assert_eq!(privacy_source, "manual_thumbnail_privacy");
+    }
+
+    #[test]
+    fn rediscovery_restores_preserved_model_as_local_without_losing_customization() {
+        let root = temp_resource_dir("rediscover_customized");
+        let lora_dir = root.join("loras");
+        fs::create_dir_all(&lora_dir).unwrap();
+        let model_path = lora_dir.join("Customized.safetensors");
+        fs::write(&model_path, b"model").unwrap();
+        let model_path = model_path.to_string_lossy().to_string();
+        let hash = format!("file:{model_path}");
+        let conn = registration_test_conn();
+        insert_test_model(&conn, &hash, "Customized", "manual_thumbnail", "loras");
+        conn.execute(
+            "UPDATE models SET thumbnail_path = 'C:/thumbs/custom.webp' WHERE hash = ?1",
+            [&hash],
+        )
+        .unwrap();
+        let mut resources = FacetResourceTouches::default();
+
+        register_discovered_model_file(&conn, &model_path, 200, &mut resources).unwrap();
+
+        let restored: (String, Option<String>) = conn
+            .query_row(
+                "SELECT lookup_source, thumbnail_path FROM models WHERE hash = ?1",
+                [&hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(restored.0, "disk_scan");
+        assert_eq!(restored.1.as_deref(), Some("C:/thumbs/custom.webp"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn purge_rolls_back_when_facet_refresh_fails() {
+        let mut conn = registration_test_conn();
+        let path = "C:/AI/models/loras/Foo.safetensors";
+        let hash = format!("file:{path}");
+        insert_test_model(&conn, &hash, "Foo", "disk_scan", "loras");
+        insert_test_scanned_file(&conn, path, &hash);
+
+        let result = purge_resource_folder_assets_with_refresh(
+            &mut conn,
+            "C:/AI/models/loras",
+            &[],
+            |_, _| Err("forced refresh failure".to_string()),
+        );
+
+        assert_eq!(result.unwrap_err(), "forced refresh failure");
+        let model_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
+            .unwrap();
+        let scanned_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scanned_files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(model_count, 1);
+        assert_eq!(scanned_count, 1);
+    }
+
+    #[test]
+    fn sidecar_linking_updates_only_exact_discovered_hash() {
+        let conn = registration_test_conn();
+        let first_path = "C:/AI/models/loras/Duplicate.safetensors";
+        let second_path = "D:/Archive/loras/Duplicate.safetensors";
+        let first_hash = format!("file:{first_path}");
+        let second_hash = format!("file:{second_path}");
+        let first_thumb = Path::new(first_path)
+            .parent()
+            .unwrap()
+            .join("Duplicate.preview.png")
+            .to_string_lossy()
+            .to_string();
+        let mut images = HashSet::new();
+        images.insert(first_thumb.clone());
+
+        insert_test_model(&conn, &first_hash, "Duplicate", "disk_scan", "loras");
+        insert_test_model(&conn, &second_hash, "Duplicate", "disk_scan", "loras");
+
+        let linked =
+            link_sidecar_thumbnail_for_model(&conn, first_path, &first_hash, &images).unwrap();
+
+        assert!(linked);
+        let first_sidecar: Option<String> = conn
+            .query_row(
+                "SELECT sidecar_thumbnail_path FROM models WHERE hash = ?1",
+                params![first_hash],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let second_sidecar: Option<String> = conn
+            .query_row(
+                "SELECT sidecar_thumbnail_path FROM models WHERE hash = ?1",
+                params![second_hash],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(first_sidecar.as_deref(), Some(first_thumb.as_str()));
+        assert_eq!(second_sidecar, None);
     }
 
     #[test]

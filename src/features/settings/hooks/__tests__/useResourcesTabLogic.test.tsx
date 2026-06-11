@@ -47,6 +47,7 @@ vi.mock('../../../../bindings', () => ({
     commands: {
         resolveHashesOnline: vi.fn(),
         cancelModelResolution: vi.fn().mockResolvedValue(undefined),
+        purgeResourceFolderAssets: vi.fn(),
     },
 }));
 
@@ -107,6 +108,14 @@ const finishResourceScanTimer = async (promise: Promise<void>) => {
     await promise;
 };
 
+const createDeferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(promiseResolve => {
+        resolve = promiseResolve;
+    });
+    return { promise, resolve };
+};
+
 describe('useResourcesTabLogic', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -115,6 +124,16 @@ describe('useResourcesTabLogic', () => {
         refreshFacetCacheForResourcesStrictMock.mockResolvedValue(2);
         rebuildFacetCacheIncrementalMock.mockResolvedValue(2);
         vi.mocked(commands.resolveHashesOnline).mockResolvedValue({ status: 'ok', data: resolutionResult });
+        vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValue({
+            status: 'ok',
+            data: {
+                removedModels: 0,
+                preservedModels: 0,
+                removedScannedFiles: 0,
+                refreshedFacets: 0,
+                resources: emptyResources
+            }
+        });
         libraryContextState.isResolvingModels = false;
         libraryContextState.modelResolutionProgress = null;
         libraryContextState.lastModelResolutionResult = null;
@@ -245,6 +264,135 @@ describe('useResourcesTabLogic', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('purges only assets not covered by remaining resource folders before removing the path', async () => {
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/models', 'D:/AI/models/loras'],
+        };
+        vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                removedModels: 2,
+                preservedModels: 1,
+                removedScannedFiles: 2,
+                refreshedFacets: 2,
+                resources: {
+                    ...emptyResources,
+                    checkpoints: ['FalsePositive']
+                }
+            }
+        });
+        const { result, setSettings } = renderResourcesHook(settings);
+
+        await act(async () => {
+            await result.current.handleRemoveResourceFolder('D:/AI/models');
+        });
+
+        expect(commands.purgeResourceFolderAssets).toHaveBeenCalledWith(
+            'D:/AI/models',
+            ['D:/AI/models/loras']
+        );
+        expect(refreshFacetCacheForResourcesStrictMock).not.toHaveBeenCalled();
+        const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
+        expect(updateSettings(settings).resourceFolders).toEqual(['D:/AI/models/loras']);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(addToastMock).toHaveBeenCalledWith(
+            'Removed resource folder: 2 local assets purged, 1 customized asset preserved',
+            'success'
+        );
+    });
+
+    it('keeps the resource folder and facet version unchanged when atomic purge fails', async () => {
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/models'],
+        };
+        vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
+            status: 'error',
+            error: 'facet refresh failed'
+        });
+        const { result, setSettings } = renderResourcesHook(settings);
+
+        await act(async () => {
+            await result.current.handleRemoveResourceFolder('D:/AI/models');
+        });
+
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(0);
+        expect(result.current.removingResourcePath).toBeNull();
+        expect(addToastMock).toHaveBeenCalledWith('Failed to remove resource folder', 'error');
+    });
+
+    it('serializes resource cleanup and blocks discovery actions until purge completes', async () => {
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/models', 'D:/AI/models/loras'],
+        };
+        const purge = createDeferred<Awaited<ReturnType<typeof commands.purgeResourceFolderAssets>>>();
+        vi.mocked(commands.purgeResourceFolderAssets).mockReturnValueOnce(purge.promise);
+        const { result, setSettings } = renderResourcesHook(settings);
+
+        act(() => {
+            result.current.setNewResourcePath('D:/AI/models/checkpoints');
+        });
+
+        let removalPromise!: Promise<void>;
+        await act(async () => {
+            removalPromise = result.current.handleRemoveResourceFolder('D:/AI/models');
+            await Promise.resolve();
+        });
+
+        expect(result.current.removingResourcePath).toBe('D:/AI/models');
+
+        await act(async () => {
+            await result.current.handleBrowseResource();
+            await result.current.handleAddResourceFolder({
+                preventDefault: vi.fn(),
+            } as unknown as React.FormEvent);
+            await result.current.handleScanNow();
+            await result.current.handleRemoveResourceFolder('D:/AI/models/loras');
+        });
+
+        expect(openMock).not.toHaveBeenCalled();
+        expect(scanResourceThumbnailsMock).not.toHaveBeenCalled();
+        expect(commands.purgeResourceFolderAssets).toHaveBeenCalledTimes(1);
+        expect(setSettings).not.toHaveBeenCalled();
+
+        await act(async () => {
+            purge.resolve({
+                status: 'ok',
+                data: {
+                    removedModels: 1,
+                    preservedModels: 0,
+                    removedScannedFiles: 1,
+                    refreshedFacets: 1,
+                    resources: emptyResources
+                }
+            });
+            await removalPromise;
+        });
+
+        expect(result.current.removingResourcePath).toBeNull();
+        expect(setSettings).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+    });
+
+    it('does not start folder removal while resource discovery is busy', async () => {
+        useLibraryStore.setState({ isScanningDiscovery: true });
+        const settings = {
+            ...baseSettings,
+            resourceFolders: ['D:/AI/models'],
+        };
+        const { result, setSettings } = renderResourcesHook(settings);
+
+        await act(async () => {
+            await result.current.handleRemoveResourceFolder('D:/AI/models');
+        });
+
+        expect(commands.purgeResourceFolderAssets).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
     });
 
     it('keeps Resolve Online behind confirmation before calling CivitAI lookup', async () => {

@@ -201,8 +201,10 @@ describe('ResourceSection asset scope filtering', () => {
         renderScopedSection({ assetScope: 'local' });
 
         expect(screen.getByText('UnusedLocal')).toBeTruthy();
-        expect(screen.getByText('Unused')).toBeTruthy();
+        expect(screen.queryByText('Unused', { exact: true })).toBeNull();
+        expect(screen.getByLabelText('Unused: local asset has no matching library images.')).toBeTruthy();
         expect(screen.getByText('UsedLocal')).toBeTruthy();
+        expect(screen.getByLabelText('Local asset on disk')).toBeTruthy();
         expect(screen.queryByText('HarvestedOnly')).toBeNull();
     });
 
@@ -284,6 +286,58 @@ describe('ResourceSection asset scope filtering', () => {
         );
 
         expect(screen.getByText('Detailer-Style')).toBeTruthy();
+    });
+
+    it('explains sidecar previews on unused local asset badges', () => {
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'SidecarOnly',
+                    hash: 'file:C:/models/SidecarOnly.safetensors',
+                    count: 0,
+                    isLocalDisk: true,
+                    thumbnailPath: 'sidecar.webp',
+                    hasSidecar: 1,
+                    thumbnailSource: 'sidecar'
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope="local"
+            />
+        );
+
+        expect(screen.getByLabelText('Unused: local asset has no matching library images. Preview from sidecar image.')).toBeTruthy();
+    });
+
+    it('does not describe an available sidecar when a manual preview is displayed', () => {
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'ManualPreview',
+                    hash: 'file:C:/models/ManualPreview.safetensors',
+                    count: 0,
+                    isLocalDisk: true,
+                    thumbnailPath: 'manual.webp',
+                    hasSidecar: 1,
+                    isUserOverride: 1,
+                    thumbnailSource: 'manual'
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope="local"
+            />
+        );
+
+        expect(screen.getByLabelText('Unused: local asset has no matching library images.')).toBeTruthy();
+        expect(screen.queryByLabelText(/Preview from sidecar image/)).toBeNull();
     });
 });
 

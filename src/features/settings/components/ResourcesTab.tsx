@@ -16,6 +16,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
         isScanningDiscovery,
         discoveryScanProgress,
         isPopulatingThumbnails,
+        removingResourcePath,
         newResourcePath,
         setNewResourcePath,
         resourceInputRef,
@@ -42,6 +43,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                 isScanning={isScanningDiscovery}
                 scanProgress={discoveryScanProgress ?? undefined}
                 isPopulatingThumbnails={isPopulatingThumbnails}
+                removingResourcePath={removingResourcePath}
                 newResourcePath={newResourcePath}
                 setNewResourcePath={setNewResourcePath}
                 onBrowse={handleBrowseResource}
