@@ -1,6 +1,6 @@
-use super::{ProgressPayload, configure_connection, resolve_db_path};
+use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
-use rusqlite::{OptionalExtension, params, types::Value};
+use rusqlite::{params, types::Value, OptionalExtension};
 use std::collections::BTreeSet;
 use std::time::Instant;
 use tauri::Emitter;
@@ -1126,6 +1126,40 @@ where
     }
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let refreshed = refresh_live_facet_resources_in_transaction_with_progress(
+        &tx,
+        touches,
+        &mut emit_progress,
+    )?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    if total > 0 {
+        emit_progress(resource_index_progress_payload(
+            total, total, message, refreshed,
+        ));
+    }
+
+    Ok(refreshed)
+}
+
+pub(crate) fn refresh_live_facet_resources_in_transaction(
+    conn: &rusqlite::Connection,
+    touches: &FacetResourceTouches,
+) -> Result<usize, String> {
+    refresh_live_facet_resources_in_transaction_with_progress(conn, touches, &mut |_| {})
+}
+
+fn refresh_live_facet_resources_in_transaction_with_progress<F>(
+    conn: &rusqlite::Connection,
+    touches: &FacetResourceTouches,
+    emit_progress: &mut F,
+) -> Result<usize, String>
+where
+    F: FnMut(ResourceIndexProgressPayload),
+{
+    let items = collect_resource_refresh_items(touches);
+    let total = items.len();
+    let message = resource_index_message(&items);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1135,11 +1169,11 @@ where
 
     for (index, item) in items.iter().enumerate() {
         let did_refresh = match item.kind {
-            ResourceIndexKind::Checkpoints => refresh_checkpoint_facet(&tx, &item.name)?,
-            ResourceIndexKind::Tools => refresh_tool_facet(&tx, &item.name)?,
+            ResourceIndexKind::Checkpoints => refresh_checkpoint_facet(conn, &item.name)?,
+            ResourceIndexKind::Tools => refresh_tool_facet(conn, &item.name)?,
             _ => {
                 let config = resource_config(item.kind.facet_type())?;
-                refresh_resource_facet(&tx, config, &item.name, now)?
+                refresh_resource_facet(conn, config, &item.name, now)?
             }
         };
 
@@ -1156,14 +1190,6 @@ where
             ));
             last_progress_emit = Instant::now();
         }
-    }
-
-    tx.commit().map_err(|e| e.to_string())?;
-
-    if total > 0 {
-        emit_progress(resource_index_progress_payload(
-            total, total, message, refreshed,
-        ));
     }
 
     Ok(refreshed)

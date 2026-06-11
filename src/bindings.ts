@@ -462,6 +462,14 @@ async scanModelThumbnails(paths: string[]) : Promise<Result<ThumbnailScanResult,
     else return { status: "error", error: e  as any };
 }
 },
+async purgeResourceFolderAssets(path: string, remainingPaths: string[]) : Promise<Result<ResourcePurgeResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("purge_resource_folder_assets", { path, remainingPaths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setModelThumbnail(modelHash: string, modelName: string | null, imagePath: string, resourceType: string | null) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_model_thumbnail", { modelHash, modelName, imagePath, resourceType }) };
@@ -573,6 +581,7 @@ export type ReparseBatchResult = { processed: number; updated: number; errors: n
  */
 export type ReparseJobResult = { processed: number; updated: number; errors: number; wasCancelled: boolean }
 export type ResolutionResult = { resolvedCount: number; harvestedCount: number; failedCount: number; namedFallbackCount: number; unknownCount: number }
+export type ResourcePurgeResult = { removedModels: number; preservedModels: number; removedScannedFiles: number; refreshedFacets: number; resources: FacetResourceTouches }
 export type ScanResult = { width: number; height: number; size: number; modified: number; thumbnail: string; 
 /**
  * Base64 encoded 32px WebP micro-thumbnail for instant previews

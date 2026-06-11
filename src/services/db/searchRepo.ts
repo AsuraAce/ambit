@@ -23,6 +23,8 @@ export interface LibraryStatsSummary {
     modelStats: { name: string; fullName: string; count: number }[];
 }
 
+export type ResourceThumbnailSource = 'manual' | 'sidecar' | 'library' | 'remote';
+
 export interface FacetItem {
     name: string;
     count: number;
@@ -39,6 +41,7 @@ export interface FacetItem {
     thumbnailImageId?: string;
     thumbnailIsSensitive?: number;
     thumbnailSensitivityOverride?: number | null;
+    thumbnailSource?: ResourceThumbnailSource;
     isLocalDisk?: boolean;
     assetMatchKey?: string;
     filterAliases?: string[];
@@ -166,18 +169,33 @@ const minOptionalNumber = (a: number | undefined, b: number | undefined): number
     return Math.min(a, b);
 };
 
-const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetItem => ({
-    ...target,
-    thumbnailPath: target.thumbnailPath || source.thumbnailPath,
-    previewUrl: target.previewUrl || source.previewUrl,
-    safeThumbnailPath: target.safeThumbnailPath || source.safeThumbnailPath,
-    thumbnailImageId: target.thumbnailImageId || source.thumbnailImageId,
-    thumbnailIsSensitive: target.thumbnailIsSensitive ?? source.thumbnailIsSensitive,
-    thumbnailSensitivityOverride: target.thumbnailSensitivityOverride ?? source.thumbnailSensitivityOverride,
-    isManual: Math.max(target.isManual ?? 0, source.isManual ?? 0),
-    hasSidecar: Math.max(target.hasSidecar ?? 0, source.hasSidecar ?? 0),
-    isUserOverride: Math.max(target.isUserOverride ?? 0, source.isUserOverride ?? 0),
-});
+const getThumbnailSource = (row: FacetCacheRow): ResourceThumbnailSource | undefined => {
+    if (row.thumbnail_path) {
+        if (row.is_user_override === 1) return 'manual';
+        if (row.has_sidecar === 1 && row.is_manual === 1) return 'sidecar';
+        if (row.thumbnail_image_id) return 'library';
+        if (row.preview_url && row.thumbnail_path === row.preview_url) return 'remote';
+        return 'library';
+    }
+    return row.preview_url ? 'remote' : undefined;
+};
+
+const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetItem => {
+    const thumbnailOwner = target.thumbnailPath ? target : source;
+    return {
+        ...target,
+        thumbnailPath: target.thumbnailPath || source.thumbnailPath,
+        previewUrl: target.previewUrl || source.previewUrl,
+        safeThumbnailPath: thumbnailOwner.safeThumbnailPath,
+        thumbnailImageId: thumbnailOwner.thumbnailImageId,
+        thumbnailIsSensitive: thumbnailOwner.thumbnailIsSensitive,
+        thumbnailSource: thumbnailOwner.thumbnailSource,
+        thumbnailSensitivityOverride: target.thumbnailSensitivityOverride ?? source.thumbnailSensitivityOverride,
+        isManual: Math.max(target.isManual ?? 0, source.isManual ?? 0),
+        hasSidecar: Math.max(target.hasSidecar ?? 0, source.hasSidecar ?? 0),
+        isUserOverride: Math.max(target.isUserOverride ?? 0, source.isUserOverride ?? 0),
+    };
+};
 
 const mergeFacetItem = (group: FacetMergeGroup, candidate: FacetItem): void => {
     group.usedAliases.add(candidate.name);
@@ -1088,6 +1106,7 @@ export const getFacets = async (
                 thumbnailImageId: row.thumbnail_image_id ?? undefined,
                 thumbnailIsSensitive: row.thumbnail_is_sensitive ?? undefined,
                 thumbnailSensitivityOverride: row.thumbnail_sensitivity_override,
+                thumbnailSource: getThumbnailSource(row),
                 isLocalDisk,
                 assetMatchKey
             };
