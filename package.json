@@ -10,10 +10,10 @@
     "type": "git",
     "url": "https://github.com/AsuraAce/ambit.git"
   },
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@11.5.3",
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=24",
+    "pnpm": ">=11"
   },
   "scripts": {
     "dev": "vite",
