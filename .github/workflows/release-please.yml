@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-please-main
@@ -19,23 +18,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Verify release automation prerequisites
+      - name: verify release automation prerequisites
         env:
-          HAS_RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
+          HAS_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
         run: |
-          if [ "${HAS_RELEASE_PLEASE_TOKEN}" != "true" ]; then
-            echo "::warning::RELEASE_PLEASE_TOKEN is not configured. Release PRs and tags created with GITHUB_TOKEN will not trigger downstream workflows."
-          else
-            echo "RELEASE_PLEASE_TOKEN detected."
+          if [ "${HAS_CLIENT_ID}" != "true" ] || [ "${HAS_PRIVATE_KEY}" != "true" ]; then
+            echo "::error::RELEASE_APP_CLIENT_ID and RELEASE_APP_PRIVATE_KEY are required."
+            exit 1
           fi
-          echo "::notice::Verify Settings > Actions > General allows GitHub Actions to create and approve pull requests."
 
-      - name: Create release PR or GitHub Release
+      - name: create release app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: create release PR or GitHub Release
         id: release
-        uses: googleapis/release-please-action@v5.0.0
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
-          # Using GITHUB_TOKEN for now. If user wants to trigger other workflows, 
-          # they should provide a PAT as RELEASE_PLEASE_TOKEN or use a GitHub App token.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}

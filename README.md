@@ -53,9 +53,9 @@ For a step-by-step product guide, see the [Ambit User Manual](docs/manual/index.
 
 Development prerequisites:
 
-*   [Node.js](https://nodejs.org/) v20 or newer
-*   [pnpm](https://pnpm.io/) v9 or newer
-*   [Rust](https://www.rust-lang.org/tools/install) stable
+*   [Node.js](https://nodejs.org/) v24 or newer
+*   [pnpm](https://pnpm.io/) v11.5.3
+*   [Rust](https://www.rust-lang.org/tools/install) v1.96.0, pinned by `rust-toolchain.toml`
 *   Optional: [VS Code](https://code.visualstudio.com/) with the Tauri extension and standard TypeScript tooling
 
 1.  Clone the repository:

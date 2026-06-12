@@ -1,3 +1,4 @@
 allowBuilds:
   '@google/genai': false
   protobufjs: false
+verifyDepsBeforeRun: false
