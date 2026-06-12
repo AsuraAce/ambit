@@ -36,7 +36,11 @@ Do not require an always-green dependency-review placeholder. Enable the real `a
 
 ## Repository Rules
 
-Configure `main` for a strict solo-maintainer workflow:
+GitHub exposes branch protection and repository rulesets for private repositories only on a paid plan. If Ambit remains private on GitHub Free, upgrade the account before treating required checks as enforced policy.
+
+The repository merge settings should allow squash merges only and automatically delete merged branches.
+
+When branch protection is available, configure `main` for a strict solo-maintainer workflow:
 
 - Require a pull request before merging, with zero required approvals.
 - Require branches to be up to date before merging.
@@ -44,7 +48,6 @@ Configure `main` for a strict solo-maintainer workflow:
 - Require conversation resolution and linear history.
 - Apply the rules to administrators and disable bypass.
 - Block force pushes and branch deletion.
-- Allow squash merges only and automatically delete merged branches.
 
 PR titles must follow Conventional Commits, for example `feat: add viewer zoom`, `fix(ui): align toolbar`, or `feat(api)!: remove legacy mode`.
 
