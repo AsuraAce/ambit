@@ -10,10 +10,10 @@
     "type": "git",
     "url": "https://github.com/AsuraAce/ambit.git"
   },
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@11.5.3",
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=24",
+    "pnpm": ">=11"
   },
   "scripts": {
     "dev": "vite",
@@ -30,6 +30,7 @@
     "bindings:generate": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings -- src/bindings.ts",
     "bindings:check": "node ./scripts/check-bindings.mjs",
     "check:versions": "node ./scripts/check-version-consistency.mjs",
+    "check:pr-title": "node ./scripts/check-pr-title.mjs",
     "typecheck": "tsc --noEmit",
     "verify:release": "pnpm run check:versions && pnpm run bindings:check && pnpm run lint && pnpm run typecheck && pnpm run build:guard && pnpm run coverage && pnpm run test:rust && pnpm run tauri:check",
     "audit:prod": "pnpm audit --prod",
@@ -37,8 +38,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "test:rust": "cd src-tauri && cross-env SKIP_TAURI_BUILD=1 cargo test --lib",
-    "coverage": "vitest run --coverage --maxWorkers=1"
+    "test:rust": "node ./scripts/test-rust.mjs",
+    "coverage": "vitest run --coverage --coverage.provider=istanbul --maxWorkers=1"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
@@ -77,9 +78,8 @@
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-istanbul": "^4.1.8",
     "autoprefixer": "^10.5.0",
-    "cross-env": "^10.1.0",
     "eslint": "^10.4.1",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.15",

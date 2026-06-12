@@ -10,9 +10,9 @@ If Ambit begins accepting outside code contributions in the future, contributor 
 
 Prerequisites:
 
-- Node.js 20 or newer
-- pnpm 9 or newer
-- Rust stable
+- Node.js 24 or newer
+- pnpm 11.5.3
+- Rust 1.96.0, pinned by `rust-toolchain.toml`
 - Tauri v2 system prerequisites for Windows desktop development
 
 Install and run:
