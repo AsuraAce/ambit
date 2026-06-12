@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.6.0](https://github.com/AsuraAce/ambit/compare/v0.5.0...v0.6.0) (2026-06-12)
+
+
+### Features
+
+* improve image viewer like and pin feedback ([#113](https://github.com/AsuraAce/ambit/issues/113)) ([2d7d0cd](https://github.com/AsuraAce/ambit/commit/2d7d0cd5ff5a80a30fe526b1b6c139106ed1c091))
+* persist dynamic collection thumbnails ([#103](https://github.com/AsuraAce/ambit/issues/103)) ([31a3bff](https://github.com/AsuraAce/ambit/commit/31a3bfffbbab9f778ed7e9ef4d4c8f780b02512f))
+* persist gallery layout mode ([#114](https://github.com/AsuraAce/ambit/issues/114)) ([4eddb72](https://github.com/AsuraAce/ambit/commit/4eddb72753adb174e7af1a9f051a94350459c306))
+* **settings:** harden production and maintenance surfaces ([#128](https://github.com/AsuraAce/ambit/issues/128)) ([9396371](https://github.com/AsuraAce/ambit/commit/9396371f1a23212a3eed6ca79e505f1993c52a2e))
+
+
+### Bug Fixes
+
+* clean up resource asset discovery ([#133](https://github.com/AsuraAce/ambit/issues/133)) ([b447164](https://github.com/AsuraAce/ambit/commit/b4471646bf38a52ed855af8c79dc0c2b1a91061c))
+* correct match any facet drilldown ([#127](https://github.com/AsuraAce/ambit/issues/127)) ([f361763](https://github.com/AsuraAce/ambit/commit/f3617639cf753e6362e6f377f041b59f4b1f2d1f))
+* correct statistics queries and progressive loading ([#107](https://github.com/AsuraAce/ambit/issues/107)) ([68ffd72](https://github.com/AsuraAce/ambit/commit/68ffd7256b424819adca1919590fa96ce878d673))
+* **deps:** block keyring major dependabot upgrades ([#95](https://github.com/AsuraAce/ambit/issues/95)) ([7510804](https://github.com/AsuraAce/ambit/commit/75108042703faaf5ab7da58b484d221fc3ecf08c))
+* harden idle background work cleanup ([#121](https://github.com/AsuraAce/ambit/issues/121)) ([d1fdf17](https://github.com/AsuraAce/ambit/commit/d1fdf172d6d23119a1db7f41b7d12ccc79e2efdc))
+* prefer nsis updater releases ([#61](https://github.com/AsuraAce/ambit/issues/61)) ([af82669](https://github.com/AsuraAce/ambit/commit/af8266944a5fa7bfaaef53a0a671bea636141d40))
+* preserve optimistic pin cache ordering ([#115](https://github.com/AsuraAce/ambit/issues/115)) ([3941ec4](https://github.com/AsuraAce/ambit/commit/3941ec498c0031a0dd3158c69d608466d1313aa3))
+* prevent stale collection refresh overwrites ([#75](https://github.com/AsuraAce/ambit/issues/75)) ([a009fe9](https://github.com/AsuraAce/ambit/commit/a009fe97fa5d1574a795f547e33b90becf65b5bb))
+* remove ai studio project links ([#104](https://github.com/AsuraAce/ambit/issues/104)) ([bb8e2e7](https://github.com/AsuraAce/ambit/commit/bb8e2e752e37352c441c97f415ba114062979741))
+* repair InvokeAI nested image paths ([#111](https://github.com/AsuraAce/ambit/issues/111)) ([3e79241](https://github.com/AsuraAce/ambit/commit/3e792419a055bb437d0a11fbd55718df617ceab2))
+* replace readme banner asset ([#105](https://github.com/AsuraAce/ambit/issues/105)) ([93b0ab2](https://github.com/AsuraAce/ambit/commit/93b0ab27436edba9b0c50f1014dfd737f84806e2))
+* restore production app build with Tailwind v4 ([#123](https://github.com/AsuraAce/ambit/issues/123)) ([b43cb2e](https://github.com/AsuraAce/ambit/commit/b43cb2e1199e31b319670cd05b4d53881bfe5aa7))
+* restore Tailwind v4 default utilities ([#124](https://github.com/AsuraAce/ambit/issues/124)) ([7f4331d](https://github.com/AsuraAce/ambit/commit/7f4331d1343387622064737e2582d81c82f035e0))
+* simplify support modal copy ([#102](https://github.com/AsuraAce/ambit/issues/102)) ([9db16bc](https://github.com/AsuraAce/ambit/commit/9db16bcc3aa283ee04b954b076b374286e7e413f))
+* speed collection thumbnail startup ([#112](https://github.com/AsuraAce/ambit/issues/112)) ([73d8f55](https://github.com/AsuraAce/ambit/commit/73d8f556cafef3fe1e9b85ac06d3edb352ef3c28))
+* stabilize integration import cancellation ([#60](https://github.com/AsuraAce/ambit/issues/60)) ([6485503](https://github.com/AsuraAce/ambit/commit/64855036bfba2cbff7a95e52f4a1a66d36b88d4a))
+* stabilize live watch sync feedback ([#122](https://github.com/AsuraAce/ambit/issues/122)) ([ec2c84b](https://github.com/AsuraAce/ambit/commit/ec2c84bcc5ec28f4ca450bc68989c4422d06dc83))
+* **timeline:** open clicked image after pin reordering ([#116](https://github.com/AsuraAce/ambit/issues/116)) ([e10f911](https://github.com/AsuraAce/ambit/commit/e10f911c2008f3fb2c65f97b262b3f25c4c2b11e))
+
 ## [0.5.0](https://github.com/AsuraAce/ambit/compare/v0.4.0...v0.5.0) (2026-05-14)
 
 
