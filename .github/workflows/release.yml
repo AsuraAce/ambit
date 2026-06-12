@@ -20,7 +20,7 @@ jobs:
         platform: [windows-latest]
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
