@@ -62,5 +62,6 @@ describe('MetadataInfoTab prompt revert control', () => {
         ));
 
         expect(screen.getByTitle('Revert all metadata to original')).not.toBeNull();
+        expect(screen.getByText('Generation Data').closest('.border')?.className).not.toContain('border-amber');
     });
 });

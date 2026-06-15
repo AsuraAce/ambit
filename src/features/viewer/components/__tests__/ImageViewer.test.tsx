@@ -121,12 +121,21 @@ describe('ImageViewer full metadata loading', () => {
     });
 
     it('keeps persisted original metadata when a lightweight image omits it after restart', async () => {
-        const originalMetadata = metadata('Original prompt');
+        const originalMetadata = {
+            ...metadata('Original prompt'),
+            seed: 42,
+            steps: 30,
+            cfg: 8,
+            sampler: 'DPM++',
+        };
         const originalChunks = { parameters: 'raw metadata' };
         const originalState = { isFavorite: false };
         mockGetImageWithFullMetadata.mockResolvedValue({
             ...lightImage,
-            metadata: metadata('Recovered prompt'),
+            metadata: {
+                ...originalMetadata,
+                positivePrompt: 'Recovered prompt',
+            },
             originalMetadata,
             originalChunks,
             originalState,
@@ -150,6 +159,12 @@ describe('ImageViewer full metadata loading', () => {
             expect(latestProps.image.originalChunks).toEqual(originalChunks);
             expect(latestProps.image.originalState).toEqual(originalState);
             expect(latestProps.image.metadata.positivePrompt).toBe('Recovered prompt');
+            expect(latestProps.image.metadata).toMatchObject({
+                seed: 42,
+                steps: 30,
+                cfg: 8,
+                sampler: 'DPM++',
+            });
         });
     });
 });
