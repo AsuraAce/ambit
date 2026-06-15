@@ -174,7 +174,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             metadata: {
                 ...fullImage.metadata,
                 ...image.metadata // Prioritize reactive metadata (e.g. recovered prompts)
-            }
+            },
+            originalMetadata: image.originalMetadata ?? fullImage.originalMetadata,
+            originalChunks: image.originalChunks ?? fullImage.originalChunks,
+            originalState: image.originalState ?? fullImage.originalState,
         } : image;
 
         if (!activeVersionId) return base;

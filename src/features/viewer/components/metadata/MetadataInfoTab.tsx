@@ -104,21 +104,12 @@ export const MetadataInfoTab = ({
             if (cur.trim() === orig.trim()) return false;
         }
 
-        console.log(`[DEBUG] isModified(${key}): true`, {
-            cur,
-            orig,
-            curType: typeof cur,
-            origType: typeof orig,
-            filename: image.filename
-        });
-
         // Final fallback: standard comparison (already checked cur === orig above)
         return true;
     };
 
     const isGenDataModified = () => {
         if (!image.originalMetadata) return false;
-        // Technical parameters only (excludes prompts)
         const keys = [
             'steps', 'cfg', 'seed', 'sampler', 'model', 'overrideModel', 'tool',
             'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale', 'hiresSteps', 'hiresUpscaler'
@@ -130,8 +121,7 @@ export const MetadataInfoTab = ({
         if (!image.originalMetadata || isLoading) return false;
         return (
             isModified('positivePrompt') ||
-            isModified('negativePrompt') ||
-            isGenDataModified()
+            isModified('negativePrompt')
         );
     };
 
