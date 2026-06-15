@@ -1,16 +1,35 @@
 import { readFile } from '@tauri-apps/plugin-fs';
 
+const getImageMimeType = (path: string): string => {
+    const extension = path.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
+    switch (extension) {
+        case 'jpg':
+        case 'jpeg':
+            return 'image/jpeg';
+        case 'webp':
+            return 'image/webp';
+        case 'gif':
+            return 'image/gif';
+        case 'avif':
+            return 'image/avif';
+        default:
+            return 'image/png';
+    }
+};
+
 /**
  * Utility to convert an image path or URL to a base64 string.
  * Handles both local filesystem paths (via Tauri) and web URLs.
  */
 export const imageToBase64 = async (url: string): Promise<string> => {
+    if (url.startsWith('data:')) return url;
+
     if (!url.startsWith('http') && !url.startsWith('blob:')) {
         // Local path
         const data = await readFile(url);
         // Simple binary to base64 conversion
         const binary = Array.from(data).map(b => String.fromCharCode(b)).join('');
-        return `data:image/png;base64,${btoa(binary)}`;
+        return `data:${getImageMimeType(url)};base64,${btoa(binary)}`;
     } else {
         // Web URL or Blob URL
         const response = await fetch(url);

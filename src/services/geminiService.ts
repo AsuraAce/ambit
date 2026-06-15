@@ -284,15 +284,16 @@ export const recoverImageMetadata = async (
     // Let's use {{stylePrompt}} in the constant.
     const prompt = template.replace('{{stylePrompt}}', stylePrompt);
 
-    // Remove data:image/png;base64, prefix if present
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    const dataUrlMatch = /^data:([^;,]+);base64,(.*)$/s.exec(base64Image);
+    const mimeType = dataUrlMatch?.[1] || 'image/png';
+    const cleanBase64 = dataUrlMatch?.[2] || base64Image;
     const thinkingConfig = getGeminiThinkingConfig(modelId, thinkingMode);
 
     const response = await ai.models.generateContent({
         model: modelId,
         contents: {
             parts: [
-                { inlineData: { mimeType: 'image/png', data: cleanBase64 } },
+                { inlineData: { mimeType, data: cleanBase64 } },
                 { text: prompt }
             ]
         },
