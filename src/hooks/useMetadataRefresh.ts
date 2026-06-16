@@ -15,6 +15,8 @@ import { listenWithCleanup } from '../utils/tauriListener';
 interface RefreshProgress {
     current: number;
     total: number;
+    updated: number;
+    errors: number;
     phase: string;
     message: string;
 }
@@ -45,6 +47,9 @@ export function useMetadataRefresh() {
                 setRefreshProgress({
                     current: event.payload.current,
                     total: event.payload.total,
+                    updated: event.payload.updated,
+                    errors: event.payload.errors,
+                    phase: event.payload.phase,
                     message: event.payload.message,
                 });
             },
@@ -147,13 +152,13 @@ export function useMetadataRefresh() {
     useEffect(() => {
         if (browserMockMode) return;
 
-        // Run after a short delay to allow app to settle
+        // Run after a short delay to allow app to settle after startup maintenance.
         const timer = setTimeout(async () => {
             try {
                 const countRes = await invoke<number>('get_reparse_count');
                 if (countRes > 0) {
                     addToast(
-                        `Parser updated — re-analyzing ${countRes.toLocaleString()} images in the background`,
+                        `Parser updated - re-analyzing ${countRes.toLocaleString()} images in the background`,
                         'info'
                     );
                     startRefresh();

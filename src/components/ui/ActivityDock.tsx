@@ -51,6 +51,29 @@ const splitDetailItems = (detail?: string): string[] => (
         : []
 );
 
+const formatProgressNumber = (value: number): string => value.toLocaleString();
+
+const formatMetadataRefreshMessage = (progress: SyncProgress | null, percent: number): string => {
+    if (!progress || progress.total <= 0) {
+        return progress?.message || progress?.phase || 'Preparing metadata refresh...';
+    }
+
+    const pieces = [
+        `${formatProgressNumber(progress.current)} / ${formatProgressNumber(progress.total)} images`,
+        `${percent}%`
+    ];
+
+    if (typeof progress.updated === 'number') {
+        pieces.push(`${formatProgressNumber(progress.updated)} updated`);
+    }
+
+    if (typeof progress.errors === 'number' && progress.errors > 0) {
+        pieces.push(`${formatProgressNumber(progress.errors)} errors`);
+    }
+
+    return pieces.join(' | ');
+};
+
 const getLiveWatchSourceLabel = (source: LiveWatchSessionSource | null): LiveWatchPresentation['sourceLabel'] => {
     if (source === 'invoke') return 'InvokeAI';
     if (source === 'generic') return 'Folders';
@@ -242,7 +265,7 @@ export const ActivityDock: React.FC = () => {
         footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
-        label = "Refreshing Metadata";
+        label = "Metadata Refresh";
         isLowPriority = false;
         supportsCancel = true;
     } else if (isLiveWatchVisible) {
@@ -279,11 +302,13 @@ export const ActivityDock: React.FC = () => {
         return () => window.clearInterval(interval);
     }, [active, progress?.startedAt, showIndeterminateProgress]);
 
+    const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
     const message = isLiveWatchVisible
         ? liveWatchPresentation.message
-        : (progress?.message || progress?.phase || '');
-    const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
-    const showCounts = total > 0 && !isLiveWatchVisible && !isBackgroundActive && !showIndeterminateProgress && !isCompleteProgress;
+        : isRefreshActive
+            ? formatMetadataRefreshMessage(progress, percent)
+            : (progress?.message || progress?.phase || '');
+    const showCounts = total > 0 && !isLiveWatchVisible && !isBackgroundActive && !isRefreshActive && !showIndeterminateProgress && !isCompleteProgress;
     const smartThumbnailHasFailures = isBackgroundActive && message.includes('need attention');
     const smartThumbnailIsComplete = isBackgroundActive && total > 0 && current >= total;
     const visibleFooterMessage = smartThumbnailHasFailures
@@ -376,7 +401,7 @@ export const ActivityDock: React.FC = () => {
                                     </motion.div>
                                     <motion.div layout="position">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">{isLiveWatchVisible ? 'Live Watch' : 'Background Activity'}</h4>
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white flex min-w-0 items-center gap-2 whitespace-nowrap">
                                             {isLiveWatchVisible ? (
                                                 liveWatchPresentation.sourceLabel && (
                                                     <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>
@@ -438,7 +463,7 @@ export const ActivityDock: React.FC = () => {
                                     <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
-                                    {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isCompleteProgress && (
+                                    {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isRefreshActive && !isCompleteProgress && (
                                         <span className={`text-[11px] font-black font-mono italic ${accentClasses.percentText}`}>
                                             {percent}%
                                         </span>

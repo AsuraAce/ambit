@@ -31,6 +31,8 @@ const debugImportRun = (event: string, data: Record<string, unknown>) => {
 export interface SyncProgress {
     current: number;
     total: number;
+    updated?: number;
+    errors?: number;
     message?: string;
     phase?: string;
     mode?: 'determinate' | 'indeterminate' | 'complete';

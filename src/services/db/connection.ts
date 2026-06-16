@@ -2,7 +2,18 @@ import Database from '@tauri-apps/plugin-sql';
 
 let db: Database | null = null;
 let dbInitialized = false;
+let dbLoadPromise: Promise<Database> | null = null;
 const SLOW_STARTUP_PHASE_MS = 1000;
+
+export type StartupDbPhase =
+    | 'Preparing library database'
+    | 'Updating database schema'
+    | 'Optimizing database'
+    | 'Loading library';
+
+interface GetDbOptions {
+    onPhase?: (phase: StartupDbPhase) => void;
+}
 
 const logStartupDbPhase = (phase: string, startedAt: number) => {
     const elapsed = Math.round(performance.now() - startedAt);
@@ -39,10 +50,17 @@ export class Mutex {
 
 export const dbMutex = new Mutex();
 
-export const getDb = async () => {
+export const getDb = async (options: GetDbOptions = {}) => {
     if (!db) {
+        options.onPhase?.('Updating database schema');
         const loadStartedAt = performance.now();
-        db = await Database.load('sqlite:images.db');
+        if (!dbLoadPromise) {
+            dbLoadPromise = Database.load('sqlite:images.db').catch((error) => {
+                dbLoadPromise = null;
+                throw error;
+            });
+        }
+        db = await dbLoadPromise;
         logStartupDbPhase('Database.load', loadStartedAt);
     }
 
@@ -50,6 +68,7 @@ export const getDb = async () => {
         dbInitialized = true;
         // Enable WAL mode and busy timeout for better concurrency
         try {
+            options.onPhase?.('Optimizing database');
             const pragmaStartedAt = performance.now();
             await db.execute('PRAGMA journal_mode=WAL');
             await db.execute('PRAGMA synchronous=NORMAL');
@@ -72,5 +91,6 @@ export const getDb = async () => {
             console.error('[DB] Failed to set PRAGMAs or Indexes', e);
         }
     }
+    options.onPhase?.('Loading library');
     return db;
 };
