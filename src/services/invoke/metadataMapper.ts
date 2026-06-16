@@ -268,7 +268,6 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex:
     const baseMetadata: InvokeImageMetadata = {
         tool: GeneratorTool.INVOKEAI,
         model: 'Unknown',
-        seed: 0,
         steps: 0,
         cfg: 0,
         sampler: 'Unknown',
@@ -305,7 +304,6 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     if (!meta) return {
         tool: GeneratorTool.INVOKEAI,
         model: 'Unknown',
-        seed: 0,
         steps: 0,
         cfg: 0,
         sampler: 'Unknown',
@@ -347,7 +345,6 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
         model: 'Unknown',
         steps: 0,
         cfg: 0,
-        seed: 0,
         sampler: 'Unknown',
         positivePrompt: '',
         negativePrompt: '',

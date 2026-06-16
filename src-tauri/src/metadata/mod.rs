@@ -18,7 +18,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 3;
+pub const CURRENT_PARSER_VERSION: u32 = 4;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]
 pub struct ImageMetadata {
@@ -28,7 +28,8 @@ pub struct ImageMetadata {
     pub raw_parameters: Option<String>,
     pub steps: u32,
     pub cfg: f32,
-    pub seed: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
     pub sampler: String,
     #[serde(rename = "positivePrompt")]
     pub positive_prompt: String,
@@ -106,7 +107,7 @@ impl ImageMetadata {
         if self.cfg == 0.0 {
             self.cfg = other.cfg;
         }
-        if self.seed == 0 {
+        if self.seed.is_none() {
             self.seed = other.seed;
         }
         if self.sampler.is_empty()
@@ -180,7 +181,7 @@ impl Default for ImageMetadata {
             raw_parameters: None,
             steps: 0,
             cfg: 0.0,
-            seed: 0,
+            seed: None,
             sampler: "Unknown".to_string(),
             positive_prompt: String::new(),
             negative_prompt: String::new(),
@@ -227,7 +228,7 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.cfg == 0.0 || (secondary.tool == "ComfyUI" && secondary.cfg > 0.0) {
         base.cfg = secondary.cfg;
     }
-    if base.seed == 0 || (secondary.tool == "ComfyUI" && secondary.seed != 0) {
+    if base.seed.is_none() || (secondary.tool == "ComfyUI" && secondary.seed.is_some()) {
         base.seed = secondary.seed;
     }
 
@@ -415,5 +416,43 @@ mod tests {
         assert_eq!(base.sampler, "euler");
         assert_eq!(base.steps, 20);
         assert_eq!(base.cfg, 3.5);
+    }
+
+    #[test]
+    fn unknown_seed_is_omitted_but_zero_seed_is_preserved() {
+        let unknown = serde_json::to_value(ImageMetadata::default()).expect("serialize metadata");
+        assert!(unknown.get("seed").is_none());
+
+        let mut zero = ImageMetadata::default();
+        zero.seed = Some(0);
+        zero.loras.push("lora".to_string());
+        zero.control_nets.push("control".to_string());
+        zero.ip_adapters.push("ip-adapter".to_string());
+        zero.embeddings.push("embedding".to_string());
+        zero.hypernetworks.push("hypernetwork".to_string());
+        let serialized = serde_json::to_value(&zero).expect("serialize zero seed");
+
+        assert_eq!(serialized.get("seed"), Some(&serde_json::json!(0)));
+        assert_eq!(
+            serde_json::from_value::<ImageMetadata>(serialized)
+                .expect("deserialize zero seed")
+                .seed,
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn merge_only_fills_an_unknown_seed() {
+        let mut known_zero = ImageMetadata::default();
+        known_zero.seed = Some(0);
+        let mut secondary = ImageMetadata::default();
+        secondary.seed = Some(42);
+
+        known_zero.merge_if_missing(secondary.clone());
+        assert_eq!(known_zero.seed, Some(0));
+
+        let mut unknown = ImageMetadata::default();
+        unknown.merge_if_missing(secondary);
+        assert_eq!(unknown.seed, Some(42));
     }
 }

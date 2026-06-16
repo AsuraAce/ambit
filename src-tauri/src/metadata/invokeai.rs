@@ -104,10 +104,10 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     }
 
     if let Some(seed) = root.get("seed").and_then(|v| v.as_i64()) {
-        meta.seed = seed;
+        meta.seed = Some(seed);
     } else if let Some(seed) = root.get("seed").and_then(|v| v.as_u64()) {
         // Handle unsigned seed values (common in v2.x)
-        meta.seed = seed as i64;
+        meta.seed = Some(seed as i64);
     }
 
     // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
@@ -313,8 +313,15 @@ mod tests {
         );
         assert_eq!(meta.steps, 30);
         assert_eq!(meta.cfg, 7.5);
-        assert_eq!(meta.seed, 42);
+        assert_eq!(meta.seed, Some(42));
         assert_eq!(meta.sampler, "k_euler_a");
+    }
+
+    #[test]
+    fn test_extract_invokeai_preserves_zero_seed() {
+        let meta = extract_invokeai_metadata(&json!({ "seed": 0 }));
+
+        assert_eq!(meta.seed, Some(0));
     }
 
     #[test]
@@ -383,7 +390,7 @@ mod tests {
         );
         assert_eq!(meta.steps, 50);
         assert_eq!(meta.cfg, 7.5);
-        assert_eq!(meta.seed, 3038946690);
+        assert_eq!(meta.seed, Some(3038946690));
         assert_eq!(meta.sampler, "k_lms");
         assert_eq!(meta.generation_type, "txt2img");
         assert!(meta.positive_prompt.contains("human flower"));
@@ -418,7 +425,7 @@ mod tests {
         assert_eq!(meta.model, "westernAnimation_v1");
         assert_eq!(meta.steps, 24);
         assert_eq!(meta.cfg, 7.0);
-        assert_eq!(meta.seed, 624077823);
+        assert_eq!(meta.seed, Some(624077823));
         assert_eq!(meta.sampler, "dpmpp_2m_k");
         assert_eq!(meta.generation_type, "txt2img");
         assert_eq!(meta.clip_skip, Some(2));

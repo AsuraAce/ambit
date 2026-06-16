@@ -121,7 +121,7 @@ export const useMaintenanceOps = ({
                     ...img.metadata,
                     positivePrompt: recoveredPrompt
                 },
-                originalMetadata: img.originalMetadata || img.metadata
+                originalMetadata: img.originalMetadata
             };
 
             await updateImageMetadataFields(img.id, { positivePrompt: recoveredPrompt });

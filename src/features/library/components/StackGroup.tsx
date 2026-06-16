@@ -103,7 +103,7 @@ export const StackGroup: React.FC<StackGroupProps> = ({ group, onConfirm }) => {
                                         {img.width}x{img.height}
                                     </div>
                                     <div className="absolute top-0 right-0 bg-black/60 p-1 text-[9px] text-white font-mono flex items-center gap-0.5 rounded-bl-lg z-20">
-                                        <Hash className="w-2 h-2 text-sage-400" /> {(!img.metadata.seed || img.metadata.seed === 0) ? '?' : img.metadata.seed.toString().slice(-4)}
+                                        <Hash className="w-2 h-2 text-sage-400" /> {img.metadata.seed === undefined ? '?' : img.metadata.seed.toString().slice(-4)}
                                     </div>
                                 </div>
 

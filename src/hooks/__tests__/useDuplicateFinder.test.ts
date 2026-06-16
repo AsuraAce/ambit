@@ -47,6 +47,22 @@ describe('useDuplicateFinder', () => {
         expect(result.current.totalRedundantCount).toBe(1);
     });
 
+    it('should treat an explicit zero seed as usable metadata', () => {
+        const images = [
+            createMockImage('1', 0, 1000),
+            createMockImage('2', 0, 2000),
+        ];
+        images.forEach(image => {
+            image.metadata.positivePrompt = '';
+            image.metadata.negativePrompt = '';
+        });
+
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+
+        expect(result.current.groups).toHaveLength(1);
+        expect(result.current.groups[0].kind).toBe('likely');
+    });
+
     it('should identify exact duplicates by file hash even without metadata', () => {
         const images = [
             createMockImage('C:/one/original.png', 0, 1000, 1000, 'abc123', false),

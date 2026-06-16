@@ -27,6 +27,18 @@ describe('metadataMapper', () => {
         expect(result.model).toBe('sd-1.5');
     });
 
+    it('should preserve zero and leave a missing seed unknown', () => {
+        const zero = mapInvokeMetadata({
+            metadata_json: JSON.stringify({ seed: 0 })
+        }, 'metadata_json', 0);
+        const unknown = mapInvokeMetadata({
+            metadata_json: JSON.stringify({})
+        }, 'metadata_json', 0);
+
+        expect(zero.seed).toBe(0);
+        expect(unknown.seed).toBeUndefined();
+    });
+
     it('should recursively extract ControlNets (v3/v5 format)', () => {
         const row = {
             metadata_json: JSON.stringify({

@@ -135,7 +135,7 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
                     ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
@@ -144,6 +144,7 @@ fn save_images_batch_inner(
                     json_extract(?8, '$.tool'),
                     COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?8, '$.modelHash')), json_extract(?8, '$.model')),
                     CAST(json_extract(?8, '$.steps') AS INTEGER),
+                    CAST(json_extract(?8, '$.seed') AS INTEGER),
                     CAST(json_extract(?8, '$.cfg') AS REAL),
                     REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
                     json_extract(?8, '$.generationType'),
@@ -201,6 +202,7 @@ fn save_images_batch_inner(
                     tool=excluded.tool,
                     resolved_model_name=excluded.resolved_model_name,
                     steps=excluded.steps,
+                    seed=excluded.seed,
                     cfg=excluded.cfg,
                     sampler=excluded.sampler,
                     generation_type=excluded.generation_type,
@@ -1630,5 +1632,51 @@ mod tests {
         assert_eq!(embedding_count, 0);
         assert_eq!(controlnet_count, 0);
         assert_eq!(ipadapter_rows, vec!["Face Adapter".to_string()]);
+    }
+
+    #[test]
+    fn save_images_batch_synchronizes_zero_and_unknown_seed_values() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record(
+                "seed-image",
+                100,
+                200,
+                r#"{"tool":"ComfyUI","model":"Model","seed":0}"#,
+            )],
+        )
+        .expect("save zero seed");
+
+        let zero_seed: Option<i64> = conn
+            .query_row(
+                "SELECT seed FROM images WHERE id = 'seed-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("zero seed");
+        assert_eq!(zero_seed, Some(0));
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record(
+                "seed-image",
+                101,
+                201,
+                r#"{"tool":"ComfyUI","model":"Model"}"#,
+            )],
+        )
+        .expect("save unknown seed");
+
+        let unknown_seed: Option<i64> = conn
+            .query_row(
+                "SELECT seed FROM images WHERE id = 'seed-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("unknown seed");
+        assert_eq!(unknown_seed, None);
     }
 }

@@ -180,9 +180,8 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                         }
                     }
                     "Seed" => {
-                        let s: i64 = val.parse().unwrap_or(0);
-                        if s > 0 {
-                            meta.seed = s;
+                        if let Ok(seed) = val.parse::<i64>() {
+                            meta.seed = Some(seed);
                         }
                     }
                     "Model" | "Checkpoint" | "Model name" | "SD model" => {
@@ -422,9 +421,19 @@ mod tests {
         assert_eq!(meta.negative_prompt, "Negative content");
         assert_eq!(meta.steps, 20);
         assert_eq!(meta.cfg, 7.0);
-        assert_eq!(meta.seed, 12345);
+        assert_eq!(meta.seed, Some(12345));
         assert_eq!(meta.model, "v1-5-pruned");
         assert_eq!(meta.model_hash.as_deref(), Some("abcde"));
+    }
+
+    #[test]
+    fn test_extract_a1111_preserves_zero_seed() {
+        let meta = extract_a1111_metadata(
+            "Prompt\nSteps: 20, Sampler: Euler, CFG scale: 7, Seed: 0",
+            None,
+        );
+
+        assert_eq!(meta.seed, Some(0));
     }
 
     #[test]
@@ -485,7 +494,7 @@ mod tests {
         let meta = extract_a1111_metadata(raw, None);
 
         assert_eq!(meta.model, "realcartoonSpecial_sp1");
-        assert_eq!(meta.seed, 83289333);
+        assert_eq!(meta.seed, Some(83289333));
         assert_eq!(meta.steps, 48);
 
         // Should be moved to IP-Adapter by the classifier
@@ -552,7 +561,7 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         );
         assert_eq!(meta.steps, 36);
         assert_eq!(meta.cfg, 6.0);
-        assert_eq!(meta.seed, 819601553905272);
+        assert_eq!(meta.seed, Some(819601553905272));
         assert!(meta.model.contains("Osaka[REV3]"));
     }
 
@@ -565,7 +574,7 @@ Steps: 20, TI hashes: "(oil on canvas by Rembrandt van Rijn)+++: invalid, EasyNe
         assert_eq!(meta.sampler, "Unknown");
         assert_eq!(meta.steps, 20);
         assert_eq!(meta.cfg, 5.0);
-        assert_eq!(meta.seed, 1047146944135898);
+        assert_eq!(meta.seed, Some(1047146944135898));
     }
 
     #[test]

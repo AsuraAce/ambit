@@ -157,6 +157,19 @@ mod tests {
     }
 
     #[test]
+    fn test_reparse_restores_explicit_zero_seed() {
+        let result = reparse_from_json("a cat\nSteps: 20, CFG scale: 7, Seed: 0", "Automatic1111")
+            .expect("reparse metadata");
+
+        assert_eq!(result.metadata.seed, Some(0));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.metadata_json)
+                .expect("metadata JSON")["seed"],
+            0
+        );
+    }
+
+    #[test]
     fn test_reparse_comfyui_both_chunks() {
         let original = r#"{"workflow": "workflow_content", "prompt": "prompt_content"}"#;
         let result = reparse_from_json(original, "ComfyUI").unwrap();

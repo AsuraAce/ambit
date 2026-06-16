@@ -1,7 +1,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { parseA1111Parameters } from '../services/metadata/mappingUtils';
-import { detectGenerationType, parseFilenameMetadata } from './metadata.worker';
+import { detectGenerationType, parseFilenameMetadata, parseSdNextJsonMetadata } from './metadata.worker';
 
 describe('Metadata Worker Tests', () => {
 
@@ -48,6 +48,12 @@ describe('Metadata Worker Tests', () => {
             expect(meta.modelHash).toBe("abcde");
         });
 
+        it('should preserve an explicit zero seed', () => {
+            const meta = parseA1111Parameters("Prompt\nSteps: 20, Seed: 0");
+
+            expect(meta.seed).toBe(0);
+        });
+
         it('should detect SD.Next via App key', () => {
             const raw = "Prompt\nSteps: 20, App: SD.Next";
             const meta = parseA1111Parameters(raw);
@@ -74,5 +80,21 @@ describe('Metadata Worker Tests', () => {
         });
 
         // Add more filename parsing tests as needed
+    });
+
+    describe('parseSdNextJsonMetadata', () => {
+        it('should preserve numeric and numeric-string seeds', () => {
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: 0 })).seed).toBe(0);
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: '0' })).seed).toBe(0);
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: '123' })).seed).toBe(123);
+        });
+
+        it('should leave malformed seeds unknown', () => {
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: 'not-a-number' })).seed).toBeUndefined();
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: '' })).seed).toBeUndefined();
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: false })).seed).toBeUndefined();
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: {} })).seed).toBeUndefined();
+            expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: [] })).seed).toBeUndefined();
+        });
     });
 });

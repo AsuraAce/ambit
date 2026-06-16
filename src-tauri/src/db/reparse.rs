@@ -204,13 +204,14 @@ pub async fn start_reparse_job(
                         tool = ?4,
                         resolved_model_name = ?3,
                         steps = ?5,
-                        cfg = ?6,
-                        sampler = ?7,
-                        generation_type = ?8,
-                        parser_version = ?9,
-                        positive_prompt = ?10,
-                        negative_prompt = ?11
-                     WHERE id = ?12"
+                        seed = ?6,
+                        cfg = ?7,
+                        sampler = ?8,
+                        generation_type = ?9,
+                        parser_version = ?10,
+                        positive_prompt = ?11,
+                        negative_prompt = ?12
+                     WHERE id = ?13"
                 ).map_err(|e| e.to_string())?;
                 
                 let mut skip_stmt = tx.prepare_cached(
@@ -274,6 +275,7 @@ pub async fn start_reparse_job(
                                     meta.model,
                                     meta.tool,
                                     meta.steps,
+                                    meta.seed,
                                     meta.cfg,
                                     sampler_normalized,
                                     meta.generation_type,

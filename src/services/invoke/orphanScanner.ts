@@ -138,7 +138,7 @@ export const scanForOrphans = async (
                 const finalMeta: ImageMetadata = {
                     tool: GeneratorTool.INVOKEAI,
                     model: meta.metadata?.model || 'Unknown',
-                    seed: meta.metadata?.seed || 0,
+                    seed: meta.metadata?.seed ?? undefined,
                     steps: meta.metadata?.steps || 0,
                     cfg: meta.metadata?.cfg || 0,
                     positivePrompt: meta.metadata?.positivePrompt || '',

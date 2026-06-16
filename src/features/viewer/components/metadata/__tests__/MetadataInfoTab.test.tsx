@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage, type ImageMetadata } from '../../../../../types';
 import { MetadataInfoTab } from '../MetadataInfoTab';
 
@@ -46,6 +46,10 @@ const renderTab = (value: AIImage) => render(<MetadataInfoTab
 />);
 
 describe('MetadataInfoTab prompt revert control', () => {
+    beforeEach(() => {
+        localStorage.removeItem('aigallery_gendata_open');
+    });
+
     it('does not show revert when only imported technical metadata differs', () => {
         renderTab(image(
             metadata({ steps: 0, cfg: 0 }),
@@ -63,5 +67,28 @@ describe('MetadataInfoTab prompt revert control', () => {
 
         expect(screen.getByTitle('Revert all metadata to original')).not.toBeNull();
         expect(screen.getByText('Generation Data').closest('.border')?.className).not.toContain('border-amber');
+    });
+
+    it('renders an explicit zero seed instead of hiding it', () => {
+        localStorage.setItem('aigallery_gendata_open', 'true');
+        renderTab(image(
+            metadata({ seed: 0 }),
+            metadata({ seed: 0 }),
+        ));
+
+        const seedItem = screen.getByText('Seed').parentElement?.parentElement;
+        expect(seedItem?.textContent).toContain('0');
+        expect(seedItem?.querySelector('[title="Modified from original"]')).toBeNull();
+    });
+
+    it('renders an unavailable seed as unknown', () => {
+        localStorage.setItem('aigallery_gendata_open', 'true');
+        renderTab(image(
+            metadata({ seed: undefined }),
+            metadata({ seed: undefined }),
+        ));
+
+        const seedItem = screen.getByText('Seed').parentElement?.parentElement;
+        expect(seedItem?.textContent).toContain('Unknown');
     });
 });

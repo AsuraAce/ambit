@@ -692,7 +692,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                         </div>
 
                         <DiffRow label="Model" valA={imageA.metadata.model} valB={imageB.metadata.model} />
-                        <DiffRow label="Seed" valA={imageA.metadata.seed} valB={imageB.metadata.seed} />
+                        <DiffRow label="Seed" valA={imageA.metadata.seed ?? 'Unknown'} valB={imageB.metadata.seed ?? 'Unknown'} />
                         <DiffRow label="Steps" valA={imageA.metadata.steps} valB={imageB.metadata.steps} />
                         <DiffRow label="CFG" valA={imageA.metadata.cfg} valB={imageB.metadata.cfg} />
                         <DiffRow label="Size" valA={`${imageA.width}x${imageA.height}`} valB={`${imageB.width}x${imageB.height}`} />

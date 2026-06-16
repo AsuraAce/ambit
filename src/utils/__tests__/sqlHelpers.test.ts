@@ -218,6 +218,14 @@ describe('sqlHelpers', () => {
                 expect(params).toEqual([20]);
             });
 
+            it('should search the scalar seed column without loading metadata JSON', () => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'seed:123' }, false, 'blur', []);
+
+                expect(where).toContain('CAST(seed AS TEXT) LIKE ?');
+                expect(where).not.toContain("json_extract(metadata_json, '$.seed')");
+                expect(params).toEqual(['%123%']);
+            });
+
             it('should handle quoted phrases', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: '"golden hour"' }, false, 'blur', []);
                 expect(where).toContain("positive_prompt LIKE ?");

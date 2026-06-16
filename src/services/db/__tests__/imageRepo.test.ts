@@ -68,6 +68,43 @@ describe('imageRepo batch removal', () => {
         expect(db.execute).not.toHaveBeenCalled();
     });
 
+    it('keeps the scalar seed synchronized when metadata fields are patched', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { updateImageMetadataFields } = await import('../imageRepo');
+        await updateImageMetadataFields('C:/images/zero.png', { seed: 0 });
+
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining(', seed = ?'),
+            [0, 0, 'C:/images/zero.png']
+        );
+    });
+
+    it('restores a genuine zero seed into both JSON and the scalar column', async () => {
+        const originalMetadata = {
+            ...liveImportMetadata,
+            seed: 0,
+        };
+        const db = {
+            select: vi.fn(async () => [{
+                original_parsed_json: JSON.stringify(originalMetadata),
+            }]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { revertImageMetadata } = await import('../imageRepo');
+        await revertImageMetadata('C:/images/zero.png');
+
+        const [, params] = db.execute.mock.calls[0] as [string, unknown[]];
+        expect(db.execute.mock.calls[0][0]).toContain('seed = ?');
+        expect(params).toContain(0);
+    });
+
     it('limits user_masked cleanup to imported record ids when default-visible overrides are present', async () => {
         const db = {
             select: vi.fn(),

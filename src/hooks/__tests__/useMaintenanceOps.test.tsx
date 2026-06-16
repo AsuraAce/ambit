@@ -112,12 +112,15 @@ describe('useMaintenanceOps metadata recovery', () => {
         });
 
         const storeUpdater = setImages.mock.calls[0][0] as (images: AIImage[]) => AIImage[];
-        expect(storeUpdater([image])[0].metadata.positivePrompt).toBe('Recovered prompt');
+        const updatedImage = storeUpdater([image])[0];
+        expect(updatedImage.metadata.positivePrompt).toBe('Recovered prompt');
+        expect(updatedImage.originalMetadata).toBeUndefined();
 
         const cached = queryClient.getQueryData<{
             pages: Array<{ images: AIImage[] }>;
         }>(queryKey);
         expect(cached?.pages[0].images[0].metadata.positivePrompt).toBe('Recovered prompt');
+        expect(cached?.pages[0].images[0].originalMetadata).toBeUndefined();
         expect(mockAddToast).toHaveBeenCalledWith('Metadata recovered successfully!', 'success');
     });
 });
