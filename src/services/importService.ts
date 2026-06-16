@@ -189,7 +189,7 @@ const mapMetadata = (meta: Partial<ImageMetadata>): ImageMetadata => ({
     ...meta,
     tool: meta.tool || GeneratorTool.UNKNOWN,
     model: meta.model || 'Unknown',
-    seed: meta.seed || 0,
+    seed: meta.seed,
     steps: meta.steps || 0,
     cfg: meta.cfg || 0,
     sampler: meta.sampler || 'Unknown',

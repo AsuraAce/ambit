@@ -2,6 +2,12 @@ use super::run_blocking;
 use rusqlite::types::Value;
 use tauri::AppHandle;
 
+const SEED_BACKFILL_EXPRESSION: &str = "CASE
+                    WHEN json_type(metadata_json, '$.seed') IN ('integer', 'real')
+                    THEN CAST(json_extract(metadata_json, '$.seed') AS INTEGER)
+                    ELSE NULL
+                END";
+
 #[derive(serde::Serialize, specta::Type)]
 pub struct NumericRange {
     pub min: f64,
@@ -159,6 +165,57 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn seed_backfill_preserves_numeric_zero_and_rejects_ambiguous_values() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                metadata_json TEXT,
+                seed INTEGER
+            );
+
+            INSERT INTO images(id, metadata_json) VALUES
+                ('zero', '{"seed":0}'),
+                ('known', '{"seed":123}'),
+                ('missing', '{"model":"a"}'),
+                ('string', '{"seed":"123"}'),
+                ('malformed', '{"seed":"not-a-number"}'),
+                ('bool', '{"seed":false}');
+            "#,
+        )
+        .expect("setup seed backfill rows");
+
+        conn.execute(
+            &format!(
+                "UPDATE images SET seed = {} WHERE metadata_json IS NOT NULL",
+                SEED_BACKFILL_EXPRESSION
+            ),
+            [],
+        )
+        .expect("backfill seed");
+
+        let mut stmt = conn
+            .prepare("SELECT id, seed FROM images ORDER BY id")
+            .expect("prepare seed query");
+        let rows: Vec<(String, Option<i64>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query seed rows")
+            .collect::<Result<_, _>>()
+            .expect("collect seed rows");
+
+        assert_eq!(rows.iter().find(|row| row.0 == "zero").unwrap().1, Some(0));
+        assert_eq!(rows.iter().find(|row| row.0 == "known").unwrap().1, Some(123));
+        for id in ["missing", "string", "malformed", "bool"] {
+            assert_eq!(
+                rows.iter().find(|row| row.0 == id).unwrap().1,
+                None,
+                "{id} should remain unknown"
+            );
+        }
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -166,14 +223,15 @@ mod tests {
 pub async fn backfill_parameter_columns(app: AppHandle) -> Result<usize, String> {
     run_blocking(app, move |conn| {
         let updated = conn.execute(
-            "UPDATE images SET 
+            &format!("UPDATE images SET
                 steps = CAST(json_extract(metadata_json, '$.steps') AS INTEGER),
+                seed = {},
                 cfg = CAST(json_extract(metadata_json, '$.cfg') AS REAL),
                 sampler = REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' '),
                 generation_type = json_extract(metadata_json, '$.generationType'),
                 positive_prompt = COALESCE(NULLIF(json_extract(metadata_json, '$.positivePrompt'), ''), NULLIF(json_extract(metadata_json, '$.positive_prompt'), '')),
                 negative_prompt = COALESCE(NULLIF(json_extract(metadata_json, '$.negativePrompt'), ''), NULLIF(json_extract(metadata_json, '$.negative_prompt'), ''))
-             WHERE steps IS NULL AND json_extract(metadata_json, '$.steps') IS NOT NULL",
+             WHERE metadata_json IS NOT NULL", SEED_BACKFILL_EXPRESSION),
             []
         ).map_err(|e| e.to_string())?;
         let _ = conn.execute("ANALYZE images", []);

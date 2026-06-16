@@ -13,7 +13,7 @@ export const getImageFieldsLight = (alias = 'images'): string => {
         ${prefix}user_masked, ${prefix}group_id, ${prefix}board_id, ${prefix}notes,
         ${prefix}is_intermediate_gen, ${prefix}is_grid_gen,
         ${prefix}model_name, ${prefix}model_hash, ${prefix}tool, ${prefix}resolved_model_name, ${prefix}file_hash,
-        ${prefix}steps, ${prefix}cfg, ${prefix}sampler, ${prefix}generation_type,
+        ${prefix}steps, ${prefix}seed, ${prefix}cfg, ${prefix}sampler, ${prefix}generation_type,
         ${prefix}positive_prompt, ${prefix}negative_prompt
     `;
 };
@@ -32,7 +32,7 @@ export const REMOVED_IMAGE_FIELDS = `
     0 as is_intermediate_gen, 0 as is_grid_gen,
     original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
     NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
-    NULL as steps, NULL as cfg, NULL as sampler, NULL as generation_type,
+    NULL as steps, NULL as seed, NULL as cfg, NULL as sampler, NULL as generation_type,
     NULL as positive_prompt, NULL as negative_prompt
 `;
 
@@ -57,7 +57,7 @@ const parseJson = <T>(value: unknown): T | undefined => {
 const buildLightMetadata = (row: ImageRow): ImageMetadata => ({
     tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
     model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
-    seed: 0,
+    seed: asNumber(row.seed),
     steps: asNumber(row.steps) ?? 0,
     cfg: asNumber(row.cfg) ?? 0,
     sampler: asString(row.sampler) || 'Unknown',
@@ -81,12 +81,14 @@ export function mapRowToImage(row: ImageRow): AIImage {
     metadata = {
         ...buildLightMetadata(row),
         ...metadata,
+        seed: asNumber(metadata.seed) ?? asNumber(row.seed),
         model: asString(row.resolved_model_name) || metadata.model || asString(row.model_name) || 'Unknown',
         modelHash: metadata.modelHash || asString(row.model_hash),
         tool: (metadata.tool || asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
         positivePrompt: metadata.positivePrompt || asString(row.positive_prompt) || '',
         negativePrompt: metadata.negativePrompt || asString(row.negative_prompt) || ''
     };
+    const originalMetadata = parseJson<ImageMetadata>(row.original_parsed_json);
 
     const result: AIImage = {
         id: asString(row.id) || normalizedPath,
@@ -112,7 +114,9 @@ export function mapRowToImage(row: ImageRow): AIImage {
         isIntermediate: asBoolean(row.is_intermediate_gen),
         metadata,
         originalChunks: parseJson<Record<string, string>>(row.original_metadata_json),
-        originalMetadata: parseJson<ImageMetadata>(row.original_parsed_json),
+        originalMetadata: originalMetadata
+            ? { ...originalMetadata, seed: asNumber(originalMetadata.seed) }
+            : undefined,
         originalState: parseJson<OriginalState>(row.original_state_json)
     };
 
@@ -132,7 +136,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
             sampler: current.sampler && current.sampler !== 'Unknown' ? current.sampler : result.originalMetadata.sampler,
             steps: current.steps || result.originalMetadata.steps,
             cfg: current.cfg || result.originalMetadata.cfg,
-            seed: current.seed || result.originalMetadata.seed
+            seed: current.seed ?? result.originalMetadata.seed
         };
     }
 

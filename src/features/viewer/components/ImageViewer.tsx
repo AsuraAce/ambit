@@ -173,8 +173,16 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             ...image, // Prioritize reactive props (isFavorite, notes, etc)
             metadata: {
                 ...fullImage.metadata,
-                ...image.metadata // Prioritize reactive metadata (e.g. recovered prompts)
-            }
+                positivePrompt: image.metadata.positivePrompt,
+                negativePrompt: image.metadata.negativePrompt,
+                tool: image.metadata.tool,
+                ...(image.metadata.overrideModel !== undefined
+                    ? { overrideModel: image.metadata.overrideModel }
+                    : {})
+            },
+            originalMetadata: image.originalMetadata ?? fullImage.originalMetadata,
+            originalChunks: image.originalChunks ?? fullImage.originalChunks,
+            originalState: image.originalState ?? fullImage.originalState,
         } : image;
 
         if (!activeVersionId) return base;

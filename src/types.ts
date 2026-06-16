@@ -34,7 +34,7 @@ export interface ImageMetadata {
   tool: GeneratorTool;
   model: string;
   overrideModel?: string; // User-forced model architecture
-  seed: number;
+  seed?: number;
   steps: number;
   cfg: number;
   sampler: string;

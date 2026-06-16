@@ -45,7 +45,7 @@ export const GeminiMetadataResponseSchema = z.object({
     negativePrompt: z.string().optional().default(''),
     cfg: z.number().optional().default(0),
     steps: z.number().optional().default(0),
-    seed: z.number().optional().default(0),
+    seed: z.number().optional(),
     model: z.string().optional().default('Unknown'),
     tool: z.string().optional().default('Unknown'),
 });

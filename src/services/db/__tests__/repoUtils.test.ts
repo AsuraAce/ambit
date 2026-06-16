@@ -32,6 +32,7 @@ const baseLightRow = {
     tool: GeneratorTool.COMFYUI,
     resolved_model_name: 'Resolved Model',
     steps: 28,
+    seed: 0,
     cfg: 7.5,
     sampler: 'euler',
     generation_type: 'txt2img',
@@ -44,6 +45,7 @@ describe('repoUtils lightweight image rows', () => {
         const fields = getImageFieldsLight();
 
         expect(fields).toContain('images.positive_prompt');
+        expect(fields).toContain('images.seed');
         expect(fields).not.toContain('metadata_json');
         expect(fields).not.toContain('original_metadata_json');
         expect(fields).not.toContain('original_parsed_json');
@@ -67,7 +69,26 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.metadata.positivePrompt).toBe('sunlit atrium');
         expect(image.metadata.negativePrompt).toBe('low quality');
         expect(image.metadata.steps).toBe(28);
+        expect(image.metadata.seed).toBe(0);
         expect(image.originalMetadata).toBeUndefined();
+    });
+
+    it('keeps an unavailable lightweight seed unknown', () => {
+        const image = mapRowToImage({ ...baseLightRow, seed: null });
+
+        expect(image.metadata.seed).toBeUndefined();
+    });
+
+    it('normalizes nullable full metadata seeds at the domain boundary', () => {
+        const image = mapRowToImage({
+            ...baseLightRow,
+            seed: null,
+            metadata_json: JSON.stringify({ seed: null }),
+            original_parsed_json: JSON.stringify({ seed: null }),
+        });
+
+        expect(image.metadata.seed).toBeUndefined();
+        expect(image.originalMetadata?.seed).toBeUndefined();
     });
 
     it('populates original metadata when full rows intentionally select it', () => {

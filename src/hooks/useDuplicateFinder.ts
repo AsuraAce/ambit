@@ -32,7 +32,7 @@ const getImageFingerprint = (img: AIImage): string => {
     const nStr = typeof negativePrompt === 'string' ? negativePrompt : '';
 
     const hasPrompt = pStr.trim().length > 0;
-    const hasSeed = seed !== undefined && seed !== 0 && seed !== -1;
+    const hasSeed = seed !== undefined;
 
     if (!hasPrompt && !hasSeed) {
         return `unverifiable-${img.id}`;

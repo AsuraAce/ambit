@@ -75,13 +75,11 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 }
                 onClose();
             }}
-            onCopySeed={() => {
-                if (activeImage?.metadata.seed !== undefined) {
-                    navigator.clipboard.writeText(String(activeImage.metadata.seed));
-                    addToast('Seed copied', 'success');
-                }
+            onCopySeed={activeImage?.metadata.seed !== undefined ? () => {
+                navigator.clipboard.writeText(String(activeImage.metadata.seed));
+                addToast('Seed copied', 'success');
                 onClose();
-            }}
+            } : undefined}
             onCopyGenerationInfo={() => {
                 const meta = activeImage?.metadata;
                 if (!meta) return;
@@ -90,7 +88,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 const infoLines = [
                     meta.positivePrompt ? `Prompt: ${meta.positivePrompt}` : '',
                     meta.negativePrompt ? `Negative Prompt: ${meta.negativePrompt}` : '',
-                    `Steps: ${meta.steps || '?'}, Sampler: ${meta.sampler || '?'}, CFG scale: ${meta.cfg || '?'}, Seed: ${meta.seed || '?'}, Size: ${activeImage?.width}x${activeImage?.height}, Model: ${meta.model || '?'}${meta.tool ? `, Tool: ${meta.tool}` : ''}`,
+                    `Steps: ${meta.steps || '?'}, Sampler: ${meta.sampler || '?'}, CFG scale: ${meta.cfg || '?'}, Seed: ${meta.seed ?? '?'}, Size: ${activeImage?.width}x${activeImage?.height}, Model: ${meta.model || '?'}${meta.tool ? `, Tool: ${meta.tool}` : ''}`,
                     meta.rawParameters ? `\nRaw Parameters:\n${meta.rawParameters}` : ''
                 ].filter(Boolean);
 

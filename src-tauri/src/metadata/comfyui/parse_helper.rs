@@ -52,7 +52,7 @@ pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
                 }
                 "Seed" => {
                     if let Ok(v) = val.trim().parse::<i64>() {
-                        meta.seed = v;
+                        meta.seed = Some(v);
                     }
                 }
                 "Sampler" => {

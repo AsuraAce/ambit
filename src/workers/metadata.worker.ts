@@ -70,6 +70,36 @@ const nodeType = (node: WorkflowNode): string =>
 
 const parseJsonRecord = (value: string): MetadataRecord => asRecord(JSON.parse(value));
 
+const parseFiniteSeed = (value: unknown): number | undefined => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+};
+
+export const parseSdNextJsonMetadata = (value: string): Partial<ImageMetadata> => {
+    const json = parseJsonRecord(value);
+    const metadata: Partial<ImageMetadata> = {};
+
+    if (typeof json.parameters === 'string') {
+        const a1111 = parseA1111Parameters(json.parameters);
+        mergeMetadata(metadata, a1111);
+    } else if (typeof json.prompt === 'string') {
+        metadata.positivePrompt = json.prompt;
+        if (typeof json.negative_prompt === 'string') metadata.negativePrompt = json.negative_prompt;
+        const seed = parseFiniteSeed(json.seed);
+        if (seed !== undefined) metadata.seed = seed;
+        if (json.steps) metadata.steps = Number(json.steps);
+    }
+
+    metadata.tool = GeneratorTool.SDNEXT;
+    return metadata;
+};
+
 const sanitize = (text: string): string => {
     return text.replace(/\0/g, '').trim();
 };
@@ -260,7 +290,6 @@ export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> 
             positivePrompt: promptParts.join(' ').trim(),
             steps: 0,
             cfg: 0,
-            seed: 0
         };
     }
 
@@ -276,7 +305,6 @@ export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> 
             positivePrompt: '',
             steps: 0,
             cfg: 0,
-            seed: 0
         };
     }
 
@@ -285,7 +313,6 @@ export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> 
         positivePrompt: '',
         steps: 0,
         cfg: 0,
-        seed: 0
     };
 };
 
@@ -384,7 +411,7 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
     }
     if (!base.steps && secondary.steps) base.steps = secondary.steps;
     if (!base.cfg && secondary.cfg) base.cfg = secondary.cfg;
-    if (!base.seed && secondary.seed) base.seed = secondary.seed;
+    if (base.seed === undefined && secondary.seed !== undefined) base.seed = secondary.seed;
     if ((!base.sampler || base.sampler === 'Unknown') && secondary.sampler) {
         base.sampler = secondary.sampler;
     }
@@ -753,19 +780,7 @@ self.onmessage = async (e: MessageEvent) => {
             const sdNextMetadata = chunks['sd-metadata'] || chunks['metadata'];
             if (sdNextMetadata) {
                 try {
-                    const json = parseJsonRecord(sdNextMetadata);
-                    const secondary: Partial<ImageMetadata> = {};
-                    if (typeof json.parameters === 'string') {
-                        const a1111 = parseA1111Parameters(json.parameters);
-                        mergeMetadata(secondary, a1111);
-                    } else if (typeof json.prompt === 'string') {
-                        secondary.positivePrompt = json.prompt;
-                        if (typeof json.negative_prompt === 'string') secondary.negativePrompt = json.negative_prompt;
-                        if (json.seed) secondary.seed = Number(json.seed);
-                        if (json.steps) secondary.steps = Number(json.steps);
-                    }
-                    secondary.tool = GeneratorTool.SDNEXT;
-                    mergeMetadata(metadata, secondary);
+                    mergeMetadata(metadata, parseSdNextJsonMetadata(sdNextMetadata));
                 } catch { }
             }
 

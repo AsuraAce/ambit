@@ -104,21 +104,12 @@ export const MetadataInfoTab = ({
             if (cur.trim() === orig.trim()) return false;
         }
 
-        console.log(`[DEBUG] isModified(${key}): true`, {
-            cur,
-            orig,
-            curType: typeof cur,
-            origType: typeof orig,
-            filename: image.filename
-        });
-
         // Final fallback: standard comparison (already checked cur === orig above)
         return true;
     };
 
     const isGenDataModified = () => {
         if (!image.originalMetadata) return false;
-        // Technical parameters only (excludes prompts)
         const keys = [
             'steps', 'cfg', 'seed', 'sampler', 'model', 'overrideModel', 'tool',
             'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale', 'hiresSteps', 'hiresUpscaler'
@@ -130,8 +121,7 @@ export const MetadataInfoTab = ({
         if (!image.originalMetadata || isLoading) return false;
         return (
             isModified('positivePrompt') ||
-            isModified('negativePrompt') ||
-            isGenDataModified()
+            isModified('negativePrompt')
         );
     };
 
@@ -164,7 +154,7 @@ export const MetadataInfoTab = ({
             params.push(`Steps: ${md.steps || 0}`);
             params.push(`Sampler: ${md.sampler || 'Euler a'}`);
             if (md.cfg) params.push(`CFG scale: ${md.cfg}`);
-            params.push(`Seed: ${md.seed || -1}`);
+            if (md.seed !== undefined) params.push(`Seed: ${md.seed}`);
             params.push(`Size: ${image.width}x${image.height}`);
             if (md.modelHash) params.push(`Model hash: ${md.modelHash}`);
             if (md.model && md.model !== 'Unknown') params.push(`Model: ${md.model}`);
@@ -376,7 +366,14 @@ export const MetadataInfoTab = ({
                                     <ParamItem label="Sampler" value={image.metadata.sampler || 'Unknown'} isModified={isModified('sampler')} />
                                     <ParamItem label="Steps" value={(image.metadata.steps ?? 0).toString()} isModified={isModified('steps')} />
                                     <ParamItem label="CFG Scale" value={(image.metadata.cfg ?? 0).toString()} isModified={isModified('cfg')} />
-                                    <ParamItem label="Seed" value={(image.metadata.seed ?? 0).toString()} fullWidth isModified={isModified('seed')} />
+                                    <ParamItem
+                                        label="Seed"
+                                        value={image.metadata.seed?.toString() ?? 'Unknown'}
+                                        fullWidth
+                                        isModified={isModified('seed')}
+                                        allowZero
+                                        showUnknown
+                                    />
 
                                     {/* Advanced Fields */}
                                     <ParamItem label="VAE" value={image.metadata.vae || ''} isModified={isModified('vae')} />

@@ -37,7 +37,7 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                 found = true;
             }
             if let Some(v) = get_node_param(node, "seed").and_then(|v| v.as_i64()) {
-                meta.seed = v;
+                meta.seed = Some(v);
                 found = true;
             }
             if let Some(v) = get_node_param(node, "sampler")
@@ -149,12 +149,12 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                     meta.cfg = v as f32;
                 }
             }
-            if meta.seed == 0 {
+            if meta.seed.is_none() {
                 if let Some(v) = get_node_param(node, "seed").and_then(|v| v.as_i64()) {
-                    meta.seed = v;
+                    meta.seed = Some(v);
                 } else if let Some(v) = get_node_param(node, "noise_seed").and_then(|v| v.as_i64())
                 {
-                    meta.seed = v;
+                    meta.seed = Some(v);
                 }
             }
         }

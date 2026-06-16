@@ -23,9 +23,9 @@ pub fn extract_from_sampler(
         meta.cfg = v as f32;
     }
     if let Some(v) = evaluate_number(graph, node, "seed", i64::MAX) {
-        meta.seed = v;
+        meta.seed = Some(v);
     } else if let Some(v) = evaluate_number(graph, node, "noise_seed", i64::MAX) {
-        meta.seed = v;
+        meta.seed = Some(v);
     }
 
     let mut sampler = String::new();

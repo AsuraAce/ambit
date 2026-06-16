@@ -22,3 +22,22 @@ fn test_extract_comfyui_nan_json() {
 
     assert_eq!(meta.steps, 20);
 }
+
+#[test]
+fn test_extract_comfyui_preserves_zero_seed() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "SDParameterGenerator",
+            "inputs": {
+                "seed": 0
+            }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.seed, Some(0));
+}

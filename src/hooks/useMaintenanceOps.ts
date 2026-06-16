@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
 import { imageToBase64 } from '../services/imageService';
@@ -9,10 +10,11 @@ import { urlToPath } from '../utils/pathUtils';
 import {
     deleteImageFromDisk,
     getImagesByIds,
-    insertImage,
     rebuildFacetCache,
     removeImagesFromLibrary,
+    updateImageMetadataFields,
 } from '../services/db/imageRepo';
+import { updateImagesQueryCaches } from '../utils/imageQueryCache';
 import {
     getEffectiveAiModel,
     getEffectiveAiThinkingMode,
@@ -33,6 +35,7 @@ export const useMaintenanceOps = ({
     settings
 }: UseMaintenanceOpsProps) => {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const [isRecoveringMetadata, setIsRecoveringMetadata] = useState(false);
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
     const effectiveAiModel = getEffectiveAiModel(settings);
@@ -97,7 +100,7 @@ export const useMaintenanceOps = ({
 
         setIsRecoveringMetadata(true);
         try {
-            const base64 = await imageToBase64(img.url);
+            const base64 = await imageToBase64(img.id);
             const apiKey = useSettingsStore.getState().geminiApiKey;
             if (!apiKey) throw new Error("No API Key");
 
@@ -118,12 +121,14 @@ export const useMaintenanceOps = ({
                     ...img.metadata,
                     positivePrompt: recoveredPrompt
                 },
-                originalMetadata: img.originalMetadata || img.metadata
+                originalMetadata: img.originalMetadata
             };
 
+            await updateImageMetadataFields(img.id, { positivePrompt: recoveredPrompt });
             setImages(prev => prev.map(pImg => pImg.id === img.id ? updatedImg : pImg));
-
-            await insertImage(updatedImg);
+            updateImagesQueryCaches(queryClient, cachedImage => (
+                cachedImage.id === img.id ? updatedImg : cachedImage
+            ));
 
             addToast("Metadata recovered successfully!", "success");
             onComplete();
@@ -133,7 +138,7 @@ export const useMaintenanceOps = ({
         } finally {
             setIsRecoveringMetadata(false);
         }
-    }, [images, effectiveAiModel, effectiveAiThinkingMode, effectiveSystemPrompts, setImages, addToast]);
+    }, [images, effectiveAiModel, effectiveAiThinkingMode, effectiveSystemPrompts, setImages, addToast, queryClient]);
 
     return {
         isRecoveringMetadata,

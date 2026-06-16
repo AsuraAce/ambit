@@ -71,7 +71,7 @@ pub async fn reparse_metadata_batch(
         let mut errors = 0;
         {
             let mut update_stmt = tx.prepare_cached(
-                "UPDATE images SET metadata_json = ?1, model_hash = json_extract(?1, '$.modelHash'), model_name = json_extract(?1, '$.model'), tool = json_extract(?1, '$.tool'), resolved_model_name = COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), json_extract(?1, '$.model')), steps = CAST(json_extract(?1, '$.steps') AS INTEGER), cfg = CAST(json_extract(?1, '$.cfg') AS REAL), sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '), generation_type = json_extract(?1, '$.generationType'), parser_version = ?2 WHERE id = ?3"
+                "UPDATE images SET metadata_json = ?1, model_hash = json_extract(?1, '$.modelHash'), model_name = json_extract(?1, '$.model'), tool = json_extract(?1, '$.tool'), resolved_model_name = COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), json_extract(?1, '$.model')), steps = CAST(json_extract(?1, '$.steps') AS INTEGER), seed = CAST(json_extract(?1, '$.seed') AS INTEGER), cfg = CAST(json_extract(?1, '$.cfg') AS REAL), sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '), generation_type = json_extract(?1, '$.generationType'), parser_version = ?2 WHERE id = ?3"
             ).map_err(|e| e.to_string())?;
             
             for img in &images {

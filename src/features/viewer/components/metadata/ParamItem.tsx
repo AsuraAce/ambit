@@ -5,13 +5,19 @@ interface ParamItemProps {
     value: string;
     fullWidth?: boolean;
     isModified?: boolean;
+    allowZero?: boolean;
+    showUnknown?: boolean;
 }
 
-export const ParamItem = ({ label, value, fullWidth = false, isModified = false }: ParamItemProps) => {
-    // Strict Parsing: Hide if value is explicitly "0" or falsy/undefined (except 0 which is handled by string check)
-    // Seed 0 is technically valid but often means "random/unknown" in parsed context. 
-    // We hide it if it looks like a default value to avoid cluttering UI with hallucinated zeros.
-    if (!value || value === '0' || value === 'Unknown') return null;
+export const ParamItem = ({
+    label,
+    value,
+    fullWidth = false,
+    isModified = false,
+    allowZero = false,
+    showUnknown = false
+}: ParamItemProps) => {
+    if (!value || (!allowZero && value === '0') || (!showUnknown && value === 'Unknown')) return null;
 
     return (
         <div className={`relative bg-white dark:bg-zinc-800/50 p-3 rounded-xl ${fullWidth ? 'col-span-2' : ''} border transition-colors group ${isModified ? 'border-amber-500/30 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-900/10' : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'}`}>

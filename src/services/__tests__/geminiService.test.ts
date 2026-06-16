@@ -148,3 +148,24 @@ describe('geminiService: thinking configuration', () => {
         }
     });
 });
+
+describe('geminiService: image recovery', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('preserves the image MIME type when sending local image data to Gemini', async () => {
+        mockGenerateContent.mockResolvedValue({ text: '{"positivePrompt":"recovered"}' });
+
+        await recoverImageMetadata('data:image/jpeg;base64,abc', 'generic', 'key');
+
+        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/jpeg', data: 'abc' } },
+                    expect.objectContaining({ text: expect.any(String) })
+                ]
+            }
+        }));
+    });
+});

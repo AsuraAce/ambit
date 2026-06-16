@@ -501,6 +501,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push((updates.negativePrompt ?? updates.negative_prompt) || null);
         }
 
+        if ('seed' in updates) {
+            query += ', seed = ?';
+            params.push(updates.seed ?? null);
+        }
+
         // SPECIAL CASE: Model name is also denormalized for filtering
         if ('overrideModel' in updates) {
             query += ', resolved_model_name = ?';
@@ -544,6 +549,7 @@ export const revertImageMetadata = async (id: string) => {
                     model_hash = NULL,
                     model_name = NULL,
                     resolved_model_name = NULL,
+                    seed = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
                 WHERE id = ?
@@ -570,6 +576,7 @@ export const revertImageMetadata = async (id: string) => {
                     model_name = ?,
                     tool = ?,
                     resolved_model_name = ?,
+                    seed = ?,
                     positive_prompt = ?,
                     negative_prompt = ?
                 WHERE id = ?
@@ -579,6 +586,7 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.model || null,
                 originalMetadata.tool || GeneratorTool.UNKNOWN,
                 originalMetadata.model || null, // resolved_model_name matches model_name on revert
+                originalMetadata.seed ?? null,
                 originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
                 originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
                 normalizedId
@@ -586,7 +594,7 @@ export const revertImageMetadata = async (id: string) => {
         } catch (e) {
             console.error('[DB] Failed to revert metadata:', e);
             // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
+            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
         }
     });
 };

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, GeneratorTool } from '../types';
 import { useToast } from './useToast';
 import {
@@ -12,6 +13,7 @@ import {
     updateImageNotesCol,
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
+import { updateImagesQueryCaches } from '../utils/imageQueryCache';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -21,6 +23,7 @@ interface UseAppHandlersProps {
 
 export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
 
     const refreshFacets = () => {
@@ -172,18 +175,20 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleRevertMetadata = async (id: string) => {
-        const img = images.find(i => i.id === id);
-        if (!img) return;
-
-        // Optimistic UI update
-        const updatedImg = {
-            ...img,
-            metadata: img.originalMetadata || { ...img.metadata },
-            originalMetadata: img.originalMetadata
-        };
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-
         await revertImageMetadata(id);
+        const [revertedImage] = await getImagesByIds([id]);
+        if (!revertedImage) {
+            addToast('Metadata reverted, but the image could not be refreshed.', 'warning');
+            return;
+        }
+
+        const applyRevertedImage = (current: AIImage): AIImage => (
+            current.id === id
+                ? { ...revertedImage, stack: current.stack }
+                : current
+        );
+        setImages(prev => prev.map(applyRevertedImage));
+        updateImagesQueryCaches(queryClient, applyRevertedImage);
 
         // Revert can change tools and models, so we rebuild both incrementally
         Promise.all([

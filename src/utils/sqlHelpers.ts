@@ -139,7 +139,7 @@ const parseSearchToken = (token: SearchToken): SearchCondition | null => {
                 isPositivePrompt: false
             };
         } else if (key === 'seed') {
-            sql = `json_extract(metadata_json, '$.seed') LIKE ?`;
+            sql = `CAST(seed AS TEXT) LIKE ?`;
             param = `%${val}%`;
         } else if (key === 'neg' || key === 'negative') {
             sql = `negative_prompt LIKE ?`;
