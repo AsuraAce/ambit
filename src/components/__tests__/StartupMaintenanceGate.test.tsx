@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '../../test/testUtils';
 import { StartupMaintenanceGate } from '../StartupMaintenanceGate';
 import { getDb } from '../../services/db/connection';
@@ -23,6 +23,10 @@ describe('StartupMaintenanceGate', () => {
         vi.clearAllMocks();
         vi.mocked(isBrowserMockMode).mockReturnValue(false);
         vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock);
+    });
+
+    afterEach(() => {
+        document.getElementById('static-loading')?.remove();
     });
 
     it('shows database maintenance before mounting the app', async () => {
@@ -52,6 +56,25 @@ describe('StartupMaintenanceGate', () => {
         await waitFor(() => {
             expect(screen.getByText('Library ready')).toBeTruthy();
         });
+    });
+
+    it('dismisses the static preloader so startup maintenance is visible', async () => {
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        vi.mocked(getDb).mockImplementation(() => new Promise(() => undefined));
+
+        render(
+            <StartupMaintenanceGate>
+                <div>Library ready</div>
+            </StartupMaintenanceGate>
+        );
+
+        await waitFor(() => {
+            expect(staticLoader.style.opacity).toBe('0');
+            expect(staticLoader.style.pointerEvents).toBe('none');
+        });
+        expect(screen.getByText('Startup Maintenance')).toBeTruthy();
     });
 
     it('skips database preparation in browser mock mode', () => {

@@ -18,6 +18,18 @@ const nextFrame = () => new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
 });
 
+const dismissStaticLoader = () => {
+    const loader = document.getElementById('static-loading');
+    if (!loader) return;
+
+    loader.style.opacity = '0';
+    loader.style.pointerEvents = 'none';
+
+    window.setTimeout(() => {
+        loader.remove();
+    }, 500);
+};
+
 export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ children }) => {
     const [phase, setPhase] = React.useState<StartupDbPhase>('Preparing library database');
     const [isReady, setIsReady] = React.useState(isBrowserMockMode());
@@ -31,6 +43,7 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
         const prepareDatabase = async () => {
             try {
                 setPhase('Preparing library database');
+                dismissStaticLoader();
                 await nextFrame();
                 await getDb({
                     onPhase: (nextPhase) => {
