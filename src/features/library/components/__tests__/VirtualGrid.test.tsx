@@ -215,7 +215,10 @@ describe('VirtualGrid gallery motion', () => {
             />
         );
 
-        await waitFor(() => expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('100px, 100px'));
+        await waitFor(() => {
+            expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('100px, 100px');
+            expect(onLayoutChange).toHaveBeenLastCalledWith(4, 100);
+        });
         const callsAfterInitialLayout = onLayoutChange.mock.calls.length;
 
         rerender(
