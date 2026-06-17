@@ -188,6 +188,15 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             mode: 'manual' as const,
             ...optionsInput
         };
+        const isStartupMode = options.mode === 'startup';
+        let startupSyncVisible = false;
+        const setVisibleStartupProgress = (progress: NonNullable<typeof syncProgress>) => {
+            if (!startupSyncVisible) {
+                startupSyncVisible = true;
+                setSyncStatus('syncing');
+            }
+            setSyncProgress(progress);
+        };
         const syncStartedAt = liveWatchNow();
         const livePerfContext = options.mode === 'live' ? options.perfContext : undefined;
         let liveTotalProcessed = 0;
@@ -276,8 +285,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 watcherToSyncStartMs: livePerfContext ? elapsedMs(livePerfContext.firstEventAt) : undefined
             });
         } else {
-            setSyncStatus('syncing');
-            setSyncProgress({ current: 0, total: 0, message: options.mode === 'startup' ? 'Catching up InvokeAI DB...' : 'Preparing...' });
+            if (!isStartupMode) {
+                setSyncStatus('syncing');
+                setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
+            }
         }
 
         const ctrl = new AbortController();
@@ -323,7 +334,13 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             progress: { current: c, total: t, message: undefined }
                         });
                     } else {
-                        setSyncProgress({ current: c, total: t, message: msg });
+                        if (isStartupMode) {
+                            if (t > 0) {
+                                setVisibleStartupProgress({ current: c, total: t, message: msg });
+                            }
+                        } else {
+                            setSyncProgress({ current: c, total: t, message: msg });
+                        }
                     }
                 },
                 ctrl.signal,
@@ -342,7 +359,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             // Sync Boards to Collections
             if (settingsRef.current.syncBoardsToCollections && boardMapping && boardMapping.size > 0) {
                 if (options.mode !== 'live') {
-                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' });
+                    const nextProgress = { ...useLibraryStore.getState().syncProgress, message: 'Synchronizing boards...' };
+                    if (isStartupMode) {
+                        setVisibleStartupProgress(nextProgress);
+                    } else {
+                        setSyncProgress(nextProgress);
+                    }
                 }
                 setCollections(prev => {
                     const next = [...prev];
@@ -384,7 +406,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 );
             }
 
-            setSyncStatus('complete');
+            if (!isStartupMode || startupSyncVisible) {
+                setSyncStatus('complete');
+            }
             const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
             liveTotalProcessed = totalProcessed;
             // Conditional Facet Rebuild
@@ -437,7 +461,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     }
                 } else {
                     // MANUAL HEAVY REBUILD
-                    setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
+                    if (isStartupMode) {
+                        setVisibleStartupProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
+                    } else {
+                        setSyncProgress({ current: totalProcessed, total: totalProcessed, message: 'Updating gallery...' });
+                    }
 
                     // IMMEDIATE UI REFRESH (Block here until data hits RAM)
                     await queryClient.refetchQueries({ queryKey: ['images'] });
@@ -447,11 +475,16 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
                     }
 
-                    setSyncProgress({
+                    const cacheProgress = {
                         current: totalProcessed,
                         total: totalProcessed,
                         message: options.mode === 'startup' ? 'Updating startup filters...' : 'Rebuilding filter cache...'
-                    });
+                    };
+                    if (isStartupMode) {
+                        setVisibleStartupProgress(cacheProgress);
+                    } else {
+                        setSyncProgress(cacheProgress);
+                    }
 
                     try {
                         if (options.mode === 'startup') {
@@ -473,7 +506,12 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         return; // Halt completion if critical DB error
                     }
 
-                    setSyncProgress({ ...useLibraryStore.getState().syncProgress, message: undefined });
+                    const clearedMessageProgress = { ...useLibraryStore.getState().syncProgress, message: undefined };
+                    if (isStartupMode && startupSyncVisible) {
+                        setSyncProgress(clearedMessageProgress);
+                    } else if (!isStartupMode) {
+                        setSyncProgress(clearedMessageProgress);
+                    }
 
                     // Trigger complete routines
                     if (totalProcessed > 0 && (options.mode === 'manual' || options.mode === 'startup')) {
@@ -486,7 +524,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         if (shouldRefreshBoardCollectionThumbnails) {
                             await refreshCollections();
                         }
-                        setSyncStatus('complete');
+                        if (startupSyncVisible) {
+                            setSyncStatus('complete');
+                        }
                     }
 
                     if (shouldRefreshBoardCollectionThumbnails) {
@@ -553,6 +593,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             }
         } finally {
             setSyncAbortController(null);
+            if (isStartupMode && !startupSyncVisible) {
+                setSyncStatus('idle');
+                setSyncProgress({ current: 0, total: 0, message: undefined });
+            }
             if (options.mode === 'live') {
                 infoLiveWatchPerf('Invoke live cycle complete', {
                     cycleId: livePerfContext?.cycleId,

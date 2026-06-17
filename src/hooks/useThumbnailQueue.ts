@@ -11,8 +11,7 @@ import { isBrowserMockMode } from '../services/runtime';
 import { unwrap } from '../utils/spectaUtils';
 import {
     formatThumbnailQueueCompleteMessage,
-    formatThumbnailQueueRunningMessage,
-    THUMBNAIL_QUEUE_START_MESSAGE
+    formatThumbnailQueueRunningMessage
 } from './thumbnailQueueProgress';
 import { rebuildThumbnailFacetCache } from '../services/db/imageRepo';
 import { getThumbnailDir } from '../services/thumbnailService';
@@ -47,6 +46,21 @@ type RunningThumbnailConfig = {
 };
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const hasVisibleThumbnailProgress = (progress: ThumbnailOptimizationProgress): boolean => (
+    progress.total > 0
+    || progress.checked > 0
+    || progress.optimized > 0
+    || progress.reused > 0
+    || progress.failed > 0
+    || progress.skipped > 0
+);
+const hasVisibleThumbnailResult = (result: ThumbnailOptimizationResult): boolean => (
+    result.checked > 0
+    || result.optimized > 0
+    || result.reused > 0
+    || result.failed > 0
+    || result.skipped > 0
+);
 
 /**
  * Starts and supervises the backend-owned Smart Thumbnail optimization job.
@@ -81,6 +95,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
     const isScanningMissingFiles = useLibraryStore(s => s.isScanningMissingFiles);
     const isPopulatingThumbnails = useLibraryStore(s => s.isPopulatingThumbnails);
+    const isStartupCatchupPending = useLibraryStore(s => s.isStartupCatchupPending);
+    const isMetadataRefreshPending = useLibraryStore(s => s.isMetadataRefreshPending);
     const isRefreshingMetadata = useLibraryStore(s => s.isRefreshingMetadata);
     const thumbnailMaintenanceOperation = useLibraryStore(s => s.thumbnailMaintenanceOperation);
     const thumbnailOptimizationRetrySignal = useLibraryStore(s => s.thumbnailOptimizationRetrySignal);
@@ -105,6 +121,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         || isScanningDuplicates
         || isScanningMissingFiles
         || isPopulatingThumbnails
+        || isStartupCatchupPending
+        || isMetadataRefreshPending
         || isRefreshingMetadata
         || thumbnailMaintenanceOperation !== null;
 
@@ -122,6 +140,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             || store.isScanningDuplicates
             || store.isScanningMissingFiles
             || store.isPopulatingThumbnails
+            || store.isStartupCatchupPending
+            || store.isMetadataRefreshPending
             || store.isRefreshingMetadata
             || store.thumbnailMaintenanceOperation !== null;
     }, []);
@@ -268,6 +288,31 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         const imagesPerSecond = result.durationMs > 0
             ? result.checked / (result.durationMs / 1000)
             : 0;
+        const visibleResult = hasVisibleThumbnailResult(result);
+        setLastBackgroundHealingRun({
+            checked: result.checked,
+            optimized: result.optimized,
+            reused: result.reused,
+            failed: result.failed,
+            skipped: result.skipped,
+            imagesPerSecond,
+            durationMs: result.durationMs,
+            completedAt: Date.now(),
+            profile: completedConfig?.profile ?? thumbnailOptimizationProfile
+        });
+
+        if (!visibleResult) {
+            setBackgroundHealingActive(false);
+            setBackgroundHealingPaused(false);
+            setBackgroundHealingProgress(null);
+            setBackgroundHealingDetails(null);
+            if (retryAfterCurrentRunRef.current && enableAutoThumbnailHealing) {
+                retryAfterCurrentRunRef.current = false;
+                setPostRunRetrySignal(signal => signal + 1);
+            }
+            return;
+        }
+
         const completeCount = Math.max(result.checked, 1);
         setBackgroundHealingActive(true);
         setBackgroundHealingPaused(false);
@@ -281,17 +326,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             })
         });
         setBackgroundHealingDetails(null);
-        setLastBackgroundHealingRun({
-            checked: result.checked,
-            optimized: result.optimized,
-            reused: result.reused,
-            failed: result.failed,
-            skipped: result.skipped,
-            imagesPerSecond,
-            durationMs: result.durationMs,
-            completedAt: Date.now(),
-            profile: completedConfig?.profile ?? thumbnailOptimizationProfile
-        });
 
         void refreshThumbnailConsumers(result.optimized);
 
@@ -327,6 +361,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             'thumbnail-optimization-progress',
             (event) => {
                 if (cancelRequestedRef.current) return;
+                const shouldShowProgress = hasVisibleThumbnailProgress(event.payload);
 
                 jobDiagnosticRef.current?.update({
                     checked: event.payload.checked,
@@ -336,11 +371,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                     phase: event.payload.phase,
                     isThrottled: event.payload.isThrottled
                 });
+                if (!shouldShowProgress) return;
+
                 setBackgroundHealingActive(true);
                 setBackgroundHealingPaused(false);
                 setBackgroundHealingProgress({
                     current: event.payload.checked,
-                    total: 0,
+                    total: event.payload.total > 0 ? event.payload.total : 0,
                     message: formatThumbnailQueueRunningMessage({
                         checked: event.payload.checked,
                         optimized: event.payload.optimized,
@@ -463,27 +500,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         cancelRequestedRef.current = false;
         restartRequestedRef.current = false;
         runningConfigRef.current = optimizerConfig;
-        setBackgroundHealingActive(true);
         setBackgroundHealingPaused(false);
-        setBackgroundHealingProgress({
-            current: 0,
-            total: 0,
-            message: THUMBNAIL_QUEUE_START_MESSAGE
-        });
-        setBackgroundHealingDetails({
-            checked: 0,
-            optimized: 0,
-            reused: 0,
-            failed: 0,
-            skipped: 0,
-            imagesPerSecond: 0,
-            batchMs: 0,
-            dbMs: 0,
-            encodeMs: 0,
-            profile: optimizerConfig.profile,
-            phase: shouldStartThrottled ? 'throttled' : 'running',
-            isThrottled: shouldStartThrottled
-        });
 
         console.log('[ThumbnailQueue] Starting backend thumbnail optimization', {
             includeUpgradeable: optimizerConfig.includeUpgradeable,
