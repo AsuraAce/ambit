@@ -31,6 +31,8 @@ impl Default for ReparseState {
 pub struct ReparseProgress {
     pub current: usize,
     pub total: usize,
+    pub updated: usize,
+    pub errors: usize,
     pub phase: String,
     pub message: String,
 }
@@ -86,6 +88,8 @@ pub async fn start_reparse_job(
         let _ = app.emit("refresh-progress", ReparseProgress {
             current: 0,
             total: 0,
+            updated: 0,
+            errors: 0,
             phase: "counting".to_string(),
             message: "Calculating total images...".to_string(),
         });
@@ -159,6 +163,8 @@ pub async fn start_reparse_job(
         let _ = app.emit("refresh-progress", ReparseProgress {
             current: 0,
             total,
+            updated: 0,
+            errors: 0,
             phase: "starting".to_string(),
             message: format!("Found {} images to refresh", total),
         });
@@ -336,6 +342,8 @@ pub async fn start_reparse_job(
                         let _ = app.emit("refresh-progress", ReparseProgress {
                             current: processed,
                             total,
+                            updated,
+                            errors,
                             phase: "processing".to_string(),
                             message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms", 
                                 processed, total, updated, fetch_ms, parse_duration.as_millis(), update_ms),
@@ -459,6 +467,8 @@ pub async fn start_reparse_job(
         let _ = app.emit("refresh-progress", ReparseProgress {
             current: processed,
             total,
+            updated,
+            errors,
             phase: "complete".to_string(),
             message: format!("Completed {} / {} images", processed, total),
         });
@@ -490,4 +500,28 @@ pub async fn start_reparse_job(
 pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
     log::info!("[Refresh] Cancellation requested");
     state.is_cancelled.store(true, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_payload_serializes_structured_counters() {
+        let payload = ReparseProgress {
+            current: 126_700,
+            total: 288_222,
+            updated: 123_981,
+            errors: 2,
+            phase: "processing".to_string(),
+            message: "Processing metadata".to_string(),
+        };
+
+        let value = serde_json::to_value(payload).expect("serialize progress payload");
+
+        assert_eq!(value["current"], 126_700);
+        assert_eq!(value["total"], 288_222);
+        assert_eq!(value["updated"], 123_981);
+        assert_eq!(value["errors"], 2);
+    }
 }

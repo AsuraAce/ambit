@@ -673,6 +673,8 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().syncStatus).toBe('idle');
+        expect(useLibraryStore.getState().syncProgress.message).toBeUndefined();
         expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
             settings: expect.objectContaining({
                 invokeDbSnapshot: expect.objectContaining({
@@ -800,6 +802,8 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledWith(touchedFacetResources);
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().syncStatus).toBe('complete');
+        expect(useLibraryStore.getState().syncProgress.total).toBe(2);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
     });
 

@@ -31,6 +31,8 @@ const debugImportRun = (event: string, data: Record<string, unknown>) => {
 export interface SyncProgress {
     current: number;
     total: number;
+    updated?: number;
+    errors?: number;
     message?: string;
     phase?: string;
     mode?: 'determinate' | 'indeterminate' | 'complete';
@@ -214,6 +216,7 @@ interface LibraryState {
     lastMissingScanResult: MissingFileAuditResult | null;
 
     // Background Auto-Healing State
+    isStartupCatchupPending: boolean;
     isBackgroundHealingActive: boolean;
     backgroundHealingProgress: SyncProgress | null;
     backgroundHealingDetails: ThumbnailOptimizationDetails | null;
@@ -223,6 +226,7 @@ interface LibraryState {
     thumbnailMaintenanceOperation: ThumbnailMaintenanceOperation | null;
 
     // Background Metadata Refresh State
+    isMetadataRefreshPending: boolean;
     isRefreshingMetadata: boolean;
     refreshProgress: SyncProgress | null;
 
@@ -276,6 +280,7 @@ interface LibraryState {
     incrementFacetCacheVersion: () => void;
 
     // Background Healing Actions
+    setStartupCatchupPending: (val: boolean) => void;
     setBackgroundHealingActive: (val: boolean) => void;
     setBackgroundHealingProgress: (progress: SyncProgress | null) => void;
     setBackgroundHealingDetails: (details: ThumbnailOptimizationDetails | null) => void;
@@ -285,6 +290,7 @@ interface LibraryState {
     setThumbnailMaintenanceOperation: (operation: ThumbnailMaintenanceOperation | null) => void;
 
     // Background Metadata Refresh Actions
+    setMetadataRefreshPending: (val: boolean) => void;
     setIsRefreshingMetadata: (val: boolean) => void;
     setRefreshProgress: (progress: SyncProgress | null) => void;
     cancelRefresh: () => void;
@@ -340,6 +346,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     facetCacheVersion: 0,
 
     // Background Healing State
+    isStartupCatchupPending: false,
     isBackgroundHealingActive: false,
     backgroundHealingProgress: null,
     backgroundHealingDetails: null,
@@ -349,6 +356,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     thumbnailMaintenanceOperation: null,
 
     // Background Metadata Refresh State
+    isMetadataRefreshPending: false,
     isRefreshingMetadata: false,
     refreshProgress: null,
 
@@ -558,6 +566,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
 
     // Background Healing Actions
+    setStartupCatchupPending: (val) => set({ isStartupCatchupPending: val }),
     setBackgroundHealingActive: (val) => set({ isBackgroundHealingActive: val }),
     setBackgroundHealingProgress: (progress) => set({ backgroundHealingProgress: progress }),
     setBackgroundHealingDetails: (details) => set({ backgroundHealingDetails: details }),
@@ -569,11 +578,12 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setThumbnailMaintenanceOperation: (operation) => set({ thumbnailMaintenanceOperation: operation }),
 
     // Background Metadata Refresh Actions
+    setMetadataRefreshPending: (val) => set({ isMetadataRefreshPending: val }),
     setIsRefreshingMetadata: (val) => set({ isRefreshingMetadata: val, isActivityDockDismissed: val ? false : undefined }),
     setRefreshProgress: (progress) => set({ refreshProgress: progress }),
     cancelRefresh: () => {
         invoke('cancel_reparse_job').catch(console.error);
-        set({ isRefreshingMetadata: false, refreshProgress: null });
+        set({ isMetadataRefreshPending: false, isRefreshingMetadata: false, refreshProgress: null });
     },
 
     // Live Watch Session Actions

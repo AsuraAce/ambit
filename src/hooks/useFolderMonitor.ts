@@ -91,6 +91,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
             });
 
             const performStartupScan = async () => {
+                useLibraryStore.getState().setStartupCatchupPending(true);
                 const startupStartedAt = Date.now();
                 const folderScanStartedAt = Date.now();
                 const tasks: { paths: string[], variant: GeneratorTool | undefined, folderId: string }[] = [];
@@ -98,45 +99,46 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                 let startupScanWasCancelled = false;
                 const scanTime = Date.now();
 
-                // Phase 1: Aggregation - Collect all new files from all valid folders
-                for (const folder of activeFolders) {
-                    if (folder.lastScanned) {
-                        try {
-                            console.log(`[FolderMonitor] Smart Scan for ${folder.path}`);
-                            const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
+                try {
+                    // Phase 1: Aggregation - Collect all new files from all valid folders
+                    for (const folder of activeFolders) {
+                        if (folder.lastScanned) {
+                            try {
+                                console.log(`[FolderMonitor] Smart Scan for ${folder.path}`);
+                                const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
 
-                            if (newFiles && newFiles.length > 0) {
-                                console.log(`[FolderMonitor] Found ${newFiles.length} new files in ${folder.path}`);
-                                const paths = newFiles.map(f => f.path);
-                                tasks.push({ paths, variant: folder.variant, folderId: folder.id });
-                                totalFilesFound += paths.length;
-                            } else {
-                                console.log(`[FolderMonitor] No new files in ${folder.path}`);
-                                updateFolderLastScanned(folder.id, scanTime); // Safe to update if nothing found
+                                if (newFiles && newFiles.length > 0) {
+                                    console.log(`[FolderMonitor] Found ${newFiles.length} new files in ${folder.path}`);
+                                    const paths = newFiles.map(f => f.path);
+                                    tasks.push({ paths, variant: folder.variant, folderId: folder.id });
+                                    totalFilesFound += paths.length;
+                                } else {
+                                    console.log(`[FolderMonitor] No new files in ${folder.path}`);
+                                    updateFolderLastScanned(folder.id, scanTime); // Safe to update if nothing found
+                                }
+                            } catch (e) {
+                                console.error(`[FolderMonitor] Smart scan failed for ${folder.path}, falling back to full scan`, e);
                             }
-                        } catch (e) {
-                            console.error(`[FolderMonitor] Smart scan failed for ${folder.path}, falling back to full scan`, e);
-                        }
-                    } else {
-                        // Full scan usage (rare on startup if already configured)
-                        console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
-                        const result = await onScan([{ path: folder.path, variant: folder.variant }], { mode: 'startup' });
-                        if (isImportSourceCompleted(result, folder.path)) {
-                            updateFolderLastScanned(folder.id, scanTime);
-                        } else if (isImportSourceCancelled(result, folder.path)) {
-                            markInitialScanCancelled([folder.id]);
-                            startupScanWasCancelled = true;
-                            break;
                         } else {
-                            warnCursorHeld('Startup full scan', folder.id, result);
+                            // Full scan usage (rare on startup if already configured)
+                            console.log(`[FolderMonitor] Full Scan for ${folder.path} (first time)`);
+                            const result = await onScan([{ path: folder.path, variant: folder.variant }], { mode: 'startup' });
+                            if (isImportSourceCompleted(result, folder.path)) {
+                                updateFolderLastScanned(folder.id, scanTime);
+                            } else if (isImportSourceCancelled(result, folder.path)) {
+                                markInitialScanCancelled([folder.id]);
+                                startupScanWasCancelled = true;
+                                break;
+                            } else {
+                                warnCursorHeld('Startup full scan', folder.id, result);
+                            }
                         }
                     }
-                }
-                console.info('[Startup Catch-up] Folder scan phase complete.', {
-                    activeFolders: activeFolders.length,
-                    filesFound: totalFilesFound,
-                    durationMs: Date.now() - folderScanStartedAt
-                });
+                    console.info('[Startup Catch-up] Folder scan phase complete.', {
+                        activeFolders: activeFolders.length,
+                        filesFound: totalFilesFound,
+                        durationMs: Date.now() - folderScanStartedAt
+                    });
 
                 // Phase 2: Execution - Run single unified batch for smart updates
                 if (!startupScanWasCancelled && totalFilesFound > 0) {
@@ -265,9 +267,12 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                     });
                 }
 
-                console.info('[Startup Catch-up] Complete.', {
-                    durationMs: Date.now() - startupStartedAt
-                });
+                    console.info('[Startup Catch-up] Complete.', {
+                        durationMs: Date.now() - startupStartedAt
+                    });
+                } finally {
+                    useLibraryStore.getState().setStartupCatchupPending(false);
+                }
             };
 
             void performStartupScan();

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
+import { invoke } from '@tauri-apps/api/core';
 
 vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -225,6 +226,34 @@ describe('ActivityDock', () => {
 
         expect(screen.getByText('Optimized 338 thumbnails; 2 need attention')).toBeTruthy();
         expect(screen.getByText('Some files may be corrupt or unavailable.')).toBeTruthy();
+    });
+
+    it('renders metadata refresh progress without duplicate count chrome and can cancel', () => {
+        vi.mocked(invoke).mockResolvedValue(undefined);
+        useLibraryStore.setState({
+            isRefreshingMetadata: true,
+            refreshProgress: {
+                current: 126700,
+                total: 288222,
+                updated: 123981,
+                errors: 0,
+                phase: 'processing',
+                message: 'Processed 126700/288222 (Updated: 123981). Timings: Fetch 54ms'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('Metadata Refresh')).toBeTruthy();
+        expect(screen.getByText('126,700 / 288,222 images | 44% | 123,981 updated')).toBeTruthy();
+        expect(screen.queryByText('Refreshing Metadata')).toBeNull();
+        expect(screen.queryByText('126,700 / 288,222')).toBeNull();
+        expect(screen.queryByText(/Processed 126700/)).toBeNull();
+        expect(screen.queryByText('44%')).toBeNull();
+
+        fireEvent.click(screen.getByText('Cancel'));
+
+        expect(invoke).toHaveBeenCalledWith('cancel_reparse_job');
     });
 
     it('renders indeterminate discovery progress without a misleading percentage', () => {

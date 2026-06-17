@@ -4,6 +4,7 @@ import App from './App';
 import './index.css';
 import { ToastProvider } from './contexts/ToastContext';
 import { LibraryProvider } from './contexts/LibraryContext';
+import { StartupMaintenanceGate } from './components/StartupMaintenanceGate';
 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,11 +36,13 @@ root.render(
   <React.StrictMode>
     <ToastProvider>
       <QueryClientProvider client={queryClient}>
-        <LibraryProvider>
-          <ErrorBoundary>
-            <App />
-          </ErrorBoundary>
-        </LibraryProvider>
+        <StartupMaintenanceGate>
+          <LibraryProvider>
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+          </LibraryProvider>
+        </StartupMaintenanceGate>
         {import.meta.env.DEV && (
           <React.Suspense fallback={null}>
             <ReactQueryDevtools initialIsOpen={false} />
