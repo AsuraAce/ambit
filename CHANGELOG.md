@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/AsuraAce/ambit/compare/v0.6.0...v0.6.1) (2026-06-17)
+
+
+### Bug Fixes
+
+* clarify startup background activity ([#143](https://github.com/AsuraAce/ambit/issues/143)) ([fe8a95c](https://github.com/AsuraAce/ambit/commit/fe8a95cd49d2c1d05c66d1d72cb3905edbcb1b40))
+* preserve truthful nullable seed metadata ([#141](https://github.com/AsuraAce/ambit/issues/141)) ([50819d4](https://github.com/AsuraAce/ambit/commit/50819d4b38bb4e3c8ff002743d1b470235d1e00b))
+
 ## [0.6.0](https://github.com/AsuraAce/ambit/compare/v0.5.0...v0.6.0) (2026-06-12)
 
 
