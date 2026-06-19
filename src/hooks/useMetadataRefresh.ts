@@ -11,6 +11,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
 import { listenWithCleanup } from '../utils/tauriListener';
+import { rebuildFacetCacheIncrementalBatchStrict } from '../services/db/imageRepo';
 
 interface RefreshProgress {
     current: number;
@@ -41,6 +42,16 @@ interface StartRefreshOptions {
 const STARTUP_REFRESH_INITIAL_DELAY_MS = 3000;
 const STARTUP_REFRESH_RETRY_DELAY_MS = 15000;
 const STARTUP_REFRESH_MAX_ATTEMPTS = 20;
+const METADATA_REFRESH_FACET_TYPES = [
+    'checkpoints',
+    'loras',
+    'embeddings',
+    'hypernetworks',
+    'controlNets',
+    'ipAdapters',
+    'tools'
+];
+const ACTIVE_REFRESH_PROGRESS_PHASES = new Set(['counting', 'starting', 'processing']);
 
 const getErrorMessage = (err: unknown): string => (
     err instanceof Error ? err.message : String(err)
@@ -61,12 +72,27 @@ export function useMetadataRefresh() {
     const startupAnnouncementCountRef = useRef<number | null>(null);
     const startupAnnouncementShownRef = useRef(false);
     const deferStartupVisibilityUntilProcessingRef = useRef(false);
+    const metadataFacetRefreshHandledRef = useRef(false);
 
     const {
         setMetadataRefreshPending,
         setIsRefreshingMetadata,
         setRefreshProgress,
     } = useLibraryStore();
+
+    const refreshFacetsAfterMetadataUpdate = useCallback(async (result: RefreshResult) => {
+        if (result.updated <= 0 || metadataFacetRefreshHandledRef.current) return;
+        metadataFacetRefreshHandledRef.current = true;
+
+        try {
+            const refreshed = await rebuildFacetCacheIncrementalBatchStrict(METADATA_REFRESH_FACET_TYPES);
+            useLibraryStore.getState().incrementFacetCacheVersion();
+            console.info(`[Refresh] Refreshed metadata facet cache after reparse: ${refreshed} entries`);
+        } catch (err) {
+            console.error('[Refresh] Failed to refresh metadata facet cache after reparse', err);
+            addToast('Metadata refresh finished, but asset counts may be stale until the next refresh.', 'warning');
+        }
+    }, [addToast]);
 
     // Listen to progress events from backend
     useEffect(() => {
@@ -85,6 +111,9 @@ export function useMetadataRefresh() {
                     return;
                 }
 
+                if (ACTIVE_REFRESH_PROGRESS_PHASES.has(event.payload.phase)) {
+                    metadataFacetRefreshHandledRef.current = false;
+                }
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 setMetadataRefreshPending(false);
                 setIsRefreshingMetadata(true);
@@ -129,6 +158,7 @@ export function useMetadataRefresh() {
                 }
 
                 console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
+                void refreshFacetsAfterMetadataUpdate(event.payload);
             },
             'Metadata refresh complete'
         );
@@ -137,7 +167,7 @@ export function useMetadataRefresh() {
             progressListener.cleanup();
             completeListener.cleanup();
         };
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode]);
+    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, refreshFacetsAfterMetadataUpdate]);
 
     // Start refresh job
     const startRefresh = useCallback(async (
@@ -152,6 +182,7 @@ export function useMetadataRefresh() {
         }
 
         console.log(`[Refresh] Starting backend refresh job${filterTool ? ` (Tool: ${filterTool})` : ''}`);
+        metadataFacetRefreshHandledRef.current = false;
         deferStartupVisibilityUntilProcessingRef.current = deferActiveUntilProgress;
         if (!deferActiveUntilProgress) {
             startupAnnouncementCountRef.current = null;
@@ -168,6 +199,7 @@ export function useMetadataRefresh() {
             });
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately
+            void refreshFacetsAfterMetadataUpdate(result);
             setMetadataRefreshPending(false);
             setIsRefreshingMetadata(false);
             startupAnnouncementCountRef.current = null;
@@ -208,6 +240,7 @@ export function useMetadataRefresh() {
         }
 
         console.log(`[Refresh] Job requested. Root: ${rootPath || 'ALL'}, Force: ${force}${filterTool ? `, Tool: ${filterTool}` : ''}`);
+        metadataFacetRefreshHandledRef.current = false;
         deferStartupVisibilityUntilProcessingRef.current = false;
         startupAnnouncementCountRef.current = null;
         startupAnnouncementShownRef.current = false;
@@ -222,6 +255,7 @@ export function useMetadataRefresh() {
             });
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately
+            void refreshFacetsAfterMetadataUpdate(result);
             setMetadataRefreshPending(false);
             setIsRefreshingMetadata(false);
             startupAnnouncementCountRef.current = null;

@@ -5,6 +5,7 @@ import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
 import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
 import { commands } from '../../bindings';
+import { resourceReferenceEqualsSql, resourceReferenceSql } from '../../utils/sqlHelpers';
 
 export interface LibraryStats {
     totalImages: number;
@@ -392,6 +393,8 @@ const appendTrailingPredicate = (whereClause: string, predicate?: string): strin
     predicate ? `${whereClause} AND ${predicate}` : whereClause
 );
 
+const loraReferencePredicate = resourceReferenceEqualsSql('il.lora_name');
+
 export const countImages = async (whereClause: string, params: unknown[], collectionId?: string, loraName?: string): Promise<number> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
@@ -404,7 +407,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, loraName, ...params]));
         return result[0]?.count || 0;
@@ -428,7 +431,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             SELECT count(*) as count 
             FROM image_loras il
             CROSS JOIN images ON images.id = il.image_id
-            ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [loraName, ...params]));
         return result[0]?.count || 0;
@@ -537,7 +540,7 @@ export const searchImages = async (
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN images ON images.id = ci.image_id
-            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
             ${cursorWhere}
             ${orderBy}
             LIMIT ${limit}
@@ -568,7 +571,7 @@ export const searchImages = async (
             SELECT ${getImageFieldsLight()}
             FROM image_loras il
             CROSS JOIN images ON images.id = il.image_id
-            ${finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND')}
+            ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
             ${cursorWhere}
             ${orderBy}
             LIMIT ${limit}
@@ -630,7 +633,7 @@ const buildScopedImageSourceParts = (
                 JOIN images ON images.id = ci.image_id
             `,
             scopedWhere: appendTrailingPredicate(
-                finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND il.lora_name = ? AND'),
+                finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`),
                 trailingPredicate
             ),
             queryParams: [collectionId, loraName, ...params, ...trailingParams],
@@ -660,7 +663,7 @@ const buildScopedImageSourceParts = (
                 CROSS JOIN images ON images.id = il.image_id
             `,
             scopedWhere: appendTrailingPredicate(
-                finalWhere.replace('WHERE', 'WHERE il.lora_name = ? AND'),
+                finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`),
                 trailingPredicate
             ),
             queryParams: [loraName, ...params, ...trailingParams],
@@ -708,46 +711,56 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
                 FROM scoped_images
                 GROUP BY name
             `;
-        case 'loras':
+        case 'loras': {
+            const nameExpr = resourceReferenceSql('il.lora_name');
             return `
                 ${cteSql}
-                SELECT COALESCE(il.lora_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
                 FROM scoped_images si
                 JOIN image_loras il ON il.image_id = si.id
-                GROUP BY il.lora_name
+                GROUP BY ${nameExpr}
             `;
-        case 'embeddings':
+        }
+        case 'embeddings': {
+            const nameExpr = resourceReferenceSql('ie.embedding_name');
             return `
                 ${cteSql}
-                SELECT COALESCE(ie.embedding_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
                 FROM scoped_images si
                 JOIN image_embeddings ie ON ie.image_id = si.id
-                GROUP BY ie.embedding_name
+                GROUP BY ${nameExpr}
             `;
-        case 'hypernetworks':
+        }
+        case 'hypernetworks': {
+            const nameExpr = resourceReferenceSql('ih.hypernetwork_name');
             return `
                 ${cteSql}
-                SELECT COALESCE(ih.hypernetwork_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
                 FROM scoped_images si
                 JOIN image_hypernetworks ih ON ih.image_id = si.id
-                GROUP BY ih.hypernetwork_name
+                GROUP BY ${nameExpr}
             `;
-        case 'control_nets':
+        }
+        case 'control_nets': {
+            const nameExpr = resourceReferenceSql('ic.controlnet_name');
             return `
                 ${cteSql}
-                SELECT COALESCE(ic.controlnet_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
                 FROM scoped_images si
                 JOIN image_controlnets ic ON ic.image_id = si.id
-                GROUP BY ic.controlnet_name
+                GROUP BY ${nameExpr}
             `;
-        case 'ip_adapters':
+        }
+        case 'ip_adapters': {
+            const nameExpr = resourceReferenceSql('ii.ipadapter_name');
             return `
                 ${cteSql}
-                SELECT COALESCE(ii.ipadapter_name, 'Unknown') AS name, count(DISTINCT si.id) AS count
+                SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
                 FROM scoped_images si
                 JOIN image_ipadapters ii ON ii.image_id = si.id
-                GROUP BY ii.ipadapter_name
+                GROUP BY ${nameExpr}
             `;
+        }
         default:
             return null;
     }
