@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/AsuraAce/ambit/compare/v0.6.1...v0.6.2) (2026-06-20)
+
+
+### Bug Fixes
+
+* refresh canonical resource facets after reparse ([#144](https://github.com/AsuraAce/ambit/issues/144)) ([bb4987a](https://github.com/AsuraAce/ambit/commit/bb4987aa59173681f8c372e4842563d2707e89bb))
+
 ## [0.6.1](https://github.com/AsuraAce/ambit/compare/v0.6.0...v0.6.1) (2026-06-17)
 
 
