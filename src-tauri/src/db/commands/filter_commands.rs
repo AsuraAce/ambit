@@ -8,6 +8,16 @@ const SEED_BACKFILL_EXPRESSION: &str = "CASE
                     ELSE NULL
                 END";
 
+fn resource_clean_ref_sql(column: &str) -> String {
+    format!(
+        "CASE
+            WHEN instr({column}, ' (') > 0 THEN trim(substr({column}, 1, instr({column}, ' (') - 1))
+            WHEN instr({column}, ':') > 0 THEN trim(substr({column}, 1, instr({column}, ':') - 1))
+            ELSE trim({column})
+        END"
+    )
+}
+
 #[derive(serde::Serialize, specta::Type)]
 pub struct NumericRange {
     pub min: f64,
@@ -42,8 +52,10 @@ fn build_parameter_scope_from_clause(
     }
 
     if let Some(lora) = lora_name {
-        from_clause
-            .push_str(" JOIN image_loras il ON il.image_id = images.id AND il.lora_name = ?");
+        from_clause.push_str(&format!(
+            " JOIN image_loras il ON il.image_id = images.id AND ({}) COLLATE NOCASE = ?",
+            resource_clean_ref_sql("il.lora_name")
+        ));
         join_params.push(Value::Text(lora.to_string()));
     }
 
@@ -154,7 +166,8 @@ mod tests {
             build_parameter_scope_from_clause(Some(collection_id), Some(lora_name));
 
         assert!(from_clause.contains("ci.collection_id = ?"));
-        assert!(from_clause.contains("il.lora_name = ?"));
+        assert!(from_clause.contains("il.lora_name"));
+        assert!(from_clause.contains("COLLATE NOCASE = ?"));
         assert!(!from_clause.contains(collection_id));
         assert!(!from_clause.contains(lora_name));
         assert_eq!(

@@ -835,7 +835,8 @@ describe('searchRepo scoped stats queries', () => {
         expect(statsSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
         expect(statsSql).toContain('JOIN images ON images.id = ci.image_id');
         expect(statsSql).toContain('ci.collection_id = ?');
-        expect(statsSql).toContain('il.lora_name = ?');
+        expect(statsSql).toContain("instr(il.lora_name, ' (')");
+        expect(statsSql).toContain('COLLATE NOCASE = ?');
         expect(statsSql).not.toContain(collectionId);
         expect(statsSql).not.toContain(loraName);
         expect(statsParams).toEqual([collectionId, loraName, 0]);
@@ -844,7 +845,8 @@ describe('searchRepo scoped stats queries', () => {
         expect(keywordSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
         expect(keywordSql).toContain('JOIN images ON images.id = ci.image_id');
         expect(keywordSql).toContain('ci.collection_id = ?');
-        expect(keywordSql).toContain('il.lora_name = ?');
+        expect(keywordSql).toContain("instr(il.lora_name, ' (')");
+        expect(keywordSql).toContain('COLLATE NOCASE = ?');
         expect(keywordSql).toContain('images.rowid > ?');
         expect(keywordSql).not.toContain('WHERE si.rowid > ?');
         expect(keywordSql).not.toContain(collectionId);
@@ -904,15 +906,64 @@ describe('searchRepo scoped stats queries', () => {
 
         expect(statsSql).toContain('FROM image_loras il');
         expect(statsSql).toContain('CROSS JOIN images ON images.id = il.image_id');
+        expect(statsSql).toContain("instr(il.lora_name, ' (')");
+        expect(statsSql).toContain('COLLATE NOCASE = ?');
         expect(statsSql).not.toContain('FROM images INDEXED BY');
         expect(statsParams).toEqual(['Detailer', 0]);
 
         expect(keywordSql).toContain('FROM image_loras il');
         expect(keywordSql).toContain('CROSS JOIN images ON images.id = il.image_id');
+        expect(keywordSql).toContain("instr(il.lora_name, ' (')");
+        expect(keywordSql).toContain('COLLATE NOCASE = ?');
         expect(keywordSql).toContain('images.rowid > ?');
         expect(keywordSql).not.toContain('WHERE si.rowid > ?');
         expect(keywordSql).not.toContain('FROM images INDEXED BY');
         expect(keywordParams).toEqual(['Detailer', 0, 0]);
+    });
+
+    it('uses canonical LoRA references for optimized image count and search', async () => {
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+                if (normalizedSql.includes('count(*) as count')) return [{ count: 1 }];
+                return [];
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { countImages, searchImages } = await import('../searchRepo');
+
+        await countImages('WHERE is_deleted = ?', [0], undefined, 'detail___add_detail');
+        await searchImages('WHERE is_deleted = ?', [0], 100, 'timestamp', 'DESC', false, undefined, 'detail___add_detail');
+
+        const [countSql, countParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
+        const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes('SELECT') && value.includes('FROM image_loras il') && !value.includes('count(*) as count')) as [string, unknown[]];
+
+        expect(countSql).toContain("instr(il.lora_name, ' (')");
+        expect(countSql).toContain('COLLATE NOCASE = ?');
+        expect(countParams).toEqual(['detail___add_detail', 0]);
+        expect(searchSql).toContain("instr(il.lora_name, ' (')");
+        expect(searchSql).toContain('COLLATE NOCASE = ?');
+        expect(searchParams).toEqual(['detail___add_detail', 0]);
+    });
+
+    it('groups scoped LoRA facet counts by canonical resource reference', async () => {
+        const db = createFacetDb([
+            {
+                facet_type: 'loras',
+                resource_name: 'detail___add_detail',
+                resource_hash: 'lora_detail___add_detail',
+                count: 1
+            }
+        ]);
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        await getFacets('WHERE is_deleted = 0', [], ['loras'], { assetScope: 'used' });
+
+        const [scopedSql] = findSelectCall(db, (value) => value.includes('FROM scoped_images') && value.includes('JOIN image_loras')) as [string, unknown[]];
+        expect(scopedSql).toContain("instr(il.lora_name, ' (')");
+        expect(scopedSql).toContain('GROUP BY CASE');
     });
 
     it('returns full model names without a top-20 cap for scoped stats', async () => {
@@ -947,7 +998,8 @@ describe('searchRepo scoped stats queries', () => {
         const [modelSql, modelParams] = findSelectCall(db, (value) => value.includes('GROUP BY name')) as [string, unknown[]];
         expect(modelSql).toContain('WITH scoped_images');
         expect(modelSql).toContain('ci.collection_id = ?');
-        expect(modelSql).toContain('il.lora_name = ?');
+        expect(modelSql).toContain("instr(il.lora_name, ' (')");
+        expect(modelSql).toContain('COLLATE NOCASE = ?');
         expect(modelSql).not.toContain('LIMIT 20');
         expect(modelParams).toEqual(['collection-1', 'Detailer', 0]);
     });

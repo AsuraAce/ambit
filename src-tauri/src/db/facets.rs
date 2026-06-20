@@ -1450,9 +1450,9 @@ fn push_valid_facet_branch_params(
 fn resource_clean_ref_sql(column: &str) -> String {
     format!(
         "CASE
-            WHEN instr({0}, ' (') > 0 THEN substr({0}, 1, instr({0}, ' (') - 1)
-            WHEN instr({0}, ':') > 0 THEN substr({0}, 1, instr({0}, ':') - 1)
-            ELSE {0}
+            WHEN instr({0}, ' (') > 0 THEN trim(substr({0}, 1, instr({0}, ' (') - 1))
+            WHEN instr({0}, ':') > 0 THEN trim(substr({0}, 1, instr({0}, ':') - 1))
+            ELSE trim({0})
         END",
         column
     )
@@ -1495,11 +1495,14 @@ fn get_valid_facet_names_for_query(
     let collection_join = collection_id
         .map(|_| "JOIN collection_images ci_filter ON ci_filter.image_id = i.id AND ci_filter.collection_id = ?")
         .unwrap_or("");
-    let lora_join = lora_name
-        .map(|_| {
-            "JOIN image_loras il_filter ON il_filter.image_id = i.id AND il_filter.lora_name = ?"
-        })
-        .unwrap_or("");
+    let lora_join = if lora_name.is_some() {
+        let clean_lora = resource_clean_ref_sql("il_filter.lora_name");
+        format!(
+            "JOIN image_loras il_filter ON il_filter.image_id = i.id AND ({clean_lora}) COLLATE NOCASE = ?"
+        )
+    } else {
+        String::new()
+    };
     let prefixed = prefix_valid_facet_where_columns(&base_where);
     let checkpoint_cache_join =
         "JOIN facet_cache fc ON fc.facet_type = 'checkpoints'
@@ -1531,7 +1534,7 @@ fn get_valid_facet_names_for_query(
          UNION ALL
          SELECT 'ip_adapters', fc.resource_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {ipadapter_cache} {where}",
         coll = collection_join,
-        lora = lora_join,
+        lora = lora_join.as_str(),
         checkpoint_cache = checkpoint_cache_join,
         lora_cache = lora_cache_join,
         embedding_cache = embedding_cache_join,
@@ -2376,6 +2379,41 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.loras, vec!["CaseLora"]);
+    }
+
+    #[test]
+    fn test_valid_facet_names_lora_filter_matches_weighted_resource_reference() {
+        let conn = create_valid_facet_conn();
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, resolved_model_name, positive_prompt)
+             VALUES ('img-weighted-lora', 'weighted-lora.png', 300, 'CollectionModel', 'weighted lora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('img-weighted-lora', 'detail___add_detail (0.20)')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count)
+             VALUES ('loras', 'detail___add_detail', 'lora_detail___add_detail', 1)",
+            [],
+        )
+        .unwrap();
+
+        let result = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND positive_prompt LIKE ?",
+            vec![Value::Text("%weighted lora%".to_string())],
+            None,
+            Some("detail___add_detail"),
+        )
+        .unwrap();
+
+        assert_eq!(result.loras, vec!["detail___add_detail"]);
     }
 
     #[test]

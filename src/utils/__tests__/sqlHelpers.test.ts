@@ -86,6 +86,33 @@ describe('sqlHelpers', () => {
             expect(params).toEqual([]);
         });
 
+        it('should canonicalize weighted single LoRA filters for the optimized path', () => {
+            const { where, params, loraName } = buildSqlWhereClause({
+                ...defaultFilters,
+                loras: ['detail___add_detail (0.20)']
+            }, false, 'blur', []);
+
+            expect(loraName).toBe('detail___add_detail');
+            expect(where).not.toContain('image_loras');
+            expect(params).toEqual([]);
+        });
+
+        it('should keep canonical-only weighted LoRA aliases on the optimized path', () => {
+            const { where, params, loraName } = buildSqlWhereClause({
+                ...defaultFilters,
+                loras: ['detail___add_detail'],
+                assetFilterAliases: {
+                    loras: {
+                        detail___add_detail: ['detail___add_detail', 'detail___add_detail (0.20)']
+                    }
+                }
+            }, false, 'blur', []);
+
+            expect(loraName).toBe('detail___add_detail');
+            expect(where).not.toContain('image_loras');
+            expect(params).toEqual([]);
+        });
+
         it('should expand merged LoRA aliases instead of using the single-LoRA optimization', () => {
             const { where, params, loraName } = buildSqlWhereClause({
                 ...defaultFilters,
@@ -98,19 +125,22 @@ describe('sqlHelpers', () => {
             }, false, 'blur', []);
 
             expect(loraName).toBeUndefined();
-            expect(where).toContain("il.lora_name = ? COLLATE NOCASE) OR EXISTS");
+            expect(where).toContain("instr(il.lora_name, ' (')");
+            expect(where).toContain(") OR EXISTS");
             expect(params).toEqual(['Detailer-Style', 'detailer style']);
         });
 
         it('should use junction table for Embedding filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, embeddings: ['EasyNegative'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)");
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND (CASE");
+            expect(where).toContain("ie.embedding_name");
             expect(params).toEqual(['EasyNegative']);
         });
 
         it('should use junction table for Hypernetwork filters', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, hypernetworks: ['HyperNet'] }, false, 'blur', []);
-            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)");
+            expect(where).toContain("EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND (CASE");
+            expect(where).toContain("ih.hypernetwork_name");
             expect(params).toEqual(['HyperNet']);
         });
 
@@ -459,7 +489,8 @@ describe('sqlHelpers', () => {
                     }
                 }, false, 'blur', []);
 
-                expect(where).toContain('il.lora_name = ? COLLATE NOCASE) OR EXISTS');
+                expect(where).toContain("instr(il.lora_name, ' (')");
+                expect(where).toContain(') OR EXISTS');
                 expect(where).toContain(') AND EXISTS (');
                 expect(params).toEqual(['Detailer-Style', 'detailer style', 'PortraitBoost']);
             });

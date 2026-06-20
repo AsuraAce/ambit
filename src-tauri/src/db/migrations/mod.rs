@@ -25,6 +25,7 @@ pub mod m55_manual_thumbnail_lookup_index;
 pub mod m56_thumbnail_optimization;
 pub mod m57_collection_thumbnail_cache;
 pub mod m58_nullable_seed;
+pub mod m59_canonical_resource_lookup_indexes;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -59,6 +60,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m56_thumbnail_optimization::migration56());
     migrations.push(m57_collection_thumbnail_cache::migration57());
     migrations.push(m58_nullable_seed::migration58());
+    migrations.push(m59_canonical_resource_lookup_indexes::migration59());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -70,7 +72,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_through_nullable_seed_58() {
+    fn migrations_include_mainline_through_canonical_resource_indexes_59() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -86,6 +88,7 @@ mod tests {
         assert!(versions.contains(&56));
         assert!(versions.contains(&57));
         assert!(versions.contains(&58));
+        assert!(versions.contains(&59));
     }
 
     #[test]
@@ -111,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_nullable_seed_58_pending() {
+    fn database_at_mainline_49_has_migrations_through_canonical_resource_indexes_59_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -121,6 +124,6 @@ mod tests {
             .collect();
 
         assert!(has_49);
-        assert_eq!(pending_after_49, vec![50, 51, 52, 53, 54, 55, 56, 57, 58]);
+        assert_eq!(pending_after_49, vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
     }
 }

@@ -17,6 +17,29 @@ interface SearchCondition {
 
 type AssetAliasFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
 
+export const normalizeResourceReferenceForFilter = (value: string): string => {
+    const trimmed = value.trim();
+    const weightIndex = trimmed.indexOf(' (');
+    if (weightIndex > 0) return trimmed.slice(0, weightIndex).trim();
+
+    const colonIndex = trimmed.indexOf(':');
+    if (colonIndex > 0) return trimmed.slice(0, colonIndex).trim();
+
+    return trimmed;
+};
+
+export const resourceReferenceSql = (column: string): string => (
+    `CASE
+        WHEN instr(${column}, ' (') > 0 THEN trim(substr(${column}, 1, instr(${column}, ' (') - 1))
+        WHEN instr(${column}, ':') > 0 THEN trim(substr(${column}, 1, instr(${column}, ':') - 1))
+        ELSE trim(${column})
+    END`
+);
+
+export const resourceReferenceEqualsSql = (column: string): string => (
+    `(${resourceReferenceSql(column)}) COLLATE NOCASE = ?`
+);
+
 const uniqueValues = (values: string[]): string[] => {
     const result: string[] = [];
     const seen = new Set<string>();
@@ -40,6 +63,13 @@ const getAssetAliasGroups = (
 ): string[][] => selectedValues.map(value => (
     uniqueValues([value, ...(filters.assetFilterAliases?.[filterKey]?.[value] || [])])
 ));
+
+const getResourceAliasGroups = (
+    filters: FilterState,
+    filterKey: Exclude<AssetAliasFilterKey, 'models'>,
+    selectedValues: string[]
+): string[][] => getAssetAliasGroups(filters, filterKey, selectedValues)
+    .map(aliases => uniqueValues(aliases.map(normalizeResourceReferenceForFilter)));
 
 const buildAliasGroupCondition = (
     aliases: string[],
@@ -362,13 +392,13 @@ export const buildSqlWhereClause = (
     // LoRAs
     const loraMode = filters.matchModes?.loras || 'any';
     if (!excludeCategories.includes('loras')) {
-        const loraAliasGroups = getAssetAliasGroups(filters, 'loras', filters.loras);
+        const loraAliasGroups = getResourceAliasGroups(filters, 'loras', filters.loras);
         if (filters.loras.length === 1 && loraMode === 'any' && loraAliasGroups[0]?.length === 1) {
             // Handled by searchRepo
         } else if (filters.loras.length > 0) {
             const loraConditions = loraAliasGroups.map(aliases => (
                 buildAliasGroupCondition(aliases, () => (
-                    `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND il.lora_name = ? COLLATE NOCASE)`
+                    `EXISTS (SELECT 1 FROM image_loras il WHERE il.image_id = id AND ${resourceReferenceEqualsSql('il.lora_name')})`
                 ), params)
             ));
             conditions.push(`(${loraConditions.join(loraMode === 'all' ? ' AND ' : ' OR ')})`);
@@ -378,9 +408,9 @@ export const buildSqlWhereClause = (
     // Embeddings
     const embMode = filters.matchModes?.embeddings || 'any';
     if (filters.embeddings.length > 0 && !excludeCategories.includes('embeddings')) {
-        const embConditions = getAssetAliasGroups(filters, 'embeddings', filters.embeddings).map(aliases => (
+        const embConditions = getResourceAliasGroups(filters, 'embeddings', filters.embeddings).map(aliases => (
             buildAliasGroupCondition(aliases, () => (
-                `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ie.embedding_name = ? COLLATE NOCASE)`
+                `EXISTS (SELECT 1 FROM image_embeddings ie WHERE ie.image_id = id AND ${resourceReferenceEqualsSql('ie.embedding_name')})`
             ), params)
         ));
         conditions.push(`(${embConditions.join(embMode === 'all' ? ' AND ' : ' OR ')})`);
@@ -389,9 +419,9 @@ export const buildSqlWhereClause = (
     // Hypernetworks
     const hnMode = filters.matchModes?.hypernetworks || 'any';
     if (filters.hypernetworks.length > 0 && !excludeCategories.includes('hypernetworks')) {
-        const hnConditions = getAssetAliasGroups(filters, 'hypernetworks', filters.hypernetworks).map(aliases => (
+        const hnConditions = getResourceAliasGroups(filters, 'hypernetworks', filters.hypernetworks).map(aliases => (
             buildAliasGroupCondition(aliases, () => (
-                `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ih.hypernetwork_name = ? COLLATE NOCASE)`
+                `EXISTS (SELECT 1 FROM image_hypernetworks ih WHERE ih.image_id = id AND ${resourceReferenceEqualsSql('ih.hypernetwork_name')})`
             ), params)
         ));
         conditions.push(`(${hnConditions.join(hnMode === 'all' ? ' AND ' : ' OR ')})`);
@@ -400,9 +430,9 @@ export const buildSqlWhereClause = (
     // ControlNets
     const cnMode = filters.matchModes?.controlNets || 'any';
     if (filters.controlNets && filters.controlNets.length > 0 && !excludeCategories.includes('controlNets')) {
-        const cnConditions = getAssetAliasGroups(filters, 'controlNets', filters.controlNets).map(aliases => (
+        const cnConditions = getResourceAliasGroups(filters, 'controlNets', filters.controlNets).map(aliases => (
             buildAliasGroupCondition(aliases, () => (
-                `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND cn.controlnet_name = ? COLLATE NOCASE)`
+                `EXISTS (SELECT 1 FROM image_controlnets cn WHERE cn.image_id = id AND ${resourceReferenceEqualsSql('cn.controlnet_name')})`
             ), params)
         ));
         conditions.push(`(${cnConditions.join(cnMode === 'all' ? ' AND ' : ' OR ')})`);
@@ -411,9 +441,9 @@ export const buildSqlWhereClause = (
     // IP-Adapters
     const ipMode = filters.matchModes?.ipAdapters || 'any';
     if (filters.ipAdapters && filters.ipAdapters.length > 0 && !excludeCategories.includes('ipAdapters')) {
-        const ipConditions = getAssetAliasGroups(filters, 'ipAdapters', filters.ipAdapters).map(aliases => (
+        const ipConditions = getResourceAliasGroups(filters, 'ipAdapters', filters.ipAdapters).map(aliases => (
             buildAliasGroupCondition(aliases, () => (
-                `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ip.ipadapter_name = ? COLLATE NOCASE)`
+                `EXISTS (SELECT 1 FROM image_ipadapters ip WHERE ip.image_id = id AND ${resourceReferenceEqualsSql('ip.ipadapter_name')})`
             ), params)
         ));
         conditions.push(`(${ipConditions.join(ipMode === 'all' ? ' AND ' : ' OR ')})`);
@@ -478,7 +508,7 @@ export const buildSqlWhereClause = (
 
     const loraModeCheck = filters.matchModes?.loras || 'any';
     const loraExcluded = excludeCategories.includes('loras');
-    const singleLoraAliasGroups = getAssetAliasGroups(filters, 'loras', filters.loras);
+    const singleLoraAliasGroups = getResourceAliasGroups(filters, 'loras', filters.loras);
     const singleLoraName = (!loraExcluded && filters.loras.length === 1 && loraModeCheck === 'any' && singleLoraAliasGroups[0]?.length === 1)
         ? singleLoraAliasGroups[0][0]
         : undefined;
