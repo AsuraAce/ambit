@@ -26,6 +26,8 @@ pub mod m56_thumbnail_optimization;
 pub mod m57_collection_thumbnail_cache;
 pub mod m58_nullable_seed;
 pub mod m59_canonical_resource_lookup_indexes;
+pub mod m60_resource_inventory_cleanup;
+pub mod m61_auxiliary_resource_inventory_cleanup;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -61,6 +63,8 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m57_collection_thumbnail_cache::migration57());
     migrations.push(m58_nullable_seed::migration58());
     migrations.push(m59_canonical_resource_lookup_indexes::migration59());
+    migrations.push(m60_resource_inventory_cleanup::migration60());
+    migrations.push(m61_auxiliary_resource_inventory_cleanup::migration61());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -72,7 +76,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_through_canonical_resource_indexes_59() {
+    fn migrations_include_mainline_through_auxiliary_resource_inventory_cleanup_61() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -89,6 +93,8 @@ mod tests {
         assert!(versions.contains(&57));
         assert!(versions.contains(&58));
         assert!(versions.contains(&59));
+        assert!(versions.contains(&60));
+        assert!(versions.contains(&61));
     }
 
     #[test]
@@ -114,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_canonical_resource_indexes_59_pending() {
+    fn database_at_mainline_49_has_migrations_through_auxiliary_resource_inventory_cleanup_61_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -124,6 +130,9 @@ mod tests {
             .collect();
 
         assert!(has_49);
-        assert_eq!(pending_after_49, vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
+        assert_eq!(
+            pending_after_49,
+            vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61]
+        );
     }
 }
