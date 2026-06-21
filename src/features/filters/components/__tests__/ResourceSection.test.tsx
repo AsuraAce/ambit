@@ -202,13 +202,13 @@ describe('ResourceSection asset scope filtering', () => {
 
         expect(screen.getByText('UnusedLocal')).toBeTruthy();
         expect(screen.queryByText('Unused', { exact: true })).toBeNull();
-        expect(screen.getByLabelText('Unused: local asset has no matching library images.')).toBeTruthy();
+        expect(screen.getByLabelText('Local only: no indexed library images.')).toBeTruthy();
         expect(screen.getByText('UsedLocal')).toBeTruthy();
         expect(screen.getByLabelText('Local asset on disk')).toBeTruthy();
         expect(screen.queryByText('HarvestedOnly')).toBeNull();
     });
 
-    it('does not toggle filters when an unused local asset is clicked', () => {
+    it('does not toggle filters when a local-only asset is clicked', () => {
         const setFilters = vi.fn();
         renderScopedSection({ assetScope: 'local', setFilters });
 
@@ -264,6 +264,37 @@ describe('ResourceSection asset scope filtering', () => {
         expect(nextFilters.assetFilterAliases?.loras?.['Detailer-Style']).toEqual(['Detailer-Style', 'detailer style']);
     });
 
+    it('matches merged resource aliases in the local search box', () => {
+        render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={vi.fn()}
+                data={[{
+                    name: 'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                    hash: 'lora_Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                    count: 2,
+                    isLocalDisk: true,
+                    filterAliases: [
+                        'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                        'watercolor_flux_v1.1_rank_16_bf16'
+                    ]
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+                assetScope="used"
+            />
+        );
+
+        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), {
+            target: { value: 'watercolor_flu' }
+        });
+
+        expect(screen.getByText('Flux Style - watercolor_flux_v1.1_rank_16_bf16')).toBeTruthy();
+    });
+
     it('keeps merged aliases visible when a valid alias exists in the current result set', () => {
         render(
             <ResourceSection
@@ -288,7 +319,7 @@ describe('ResourceSection asset scope filtering', () => {
         expect(screen.getByText('Detailer-Style')).toBeTruthy();
     });
 
-    it('explains sidecar previews on unused local asset badges', () => {
+    it('explains sidecar previews on local-only asset badges', () => {
         render(
             <ResourceSection
                 title="Resources"
@@ -310,7 +341,7 @@ describe('ResourceSection asset scope filtering', () => {
             />
         );
 
-        expect(screen.getByLabelText('Unused: local asset has no matching library images. Preview from sidecar image.')).toBeTruthy();
+        expect(screen.getByLabelText('Local only: no indexed library images. Preview from sidecar image.')).toBeTruthy();
     });
 
     it('does not describe an available sidecar when a manual preview is displayed', () => {
@@ -336,7 +367,7 @@ describe('ResourceSection asset scope filtering', () => {
             />
         );
 
-        expect(screen.getByLabelText('Unused: local asset has no matching library images.')).toBeTruthy();
+        expect(screen.getByLabelText('Local only: no indexed library images.')).toBeTruthy();
         expect(screen.queryByLabelText(/Preview from sidecar image/)).toBeNull();
     });
 });
@@ -412,7 +443,7 @@ describe('ResourceSection asset sorting', () => {
         />
     );
 
-    it('sorts all-scope unused local assets by local modified date for Newest Added', () => {
+    it('sorts all-scope local-only assets by local modified date for Newest Added', () => {
         setResourceSort('added_desc');
 
         renderSortingSection({

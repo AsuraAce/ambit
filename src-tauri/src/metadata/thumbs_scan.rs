@@ -80,6 +80,7 @@ fn resource_count_detail(found: usize, updated: usize) -> String {
 struct ModelRegistrationOutcome {
     cached: bool,
     registered_models: usize,
+    skipped: bool,
     filename: String,
     hash: String,
 }
@@ -125,7 +126,15 @@ fn register_discovered_model_file(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("");
-    let resource_type = resource_type_for_model_path(model_path);
+    let Some(resource_type) = resource_type_for_model_path(model_path) else {
+        return Ok(ModelRegistrationOutcome {
+            cached: false,
+            registered_models: 0,
+            skipped: true,
+            filename,
+            hash: String::new(),
+        });
+    };
 
     touch_resource(touched_resources, resource_type, stem);
 
@@ -173,6 +182,7 @@ fn register_discovered_model_file(
     Ok(ModelRegistrationOutcome {
         cached,
         registered_models,
+        skipped: false,
         filename,
         hash,
     })
@@ -231,29 +241,130 @@ fn truncate_middle(value: &str, max_chars: usize) -> String {
     format!("{start}...{end}")
 }
 
-fn resource_type_for_model_path(model_path: &str) -> &'static str {
-    let path_lower = model_path.to_lowercase();
-    if path_lower.contains("lora") {
-        "loras"
-    } else if path_lower.contains("embedding") || path_lower.contains("textual_inversion") {
-        "embeddings"
-    } else if path_lower.contains("hypernetwork") {
-        "hypernetworks"
-    } else if path_lower.contains("controlnet")
-        || path_lower.contains("control_net")
-        || path_lower.contains("control-nets")
-        || path_lower.contains("controlnets")
-    {
-        "control_nets"
-    } else if path_lower.contains("ipadapter")
-        || path_lower.contains("ip-adapter")
-        || path_lower.contains("ip_adapter")
-        || path_lower.contains("ipadapters")
-    {
-        "ip_adapters"
-    } else {
-        "checkpoint"
+fn normalized_model_path_parts(model_path: &str) -> (String, Vec<String>) {
+    let normalized = model_path.replace('\\', "/").to_lowercase();
+    let parts = normalized
+        .split('/')
+        .filter(|part| !part.trim().is_empty())
+        .map(ToString::to_string)
+        .collect();
+    (normalized, parts)
+}
+
+fn path_has_segment(parts: &[String], candidates: &[&str]) -> bool {
+    parts
+        .iter()
+        .any(|part| candidates.iter().any(|candidate| part.as_str() == *candidate))
+}
+
+fn path_or_filename_contains(normalized_path: &str, candidates: &[&str]) -> bool {
+    let filename = normalized_path.rsplit('/').next().unwrap_or(normalized_path);
+    candidates
+        .iter()
+        .any(|candidate| normalized_path.contains(candidate) || filename.contains(candidate))
+}
+
+fn resource_type_for_model_path(model_path: &str) -> Option<&'static str> {
+    let (normalized_path, parts) = normalized_model_path_parts(model_path);
+
+    if path_has_segment(&parts, &["lora", "loras"]) {
+        return Some("loras");
     }
+
+    if path_has_segment(
+        &parts,
+        &[
+            "vae",
+            "vae_approx",
+            "clip",
+            "clip_vision",
+            "text_encoder",
+            "text_encoders",
+            "upscale_model",
+            "upscale_models",
+            "upscaler",
+            "upscalers",
+            "ultralytics",
+            "detector",
+            "detectors",
+            "facedetection",
+            "face_detection",
+            "bbox",
+            "segm",
+            "sam",
+            "sams",
+            "caption",
+            "captions",
+            "caption_models",
+            "joy_caption",
+            "wd14_tagger",
+            "insightface",
+            "facerestore",
+            "face_restore",
+            "florence2",
+            "florence-2",
+            "florence_2",
+            "gfpgan",
+            "ldsr",
+            "llm",
+            "omnisr",
+            "pulid",
+            "realesrgan",
+            "real-esrgan",
+            "real_esrgan",
+            "seedvr2",
+            "swinir",
+            "t2iadapter",
+        ],
+    ) {
+        return None;
+    }
+
+    if path_has_segment(&parts, &["embedding", "embeddings", "textual_inversion"]) {
+        return Some("embeddings");
+    }
+
+    if path_has_segment(&parts, &["hypernetwork", "hypernetworks"]) {
+        return Some("hypernetworks");
+    }
+
+    if path_or_filename_contains(
+        &normalized_path,
+        &["ipadapter", "ip-adapter", "ip_adapter", "ipadapters"],
+    ) {
+        return Some("ip_adapters");
+    }
+
+    if path_has_segment(
+        &parts,
+        &[
+            "controlnet",
+            "control_net",
+            "control-nets",
+            "controlnets",
+            "control_nets",
+            "t2i_adapter",
+            "t2i-adapter",
+        ],
+    ) {
+        return Some("control_nets");
+    }
+
+    if path_has_segment(
+        &parts,
+        &[
+            "checkpoint",
+            "checkpoints",
+            "diffusion_model",
+            "diffusion_models",
+            "unet",
+            "unets",
+        ],
+    ) {
+        return Some("checkpoint");
+    }
+
+    None
 }
 
 fn push_unique_resource_name(values: &mut Vec<String>, name: &str) {
@@ -452,8 +563,10 @@ where
             let resource_type = resource_type
                 .as_deref()
                 .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| resource_type_for_model_path(path));
-            touch_resource(&mut resources, resource_type, resource_name);
+                .or_else(|| resource_type_for_model_path(path));
+            if let Some(resource_type) = resource_type {
+                touch_resource(&mut resources, resource_type, resource_name);
+            }
             let has_thumbnail_override = thumbnail_path
                 .as_deref()
                 .map(|value| !value.trim().is_empty())
@@ -729,13 +842,15 @@ pub async fn scan_model_thumbnails(
 
             let outcome =
                 register_discovered_model_file(&conn, model_path, now, &mut touched_resources)?;
-            if outcome.cached {
-                cached_files += 1;
-            } else {
-                new_or_changed_files += 1;
+            if !outcome.skipped {
+                if outcome.cached {
+                    cached_files += 1;
+                } else {
+                    new_or_changed_files += 1;
+                }
+                registered_hashes.insert(model_path.to_string(), outcome.hash.clone());
             }
             registered_models += outcome.registered_models;
-            registered_hashes.insert(model_path.to_string(), outcome.hash.clone());
 
             if last_emit.elapsed().as_millis() > 200 || i == models_found.len() - 1 {
                 if state.is_cancelled.load(Ordering::SeqCst) {
@@ -891,7 +1006,7 @@ fn scan_dir_for_resources(
                     .unwrap_or("")
                     .to_lowercase();
 
-                if is_model_resource_ext(&ext) {
+                if is_model_resource_ext(&ext) && resource_type_for_model_path(&path.to_string_lossy()).is_some() {
                     models.push(path.to_string_lossy().to_string());
                 } else if is_sidecar_image_ext(&ext) {
                     images.insert(path.to_string_lossy().to_string());
@@ -1064,7 +1179,7 @@ mod tests {
     #[test]
     fn scan_dir_for_resources_reports_live_counters() {
         let root = temp_resource_dir("scan_counters");
-        let nested = root.join("nested");
+        let nested = root.join("checkpoints");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("ponyDiffusionV6XL.safetensors"), b"model").unwrap();
         fs::write(nested.join("ponyDiffusionV6XL.preview.png"), b"image").unwrap();
@@ -1126,6 +1241,74 @@ mod tests {
     }
 
     #[test]
+    fn resource_type_for_model_path_uses_generation_model_folders() {
+        let cases = [
+            (
+                "C:/ComfyUI/models/checkpoints/Pony Diffusion V6 XL.safetensors",
+                Some("checkpoint"),
+            ),
+            (
+                "C:/ComfyUI/models/diffusion_models/FluxDev.safetensors",
+                Some("checkpoint"),
+            ),
+            ("C:/ComfyUI/models/unet/HunyuanVideo.safetensors", Some("checkpoint")),
+            ("C:/ComfyUI/models/loras/CinematicDetail.safetensors", Some("loras")),
+            (
+                "C:/ComfyUI/models/loras/ip-adapter-faceid-lora.safetensors",
+                Some("loras"),
+            ),
+            ("C:/ComfyUI/models/embeddings/EasyNegative.pt", Some("embeddings")),
+            (
+                "C:/ComfyUI/models/textual_inversion/EasyNegative.pt",
+                Some("embeddings"),
+            ),
+            (
+                "C:/ComfyUI/models/hypernetworks/InkStyle.pt",
+                Some("hypernetworks"),
+            ),
+            (
+                "C:/ComfyUI/models/controlnet/OpenPose.safetensors",
+                Some("control_nets"),
+            ),
+            (
+                "C:/ComfyUI/models/controlnet/control-lora-canny.safetensors",
+                Some("control_nets"),
+            ),
+            (
+                "C:/ComfyUI/models/controlnet/ip-adapter-faceid.safetensors",
+                Some("ip_adapters"),
+            ),
+            ("C:/ComfyUI/models/ipadapter/FaceID.bin", Some("ip_adapters")),
+            ("C:/ComfyUI/models/vae/sdxl_vae.safetensors", None),
+            ("C:/ComfyUI/models/clip/clip_l.safetensors", None),
+            ("C:/ComfyUI/models/clip_vision/clip_vision.safetensors", None),
+            ("C:/ComfyUI/models/text_encoders/t5xxl.safetensors", None),
+            ("C:/ComfyUI/models/upscale_models/4x-UltraSharp.pth", None),
+            ("C:/ComfyUI/models/ultralytics/bbox/face_yolov8m.pt", None),
+            ("C:/ComfyUI/models/facedetection/detection_mobilenet.pth", None),
+            ("C:/ComfyUI/models/facerestore/GFPGANv1.4.pth", None),
+            ("C:/ComfyUI/models/RealESRGAN/RealESRGAN_x4plus.pth", None),
+            ("C:/ComfyUI/models/SwinIR/SwinIR_4x.pth", None),
+            ("C:/ComfyUI/models/OmniSR/epoch994_OmniSR.pth", None),
+            ("C:/ComfyUI/models/florence2/base/pytorch_model.bin", None),
+            ("C:/ComfyUI/models/LLM/LLaVA/model.safetensors", None),
+            ("C:/ComfyUI/models/pulid/pulid_v1.1.safetensors", None),
+            ("C:/ComfyUI/models/sams/sam_hq_vit_b.pth", None),
+            ("C:/ComfyUI/models/SEEDVR2/ema_vae_fp16.safetensors", None),
+            (
+                "C:/ComfyUI/models/T2IAdapter/t2i-adapter-canny-sdxl-1.0/diffusion_pytorch_model.safetensors",
+                None,
+            ),
+            ("C:/ComfyUI/models/Joy_caption/clip_model.pt", None),
+            ("C:/ComfyUI/models/mystery/unknown.safetensors", None),
+        ];
+
+        for (path, expected) in cases {
+            assert_eq!(resource_type_for_model_path(path), expected, "{path}");
+        }
+    }
+
+    #[test]
     fn resource_touches_are_grouped_by_comfyui_model_folders() {
         let mut resources = FacetResourceTouches::default();
         let paths = [
@@ -1143,7 +1326,7 @@ mod tests {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap();
-            touch_resource(&mut resources, resource_type_for_model_path(path), stem);
+            touch_resource(&mut resources, resource_type_for_model_path(path).unwrap(), stem);
         }
 
         assert_eq!(resources.checkpoints, vec!["Pony Diffusion V6 XL"]);
@@ -1188,6 +1371,37 @@ mod tests {
             .unwrap();
         assert_eq!(scan_rows, 1);
         assert_eq!(disk_rows, 1);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn register_discovered_model_skips_unsupported_assets_without_touching_facets() {
+        let root = temp_resource_dir("registration_unsupported");
+        let vae_dir = root.join("vae");
+        fs::create_dir_all(&vae_dir).unwrap();
+        let model_path = vae_dir.join("sdxl_vae.safetensors");
+        fs::write(&model_path, b"model").unwrap();
+        let model_path = model_path.to_string_lossy().to_string();
+        let conn = registration_test_conn();
+        let mut resources = FacetResourceTouches::default();
+
+        let result =
+            register_discovered_model_file(&conn, &model_path, 100, &mut resources).unwrap();
+
+        assert!(result.skipped);
+        assert_eq!(result.registered_models, 0);
+        assert!(resources.checkpoints.is_empty());
+        assert!(resources.loras.is_empty());
+
+        let scan_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scanned_files", [], |row| row.get(0))
+            .unwrap();
+        let disk_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(scan_rows, 0);
+        assert_eq!(disk_rows, 0);
 
         let _ = fs::remove_dir_all(root);
     }

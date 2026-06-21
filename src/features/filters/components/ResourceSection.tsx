@@ -336,9 +336,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
         const hasSidecarPreview = item.thumbnailSource === 'sidecar';
-        const unusedTitle = hasSidecarPreview
-            ? 'Unused: local asset has no matching library images. Preview from sidecar image.'
-            : 'Unused: local asset has no matching library images.';
+        const localOnlyTitle = hasSidecarPreview
+            ? 'Local only: no indexed library images. Preview from sidecar image.'
+            : 'Local only: no indexed library images.';
         const localTitle = hasSidecarPreview
             ? 'Local asset on disk. Preview from sidecar image.'
             : 'Local asset on disk';
@@ -348,7 +348,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 key={`${item.name}-${item.hash || 'no-hash'}`}
                 onClick={() => toggleItem(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
-                title={isInventoryOnly ? `${item.name} has no images in the library yet` : item.name}
+                title={isInventoryOnly ? `${item.name} has no indexed library images` : item.name}
                 className={`group relative aspect-square rounded-xl overflow-hidden border transition-all duration-300 ease-spring ${isInventoryOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected
                     ? 'border-sage-500 ring-2 ring-sage-500/20 shadow-lg shadow-sage-500/10'
                     : 'border-gray-200 dark:border-white/10 hover:border-sage-400/50 hover:shadow-md'
@@ -393,8 +393,8 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     <div className={`absolute top-1.5 right-1.5 transition-opacity z-10 ${isInventoryOnly ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                         <div
                             role={isInventoryOnly ? 'img' : undefined}
-                            aria-label={isInventoryOnly ? unusedTitle : undefined}
-                            title={isInventoryOnly ? unusedTitle : `${item.count.toLocaleString()} total images`}
+                            aria-label={isInventoryOnly ? localOnlyTitle : undefined}
+                            title={isInventoryOnly ? localOnlyTitle : `${item.count.toLocaleString()} total images`}
                             className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-blue-500/80 text-white' : 'bg-black/40 text-white/90'}`}
                         >
                             {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
@@ -423,9 +423,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         const isInventoryOnly = item.count === 0 && item.isLocalDisk;
         const thumbUrl = item.thumbnailPath || item.previewUrl;
         const hasSidecarPreview = item.thumbnailSource === 'sidecar';
-        const unusedTitle = hasSidecarPreview
-            ? 'Unused: local asset has no matching library images. Preview from sidecar image.'
-            : 'Unused: local asset has no matching library images.';
+        const localOnlyTitle = hasSidecarPreview
+            ? 'Local only: no indexed library images. Preview from sidecar image.'
+            : 'Local only: no indexed library images.';
         const localTitle = hasSidecarPreview
             ? 'Local asset on disk. Preview from sidecar image.'
             : 'Local asset on disk';
@@ -469,9 +469,9 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <span
                         role={isInventoryOnly ? 'img' : undefined}
-                        aria-label={isInventoryOnly ? unusedTitle : undefined}
+                        aria-label={isInventoryOnly ? localOnlyTitle : undefined}
                         className={`text-[10px] px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${isInventoryOnly ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 opacity-100' : `bg-gray-100 dark:bg-white/10 ${validNames != null ? 'opacity-30' : 'opacity-60'}`}`}
-                        title={isInventoryOnly ? unusedTitle : `${item.count.toLocaleString()} total images`}
+                        title={isInventoryOnly ? localOnlyTitle : `${item.count.toLocaleString()} total images`}
                     >
                         {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
                     </span>

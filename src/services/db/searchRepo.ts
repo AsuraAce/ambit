@@ -2,7 +2,7 @@ import { AIImage, AssetScope, FacetType } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
-import { getAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
+import { getAssetMatchKey, resolveAssetMatchKey, uniqueAssetAliases } from '../../utils/assetIdentity';
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
 import { commands } from '../../bindings';
 import { resourceReferenceEqualsSql, resourceReferenceSql } from '../../utils/sqlHelpers';
@@ -244,6 +244,26 @@ const sortFacetItems = (items: FacetItem[]): FacetItem[] => (
 const normalizeFacetCountKey = (value: string | null | undefined): string => (
     getAssetMatchKey(value) || (value || 'Unknown').toLowerCase()
 );
+
+const getScopedCountForGroup = (
+    group: FacetMergeGroup,
+    scopedCountMap: Map<string, number> | undefined
+): number => {
+    if (!scopedCountMap) return 0;
+
+    const keys = new Set<string>();
+    if (group.item.assetMatchKey) keys.add(group.item.assetMatchKey);
+    keys.add(normalizeFacetCountKey(group.item.name));
+    for (const alias of group.usedAliases) {
+        keys.add(normalizeFacetCountKey(alias));
+    }
+
+    let count = 0;
+    for (const key of keys) {
+        count += scopedCountMap.get(key) ?? 0;
+    }
+    return count;
+};
 
 const cacheTypeToDiskResourceType = (cacheType: string): string | null => {
     if (cacheType === 'tools') return null;
@@ -1098,7 +1118,10 @@ export const getFacets = async (
                 continue;
             }
 
-            const assetMatchKey = getAssetMatchKey(row.resource_name) || (row.resource_name || 'Unknown').toLowerCase();
+            const assetMatchKey = resolveAssetMatchKey(
+                row.resource_name,
+                diskLookups.matchKeysByCacheType.get(row.facet_type)
+            ) || (row.resource_name || 'Unknown').toLowerCase();
             const isLocalDisk = isDiskBackedFacetRow(row, assetMatchKey, diskLookups);
             const localModifiedAt = isLocalDisk
                 ? getDiskModifiedAtForFacetRow(row, assetMatchKey, diskLookups)
@@ -1154,7 +1177,7 @@ export const getFacets = async (
                     ...group.item,
                     count: assetScope === 'local' || !shouldUseScopedFacetOverlay
                         ? group.item.count
-                        : (scopedCountMap?.get(group.item.assetMatchKey || normalizeFacetCountKey(group.item.name)) ?? 0),
+                        : getScopedCountForGroup(group, scopedCountMap),
                     filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
                 })).filter(shouldIncludeFacetItem)
             );

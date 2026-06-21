@@ -184,6 +184,143 @@ describe('searchRepo getFacets', () => {
         });
     });
 
+    it('merges InvokeAI display labels with matching local disk resource suffixes', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Flux Style - watercolor_flux_v1.1_rank_16_bf16 ',
+                    resource_hash: 'lora_Flux Style - watercolor_flux_v1.1_rank_16_bf16 ',
+                    count: 2,
+                    thumbnail_path: 'used.webp',
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'watercolor_flux_v1.1_rank_16_bf16 ',
+                    resource_hash: 'file:C:/models/watercolor_flux_v1.1_rank_16_bf16.safetensors',
+                    count: 0,
+                    thumbnail_path: 'local.webp',
+                    has_sidecar: 1,
+                    is_manual: 1,
+                    is_local_disk: 1
+                }
+            ],
+            [
+                {
+                    resource_type: 'loras',
+                    name: 'watercolor_flux_v1.1_rank_16_bf16 ',
+                    hash: 'file:C:/models/watercolor_flux_v1.1_rank_16_bf16.safetensors'
+                }
+            ]
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
+
+        expect(facets.loras).toHaveLength(1);
+        expect(facets.loras[0]).toMatchObject({
+            name: 'Flux Style - watercolor_flux_v1.1_rank_16_bf16 ',
+            count: 2,
+            isLocalDisk: true,
+            assetMatchKey: 'watercolorfluxv11rank16bf16',
+            thumbnailPath: 'used.webp',
+            hasSidecar: 1,
+            filterAliases: [
+                'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
+                'watercolor_flux_v1.1_rank_16_bf16'
+            ]
+        });
+    });
+
+    it('uses merged aliases when overlaying filtered counts', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Pony Style - Gothic Neon, g0th1cPXL',
+                    resource_hash: 'lora_Pony Style - Gothic Neon, g0th1cPXL',
+                    count: 38,
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'g0th1cPXL',
+                    resource_hash: 'file:C:/models/g0th1cPXL.safetensors',
+                    count: 0,
+                    is_local_disk: 1
+                }
+            ],
+            [
+                {
+                    resource_type: 'loras',
+                    name: 'g0th1cPXL',
+                    hash: 'file:C:/models/g0th1cPXL.safetensors'
+                }
+            ],
+            {
+                loras: [{ name: 'Pony Style - Gothic Neon, g0th1cPXL', count: 5 }]
+            }
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('WHERE resolved_model_name = ?', ['Flux'], ['loras'], { assetScope: 'used' });
+
+        expect(facets.loras).toHaveLength(1);
+        expect(facets.loras[0]).toMatchObject({
+            name: 'Pony Style - Gothic Neon, g0th1cPXL',
+            count: 5,
+            isLocalDisk: true,
+            assetMatchKey: 'g0th1cpxl'
+        });
+    });
+
+    it('merges comma display labels with multi-word local disk suffixes', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Pony Style - Gothic Neon, g0th1cPXL',
+                    resource_hash: 'lora_Pony Style - Gothic Neon, g0th1cPXL',
+                    count: 6,
+                    is_local_disk: 0
+                },
+                {
+                    facet_type: 'loras',
+                    resource_name: 'Gothic_Neon_g0th1cPXL',
+                    resource_hash: 'file:C:/models/Gothic_Neon_g0th1cPXL.safetensors',
+                    count: 0,
+                    is_local_disk: 1
+                }
+            ],
+            [
+                {
+                    resource_type: 'loras',
+                    name: 'Gothic_Neon_g0th1cPXL',
+                    hash: 'file:C:/models/Gothic_Neon_g0th1cPXL.safetensors'
+                }
+            ]
+        );
+        getDbMock.mockResolvedValue(db);
+
+        const { getFacets } = await import('../searchRepo');
+        const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
+
+        expect(facets.loras).toHaveLength(1);
+        expect(facets.loras[0]).toMatchObject({
+            name: 'Pony Style - Gothic Neon, g0th1cPXL',
+            count: 6,
+            isLocalDisk: true,
+            assetMatchKey: 'gothicneong0th1cpxl',
+            filterAliases: [
+                'Pony Style - Gothic Neon, g0th1cPXL',
+                'Gothic_Neon_g0th1cPXL'
+            ]
+        });
+    });
+
     it('keeps thumbnail provenance paired with the thumbnail selected during alias merging', async () => {
         const db = createFacetDb([
             {
