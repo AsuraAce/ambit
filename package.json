@@ -42,7 +42,7 @@
     "coverage": "vitest run --coverage --coverage.provider=istanbul --maxWorkers=1"
   },
   "dependencies": {
-    "@google/genai": "^2.8.0",
+    "@google/genai": "^2.9.0",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-query-devtools": "^5.101.0",
     "@tauri-apps/api": "2.11.0",
@@ -67,7 +67,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.3.0",
+    "@tailwindcss/postcss": "4.3.1",
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -75,17 +75,17 @@
     "@types/node": "^25.9.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.60.1",
-    "@typescript-eslint/parser": "^8.60.1",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/parser": "^8.61.1",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vitest/coverage-istanbul": "^4.1.8",
+    "@vitest/coverage-istanbul": "^4.1.9",
     "autoprefixer": "^10.5.0",
-    "eslint": "^10.4.1",
+    "eslint": "^10.5.0",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.1",
     "typescript": "~6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }
