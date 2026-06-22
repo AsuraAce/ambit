@@ -35,6 +35,8 @@ gha-creds-*.json
 
 # Keep generated or scratch docs ignored by default, but track the canonical agent docs.
 docs/*
+!docs/assets/
+!docs/assets/**
 !docs/WORKFLOW_SETUP.md
 !docs/architecture.md
 !docs/progress.md

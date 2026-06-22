@@ -7,6 +7,20 @@
 
 Ambit is a local-first desktop app for organizing large AI-generated image libraries. It helps you import folders, browse fast, search by generation metadata, resolve model references, and keep library maintenance work on your own machine.
 
+<p align="center">
+  <img alt="Ambit dark gallery with filters, collections, and pinned images" src="docs/assets/showcase/ambit-gallery-dark.webp" />
+</p>
+
+## Screenshots
+
+| Light theme and advanced search | Timeline browsing |
+| --- | --- |
+| ![Ambit light theme gallery with advanced search filters](docs/assets/showcase/ambit-gallery-light.webp) | ![Ambit timeline view grouped by month](docs/assets/showcase/ambit-timeline-dark.webp) |
+
+| AI prompt recovery | Creative prompt variations |
+| --- | --- |
+| ![Ambit AI prompt recovery style selection](docs/assets/showcase/ambit-ai-prompt-recovery.webp) | ![Ambit AI creative prompt variations modal](docs/assets/showcase/ambit-ai-prompt-variations.webp) |
+
 ## Key Features
 
 *   **Local library management**: Catalog image folders without moving your source files, then review, remove, recover, and maintain records from one desktop workspace.
@@ -49,40 +63,24 @@ The Windows installer includes the packaged app. You do not need Node.js, pnpm, 
 
 For a step-by-step product guide, see the [Ambit User Manual](docs/manual/index.md).
 
-### Development Installation
+### Development
 
-Development prerequisites:
+For local development, Ambit requires Node.js 24 or newer, pnpm 11.5.3, and Rust 1.96.0 as pinned by `rust-toolchain.toml`.
 
-*   [Node.js](https://nodejs.org/) v24 or newer
-*   [pnpm](https://pnpm.io/) v11.5.3
-*   [Rust](https://www.rust-lang.org/tools/install) v1.96.0, pinned by `rust-toolchain.toml`
-*   Optional: [VS Code](https://code.visualstudio.com/) with the Tauri extension and standard TypeScript tooling
+```bash
+git clone https://github.com/AsuraAce/ambit.git
+cd ambit
+pnpm install
+pnpm run app:dev
+```
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/AsuraAce/ambit.git
-    cd ambit
-    ```
-2.  Install dependencies:
-    ```bash
-    pnpm install
-    ```
-3.  Configure optional local environment settings if needed.
-4.  Run the desktop app:
-    ```bash
-    pnpm run app:dev
-    ```
-5.  Run focused checks before sharing or publishing local changes:
-    ```bash
-    pnpm run typecheck
-    pnpm run test:run
-    ```
+For checks, branch expectations, and maintainer workflow notes, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing
 
-Ambit is currently maintainer-led. Bug reports, security reports, documentation corrections, and feature requests are welcome, but code contributions and pull requests are not being accepted at this stage.
+Ambit is currently maintainer-led. Bug reports, documentation corrections, and feature requests are welcome, but code contributions and pull requests are not being accepted during the public beta.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local development notes and the current contribution policy.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the current contribution policy.
 
 For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
