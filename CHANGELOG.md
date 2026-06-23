@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/AsuraAce/ambit/compare/v0.6.2...v0.6.3) (2026-06-23)
+
+
+### Bug Fixes
+
+* correct resource asset inventory ([#146](https://github.com/AsuraAce/ambit/issues/146)) ([8521e7a](https://github.com/AsuraAce/ambit/commit/8521e7a9ac1d5ecabf68d0fd1a6dbcf07b9687f5))
+
 ## [0.6.2](https://github.com/AsuraAce/ambit/compare/v0.6.1...v0.6.2) (2026-06-20)
 
 
