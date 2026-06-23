@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.6.2"
+version = "0.6.3"
 default-run = "app"
 description = "High-performance local AI image manager for large AI-generated image libraries."
 authors = ["AsuraAce"]
