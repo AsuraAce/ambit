@@ -238,14 +238,14 @@ Status: Deferred
 - `src/services/repository.ts` is not the canonical desktop persistence path today; it exports `TauriFsRepository` for the shipping app while still carrying a LocalStorage or mock fallback.
 - Treat that fallback path as ambiguous legacy surface unless a dedicated task explicitly keeps, validates, or removes non-Tauri mode.
 - `src/services/TauriFsRepository.ts` writes `library.json` to `BaseDirectory.AppLocalData`; `src/services/thumbnailService.ts` stores generated thumbnails under `appLocalDataDir()/.thumbnails`; Tauri fs and asset scopes are centered on `$APPLOCALDATA`.
-- `src-tauri/src/db/mod.rs` currently resolves `images.db` by checking `app_config_dir()` first, then `app_local_data_dir()`, and defaults new databases to `app_config_dir()`. On Windows, Tauri's local path APIs map config/data to Roaming AppData and local-data to Local AppData.
+- `src-tauri/src/db/mod.rs` resolves the production `images.db` by checking Local AppData first, then Roaming AppData as a legacy fallback. Development builds keep the legacy dev-profile SQL URL so local development does not touch production user data.
 - `src-tauri/src/lib.rs` and `src-tauri/src/db/commands/maintenance.rs` already contain reset/purge behavior that accounts for both possible database locations.
 
 ### Current Pain Points
 - It is easy to modify the wrong persistence layer or leave migrations half-finished.
 - Startup, onboarding, folder scope registration, and secure key handling all depend on coordinated changes across TypeScript and Rust.
-- Fresh-profile or reset instructions must mention both the current `io.github.asuraace.ambit` directories and the legacy `com.ambit.app` directories while the public-beta identifier migration remains in the transition window.
-- A naive switch from Roaming to Local would look like data loss for existing users if `images.db`, `images.db-wal`, and `images.db-shm` are not migrated before the SQL plugin opens the database.
+- Fresh-profile or reset instructions must mention the Local AppData database path, the current `io.github.asuraace.ambit` directories, and the legacy `com.ambit.app` directories while the public-beta identifier migration remains in the transition window.
+- The Roaming-to-Local SQLite move is handled before the SQL plugin opens the database. The remaining risk is removing legacy fallback code too early, not the default storage location itself.
 
 ### Safe-Change Warning
 - Persistence changes can silently affect existing user libraries and first-run behavior.
@@ -255,12 +255,12 @@ Status: Deferred
 - Make the production Tauri persistence path the obvious canonical path in the frontend.
 - Keep the storage split explicit and narrow: SQLite for images and metadata, `library.json` for lightweight app state, keyring for secrets.
 - Resolve `src/services/repository.ts` intentionally: either document the fallback as supported, or remove it in a dedicated cleanup once the repo explicitly drops that mode.
-- Prefer Local AppData for Ambit's main SQLite library in a future migration because the DB can be large and contains machine-local absolute image paths. Keep a Roaming fallback or explicit migration path for existing installs.
-- Add an in-app diagnostics/reset surface that shows the resolved Local AppData path, resolved database path, thumbnail path, and any detected legacy Roaming database.
+- Keep Local AppData as Ambit's main SQLite library location because the DB can be large and contains machine-local absolute image paths.
+- Expand diagnostics over time to include the thumbnail path and any detected legacy identifier directories. The current support surface shows the active, Local, and Roaming database paths.
 
 ### Not Part of the Current Task
 - Do not delete web or mock fallbacks unless the repo intentionally drops that mode.
-- Do not move the database as a documentation-only or opportunistic cleanup; it needs a dedicated migration and upgrade test pass.
+- Do not remove the Roaming AppData database fallback until the public-beta upgrade window is intentionally closed.
 
 ### Related Code
 - `src/services/repository.ts`

@@ -1,8 +1,11 @@
 import Database from '@tauri-apps/plugin-sql';
+import { commands } from '../../bindings';
+import { unwrap } from '../../utils/spectaUtils';
 
 let db: Database | null = null;
 let dbInitialized = false;
 let dbLoadPromise: Promise<Database> | null = null;
+let dbUrlPromise: Promise<string> | null = null;
 const SLOW_STARTUP_PHASE_MS = 1000;
 
 export type StartupDbPhase =
@@ -50,15 +53,27 @@ export class Mutex {
 
 export const dbMutex = new Mutex();
 
+const getMainDatabaseUrl = () => {
+    if (!dbUrlPromise) {
+        dbUrlPromise = unwrap(commands.getMainDatabaseUrl()).catch((error) => {
+            dbUrlPromise = null;
+            throw error;
+        });
+    }
+    return dbUrlPromise;
+};
+
 export const getDb = async (options: GetDbOptions = {}) => {
     if (!db) {
         options.onPhase?.('Updating database schema');
         const loadStartedAt = performance.now();
         if (!dbLoadPromise) {
-            dbLoadPromise = Database.load('sqlite:images.db').catch((error) => {
-                dbLoadPromise = null;
-                throw error;
-            });
+            dbLoadPromise = getMainDatabaseUrl()
+                .then((databaseUrl) => Database.load(databaseUrl))
+                .catch((error) => {
+                    dbLoadPromise = null;
+                    throw error;
+                });
         }
         db = await dbLoadPromise;
         logStartupDbPhase('Database.load', loadStartedAt);

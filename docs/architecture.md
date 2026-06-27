@@ -3,7 +3,7 @@ Status: Canonical
 Last reviewed: 2026-05-15
 
 ## System Overview
-Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
+Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
 
 ## Major Subsystems
 
@@ -50,7 +50,7 @@ Risks: passive third-party assets or unclear copy can make local-first behavior 
 Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 
 ## Invariants
-- SQLite is the source of truth for image records and heavy metadata. `library.json` should not become a second image store.
+- SQLite is the source of truth for image records and heavy metadata. On Windows, the main library database lives in Local AppData, with Roaming AppData retained only as a legacy fallback during the public-beta transition. `library.json` should not become a second image store.
 - Rust-exposed command and type changes should flow through Specta into `src/bindings.ts`; do not hand-maintain Rust-backed TypeScript mirrors.
 - Filesystem access must remain local-only and within Tauri-registered or scoped paths.
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.

@@ -28,6 +28,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // db commands
         db::commands::image_commands::save_images_batch,
         db::commands::image_commands::move_image_path_identities,
+        db::commands::maintenance::get_main_database_url,
         db::commands::maintenance::get_db_diagnostics,
         db::commands::maintenance::backfill_image_file_hashes,
         db::commands::maintenance::cancel_image_file_hash_backfill,
@@ -110,8 +111,21 @@ pub fn run() {
     }
 
     // Check for deferred purge request BEFORE initializing the database.
-    check_and_execute_deferred_purge();
+    app_data_migration::check_and_execute_deferred_purge();
+
+    // Move the production SQLite catalog from Roaming AppData to Local AppData
+    // before tauri-plugin-sql can open images.db.
+    if cfg!(all(windows, not(debug_assertions))) {
+        app_data_migration::migrate_current_database_to_local_app_data();
+    }
+
     repair_known_migration_metadata();
+
+    let sql_builder = db::main_database_migration_urls()
+        .into_iter()
+        .fold(tauri_plugin_sql::Builder::default(), |builder, db_url| {
+            builder.add_migrations(&db_url, db::migrations::init_db())
+        });
 
     let log_level = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "info".to_string())
@@ -125,9 +139,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:images.db", db::migrations::init_db())
-                .build(),
+            sql_builder.build(),
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -185,70 +197,6 @@ pub fn run() {
                 }
             }
         });
-}
-
-/// Check for and execute any pending database purge request.
-/// This runs BEFORE the SQL plugin initializes, so the DB file isn't locked yet.
-#[cfg(not(test))]
-fn check_and_execute_deferred_purge() {
-    // Check current and transitional identifiers in both Roaming and Local AppData.
-    for app_dir in app_data_migration::app_identifier_dirs_to_check() {
-        let marker_path = app_dir.join(".purge_on_restart");
-
-        if marker_path.exists() {
-            println!(
-                "[Purge] Found purge marker at {:?}! Proceeding to delete database...",
-                marker_path
-            );
-
-            // Delete the marker first
-            let _ = std::fs::remove_file(&marker_path);
-
-            // Delete database files with retry loop for Windows file locking
-            let db_path = app_dir.join("images.db");
-            let wal_path = app_dir.join("images.db-wal");
-            let shm_path = app_dir.join("images.db-shm");
-
-            if db_path.exists() {
-                let mut attempts = 0;
-                let max_attempts = 5;
-                let mut success = false;
-
-                while attempts < max_attempts && !success {
-                    match std::fs::remove_file(&db_path) {
-                        Ok(_) => {
-                            println!(
-                                "[Purge] SUCCESS: Database deleted. Fresh DB will be created."
-                            );
-                            success = true;
-                        }
-                        Err(e) => {
-                            attempts += 1;
-                            eprintln!(
-                                "[Purge] Attempt {}/{} failed to delete database: {}",
-                                attempts, max_attempts, e
-                            );
-                            if attempts < max_attempts {
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                            }
-                        }
-                    }
-                }
-
-                if !success {
-                    eprintln!("[Purge] FATAL: Could not delete database after {} attempts. Manual intervention may be required.", max_attempts);
-                }
-            }
-
-            // Best effort cleanup for WAL/SHM files
-            if wal_path.exists() {
-                let _ = std::fs::remove_file(&wal_path);
-            }
-            if shm_path.exists() {
-                let _ = std::fs::remove_file(&shm_path);
-            }
-        }
-    }
 }
 
 /// Repair historical migration metadata for a known development/mainline collision.

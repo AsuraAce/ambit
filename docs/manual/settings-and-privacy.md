@@ -61,8 +61,10 @@ Advanced includes:
 - backup settings
 - automatic update controls
 - reset onboarding
-- troubleshooting tools for sync cursors, thumbnails, and library verification
+- support diagnostics, including the active library database location
 - database reset tools
+
+The database location shown in Support Diagnostics is the local catalog path, not the Ambit installer path. On Windows, Ambit stores the catalog under Local AppData and may show a legacy Roaming AppData fallback only for older installs that could not be moved automatically.
 
 Use Purge Database only when you intentionally want to remove all imported metadata and reset application state. The confirmation explains that source image files are not touched, but Ambit's catalog and linked folders are reset.
 
