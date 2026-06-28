@@ -406,23 +406,97 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn symlink_dir(target: &Path, link: &Path) -> io::Result<()> {
+    fn create_directory_link(target: &Path, link: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, link)
     }
 
     #[cfg(windows)]
-    fn symlink_dir(target: &Path, link: &Path) -> io::Result<()> {
-        std::os::windows::fs::symlink_dir(target, link)
+    fn create_directory_link(target: &Path, link: &Path) -> io::Result<()> {
+        match std::os::windows::fs::symlink_dir(target, link) {
+            Ok(()) => Ok(()),
+            Err(symlink_error) => {
+                let output = std::process::Command::new("cmd")
+                    .arg("/C")
+                    .arg("mklink")
+                    .arg("/J")
+                    .arg(link)
+                    .arg(target)
+                    .output();
+
+                match output {
+                    Ok(output) if output.status.success() => Ok(()),
+                    Ok(output) => Err(io::Error::new(
+                        symlink_error.kind(),
+                        format!(
+                            "symlink_dir failed: {symlink_error}; mklink /J failed: {}{}",
+                            String::from_utf8_lossy(&output.stdout),
+                            String::from_utf8_lossy(&output.stderr)
+                        ),
+                    )),
+                    Err(junction_error) => Err(io::Error::new(
+                        symlink_error.kind(),
+                        format!(
+                            "symlink_dir failed: {symlink_error}; mklink /J failed: {junction_error}"
+                        ),
+                    )),
+                }
+            }
+        }
     }
 
     #[cfg(unix)]
-    fn symlink_file(target: &Path, link: &Path) -> io::Result<()> {
+    fn create_file_link(target: &Path, link: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, link)
     }
 
     #[cfg(windows)]
-    fn symlink_file(target: &Path, link: &Path) -> io::Result<()> {
+    fn create_file_link(target: &Path, link: &Path) -> io::Result<()> {
         std::os::windows::fs::symlink_file(target, link)
+    }
+
+    fn assert_scanners_only_return(root: &Path, expected_absolute: &[String]) {
+        let mut stats = FolderStats::default();
+        scan_dir_recursive(root, root, &mut stats);
+        assert_eq!(stats.image_files, expected_absolute.len());
+
+        let mut relative = Vec::new();
+        collect_images_recursive(root, root, &mut relative);
+        relative.sort();
+        assert_eq!(relative, vec!["inside.png", "nested/inner.webp"]);
+
+        let mut absolute = Vec::new();
+        collect_images_recursive_absolute(root, root, &mut absolute);
+        absolute.sort();
+        assert_eq!(absolute, expected_absolute);
+
+        let mut with_stats = Vec::new();
+        collect_images_with_stats_recursive(root, &mut with_stats);
+        let mut with_stats_paths: Vec<_> = with_stats.iter().map(|entry| entry.path.clone()).collect();
+        with_stats_paths.sort();
+        assert_eq!(with_stats_paths, expected_absolute);
+
+        let mut since = Vec::new();
+        collect_images_with_stats_since_recursive(root, 0, &mut since);
+        let mut since_paths: Vec<_> = since.iter().map(|entry| entry.path.clone()).collect();
+        since_paths.sort();
+        assert_eq!(since_paths, expected_absolute);
+    }
+
+    fn create_link_fixture(name: &str) -> (TestDir, TestDir, PathBuf, Vec<String>) {
+        let root = TestDir::new(name);
+        let outside = TestDir::new(&format!("{name}-outside"));
+
+        let inside = root.path.join("inside.png");
+        let nested = root.path.join("nested").join("inner.webp");
+        let outside_image = outside.path.join("outside.png");
+        write_file(&inside);
+        write_file(&nested);
+        write_file(&outside_image);
+
+        let mut expected_absolute = vec![normalized(&inside), normalized(&nested)];
+        expected_absolute.sort();
+
+        (root, outside, outside_image, expected_absolute)
     }
 
     #[test]
@@ -445,52 +519,31 @@ mod tests {
     }
 
     #[test]
-    fn traversal_skips_linked_outside_entries_for_all_scanners() {
-        let root = TestDir::new("linked-root");
-        let outside = TestDir::new("linked-outside");
-
-        let inside = root.path.join("inside.png");
-        let nested = root.path.join("nested").join("inner.webp");
-        let outside_image = outside.path.join("outside.png");
-        write_file(&inside);
-        write_file(&nested);
-        write_file(&outside_image);
+    fn traversal_skips_linked_outside_directories_for_all_scanners() {
+        let (root, outside, _outside_image, expected_absolute) =
+            create_link_fixture("linked-dir-root");
 
         let linked_dir = root.path.join("linked-outside");
+        create_directory_link(&outside.path, &linked_dir).expect(
+            "directory symlink or junction should be available for traversal security coverage",
+        );
+
+        assert_scanners_only_return(&root.path, &expected_absolute);
+    }
+
+    #[test]
+    fn traversal_skips_linked_outside_files_for_all_scanners() {
+        let (root, _outside, outside_image, expected_absolute) =
+            create_link_fixture("linked-file-root");
+
         let linked_file = root.path.join("linked-file.png");
-        let _ = symlink_dir(&outside.path, &linked_dir);
-        let _ = symlink_file(&outside_image, &linked_file);
+        if let Err(error) = create_file_link(&outside_image, &linked_file) {
+            eprintln!(
+                "Skipping file symlink traversal coverage because file link creation failed: {error}"
+            );
+            return;
+        }
 
-        let mut stats = FolderStats::default();
-        scan_dir_recursive(&root.path, &root.path, &mut stats);
-        assert_eq!(stats.image_files, 2);
-
-        let mut relative = Vec::new();
-        collect_images_recursive(&root.path, &root.path, &mut relative);
-        relative.sort();
-        assert_eq!(relative, vec!["inside.png", "nested/inner.webp"]);
-
-        let expected_absolute = {
-            let mut values = vec![normalized(&inside), normalized(&nested)];
-            values.sort();
-            values
-        };
-
-        let mut absolute = Vec::new();
-        collect_images_recursive_absolute(&root.path, &root.path, &mut absolute);
-        absolute.sort();
-        assert_eq!(absolute, expected_absolute);
-
-        let mut with_stats = Vec::new();
-        collect_images_with_stats_recursive(&root.path, &mut with_stats);
-        let mut with_stats_paths: Vec<_> = with_stats.iter().map(|entry| entry.path.clone()).collect();
-        with_stats_paths.sort();
-        assert_eq!(with_stats_paths, expected_absolute);
-
-        let mut since = Vec::new();
-        collect_images_with_stats_since_recursive(&root.path, 0, &mut since);
-        let mut since_paths: Vec<_> = since.iter().map(|entry| entry.path.clone()).collect();
-        since_paths.sort();
-        assert_eq!(since_paths, expected_absolute);
+        assert_scanners_only_return(&root.path, &expected_absolute);
     }
 }
