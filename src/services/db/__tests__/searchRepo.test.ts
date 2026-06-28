@@ -1058,6 +1058,81 @@ describe('searchRepo scoped stats queries', () => {
         expect(keywordParams).toEqual(['Detailer', 0, 0]);
     });
 
+    it.each([
+        {
+            label: 'default image search',
+            args: [undefined, undefined] as const,
+            expectedSql: 'FROM images',
+            expectedParams: [0, "x' OR 1=1 --", "id' OR 1=1 --"]
+        },
+        {
+            label: 'collection search',
+            args: ["collection' OR 1=1 --", undefined] as const,
+            expectedSql: 'FROM collection_images ci',
+            expectedParams: ["collection' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
+        },
+        {
+            label: 'lora search',
+            args: [undefined, "lora' OR 1=1 --"] as const,
+            expectedSql: 'FROM image_loras il',
+            expectedParams: ["lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
+        },
+        {
+            label: 'collection and lora search',
+            args: ["collection' OR 1=1 --", "lora' OR 1=1 --"] as const,
+            expectedSql: 'FROM collection_images ci',
+            expectedParams: ["collection' OR 1=1 --", "lora' OR 1=1 --", 0, "x' OR 1=1 --", "id' OR 1=1 --"]
+        }
+    ])('binds image pagination cursor values for $label', async ({ args, expectedSql, expectedParams }) => {
+        const db = { select: vi.fn(async () => []) };
+        getDbMock.mockResolvedValue(db);
+
+        const { searchImages } = await import('../searchRepo');
+        await searchImages('WHERE is_deleted = ?', [0], 100, 'path', 'ASC', false, args[0], args[1], {
+            val: "x' OR 1=1 --",
+            id: "id' OR 1=1 --"
+        });
+
+        const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes(expectedSql)) as [string, unknown[]];
+        const normalizedSql = searchSql.replace(/\s+/g, ' ').trim();
+
+        expect(normalizedSql).toContain('AND (images.path, images.id) > (?, ?)');
+        expect(searchSql).not.toContain("x' OR 1=1 --");
+        expect(searchSql).not.toContain("id' OR 1=1 --");
+        expect(searchParams).toEqual(expectedParams);
+    });
+
+    it('binds pinned-priority cursor values without interpolating filename or id', async () => {
+        const db = { select: vi.fn(async () => []) };
+        getDbMock.mockResolvedValue(db);
+
+        const { searchImages } = await import('../searchRepo');
+        await searchImages('WHERE is_deleted = ?', [0], 100, 'path', 'ASC', true, "collection' OR 1=1 --", undefined, {
+            val: "x' OR 1=1 --",
+            id: "id' OR 1=1 --",
+            isPinned: 1
+        });
+
+        const [searchSql, searchParams] = findSelectCall(db, (value) => value.includes('FROM collection_images ci')) as [string, unknown[]];
+        const normalizedSql = searchSql.replace(/\s+/g, ' ').trim();
+
+        expect(normalizedSql).toContain('images.is_pinned < ?');
+        expect(normalizedSql).toContain('images.is_pinned = ? AND images.path > ?');
+        expect(normalizedSql).toContain('images.is_pinned = ? AND images.path = ? AND images.id > ?');
+        expect(searchSql).not.toContain("x' OR 1=1 --");
+        expect(searchSql).not.toContain("id' OR 1=1 --");
+        expect(searchParams).toEqual([
+            "collection' OR 1=1 --",
+            0,
+            1,
+            1,
+            "x' OR 1=1 --",
+            1,
+            "x' OR 1=1 --",
+            "id' OR 1=1 --"
+        ]);
+    });
+
     it('uses canonical LoRA references for optimized image count and search', async () => {
         const db = {
             select: vi.fn(async (sql: string) => {

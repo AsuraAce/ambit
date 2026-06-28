@@ -510,12 +510,10 @@ export const searchImages = async (
         ? `ORDER BY images.is_pinned DESC, images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}` // Strict tie-breaker
         : `ORDER BY images.${sortField} ${sortOrder}, images.id ${sortOrder === 'DESC' ? 'DESC' : 'ASC'}`;
 
-    // Helper to build cursor condition
-    const buildCursorWhere = () => {
-        if (!cursor) return '';
+    const buildCursorWhere = (): { sql: string; params: unknown[] } => {
+        if (!cursor) return { sql: '', params: [] };
 
         const op = sortOrder === 'DESC' ? '<' : '>';
-        const sortValParam = typeof cursor.val === 'string' ? `'${cursor.val}'` : cursor.val;
 
         if (prioritizePinned) {
             // Complex case: Pinned (1) -> Unpinned (0). 
@@ -539,16 +537,21 @@ export const searchImages = async (
 
             const pinnedVal = cursor.isPinned ?? 0;
 
-            return `AND (
-                images.is_pinned < ${pinnedVal}
-                OR (images.is_pinned = ${pinnedVal} AND images.${sortField} ${op} ${sortValParam})
-                OR (images.is_pinned = ${pinnedVal} AND images.${sortField} = ${sortValParam} AND images.id ${op} '${cursor.id}')
-            )`;
+            return {
+                sql: `AND (
+                    images.is_pinned < ?
+                    OR (images.is_pinned = ? AND images.${sortField} ${op} ?)
+                    OR (images.is_pinned = ? AND images.${sortField} = ? AND images.id ${op} ?)
+                )`,
+                params: [pinnedVal, pinnedVal, cursor.val, pinnedVal, cursor.val, cursor.id]
+            };
         }
 
         // Simple case: (sortField, id) < (val, id)
-        // Ensure we handle string vs number types correctly for sql injection safety if raw string
-        return `AND (images.${sortField}, images.id) ${op} (${sortValParam}, '${cursor.id}')`;
+        return {
+            sql: `AND (images.${sortField}, images.id) ${op} (?, ?)`,
+            params: [cursor.val, cursor.id]
+        };
     };
 
     const cursorWhere = buildCursorWhere();
@@ -561,11 +564,11 @@ export const searchImages = async (
             JOIN image_loras il ON il.image_id = ci.image_id
             JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
-            ${cursorWhere}
+            ${cursorWhere.sql}
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, loraName, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, loraName, ...params, ...cursorWhere.params]));
         return rows.map(mapRowToImage);
     }
 
@@ -576,11 +579,11 @@ export const searchImages = async (
             FROM collection_images ci
             CROSS JOIN images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
-            ${cursorWhere}
+            ${cursorWhere.sql}
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [collectionId, ...params, ...cursorWhere.params]));
         return rows.map(mapRowToImage);
     }
 
@@ -592,11 +595,11 @@ export const searchImages = async (
             FROM image_loras il
             CROSS JOIN images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
-            ${cursorWhere}
+            ${cursorWhere.sql}
             ${orderBy}
             LIMIT ${limit}
         `;
-        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [loraName, ...params]));
+        const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [loraName, ...params, ...cursorWhere.params]));
         return rows.map(mapRowToImage);
     }
 
@@ -614,12 +617,12 @@ export const searchImages = async (
         SELECT ${getImageFieldsLight()}
         ${fromClause}
         ${finalWhere} 
-        ${cursorWhere}
+        ${cursorWhere.sql}
         ${orderBy} 
         LIMIT ${limit}
     `;
 
-    const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, params));
+    const rows = await timeDbCall('searchImages', reason, () => db.select<ImageRow[]>(query, [...params, ...cursorWhere.params]));
     
     return rows.map(mapRowToImage);
 };
