@@ -547,10 +547,12 @@ export const syncImages = async (
 
         let sizes: number[] = [];
         const fileSizeProbeStartedAt = liveWatchNow();
-        try {
-            sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
-        } catch (e) {
-            sizes = new Array(rows.length).fill(0);
+        if (batchPaths.length > 0) {
+            try {
+                sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
+            } catch (e) {
+                sizes = new Array(batchPaths.length).fill(0);
+            }
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 

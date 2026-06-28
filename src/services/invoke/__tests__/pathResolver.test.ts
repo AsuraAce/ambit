@@ -53,6 +53,29 @@ describe('InvokeAI image path resolver', () => {
         });
     });
 
+    it.each([
+        ['traversal image name', '../outside.png', undefined],
+        ['nested traversal image name', '2026/05/25/../../outside.png', undefined],
+        ['output traversal image name', 'outputs/images/../../outside.png', undefined],
+        ['absolute image name', '/tmp/outside.png', undefined],
+        ['drive-qualified image name', 'C:/Windows/outside.png', undefined],
+        ['UNC image name', '\\\\server\\share\\outside.png', undefined],
+        ['traversal image_subfolder', 'safe.png', '../outside'],
+        ['absolute image_subfolder', 'safe.png', '/tmp/outside'],
+        ['drive-qualified image_subfolder', 'safe.png', 'C:/outside'],
+        ['UNC image_subfolder', 'safe.png', '\\\\server\\share']
+    ])('rejects %s from InvokeAI database rows', async (_label, imageName, imageSubfolder) => {
+        const listImages = vi.fn().mockResolvedValue(files);
+        const resolver = createInvokeImagePathResolver('D:/Invoke', listImages);
+
+        await expect(resolver.resolveImagePath(imageName, imageSubfolder)).resolves.toEqual({
+            absolutePath: null,
+            relativePath: null,
+            ambiguous: false
+        });
+        expect(listImages).not.toHaveBeenCalled();
+    });
+
     it('uses existing InvokeAI thumbnail candidates and falls back to the source image when none exist', async () => {
         const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
 
@@ -81,5 +104,22 @@ describe('InvokeAI image path resolver', () => {
         ]);
 
         expect(resolver.resolveThumbnailPath(null, nested, existing)).toBe('D:/Invoke/outputs/images/thumbnails/2026/05/25/date.webp');
+    });
+
+    it('ignores unsafe thumbnail names and falls back to bounded thumbnail candidates', async () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+        const nested = await resolver.resolveImagePath('date.png');
+
+        const boundedFallbacks = [
+            'D:/Invoke/outputs/images/2026/05/25/date.webp',
+            'D:/Invoke/outputs/images/2026/05/25/thumbnails/date.webp',
+            'D:/Invoke/outputs/images/thumbnails/2026/05/25/date.webp',
+            'D:/Invoke/outputs/images/thumbnails/date.webp'
+        ];
+
+        expect(resolver.getThumbnailPathCandidates('../outside.webp', nested)).toEqual(boundedFallbacks);
+        expect(resolver.getThumbnailPathCandidates('/tmp/outside.webp', nested)).toEqual(boundedFallbacks);
+        expect(resolver.getThumbnailPathCandidates('C:/outside.webp', nested)).toEqual(boundedFallbacks);
+        expect(resolver.getThumbnailPathCandidates('\\\\server\\share\\outside.webp', nested)).toEqual(boundedFallbacks);
     });
 });

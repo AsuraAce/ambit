@@ -14,32 +14,47 @@ interface InvokeDiskIndex {
 
 const OUTPUT_IMAGES_PREFIX = 'outputs/images/';
 
-const trimLeadingSlash = (path: string): string => path.replace(/^\/+/, '');
+const unresolvedPath = (): ResolvedInvokeImagePath => ({
+    absolutePath: null,
+    relativePath: null,
+    ambiguous: false
+});
 
 const isOutputImagesRelative = (path: string): boolean =>
     path.toLowerCase().startsWith(OUTPUT_IMAGES_PREFIX);
 
 const hasPathSeparator = (path: string): boolean => /[\\/]/.test(path);
 
-const normalizeRelativePath = (path: string): string =>
-    trimLeadingSlash(normalizePath(path)).replace(/\/+$/, '');
+const isUnsafePathInput = (path: string): boolean =>
+    /^[\\/]/.test(path) || /^[A-Za-z]:/.test(path) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path);
+
+const normalizeSafeRelativePath = (path: string | null | undefined): string | null => {
+    const raw = (path || '').trim();
+    if (!raw || isUnsafePathInput(raw)) return null;
+
+    const normalized = normalizePath(raw).replace(/\/+$/, '');
+    if (!normalized) return null;
+
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.some(part => part === '.' || part === '..')) return null;
+
+    return parts.join('/');
+};
 
 const joinRelativePath = (...parts: Array<string | null | undefined>): string =>
     parts
-        .map(part => part ? normalizeRelativePath(part) : '')
+        .map(part => normalizeSafeRelativePath(part) || '')
         .filter(Boolean)
         .join('/');
 
 const toRootRelativeImagePath = (imageName: string): string => {
-    const normalized = normalizeRelativePath(imageName);
-    return isOutputImagesRelative(normalized)
-        ? normalized
-        : `${OUTPUT_IMAGES_PREFIX}${normalized}`;
+    return isOutputImagesRelative(imageName)
+        ? imageName
+        : `${OUTPUT_IMAGES_PREFIX}${imageName}`;
 };
 
 const toSubfolderImagePath = (imageName: string, imageSubfolder: string): string => {
-    const normalizedName = normalizeRelativePath(imageName);
-    const filename = getFilename(normalizedName) || normalizedName;
+    const filename = getFilename(imageName) || imageName;
     const normalizedSubfolder = isOutputImagesRelative(imageSubfolder)
         ? imageSubfolder.slice(OUTPUT_IMAGES_PREFIX.length)
         : imageSubfolder;
@@ -47,14 +62,16 @@ const toSubfolderImagePath = (imageName: string, imageSubfolder: string): string
 };
 
 const fromOutputImagesRelative = (rootRelativePath: string): string | null => {
-    const normalized = normalizeRelativePath(rootRelativePath);
+    const normalized = normalizeSafeRelativePath(rootRelativePath);
+    if (!normalized) return null;
+
     return isOutputImagesRelative(normalized)
         ? normalized.slice(OUTPUT_IMAGES_PREFIX.length)
         : null;
 };
 
 const toAbsolutePath = (invokeRoot: string, rootRelativePath: string): string =>
-    normalizePath(`${invokeRoot}/${normalizeRelativePath(rootRelativePath)}`);
+    normalizePath(`${invokeRoot}/${normalizeSafeRelativePath(rootRelativePath) || ''}`);
 
 export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
     const byRootRelative = new Map<string, string>();
@@ -62,7 +79,7 @@ export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
     const byBasename = new Map<string, string | null>();
 
     files.forEach((file) => {
-        const rootRelative = normalizeRelativePath(file);
+        const rootRelative = normalizeSafeRelativePath(file);
         if (!rootRelative) return;
 
         byRootRelative.set(rootRelative.toLowerCase(), rootRelative);
@@ -106,11 +123,20 @@ export const createInvokeImagePathResolver = (
         imageName: string,
         imageSubfolder?: string | null
     ): Promise<ResolvedInvokeImagePath> => {
-        const normalizedName = normalizeRelativePath(imageName);
-        const normalizedSubfolder = normalizeRelativePath(imageSubfolder || '');
+        const normalizedName = normalizeSafeRelativePath(imageName);
+        const rawSubfolder = (imageSubfolder || '').trim();
+        const normalizedSubfolder = rawSubfolder ? normalizeSafeRelativePath(rawSubfolder) : '';
+        if (!normalizedName || normalizedSubfolder === null) {
+            console.warn('[InvokeAI Sync] Unsafe image path in InvokeAI database row; skipping.', {
+                imageName,
+                imageSubfolder
+            });
+            return unresolvedPath();
+        }
+
         const directRelativePath = normalizedSubfolder
-            ? toSubfolderImagePath(imageName, normalizedSubfolder)
-            : toRootRelativeImagePath(imageName);
+            ? toSubfolderImagePath(normalizedName, normalizedSubfolder)
+            : toRootRelativeImagePath(normalizedName);
         const fallbackRelativePath = directRelativePath;
         const fallback: ResolvedInvokeImagePath = {
             absolutePath: toAbsolutePath(normalizedRoot, fallbackRelativePath),
@@ -172,7 +198,7 @@ export const createInvokeImagePathResolver = (
         const imageBasename = imagesRelative ? getFilename(imagesRelative) : getFilename(resolvedImage.absolutePath);
         const fallbackThumbnailName = imageBasename.replace(/\.[^/.]+$/, '.webp');
 
-        const normalizedThumbnail = normalizeRelativePath(thumbnailName || fallbackThumbnailName);
+        const normalizedThumbnail = normalizeSafeRelativePath(thumbnailName) ?? normalizeSafeRelativePath(fallbackThumbnailName);
         if (!normalizedThumbnail) return [];
 
         const candidates: string[] = [];
@@ -213,7 +239,9 @@ export const createInvokeImagePathResolver = (
     };
 
     const getLegacyFlatImagePath = (imageName: string): string | null => {
-        const normalizedName = normalizeRelativePath(imageName);
+        const normalizedName = normalizeSafeRelativePath(imageName);
+        if (!normalizedName) return null;
+
         const filename = getFilename(normalizedName);
         if (!filename) return null;
 
