@@ -15,6 +15,91 @@ export interface ParseResult {
 // Helper to decode text from buffer
 // Note: In a worker, TextDecoder is available in global scope in modern browsers.
 const textDecoder = new TextDecoder('utf-8');
+const textEncoder = new TextEncoder();
+
+const MAX_PNG_METADATA_CHUNK_BYTES = 16 * 1024 * 1024;
+const MAX_PNG_DECOMPRESSED_TEXT_BYTES = 10 * 1024 * 1024;
+const MAX_PNG_METADATA_TOTAL_CHUNK_BYTES = 32 * 1024 * 1024;
+const MAX_PNG_DECODED_TEXT_TOTAL_BYTES = 16 * 1024 * 1024;
+
+type PngMetadataBudget = {
+    rawChunkBytes: number;
+    decodedTextBytes: number;
+    rawExhausted: boolean;
+    decodedExhausted: boolean;
+    loggedLimit: boolean;
+};
+
+const createPngMetadataBudget = (): PngMetadataBudget => ({
+    rawChunkBytes: 0,
+    decodedTextBytes: 0,
+    rawExhausted: false,
+    decodedExhausted: false,
+    loggedLimit: false,
+});
+
+const notePngBudgetLimit = (budget: PngMetadataBudget, reason: string) => {
+    if (!budget.loggedLimit) {
+        if (typeof console.debug === 'function') {
+            console.debug(`[Worker] PNG metadata budget reached: ${reason}`);
+        }
+        budget.loggedLimit = true;
+    }
+};
+
+const isPngMetadataChunk = (type: string): boolean =>
+    type === 'tEXt' || type === 'iTXt' || type === 'zTXt' || type === 'eXIf';
+
+const allowPngMetadataChunk = (budget: PngMetadataBudget, length: number): boolean => {
+    if (budget.rawExhausted) return false;
+
+    if (length > MAX_PNG_METADATA_CHUNK_BYTES) {
+        notePngBudgetLimit(budget, 'single metadata chunk exceeds limit');
+        return false;
+    }
+    if (budget.rawChunkBytes + length > MAX_PNG_METADATA_TOTAL_CHUNK_BYTES) {
+        budget.rawExhausted = true;
+        notePngBudgetLimit(budget, 'aggregate metadata chunk bytes exceed limit');
+        return false;
+    }
+
+    budget.rawChunkBytes += length;
+    return true;
+};
+
+const remainingPngDecodedTextBytes = (budget: PngMetadataBudget): number =>
+    budget.decodedExhausted
+        ? 0
+        : Math.max(0, MAX_PNG_DECODED_TEXT_TOTAL_BYTES - budget.decodedTextBytes);
+
+const exhaustPngDecodedTextBudget = (budget: PngMetadataBudget) => {
+    budget.decodedExhausted = true;
+    notePngBudgetLimit(budget, 'aggregate decoded text bytes exceed limit');
+};
+
+const acceptPngDecodedText = (
+    chunks: Record<string, string>,
+    budget: PngMetadataBudget,
+    key: string,
+    value: string,
+): boolean => {
+    if (budget.decodedExhausted) return false;
+
+    const decodedBytes = textEncoder.encode(value).byteLength;
+    if (decodedBytes > remainingPngDecodedTextBytes(budget)) {
+        exhaustPngDecodedTextBudget(budget);
+        return false;
+    }
+
+    budget.decodedTextBytes += decodedBytes;
+    chunks[key] = value;
+    return true;
+};
+
+type DecompressDeflateResult =
+    | { status: 'ok'; data: Uint8Array }
+    | { status: 'over-limit' }
+    | { status: 'invalid' };
 
 type MetadataRecord = Record<string, unknown>;
 type WorkflowInput = MetadataRecord & {
@@ -473,6 +558,8 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
 
 const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
     const chunks: Record<string, string> = {};
+    if (buffer.length < 8) return chunks;
+
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
     // Verify PNG header
@@ -480,19 +567,35 @@ const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
         return chunks;
     }
 
+    const budget = createPngMetadataBudget();
     let pos = 8;
     while (pos + 8 < buffer.length) {
         const length = view.getUint32(pos);
         const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
         pos += 8;
+        const dataEnd = pos + length;
+
+        if (dataEnd + 4 > buffer.length) break;
+
+        if (isPngMetadataChunk(type)) {
+            if (!allowPngMetadataChunk(budget, length)) {
+                pos += length + 4;
+                continue;
+            }
+        }
 
         if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
-            const data = buffer.slice(pos, pos + length);
+            const data = buffer.slice(pos, dataEnd);
             const nullPos = data.indexOf(0);
             if (nullPos !== -1) {
                 const key = textDecoder.decode(data.slice(0, nullPos));
                 if (type === 'tEXt') {
-                    chunks[key] = textDecoder.decode(data.slice(nullPos + 1));
+                    acceptPngDecodedText(
+                        chunks,
+                        budget,
+                        key,
+                        textDecoder.decode(data.slice(nullPos + 1)),
+                    );
                 } else if (type === 'iTXt') {
                     // iTXt: Keyword (null) CompressionFlag (1) CompressionMethod (1) Language (null) TranslatedKeyword (null) Text
                     const isCompressed = data[nullPos + 1] === 1;
@@ -507,8 +610,13 @@ const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
                     if (isCompressed) {
                         // Decompression would require a lib like fflate in the worker.
                         // For now we skip compressed iTXt if not available.
-                    } else {
-                        chunks[key] = textDecoder.decode(data.slice(textStart));
+                    } else if (textStart <= data.byteLength) {
+                        acceptPngDecodedText(
+                            chunks,
+                            budget,
+                            key,
+                            textDecoder.decode(data.slice(textStart)),
+                        );
                     }
                 }
                 // zTXt would also need decompression.
@@ -625,17 +733,21 @@ const parseExifData = (data: Uint8Array): string | null => {
 };
 
 // Decompression helper using browser-native DecompressionStream
-export const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array | null> => {
-    const MAX_DECOMPRESSED_SIZE = 10 * 1024 * 1024; // 10MB limit
+export const decompressDeflate = async (
+    buffer: Uint8Array,
+    maxDecompressedSize = MAX_PNG_DECOMPRESSED_TEXT_BYTES,
+): Promise<DecompressDeflateResult> => {
+    if (maxDecompressedSize <= 0) return { status: 'over-limit' };
+
     try {
         // DecompressionStream is available in modern browser environments (webview2/webkit)
         const DecompressionStreamImpl = (globalThis as DecompressionGlobal).DecompressionStream;
-        if (!DecompressionStreamImpl) return null;
+        if (!DecompressionStreamImpl) return { status: 'invalid' };
         const ds = new DecompressionStreamImpl('deflate');
         const body = new ArrayBuffer(buffer.byteLength);
         new Uint8Array(body).set(buffer);
         const stream = new Response(body).body?.pipeThrough(ds);
-        if (!stream) return null;
+        if (!stream) return { status: 'invalid' };
 
         const reader = stream.getReader();
         const chunks: Uint8Array[] = [];
@@ -647,10 +759,10 @@ export const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array 
             if (!(value instanceof Uint8Array)) continue;
 
             totalSize += value.length;
-            if (totalSize > MAX_DECOMPRESSED_SIZE) {
-                console.warn('[Worker] Decompression limit exceeded (10MB)');
+            if (totalSize > maxDecompressedSize) {
+                console.warn(`[Worker] Decompression limit exceeded (${maxDecompressedSize} bytes)`);
                 await reader.cancel();
-                return null;
+                return { status: 'over-limit' };
             }
             chunks.push(value);
         }
@@ -661,11 +773,133 @@ export const decompressDeflate = async (buffer: Uint8Array): Promise<Uint8Array 
             result.set(chunk, offset);
             offset += chunk.length;
         }
-        return result;
+        return { status: 'ok', data: result };
     } catch (e) {
         console.error('[Worker] Decompression failed:', e);
-        return null;
+        return { status: 'invalid' };
     }
+};
+
+// Modified parsePngChunks to include eXIf and supported compressed chunks
+export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record<string, string>> => {
+    const chunks: Record<string, string> = {};
+    if (buffer.length < 8) return chunks;
+
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const budget = createPngMetadataBudget();
+
+    if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) return chunks;
+
+    let pos = 8;
+    while (pos + 8 < buffer.length) {
+        const length = view.getUint32(pos);
+        const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
+        pos += 8;
+        const dataEnd = pos + length;
+
+        if (dataEnd + 4 > buffer.length) break;
+
+        if (isPngMetadataChunk(type)) {
+            if (!allowPngMetadataChunk(budget, length)) {
+                pos += length + 4;
+                continue;
+            }
+        }
+
+        if (type === 'tEXt') {
+            const data = buffer.slice(pos, dataEnd);
+            const nullPos = data.indexOf(0);
+            if (nullPos !== -1) {
+                const key = textDecoder.decode(data.slice(0, nullPos));
+                acceptPngDecodedText(
+                    chunks,
+                    budget,
+                    key,
+                    textDecoder.decode(data.slice(nullPos + 1)),
+                );
+            }
+        } else if (type === 'zTXt') {
+            const data = buffer.slice(pos, dataEnd);
+            const nullPos = data.indexOf(0);
+            if (nullPos !== -1) {
+                const key = textDecoder.decode(data.slice(0, nullPos));
+                // zTXt: key (null) method (1 byte, must be 0 for deflate) compressedData
+                if (data[nullPos + 1] === 0) { // Compression method 0 (deflate)
+                    const compressed = data.slice(nullPos + 2);
+                    const maxDecoded = Math.min(
+                        MAX_PNG_DECOMPRESSED_TEXT_BYTES,
+                        remainingPngDecodedTextBytes(budget),
+                    );
+                    const decompressed = await decompressDeflate(compressed, maxDecoded);
+                    if (decompressed.status === 'ok') {
+                        acceptPngDecodedText(
+                            chunks,
+                            budget,
+                            key,
+                            textDecoder.decode(decompressed.data),
+                        );
+                    } else if (decompressed.status === 'over-limit') {
+                        exhaustPngDecodedTextBudget(budget);
+                    }
+                }
+            }
+        } else if (type === 'iTXt') {
+            const data = buffer.slice(pos, dataEnd);
+            const nullPos = data.indexOf(0);
+            if (nullPos !== -1) {
+                const key = textDecoder.decode(data.slice(0, nullPos));
+                const isCompressed = data[nullPos + 1] === 1;
+                const method = data[nullPos + 2]; // Compression method (0 for deflate)
+
+                let textStart = nullPos + 3;
+                while (textStart < data.length && data[textStart] !== 0) textStart++;
+                textStart++; // Skip Lang
+                while (textStart < data.length && data[textStart] !== 0) textStart++;
+                textStart++; // Skip Trans
+
+                if (textStart <= data.byteLength) {
+                    if (isCompressed) {
+                        if (method === 0) { // Compression method 0 (deflate)
+                            const compressed = data.slice(textStart);
+                            const maxDecoded = Math.min(
+                                MAX_PNG_DECOMPRESSED_TEXT_BYTES,
+                                remainingPngDecodedTextBytes(budget),
+                            );
+                            const decompressed = await decompressDeflate(compressed, maxDecoded);
+                            if (decompressed.status === 'ok') {
+                                acceptPngDecodedText(
+                                    chunks,
+                                    budget,
+                                    key,
+                                    textDecoder.decode(decompressed.data),
+                                );
+                            } else if (decompressed.status === 'over-limit') {
+                                exhaustPngDecodedTextBudget(budget);
+                            }
+                        }
+                    } else {
+                        acceptPngDecodedText(
+                            chunks,
+                            budget,
+                            key,
+                            textDecoder.decode(data.slice(textStart)),
+                        );
+                    }
+                }
+            }
+        } else if (type === 'eXIf') {
+            const data = buffer.slice(pos, dataEnd);
+            const exifComment = parseExifData(data);
+            if (exifComment && !chunks['parameters']) {
+                acceptPngDecodedText(chunks, budget, 'parameters', exifComment);
+            }
+        } else if (type === 'IEND') {
+            break;
+        }
+
+        pos += length + 4; // Data + CRC
+    }
+    return chunks;
 };
 
 // Worker Message Handler
@@ -677,83 +911,6 @@ self.onmessage = async (e: MessageEvent) => {
     const requestId = typeof request.requestId === 'string' ? request.requestId : undefined;
     const path = typeof request.path === 'string' ? request.path : '';
     const defaultTool = asGeneratorTool(request.defaultTool);
-
-    // Modified parsePngChunks to include eXIf and supported compressed chunks
-    const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record<string, string>> => {
-        const chunks: Record<string, string> = {};
-        const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-        if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) return chunks;
-
-        let pos = 8;
-        while (pos + 8 < buffer.length) {
-            const length = view.getUint32(pos);
-            const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
-            pos += 8;
-
-            if (type === 'tEXt') {
-                const data = buffer.slice(pos, pos + length);
-                const nullPos = data.indexOf(0);
-                if (nullPos !== -1) {
-                    const key = textDecoder.decode(data.slice(0, nullPos));
-                    chunks[key] = textDecoder.decode(data.slice(nullPos + 1));
-                }
-            } else if (type === 'zTXt') {
-                const data = buffer.slice(pos, pos + length);
-                const nullPos = data.indexOf(0);
-                if (nullPos !== -1) {
-                    const key = textDecoder.decode(data.slice(0, nullPos));
-                    // zTXt: key (null) method (1 byte, must be 0 for deflate) compressedData
-                    if (data[nullPos + 1] === 0) { // Compression method 0 (deflate)
-                        const compressed = data.slice(nullPos + 2);
-                        const decompressed = await decompressDeflate(compressed);
-                        if (decompressed) {
-                            chunks[key] = textDecoder.decode(decompressed);
-                        }
-                    }
-                }
-            } else if (type === 'iTXt') {
-                const data = buffer.slice(pos, pos + length);
-                const nullPos = data.indexOf(0);
-                if (nullPos !== -1) {
-                    const key = textDecoder.decode(data.slice(0, nullPos));
-                    const isCompressed = data[nullPos + 1] === 1;
-                    const method = data[nullPos + 2]; // Compression method (0 for deflate)
-
-                    let textStart = nullPos + 3;
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++; // Skip Lang
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++; // Skip Trans
-
-                    if (isCompressed) {
-                        if (method === 0) { // Compression method 0 (deflate)
-                            const compressed = data.slice(textStart);
-                            const decompressed = await decompressDeflate(compressed);
-                            if (decompressed) {
-                                chunks[key] = textDecoder.decode(decompressed);
-                            }
-                        }
-                    } else {
-                        chunks[key] = textDecoder.decode(data.slice(textStart));
-                    }
-                }
-            } else if (type === 'eXIf') {
-                const data = buffer.slice(pos, pos + length);
-                const exifComment = parseExifData(data);
-                if (exifComment) {
-                    // Try to avoid overwriting standard parameters if already found, 
-                    // but usually eXIf is the fallback.
-                    if (!chunks['parameters']) chunks['parameters'] = exifComment;
-                }
-            } else if (type === 'IEND') {
-                break;
-            }
-
-            pos += length + 4; // Data + CRC
-        }
-        return chunks;
-    };
 
     if (!chunks && buffer) {
         chunks = await parsePngChunksEnhanced(buffer);
