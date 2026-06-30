@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '../../../../test/testUtils';
+import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { AppSettings } from '../../../../types';
 import { AdvancedTab } from '../AdvancedTab';
 
 const addToastMock = vi.hoisted(() => vi.fn());
+const getDbDiagnosticsMock = vi.hoisted(() => vi.fn());
 const libraryContextMock = vi.hoisted(() => ({
     setSettings: vi.fn(),
     cleanLibrary: vi.fn().mockResolvedValue(undefined),
@@ -22,6 +23,12 @@ vi.mock('../../../../hooks/useLibraryContext', () => ({
 
 vi.mock('../BackupSettings', () => ({
     BackupSettings: () => <div>Backup settings</div>,
+}));
+
+vi.mock('../../../../bindings', () => ({
+    commands: {
+        getDbDiagnostics: getDbDiagnosticsMock,
+    },
 }));
 
 const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
@@ -61,6 +68,21 @@ const renderAdvanced = (settings = createSettings(), onClose = vi.fn(), onNaviga
 describe('AdvancedTab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        getDbDiagnosticsMock.mockResolvedValue({
+            status: 'ok',
+            data: {
+                dbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                activeDbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                localDbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                roamingDbPath: 'C:\\Users\\Artemis\\AppData\\Roaming\\io.github.asuraace.ambit\\images.db',
+                isUsingRoamingFallback: false,
+                imageCount: 12,
+                deletedCount: 1,
+                modelCount: 2,
+                cacheCount: 3,
+                toolNullCount: 0,
+            },
+        });
     });
 
     it('does not expose the removed troubleshooting repair actions', () => {
@@ -81,6 +103,22 @@ describe('AdvancedTab', () => {
 
         expect(screen.getByText('Support Diagnostics')).not.toBeNull();
         expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('info');
+    });
+
+    it('renders the active library database location separately from the install location', async () => {
+        renderAdvanced();
+
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+
+        expect(screen.getByText('Library Database Location')).not.toBeNull();
+        expect(screen.getByText(/separate from the folder where the app itself is installed/i)).not.toBeNull();
+
+        await waitFor(() => {
+            expect(screen.getByText('Active catalog')).not.toBeNull();
+            expect(screen.getByText('Local AppData target')).not.toBeNull();
+            expect(screen.getByText('Legacy Roaming fallback')).not.toBeNull();
+            expect(screen.getAllByText(/AppData\\Local\\io\.github\.asuraace\.ambit\\images\.db/)).toHaveLength(2);
+        });
     });
 
     it('warns when debug logging is selected', () => {

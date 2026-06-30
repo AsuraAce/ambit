@@ -1,8 +1,8 @@
 const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
 const LEGACY_PRODUCTION_IDENTIFIER: &str = "com.ambit.app";
-#[cfg(not(test))]
-const THUMBNAIL_PATH_REPAIR_MARKER: &str = ".thumbnail-path-repair-v1";
-#[cfg(not(test))]
+const MAIN_DATABASE_FILES: [&str; 3] = ["images.db", "images.db-wal", "images.db-shm"];
+const PURGE_MARKER_FILE: &str = ".purge_on_restart";
+const PRODUCTION_IDENTIFIER_PATHS: [&str; 2] = [PRODUCTION_IDENTIFIER, LEGACY_PRODUCTION_IDENTIFIER];
 const APP_IDENTIFIER_PATHS: [&str; 5] = [
     PRODUCTION_IDENTIFIER,
     LEGACY_PRODUCTION_IDENTIFIER,
@@ -10,6 +10,8 @@ const APP_IDENTIFIER_PATHS: [&str; 5] = [
     "com.ambit.alpha",
     "com.tauri.dev",
 ];
+#[cfg(not(test))]
+const THUMBNAIL_PATH_REPAIR_MARKER: &str = ".thumbnail-path-repair-v1";
 
 #[derive(Debug, PartialEq, Eq)]
 enum IdentifierMigrationOutcome {
@@ -18,6 +20,28 @@ enum IdentifierMigrationOutcome {
     MergedLegacyEntries,
     SkippedExistingProfile,
     Failed,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DatabaseLocalMigrationOutcome {
+    SourceMissing,
+    Moved,
+    Copied,
+    SkippedExistingLocal,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+struct DatabaseFileMove {
+    name: &'static str,
+    source: std::path::PathBuf,
+    destination: std::path::PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct AppProfileDir {
+    identifier: &'static str,
+    path: std::path::PathBuf,
 }
 
 #[cfg(not(test))]
@@ -50,6 +74,427 @@ pub(crate) fn migrate_legacy_identifier_data() {
     if let (Some(config_dir), Some(data_local_dir)) = (&config_dir, &data_local_dir) {
         repair_legacy_production_thumbnail_paths(config_dir, data_local_dir);
     }
+}
+
+#[cfg(not(test))]
+pub(crate) fn migrate_current_database_to_local_app_data() {
+    let Some(config_dir) = dirs::config_dir() else {
+        eprintln!("[DatabaseLocalMigration] Failed to resolve Roaming AppData config directory");
+        return;
+    };
+    let Some(data_local_dir) = dirs::data_local_dir() else {
+        eprintln!("[DatabaseLocalMigration] Failed to resolve Local AppData directory");
+        return;
+    };
+
+    let roaming_dir = config_dir.join(PRODUCTION_IDENTIFIER);
+    let local_dir = data_local_dir.join(PRODUCTION_IDENTIFIER);
+    let _ = migrate_database_files_to_local(&roaming_dir, &local_dir);
+}
+
+fn migrate_database_files_to_local(
+    roaming_dir: &std::path::Path,
+    local_dir: &std::path::Path,
+) -> DatabaseLocalMigrationOutcome {
+    let roaming_db = roaming_dir.join("images.db");
+    let local_db = local_dir.join("images.db");
+
+    if local_db.exists() {
+        if roaming_db.exists() {
+            println!(
+                "[DatabaseLocalMigration] Local database already exists at {}; leaving legacy Roaming database at {} for manual recovery",
+                local_db.display(),
+                roaming_db.display()
+            );
+        }
+        return DatabaseLocalMigrationOutcome::SkippedExistingLocal;
+    }
+
+    if !roaming_db.exists() {
+        if let Err(error) = std::fs::create_dir_all(local_dir) {
+            eprintln!(
+                "[DatabaseLocalMigration] Failed to prepare Local AppData directory {}: {error}",
+                local_dir.display()
+            );
+            return DatabaseLocalMigrationOutcome::Failed;
+        }
+        println!(
+            "[DatabaseLocalMigration] No legacy Roaming database found at {}; fresh databases will use {}",
+            roaming_db.display(),
+            local_dir.display()
+        );
+        return DatabaseLocalMigrationOutcome::SourceMissing;
+    }
+
+    if let Err(error) = std::fs::create_dir_all(local_dir) {
+        eprintln!(
+            "[DatabaseLocalMigration] Failed to create Local AppData directory {}: {error}",
+            local_dir.display()
+        );
+        return DatabaseLocalMigrationOutcome::Failed;
+    }
+
+    let files = existing_database_file_moves(roaming_dir, local_dir);
+    if let Some(existing_target) = files
+        .iter()
+        .find(|file| file.destination.exists())
+        .map(|file| file.destination.clone())
+    {
+        eprintln!(
+            "[DatabaseLocalMigration] Skipped moving database because Local AppData already contains {}; Roaming database remains active",
+            existing_target.display()
+        );
+        return DatabaseLocalMigrationOutcome::SkippedExistingLocal;
+    }
+
+    match rename_database_files(&files) {
+        Ok(()) => {
+            println!(
+                "[DatabaseLocalMigration] Moved database from {} to {}",
+                roaming_dir.display(),
+                local_dir.display()
+            );
+            DatabaseLocalMigrationOutcome::Moved
+        }
+        Err(error) => {
+            eprintln!(
+                "[DatabaseLocalMigration] Rename failed; trying copy fallback from {} to {}: {error}",
+                roaming_dir.display(),
+                local_dir.display()
+            );
+            match copy_database_files_to_local(&files) {
+                Ok(()) => {
+                    println!(
+                        "[DatabaseLocalMigration] Copied database from {} to {} after rename fallback",
+                        roaming_dir.display(),
+                        local_dir.display()
+                    );
+                    DatabaseLocalMigrationOutcome::Copied
+                }
+                Err(copy_error) => {
+                    eprintln!(
+                        "[DatabaseLocalMigration] Failed to move database to Local AppData; Ambit will keep using Roaming database at {}: {copy_error}",
+                        roaming_db.display()
+                    );
+                    DatabaseLocalMigrationOutcome::Failed
+                }
+            }
+        }
+    }
+}
+
+fn existing_database_file_moves(
+    roaming_dir: &std::path::Path,
+    local_dir: &std::path::Path,
+) -> Vec<DatabaseFileMove> {
+    MAIN_DATABASE_FILES
+        .iter()
+        .filter_map(|name| {
+            let source = roaming_dir.join(name);
+            if !source.exists() {
+                return None;
+            }
+
+            Some(DatabaseFileMove {
+                name: *name,
+                source,
+                destination: local_dir.join(name),
+            })
+        })
+        .collect()
+}
+
+fn rename_database_files(files: &[DatabaseFileMove]) -> Result<(), String> {
+    let mut renamed: Vec<DatabaseFileMove> = Vec::new();
+
+    for file in files {
+        if let Err(error) = std::fs::rename(&file.source, &file.destination) {
+            for previous in renamed.iter().rev() {
+                let _ = std::fs::rename(&previous.destination, &previous.source);
+            }
+            return Err(format!(
+                "could not rename {} to {}: {error}",
+                file.source.display(),
+                file.destination.display()
+            ));
+        }
+        renamed.push(file.clone());
+    }
+
+    Ok(())
+}
+
+fn copy_database_files_to_local(files: &[DatabaseFileMove]) -> Result<(), String> {
+    let temp_suffix = format!(
+        "ambit-db-local-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos()
+    );
+    let mut temp_files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    let mut committed: Vec<std::path::PathBuf> = Vec::new();
+
+    for file in files {
+        if file.destination.exists() {
+            cleanup_paths(temp_files.iter().map(|(temp, _)| temp));
+            return Err(format!(
+                "destination already exists: {}",
+                file.destination.display()
+            ));
+        }
+
+        let temp_destination = file
+            .destination
+            .with_file_name(format!("{}.{}", file.name, temp_suffix));
+        std::fs::copy(&file.source, &temp_destination).map_err(|error| {
+            cleanup_paths(temp_files.iter().map(|(temp, _)| temp));
+            format!(
+                "could not copy {} to {}: {error}",
+                file.source.display(),
+                temp_destination.display()
+            )
+        })?;
+
+        let source_len = std::fs::metadata(&file.source)
+            .map_err(|error| format!("could not read {}: {error}", file.source.display()))?
+            .len();
+        let copied_len = std::fs::metadata(&temp_destination)
+            .map_err(|error| format!("could not read {}: {error}", temp_destination.display()))?
+            .len();
+        if source_len != copied_len {
+            cleanup_paths(temp_files.iter().map(|(temp, _)| temp));
+            let _ = std::fs::remove_file(&temp_destination);
+            return Err(format!(
+                "copy verification failed for {}: source {} bytes, copy {} bytes",
+                file.name, source_len, copied_len
+            ));
+        }
+
+        temp_files.push((temp_destination, file.destination.clone()));
+    }
+
+    for (temp, destination) in &temp_files {
+        if let Err(error) = std::fs::rename(temp, destination) {
+            cleanup_paths(temp_files.iter().map(|(temp, _)| temp));
+            cleanup_paths(committed.iter());
+            return Err(format!(
+                "could not promote {} to {}: {error}",
+                temp.display(),
+                destination.display()
+            ));
+        }
+        committed.push(destination.clone());
+    }
+
+    for file in files {
+        if let Err(error) = std::fs::remove_file(&file.source) {
+            eprintln!(
+                "[DatabaseLocalMigration] Copied {}, but could not remove legacy source {}: {error}",
+                file.name,
+                file.source.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn cleanup_paths<'a>(paths: impl Iterator<Item = &'a std::path::PathBuf>) {
+    for path in paths {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DeferredPurgeOutcome {
+    profiles_purged: usize,
+    database_files_deleted: usize,
+    markers_deleted: usize,
+    failures: usize,
+}
+
+#[cfg(not(test))]
+pub(crate) fn check_and_execute_deferred_purge() {
+    let roots = app_data_roots_to_check();
+    let outcome = execute_deferred_purge_for_roots(&roots);
+    if outcome.profiles_purged > 0 {
+        println!(
+            "[Purge] Completed deferred purge: {} profiles, {} database files, {} markers, {} failures",
+            outcome.profiles_purged,
+            outcome.database_files_deleted,
+            outcome.markers_deleted,
+            outcome.failures
+        );
+    }
+}
+
+fn execute_deferred_purge_for_roots(roots: &[std::path::PathBuf]) -> DeferredPurgeOutcome {
+    let profile_dirs = profile_dirs_for_roots(roots);
+    let marked_profiles: Vec<AppProfileDir> = profile_dirs
+        .iter()
+        .filter(|profile| profile.path.join(PURGE_MARKER_FILE).exists())
+        .cloned()
+        .collect();
+
+    if marked_profiles.is_empty() {
+        return DeferredPurgeOutcome::default();
+    }
+
+    let has_production_marker = marked_profiles
+        .iter()
+        .any(|profile| is_production_identifier(profile.identifier));
+    let mut purge_targets: Vec<AppProfileDir> = Vec::new();
+
+    if has_production_marker {
+        for profile in profile_dirs
+            .iter()
+            .filter(|profile| is_production_identifier(profile.identifier))
+        {
+            push_unique_profile(&mut purge_targets, profile.clone());
+        }
+    }
+
+    for profile in marked_profiles {
+        if !has_production_marker || !is_production_identifier(profile.identifier) {
+            push_unique_profile(&mut purge_targets, profile);
+        }
+    }
+
+    let mut outcome = DeferredPurgeOutcome::default();
+    let mut touched_profiles: Vec<std::path::PathBuf> = Vec::new();
+
+    for target in &purge_targets {
+        println!(
+            "[Purge] Processing deferred purge for {} at {}",
+            target.identifier,
+            target.path.display()
+        );
+        let target_outcome = purge_database_files(&target.path);
+        if target_outcome.database_files_deleted > 0 {
+            push_unique_path(&mut touched_profiles, target.path.clone());
+        }
+        outcome.database_files_deleted += target_outcome.database_files_deleted;
+        outcome.failures += target_outcome.failures;
+    }
+
+    if outcome.failures == 0 {
+        for target in &purge_targets {
+            let target_outcome = purge_purge_marker(&target.path);
+            if target_outcome.markers_deleted > 0 {
+                push_unique_path(&mut touched_profiles, target.path.clone());
+            }
+            outcome.markers_deleted += target_outcome.markers_deleted;
+            outcome.failures += target_outcome.failures;
+        }
+    } else {
+        eprintln!(
+            "[Purge] Deferred purge did not fully clear database files; leaving purge markers for retry on next startup"
+        );
+    }
+
+    outcome.profiles_purged = touched_profiles.len();
+    outcome
+}
+
+fn profile_dirs_for_roots(roots: &[std::path::PathBuf]) -> Vec<AppProfileDir> {
+    let mut profiles = Vec::new();
+    for root in roots {
+        for identifier in APP_IDENTIFIER_PATHS {
+            profiles.push(AppProfileDir {
+                identifier,
+                path: root.join(identifier),
+            });
+        }
+    }
+    profiles
+}
+
+fn is_production_identifier(identifier: &str) -> bool {
+    PRODUCTION_IDENTIFIER_PATHS.contains(&identifier)
+}
+
+fn push_unique_profile(profiles: &mut Vec<AppProfileDir>, profile: AppProfileDir) {
+    if profiles.iter().any(|existing| existing.path == profile.path) {
+        return;
+    }
+    profiles.push(profile);
+}
+
+fn push_unique_path(paths: &mut Vec<std::path::PathBuf>, path: std::path::PathBuf) {
+    if paths.iter().any(|existing| existing == &path) {
+        return;
+    }
+    paths.push(path);
+}
+
+fn purge_database_files(profile_dir: &std::path::Path) -> DeferredPurgeOutcome {
+    let mut outcome = DeferredPurgeOutcome::default();
+
+    for name in MAIN_DATABASE_FILES {
+        let path = profile_dir.join(name);
+        match remove_existing_file_with_retry(&path) {
+            Ok(true) => {
+                println!("[Purge] Deleted {}", path.display());
+                outcome.database_files_deleted += 1;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("[Purge] Failed to delete {}: {error}", path.display());
+                outcome.failures += 1;
+            }
+        }
+    }
+
+    outcome
+}
+
+fn purge_purge_marker(profile_dir: &std::path::Path) -> DeferredPurgeOutcome {
+    let mut outcome = DeferredPurgeOutcome::default();
+    let marker_path = profile_dir.join(PURGE_MARKER_FILE);
+
+    match remove_existing_file_with_retry(&marker_path) {
+        Ok(true) => outcome.markers_deleted += 1,
+        Ok(false) => {}
+        Err(error) => {
+            eprintln!("[Purge] Failed to delete purge marker: {error}");
+            outcome.failures += 1;
+        }
+    }
+
+    outcome
+}
+
+fn remove_existing_file_with_retry(path: &std::path::Path) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    if std::fs::symlink_metadata(path)
+        .map_err(|error| format!("could not inspect {}: {error}", path.display()))?
+        .is_dir()
+    {
+        return Err(format!("refusing to delete directory {}", path.display()));
+    }
+
+    let max_attempts = 5;
+    for attempt in 1..=max_attempts {
+        match std::fs::remove_file(path) {
+            Ok(()) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) if attempt == max_attempts => {
+                return Err(format!(
+                    "could not delete {} after {} attempts: {error}",
+                    path.display(),
+                    max_attempts
+                ));
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(500)),
+        }
+    }
+
+    Ok(false)
 }
 
 #[cfg(not(test))]
@@ -525,23 +970,22 @@ fn escape_sql_like(value: &str) -> String {
 
 #[cfg(not(test))]
 pub(crate) fn app_identifier_dirs_to_check() -> Vec<std::path::PathBuf> {
-    let mut paths_to_check = Vec::new();
-
-    if let Some(config_dir) = dirs::config_dir() {
-        push_identifier_dirs(&mut paths_to_check, &config_dir);
-    }
-    if let Some(data_local_dir) = dirs::data_local_dir() {
-        push_identifier_dirs(&mut paths_to_check, &data_local_dir);
-    }
-
-    paths_to_check
+    profile_dirs_for_roots(&app_data_roots_to_check())
+        .into_iter()
+        .map(|profile| profile.path)
+        .collect()
 }
 
 #[cfg(not(test))]
-fn push_identifier_dirs(paths: &mut Vec<std::path::PathBuf>, root: &std::path::Path) {
-    for identifier in APP_IDENTIFIER_PATHS {
-        paths.push(root.join(identifier));
+fn app_data_roots_to_check() -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(config_dir) = dirs::config_dir() {
+        roots.push(config_dir);
     }
+    if let Some(data_local_dir) = dirs::data_local_dir() {
+        roots.push(data_local_dir);
+    }
+    roots
 }
 
 #[cfg(test)]
@@ -571,6 +1015,28 @@ mod identifier_migration_tests {
 
     fn cleanup(root: &Path) {
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn write_db_triplet(profile_dir: &Path, label: &str) {
+        write_file(&profile_dir.join("images.db"), &format!("{label}-db"));
+        write_file(&profile_dir.join("images.db-wal"), &format!("{label}-wal"));
+        write_file(&profile_dir.join("images.db-shm"), &format!("{label}-shm"));
+    }
+
+    fn write_purge_marker(profile_dir: &Path) {
+        write_file(&profile_dir.join(PURGE_MARKER_FILE), "purge requested");
+    }
+
+    fn assert_db_triplet_missing(profile_dir: &Path) {
+        assert!(!profile_dir.join("images.db").exists());
+        assert!(!profile_dir.join("images.db-wal").exists());
+        assert!(!profile_dir.join("images.db-shm").exists());
+    }
+
+    fn assert_db_triplet_exists(profile_dir: &Path) {
+        assert!(profile_dir.join("images.db").exists());
+        assert!(profile_dir.join("images.db-wal").exists());
+        assert!(profile_dir.join("images.db-shm").exists());
     }
 
     fn create_test_db(path: &Path) -> rusqlite::Connection {
@@ -646,6 +1112,313 @@ mod identifier_migration_tests {
             fs::read_to_string(current.join("images.db")).expect("migrated db should exist"),
             "legacy-db"
         );
+        cleanup(&root);
+    }
+
+    #[test]
+    fn database_local_migration_moves_db_wal_and_shm_together() {
+        let root = unique_temp_root("db-local-move");
+        let roaming = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let local = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        write_file(&roaming.join("images.db"), "db");
+        write_file(&roaming.join("images.db-wal"), "wal");
+        write_file(&roaming.join("images.db-shm"), "shm");
+
+        let outcome = migrate_database_files_to_local(&roaming, &local);
+
+        assert_eq!(outcome, DatabaseLocalMigrationOutcome::Moved);
+        assert!(!roaming.join("images.db").exists());
+        assert!(!roaming.join("images.db-wal").exists());
+        assert!(!roaming.join("images.db-shm").exists());
+        assert_eq!(
+            fs::read_to_string(local.join("images.db")).expect("local db should exist"),
+            "db"
+        );
+        assert_eq!(
+            fs::read_to_string(local.join("images.db-wal")).expect("local wal should exist"),
+            "wal"
+        );
+        assert_eq!(
+            fs::read_to_string(local.join("images.db-shm")).expect("local shm should exist"),
+            "shm"
+        );
+        cleanup(&root);
+    }
+
+    #[test]
+    fn database_local_migration_does_not_overwrite_existing_local_db() {
+        let root = unique_temp_root("db-local-conflict");
+        let roaming = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let local = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        write_file(&roaming.join("images.db"), "roaming-db");
+        write_file(&local.join("images.db"), "local-db");
+
+        let outcome = migrate_database_files_to_local(&roaming, &local);
+
+        assert_eq!(outcome, DatabaseLocalMigrationOutcome::SkippedExistingLocal);
+        assert_eq!(
+            fs::read_to_string(roaming.join("images.db")).expect("roaming db should remain"),
+            "roaming-db"
+        );
+        assert_eq!(
+            fs::read_to_string(local.join("images.db")).expect("local db should remain"),
+            "local-db"
+        );
+        cleanup(&root);
+    }
+
+    #[test]
+    fn database_local_migration_failure_leaves_roaming_db_usable() {
+        let root = unique_temp_root("db-local-failure");
+        let roaming = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let local = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        write_file(&roaming.join("images.db"), "roaming-db");
+        write_file(&local, "not-a-directory");
+
+        let outcome = migrate_database_files_to_local(&roaming, &local);
+
+        assert_eq!(outcome, DatabaseLocalMigrationOutcome::Failed);
+        assert_eq!(
+            fs::read_to_string(roaming.join("images.db")).expect("roaming db should remain"),
+            "roaming-db"
+        );
+        cleanup(&root);
+    }
+
+    #[test]
+    fn database_copy_fallback_copies_and_verifies_existing_files() {
+        let root = unique_temp_root("db-copy-fallback");
+        let roaming = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let local = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        write_file(&roaming.join("images.db"), "db");
+        write_file(&roaming.join("images.db-wal"), "wal");
+        fs::create_dir_all(&local).expect("local test directory should be created");
+        let files = existing_database_file_moves(&roaming, &local);
+
+        copy_database_files_to_local(&files).expect("copy fallback should succeed");
+
+        assert_eq!(
+            fs::read_to_string(local.join("images.db")).expect("local db should exist"),
+            "db"
+        );
+        assert_eq!(
+            fs::read_to_string(local.join("images.db-wal")).expect("local wal should exist"),
+            "wal"
+        );
+        assert!(!roaming.join("images.db").exists());
+        assert!(!roaming.join("images.db-wal").exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn database_local_migration_prepares_local_dir_for_fresh_profile() {
+        let root = unique_temp_root("db-local-fresh");
+        let roaming = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let local = root.join("Local").join(PRODUCTION_IDENTIFIER);
+
+        let outcome = migrate_database_files_to_local(&roaming, &local);
+
+        assert_eq!(outcome, DatabaseLocalMigrationOutcome::SourceMissing);
+        assert!(local.is_dir());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_production_purge_removes_local_and_roaming_catalogs() {
+        let root = unique_temp_root("purge-prod-current");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        let dev_profile = local_root.join("com.ambit.dev");
+        write_purge_marker(&local_profile);
+        write_purge_marker(&roaming_profile);
+        write_db_triplet(&local_profile, "local");
+        write_db_triplet(&roaming_profile, "roaming");
+        write_db_triplet(&dev_profile, "dev");
+        write_file(&local_profile.join("library.json"), "{}");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 6);
+        assert_eq!(outcome.markers_deleted, 2);
+        assert_db_triplet_missing(&local_profile);
+        assert_db_triplet_missing(&roaming_profile);
+        assert_db_triplet_exists(&dev_profile);
+        assert_eq!(
+            fs::read_to_string(local_profile.join("library.json"))
+                .expect("library settings should not be purged"),
+            "{}"
+        );
+        assert!(!local_profile.join(PURGE_MARKER_FILE).exists());
+        assert!(!roaming_profile.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_roaming_fallback_purge_prevents_local_migration_restore() {
+        let root = unique_temp_root("purge-roaming-fallback");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&roaming_profile);
+        write_db_triplet(&roaming_profile, "roaming");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let migration_outcome = migrate_database_files_to_local(&roaming_profile, &local_profile);
+
+        assert_eq!(outcome.database_files_deleted, 3);
+        assert_eq!(outcome.markers_deleted, 1);
+        assert_eq!(migration_outcome, DatabaseLocalMigrationOutcome::SourceMissing);
+        assert_db_triplet_missing(&roaming_profile);
+        assert!(!local_profile.join("images.db").exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_production_purge_removes_legacy_catalog_copies() {
+        let root = unique_temp_root("purge-prod-legacy");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let current_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let legacy_local_profile = local_root.join(LEGACY_PRODUCTION_IDENTIFIER);
+        let legacy_roaming_profile = roaming_root.join(LEGACY_PRODUCTION_IDENTIFIER);
+        write_purge_marker(&current_profile);
+        write_db_triplet(&legacy_local_profile, "legacy-local");
+        write_db_triplet(&legacy_roaming_profile, "legacy-roaming");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 6);
+        assert_db_triplet_missing(&legacy_local_profile);
+        assert_db_triplet_missing(&legacy_roaming_profile);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_non_production_purge_is_limited_to_marked_profile() {
+        let root = unique_temp_root("purge-dev-only");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let dev_profile = local_root.join("com.ambit.dev");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&dev_profile);
+        write_db_triplet(&dev_profile, "dev");
+        write_db_triplet(&local_profile, "local");
+        write_db_triplet(&roaming_profile, "roaming");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 3);
+        assert_eq!(outcome.markers_deleted, 1);
+        assert_db_triplet_missing(&dev_profile);
+        assert_db_triplet_exists(&local_profile);
+        assert_db_triplet_exists(&roaming_profile);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_production_purge_keeps_marker_when_database_delete_fails() {
+        let root = unique_temp_root("purge-prod-failure-keeps-marker");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&local_profile);
+        fs::create_dir_all(local_profile.join("images.db"))
+            .expect("directory-shaped db sentinel should be created");
+        write_file(&local_profile.join("images.db-wal"), "wal");
+        write_file(&local_profile.join("images.db-shm"), "shm");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 2);
+        assert_eq!(outcome.markers_deleted, 0);
+        assert_eq!(outcome.failures, 1);
+        assert!(local_profile.join(PURGE_MARKER_FILE).exists());
+        assert!(local_profile.join("images.db").is_dir());
+        assert!(!local_profile.join("images.db-wal").exists());
+        assert!(!local_profile.join("images.db-shm").exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_unmarked_roaming_failure_keeps_only_production_marker() {
+        let root = unique_temp_root("purge-roaming-failure-keeps-marker");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&local_profile);
+        fs::create_dir_all(roaming_profile.join("images.db"))
+            .expect("directory-shaped roaming db sentinel should be created");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 0);
+        assert_eq!(outcome.markers_deleted, 0);
+        assert_eq!(outcome.failures, 1);
+        assert!(local_profile.join(PURGE_MARKER_FILE).exists());
+        assert!(roaming_profile.join("images.db").is_dir());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_non_production_failure_keeps_only_its_marker() {
+        let root = unique_temp_root("purge-dev-failure-keeps-marker");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let dev_profile = local_root.join("com.ambit.dev");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&dev_profile);
+        fs::create_dir_all(dev_profile.join("images.db"))
+            .expect("directory-shaped dev db sentinel should be created");
+        write_db_triplet(&local_profile, "local");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 0);
+        assert_eq!(outcome.markers_deleted, 0);
+        assert_eq!(outcome.failures, 1);
+        assert!(dev_profile.join(PURGE_MARKER_FILE).exists());
+        assert!(dev_profile.join("images.db").is_dir());
+        assert_db_triplet_exists(&local_profile);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_marker_only_purge_removes_stale_marker() {
+        let root = unique_temp_root("purge-marker-only");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_purge_marker(&local_profile);
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome.database_files_deleted, 0);
+        assert_eq!(outcome.markers_deleted, 1);
+        assert_eq!(outcome.failures, 0);
+        assert!(!local_profile.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_purge_without_marker_leaves_database_files() {
+        let root = unique_temp_root("purge-no-marker");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        write_db_triplet(&local_profile, "local");
+        write_db_triplet(&roaming_profile, "roaming");
+
+        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+
+        assert_eq!(outcome, DeferredPurgeOutcome::default());
+        assert_db_triplet_exists(&local_profile);
+        assert_db_triplet_exists(&roaming_profile);
         cleanup(&root);
     }
 

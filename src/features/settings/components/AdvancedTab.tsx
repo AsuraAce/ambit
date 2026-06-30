@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { Trash2, History as HistoryIcon, Loader2, Database, AlertTriangle, Monitor, RefreshCw, ExternalLink } from 'lucide-react';
 import { AppSettings, LogLevel } from '../../../types';
+import { commands, type DbDiagnostics } from '../../../bindings';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../../stores/libraryStore';
@@ -9,6 +10,7 @@ import { BackupSettings } from './BackupSettings';
 import { useToast } from '../../../hooks/useToast';
 import { APP_NAME } from '../../../constants/app';
 import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
+import { unwrap } from '../../../utils/spectaUtils';
 
 interface TabProps {
     settings: AppSettings;
@@ -44,6 +46,8 @@ export const AdvancedTab: React.FC<TabProps> = ({
     const { addToast } = useToast();
 
     const [isPurging, setIsPurging] = useState(false);
+    const [dbDiagnostics, setDbDiagnostics] = useState<DbDiagnostics | null>(null);
+    const [dbDiagnosticsError, setDbDiagnosticsError] = useState<string | null>(null);
 
     const [activeTab, setActiveTab] = useState<'database' | 'interface' | 'support'>('database');
 
@@ -117,6 +121,25 @@ export const AdvancedTab: React.FC<TabProps> = ({
         onNavigateToMaintenance();
         onClose?.();
     };
+
+    React.useEffect(() => {
+        if (activeTab !== 'support' || dbDiagnostics || dbDiagnosticsError) return;
+
+        let isMounted = true;
+        unwrap(commands.getDbDiagnostics())
+            .then((diagnostics) => {
+                if (isMounted) setDbDiagnostics(diagnostics);
+            })
+            .catch((error) => {
+                if (isMounted) {
+                    setDbDiagnosticsError(error instanceof Error ? error.message : String(error));
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [activeTab, dbDiagnostics, dbDiagnosticsError]);
 
     return (
         <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -284,6 +307,52 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 Debug logging can be noisy. Use it when collecting information for an issue, then switch back to Info or Warn.
                             </div>
                         )}
+
+                        <div className="p-6 space-y-3">
+                            <div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Library Database Location</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    Ambit stores the library catalog in Local AppData. This is separate from the folder where the app itself is installed.
+                                </div>
+                            </div>
+
+                            {dbDiagnostics ? (
+                                <div className="space-y-2 text-xs">
+                                    {dbDiagnostics.isUsingRoamingFallback && (
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                            Ambit is using the legacy Roaming AppData database because no Local AppData database is available.
+                                        </div>
+                                    )}
+                                    <div className="rounded-lg bg-gray-50 p-3 dark:bg-black/20">
+                                        <div className="font-bold uppercase tracking-wider text-gray-400">Active catalog</div>
+                                        <div className="mt-1 break-all font-mono text-gray-700 dark:text-gray-300">
+                                            {dbDiagnostics.activeDbPath || dbDiagnostics.dbPath}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg bg-gray-50 p-3 dark:bg-black/20">
+                                        <div className="font-bold uppercase tracking-wider text-gray-400">Local AppData target</div>
+                                        <div className="mt-1 break-all font-mono text-gray-700 dark:text-gray-300">
+                                            {dbDiagnostics.localDbPath}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg bg-gray-50 p-3 dark:bg-black/20">
+                                        <div className="font-bold uppercase tracking-wider text-gray-400">Legacy Roaming fallback</div>
+                                        <div className="mt-1 break-all font-mono text-gray-700 dark:text-gray-300">
+                                            {dbDiagnostics.roamingDbPath}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : dbDiagnosticsError ? (
+                                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                    Could not load database location: {dbDiagnosticsError}
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Loading database location...
+                                </div>
+                            )}
+                        </div>
 
                         <div className="p-6 flex items-center justify-between gap-4">
                             <div>

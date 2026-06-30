@@ -45,6 +45,14 @@ async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<I
     else return { status: "error", error: e  as any };
 }
 },
+async getMainDatabaseUrl() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_main_database_url") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDbDiagnostics() : Promise<Result<DbDiagnostics, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_db_diagnostics") };
@@ -549,7 +557,7 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
-export type DbDiagnostics = { dbPath: string; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
+export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath: string; roamingDbPath: string; isUsingRoamingFallback: boolean; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
 export type FileEntry = { path: string; modified: number; size: number }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }

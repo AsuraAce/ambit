@@ -1,5 +1,5 @@
 use super::run_blocking;
-use crate::db::resolve_db_path;
+use crate::db::{resolve_db_path, resolve_db_path_info, resolve_main_database_url};
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -24,6 +24,10 @@ impl Default for FileHashBackfillState {
 #[serde(rename_all = "camelCase")]
 pub struct DbDiagnostics {
     pub db_path: String,
+    pub active_db_path: String,
+    pub local_db_path: String,
+    pub roaming_db_path: String,
+    pub is_using_roaming_fallback: bool,
     pub image_count: i64,
     pub deleted_count: i64,
     pub model_count: i64,
@@ -69,10 +73,17 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub fn get_main_database_url(app: AppHandle) -> Result<String, String> {
+    resolve_main_database_url(&app)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String> {
     let app_clone = app.clone();
     run_blocking(app, move |conn| {
-        let db_path = resolve_db_path(&app_clone)?;
+        let path_info = resolve_db_path_info(&app_clone)?;
+        let db_path = path_info.active_path.clone();
         let image_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
             .unwrap_or(0);
@@ -99,6 +110,10 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
 
         Ok(DbDiagnostics {
             db_path: db_path.to_string_lossy().to_string(),
+            active_db_path: path_info.active_path.to_string_lossy().to_string(),
+            local_db_path: path_info.local_path.to_string_lossy().to_string(),
+            roaming_db_path: path_info.roaming_path.to_string_lossy().to_string(),
+            is_using_roaming_fallback: path_info.is_using_roaming_fallback,
             image_count,
             deleted_count,
             model_count,
