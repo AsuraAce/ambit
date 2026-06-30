@@ -466,6 +466,51 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
+    it('skips unsafe InvokeAI database paths before filesystem probes or inserts', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'image_subfolder' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }];
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) {
+                return [{ found: 1 }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) {
+                return [{ count: 1 }];
+            }
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: '../outside.png',
+                    image_subfolder: '',
+                    metadata_blob: {},
+                    created_at: '2026-04-18 12:00:00',
+                    width: 512,
+                    height: 512
+                }];
+            }
+            return [];
+        });
+
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        const result = await syncImages(
+            'D:/AI/art/webUI/invokeai/databases',
+            vi.fn(),
+            undefined,
+            {
+                mode: 'live',
+                syncBoards: false,
+                syncFavorites: false
+            }
+        );
+
+        expect(result.imported).toBe(0);
+        expect(commands.getFileSizesBulk).not.toHaveBeenCalled();
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
     it('repairs an existing stale flat InvokeAI row when the real file resolves to a subfolder', async () => {
         const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/date.png';
         const resolvedPath = 'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/date.png';
