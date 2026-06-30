@@ -153,76 +153,140 @@ fn open_configured_connection(db_path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-#[tauri::command(rename_all = "camelCase")]
-#[specta::specta]
-pub fn import_a1111_cache(
-    app: tauri::AppHandle,
-    cache_path: String,
-) -> Result<ImportResult, String> {
-    let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
+fn normalize_sha256_hash(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.len() != 64 || !trimmed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
 
-    let json: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
+    Some(trimmed.to_ascii_lowercase())
+}
+
+fn warn_malformed_sha256(name: &str) {
+    log::warn!("[CivitAI] Skipping malformed SHA-256 cache hash for {name}");
+}
+
+fn model_cache_entry(
+    hash: String,
+    name: String,
+    filename: Option<String>,
+    lookup_source: &str,
+    scanned_at: u64,
+) -> ModelCacheEntry {
+    ModelCacheEntry {
+        hash,
+        name,
+        filename,
+        lookup_source: lookup_source.to_string(),
+        scanned_at,
+        thumbnail_path: None,
+        preview_url: None,
+        resource_type: Some("checkpoint".to_string()),
+    }
+}
+
+fn push_sha256_cache_entries(
+    entries: &mut Vec<ModelCacheEntry>,
+    sha256: &str,
+    name: &str,
+    filename: Option<&str>,
+    lookup_source: &str,
+    now: u64,
+) -> bool {
+    let Some(full_hash) = normalize_sha256_hash(sha256) else {
+        warn_malformed_sha256(name);
+        return false;
+    };
+
+    let short_hash = full_hash
+        .get(..10)
+        .expect("validated SHA-256 hash has a 10-character ASCII prefix")
+        .to_string();
+    let filename = filename.map(str::to_string);
+
+    entries.push(model_cache_entry(
+        short_hash,
+        name.to_string(),
+        filename.clone(),
+        lookup_source,
+        now,
+    ));
+    entries.push(model_cache_entry(
+        full_hash,
+        name.to_string(),
+        filename,
+        lookup_source,
+        now,
+    ));
+
+    true
+}
+
+fn malformed_hash_note(skipped_malformed_hashes: usize) -> String {
+    if skipped_malformed_hashes == 0 {
+        String::new()
+    } else if skipped_malformed_hashes == 1 {
+        " Skipped 1 malformed SHA-256 hash entry.".to_string()
+    } else {
+        format!(" Skipped {skipped_malformed_hashes} malformed SHA-256 hash entries.")
+    }
+}
+
+fn extract_a1111_cache_entries(
+    json: &serde_json::Value,
+    now: u64,
+) -> (Vec<ModelCacheEntry>, String, usize) {
     let mut entries = Vec::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
     let mut debug_info = String::new();
+    let mut skipped_malformed_hashes = 0;
 
     if let Some(hashes) = json.get("hashes") {
         if let Some(obj) = hashes.as_object() {
             for (key, val) in obj {
                 if let Some(inner_obj) = val.as_object() {
-                    if let Some(sha256) = inner_obj.get("sha256").and_then(|s| s.as_str()) {
+                    let mut used_flat_entry = false;
+                    if let Some(sha256_value) = inner_obj.get("sha256") {
                         let name = key.split(&['/', '\\'][..]).last().unwrap_or(key);
-                        let short_hash = &sha256[..10];
+                        if let Some(sha256) = sha256_value.as_str() {
+                            if push_sha256_cache_entries(
+                                &mut entries,
+                                sha256,
+                                name,
+                                Some(name),
+                                "local_cache_flat",
+                                now,
+                            ) {
+                                used_flat_entry = true;
+                            } else {
+                                skipped_malformed_hashes += 1;
+                            }
+                        } else {
+                            warn_malformed_sha256(name);
+                            skipped_malformed_hashes += 1;
+                        }
+                    }
 
-                        entries.push(ModelCacheEntry {
-                            hash: short_hash.to_string(),
-                            name: name.to_string(),
-                            filename: Some(name.to_string()),
-                            lookup_source: "local_cache_flat".to_string(),
-                            scanned_at: now,
-                            thumbnail_path: None,
-                            preview_url: None,
-                            resource_type: Some("checkpoint".to_string()),
-                        });
-                        entries.push(ModelCacheEntry {
-                            hash: sha256.to_string(),
-                            name: name.to_string(),
-                            filename: Some(name.to_string()),
-                            lookup_source: "local_cache_flat".to_string(),
-                            scanned_at: now,
-                            thumbnail_path: None,
-                            preview_url: None,
-                            resource_type: Some("checkpoint".to_string()),
-                        });
-                    } else {
+                    if !used_flat_entry {
                         for (filename, data) in inner_obj {
-                            if let Some(sha256) = data.get("sha256").and_then(|h| h.as_str()) {
-                                let short_hash = &sha256[..10];
-                                entries.push(ModelCacheEntry {
-                                    hash: short_hash.to_string(),
-                                    name: filename.clone(),
-                                    filename: Some(filename.clone()),
-                                    lookup_source: "local_cache_nested".to_string(),
-                                    scanned_at: now,
-                                    thumbnail_path: None,
-                                    preview_url: None,
-                                    resource_type: Some("checkpoint".to_string()),
-                                });
-                                entries.push(ModelCacheEntry {
-                                    hash: sha256.to_string(),
-                                    name: filename.clone(),
-                                    filename: Some(filename.clone()),
-                                    lookup_source: "local_cache_nested".to_string(),
-                                    scanned_at: now,
-                                    thumbnail_path: None,
-                                    preview_url: None,
-                                    resource_type: Some("checkpoint".to_string()),
-                                });
+                            if filename == "sha256" {
+                                continue;
+                            }
+                            if let Some(sha256_value) = data.get("sha256") {
+                                if let Some(sha256) = sha256_value.as_str() {
+                                    if !push_sha256_cache_entries(
+                                        &mut entries,
+                                        sha256,
+                                        filename,
+                                        Some(filename),
+                                        "local_cache_nested",
+                                        now,
+                                    ) {
+                                        skipped_malformed_hashes += 1;
+                                    }
+                                } else {
+                                    warn_malformed_sha256(filename);
+                                    skipped_malformed_hashes += 1;
+                                }
                             }
                         }
                     }
@@ -237,33 +301,54 @@ pub fn import_a1111_cache(
             let mut added = 0;
             for (key, val) in obj {
                 if let Some(v_str) = val.as_str() {
-                    entries.push(ModelCacheEntry {
-                        hash: key.clone(),
-                        name: v_str.to_string(),
-                        filename: None,
-                        lookup_source: "local_cache_simple".to_string(),
-                        scanned_at: now,
-                        thumbnail_path: None,
-                        preview_url: None,
-                        resource_type: Some("checkpoint".to_string()),
-                    });
+                    entries.push(model_cache_entry(
+                        key.clone(),
+                        v_str.to_string(),
+                        None,
+                        "local_cache_simple",
+                        now,
+                    ));
                     added += 1;
                 }
             }
             if added == 0 {
-                debug_info
-                    .push_str("Fallback: top-level object was empty or had non-string values. ");
+                debug_info.push_str("Fallback: top-level object was empty or had non-string values. ");
             }
         } else {
             debug_info.push_str("Root is not an object. ");
         }
     }
 
+    (entries, debug_info, skipped_malformed_hashes)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn import_a1111_cache(
+    app: tauri::AppHandle,
+    cache_path: String,
+) -> Result<ImportResult, String> {
+    let content = std::fs::read_to_string(&cache_path).map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let (entries, debug_info, skipped_malformed_hashes) =
+        extract_a1111_cache_entries(&json, now);
+
     if entries.is_empty() {
         return Ok(ImportResult {
             added: 0,
             total_found: 0,
-            message: format!("No models found. {}", debug_info),
+            message: format!(
+                "No models found. {}{}",
+                debug_info,
+                malformed_hash_note(skipped_malformed_hashes)
+            ),
         });
     }
 
@@ -315,8 +400,10 @@ pub fn import_a1111_cache(
         added: added_unique,
         total_found: total_unique,
         message: format!(
-            "Imported {} new models ({} found in file).",
-            added_unique, total_unique
+            "Imported {} new models ({} found in file).{}",
+            added_unique,
+            total_unique,
+            malformed_hash_note(skipped_malformed_hashes)
         ),
     })
 }
@@ -730,6 +817,175 @@ mod tests {
             ],
         )
         .expect("insert image");
+    }
+
+    fn repeated_hash(byte: char) -> String {
+        std::iter::repeat(byte).take(64).collect()
+    }
+
+    #[test]
+    fn valid_flat_cache_hash_creates_short_and_full_entries() {
+        let full_hash = repeated_hash('a');
+        let cache = json!({
+            "hashes": {
+                "C:\\models\\Dream.safetensors": {
+                    "sha256": full_hash
+                }
+            }
+        });
+
+        let (entries, debug_info, skipped) = extract_a1111_cache_entries(&cache, 123);
+
+        assert_eq!(debug_info, "");
+        assert_eq!(skipped, 0);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].hash, "aaaaaaaaaa");
+        assert_eq!(entries[1].hash, repeated_hash('a'));
+        assert_eq!(entries[0].name, "Dream.safetensors");
+        assert_eq!(entries[0].filename.as_deref(), Some("Dream.safetensors"));
+        assert_eq!(entries[0].lookup_source, "local_cache_flat");
+    }
+
+    #[test]
+    fn valid_nested_cache_hash_creates_short_and_full_entries() {
+        let full_hash = repeated_hash('b');
+        let cache = json!({
+            "hashes": {
+                "checkpoints": {
+                    "Nested.safetensors": {
+                        "sha256": full_hash
+                    }
+                }
+            }
+        });
+
+        let (entries, debug_info, skipped) = extract_a1111_cache_entries(&cache, 456);
+
+        assert_eq!(debug_info, "");
+        assert_eq!(skipped, 0);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].hash, "bbbbbbbbbb");
+        assert_eq!(entries[1].hash, repeated_hash('b'));
+        assert_eq!(entries[0].name, "Nested.safetensors");
+        assert_eq!(entries[0].filename.as_deref(), Some("Nested.safetensors"));
+        assert_eq!(entries[0].lookup_source, "local_cache_nested");
+    }
+
+    #[test]
+    fn uppercase_valid_cache_hash_is_normalized() {
+        let full_hash = "ABCDEF0123456789".repeat(4);
+        let cache = json!({
+            "hashes": {
+                "Upper.safetensors": {
+                    "sha256": full_hash
+                }
+            }
+        });
+
+        let (entries, _debug_info, skipped) = extract_a1111_cache_entries(&cache, 789);
+
+        assert_eq!(skipped, 0);
+        assert_eq!(entries[0].hash, "abcdef0123");
+        assert_eq!(entries[1].hash, "abcdef0123456789".repeat(4));
+    }
+
+    #[test]
+    fn malformed_cache_hashes_are_skipped_without_panic() {
+        let short = "a".repeat(63);
+        let non_hex = "z".repeat(64);
+        let unicode = "\u{00e9}".repeat(64);
+        let cache = json!({
+            "hashes": {
+                "short.safetensors": { "sha256": short },
+                "empty.safetensors": { "sha256": "" },
+                "nonhex.safetensors": { "sha256": non_hex },
+                "unicode.safetensors": { "sha256": unicode },
+                "numeric.safetensors": { "sha256": 123 },
+                "nested": {
+                    "boolean.safetensors": { "sha256": false }
+                }
+            }
+        });
+
+        let (entries, debug_info, skipped) = extract_a1111_cache_entries(&cache, 123);
+
+        assert_eq!(debug_info, "");
+        assert_eq!(skipped, 6);
+        assert!(
+            entries.is_empty(),
+            "malformed hashes should not produce model cache entries"
+        );
+    }
+
+    #[test]
+    fn malformed_flat_cache_hash_does_not_suppress_valid_nested_entries() {
+        let valid = repeated_hash('d');
+        let cache = json!({
+            "hashes": {
+                "mixed": {
+                    "sha256": "not-a-sha256",
+                    "ValidNested.safetensors": {
+                        "sha256": valid
+                    }
+                }
+            }
+        });
+
+        let (entries, debug_info, skipped) = extract_a1111_cache_entries(&cache, 123);
+
+        assert_eq!(debug_info, "");
+        assert_eq!(skipped, 1);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].hash, "dddddddddd");
+        assert_eq!(entries[1].hash, repeated_hash('d'));
+        assert_eq!(entries[0].name, "ValidNested.safetensors");
+        assert_eq!(entries[0].lookup_source, "local_cache_nested");
+    }
+
+    #[test]
+    fn mixed_cache_import_entries_keep_valid_hashes_and_report_skips() {
+        let valid = repeated_hash('c');
+        let invalid = "not-a-sha256";
+        let cache = json!({
+            "hashes": {
+                "Valid.safetensors": {
+                    "sha256": valid
+                },
+                "Invalid.safetensors": {
+                    "sha256": invalid
+                }
+            }
+        });
+
+        let (entries, _debug_info, skipped) = extract_a1111_cache_entries(&cache, 123);
+        let message = format!(
+            "Imported {} new models ({} found in file).{}",
+            entries.len() / 2,
+            entries.len() / 2,
+            malformed_hash_note(skipped)
+        );
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].hash, "cccccccccc");
+        assert_eq!(entries[1].hash, repeated_hash('c'));
+        assert_eq!(skipped, 1);
+        assert!(message.contains("Skipped 1 malformed SHA-256 hash entry."));
+    }
+
+    #[test]
+    fn simple_top_level_cache_format_is_unchanged() {
+        let cache = json!({
+            "abc123": "Simple Model"
+        });
+
+        let (entries, debug_info, skipped) = extract_a1111_cache_entries(&cache, 321);
+
+        assert_eq!(debug_info, "No 'hashes' key. ");
+        assert_eq!(skipped, 0);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hash, "abc123");
+        assert_eq!(entries[0].name, "Simple Model");
+        assert_eq!(entries[0].lookup_source, "local_cache_simple");
     }
 
     #[test]
