@@ -37,7 +37,11 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
         if file.read_exact(&mut len_bytes).is_err() {
             break;
         }
-        let len = (u16::from_be_bytes(len_bytes) as usize) - 2;
+        let raw_len = u16::from_be_bytes(len_bytes);
+        if raw_len < 2 {
+            break;
+        }
+        let len = (raw_len - 2) as usize;
 
         if m_type == 0xE1 {
             // APP1 - EXIF
@@ -402,7 +406,57 @@ pub fn parse_exif(data: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::io::Cursor;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("ambit_{name}_{nanos}.jpg"))
+    }
+
+    fn scan_test_jpeg(name: &str, jpeg: &[u8]) -> Result<HashMap<String, String>, String> {
+        let path = unique_test_path(name);
+        fs::write(&path, jpeg).expect("test JPEG should be writable");
+        let result = scan_jpeg_metadata(&path);
+        let _ = fs::remove_file(&path);
+        result
+    }
+
+    fn jpeg_with_segment(marker_type: u8, raw_len: u16, payload: &[u8]) -> Vec<u8> {
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, marker_type];
+        jpeg.extend_from_slice(&raw_len.to_be_bytes());
+        jpeg.extend_from_slice(payload);
+        jpeg.extend_from_slice(&[0xFF, 0xD9]);
+        jpeg
+    }
+
+    fn exif_user_comment_payload(comment: &[u8]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"Exif\0\0");
+        payload.extend_from_slice(b"II");
+        payload.extend_from_slice(&0x2Au16.to_le_bytes());
+        payload.extend_from_slice(&8u32.to_le_bytes());
+
+        payload.extend_from_slice(&1u16.to_le_bytes());
+        payload.extend_from_slice(&0x9286u16.to_le_bytes());
+        payload.extend_from_slice(&7u16.to_le_bytes());
+        payload.extend_from_slice(&((8 + comment.len()) as u32).to_le_bytes());
+        payload.extend_from_slice(&30u32.to_le_bytes());
+        payload.extend_from_slice(&0u32.to_le_bytes());
+
+        while payload.len() < 36 {
+            payload.push(0);
+        }
+
+        payload.extend_from_slice(b"ASCII\0\0\0");
+        payload.extend_from_slice(comment);
+        payload
+    }
 
     #[test]
     fn test_parse_exif_le_ascii() {
@@ -430,6 +484,62 @@ mod tests {
         let result = parse_exif(&data);
         assert!(result.is_some(), "Result should be Some");
         assert_eq!(result.unwrap(), "Hello World");
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_rejects_app1_length_zero() {
+        let jpeg = jpeg_with_segment(0xE1, 0, &[]);
+        let chunks = scan_test_jpeg("jpeg_app1_len_zero", &jpeg).unwrap();
+        assert!(
+            chunks.is_empty(),
+            "malformed APP1 length 0 should be treated as unreadable metadata"
+        );
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_rejects_app1_length_one() {
+        let jpeg = jpeg_with_segment(0xE1, 1, &[]);
+        let chunks = scan_test_jpeg("jpeg_app1_len_one", &jpeg).unwrap();
+        assert!(
+            chunks.is_empty(),
+            "malformed APP1 length 1 should be treated as unreadable metadata"
+        );
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_rejects_non_app1_malformed_lengths() {
+        for raw_len in [0, 1] {
+            let jpeg = jpeg_with_segment(0xE0, raw_len, &[]);
+            let chunks = scan_test_jpeg("jpeg_non_app1_bad_len", &jpeg).unwrap();
+            assert!(
+                chunks.is_empty(),
+                "malformed non-APP1 length {raw_len} should stop scanning safely"
+            );
+        }
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_truncated_app1_segment_is_non_fatal() {
+        let jpeg = jpeg_with_segment(0xE1, 10, b"Ex");
+        let chunks = scan_test_jpeg("jpeg_truncated_app1", &jpeg).unwrap();
+        assert!(
+            chunks.is_empty(),
+            "truncated APP1 data should not prevent library scanning"
+        );
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_reads_valid_exif_user_comment() {
+        let payload = exif_user_comment_payload(b"Safe JPEG");
+        let raw_len = (payload.len() + 2) as u16;
+        let jpeg = jpeg_with_segment(0xE1, raw_len, &payload);
+
+        let chunks = scan_test_jpeg("jpeg_valid_exif", &jpeg).unwrap();
+
+        assert_eq!(
+            chunks.get("parameters").map(String::as_str),
+            Some("Safe JPEG")
+        );
     }
 
     #[test]
