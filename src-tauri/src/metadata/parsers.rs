@@ -5,6 +5,8 @@ use std::io::{Read, Seek, SeekFrom};
 
 const MAX_PNG_METADATA_CHUNK_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_PNG_DECOMPRESSED_TEXT_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_PNG_METADATA_TOTAL_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_PNG_DECODED_TEXT_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
 
 pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
@@ -70,15 +72,95 @@ fn skip_chunk_data_and_crc<R: Seek>(reader: &mut R, length: u64) -> Result<(), S
         .map_err(|e| e.to_string())
 }
 
-fn read_limited_zlib_text(data: &[u8]) -> Option<String> {
-    let decoder = ZlibDecoder::new(data);
-    let mut limited = decoder.take(MAX_PNG_DECOMPRESSED_TEXT_BYTES + 1);
-    let mut s = String::new();
+#[derive(Default)]
+struct PngMetadataBudget {
+    raw_chunk_bytes: u64,
+    decoded_text_bytes: u64,
+    raw_exhausted: bool,
+    decoded_exhausted: bool,
+    logged_limit: bool,
+}
 
-    if limited.read_to_string(&mut s).is_ok() && s.len() as u64 <= MAX_PNG_DECOMPRESSED_TEXT_BYTES {
-        Some(s)
-    } else {
-        None
+impl PngMetadataBudget {
+    fn allow_raw_chunk(&mut self, length: u64) -> bool {
+        if self.raw_exhausted {
+            return false;
+        }
+
+        if self
+            .raw_chunk_bytes
+            .saturating_add(length)
+            > MAX_PNG_METADATA_TOTAL_CHUNK_BYTES
+        {
+            self.raw_exhausted = true;
+            self.note_limit("maximum aggregate PNG metadata chunk bytes reached");
+            return false;
+        }
+
+        self.raw_chunk_bytes += length;
+        true
+    }
+
+    fn remaining_decoded_text_bytes(&self) -> u64 {
+        if self.decoded_exhausted {
+            return 0;
+        }
+        MAX_PNG_DECODED_TEXT_TOTAL_BYTES.saturating_sub(self.decoded_text_bytes)
+    }
+
+    fn accept_decoded_text(&mut self, value: String) -> Option<String> {
+        if self.decoded_exhausted {
+            return None;
+        }
+
+        let byte_len = value.len() as u64;
+        if byte_len > self.remaining_decoded_text_bytes() {
+            self.exhaust_decoded_text();
+            return None;
+        }
+
+        self.decoded_text_bytes += byte_len;
+        Some(value)
+    }
+
+    fn exhaust_decoded_text(&mut self) {
+        if !self.decoded_exhausted {
+            self.decoded_exhausted = true;
+            self.note_limit("maximum aggregate decoded PNG text bytes reached");
+        }
+    }
+
+    fn note_limit(&mut self, reason: &str) {
+        if !self.logged_limit {
+            log::debug!("[PNG] Metadata budget reached: {reason}");
+            self.logged_limit = true;
+        }
+    }
+}
+
+enum LimitedZlibText {
+    Text(String),
+    ExceededLimit,
+    Invalid,
+}
+
+fn read_limited_zlib_text(data: &[u8], max_decoded_bytes: u64) -> LimitedZlibText {
+    if max_decoded_bytes == 0 {
+        return LimitedZlibText::ExceededLimit;
+    }
+
+    let decoder = ZlibDecoder::new(data);
+    let limit = MAX_PNG_DECOMPRESSED_TEXT_BYTES.min(max_decoded_bytes);
+    let mut limited = decoder.take(limit + 1);
+    let mut bytes = Vec::new();
+
+    match limited.read_to_end(&mut bytes) {
+        Ok(_) if bytes.len() as u64 > limit => LimitedZlibText::ExceededLimit,
+        Ok(_) => match String::from_utf8(bytes) {
+            Ok(s) => LimitedZlibText::Text(s),
+            Err(_) => LimitedZlibText::Invalid,
+        },
+        Err(_) => LimitedZlibText::Invalid,
     }
 }
 
@@ -101,6 +183,7 @@ pub fn extract_png_chunks<R: Read + Seek>(
 
     let mut chunks = HashMap::new();
     let mut loop_count = 0;
+    let mut budget = PngMetadataBudget::default();
 
     loop {
         if loop_count > 10000 {
@@ -129,6 +212,10 @@ pub fn extract_png_chunks<R: Read + Seek>(
                 skip_chunk_data_and_crc(reader, length)?;
                 continue;
             }
+            if !budget.allow_raw_chunk(length) {
+                skip_chunk_data_and_crc(reader, length)?;
+                continue;
+            }
 
             let mut chunk_data = vec![0; length as usize];
             if reader.read_exact(&mut chunk_data).is_err() {
@@ -143,7 +230,9 @@ pub fn extract_png_chunks<R: Read + Seek>(
                     &chunk_data
                 };
 
-                if let Some(comment) = parse_exif(data_slice) {
+                if let Some(comment) =
+                    parse_exif(data_slice).and_then(|comment| budget.accept_decoded_text(comment))
+                {
                     chunks.insert("parameters".to_string(), comment);
                 }
             } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
@@ -152,14 +241,25 @@ pub fn extract_png_chunks<R: Read + Seek>(
                 if chunk_type == "zTXt" {
                     if pos + 2 < chunk_data.len() && chunk_data[pos + 1] == 0 {
                         let compressed = &chunk_data[pos + 2..];
-                        if let Some(s) = read_limited_zlib_text(compressed) {
-                            chunks.insert(key, s);
+                        match read_limited_zlib_text(
+                            compressed,
+                            budget.remaining_decoded_text_bytes(),
+                        ) {
+                            LimitedZlibText::Text(s) => {
+                                if let Some(s) = budget.accept_decoded_text(s) {
+                                    chunks.insert(key, s);
+                                }
+                            }
+                            LimitedZlibText::ExceededLimit => budget.exhaust_decoded_text(),
+                            LimitedZlibText::Invalid => {}
                         }
                     }
                 } else if chunk_type == "tEXt" {
                     if pos + 1 < chunk_data.len() {
                         let val = String::from_utf8_lossy(&chunk_data[pos + 1..]).to_string();
-                        chunks.insert(key, val);
+                        if let Some(val) = budget.accept_decoded_text(val) {
+                            chunks.insert(key, val);
+                        }
                     }
                 } else if chunk_type == "iTXt" {
                     // Simplified iTXt parsing
@@ -182,11 +282,23 @@ pub fn extract_png_chunks<R: Read + Seek>(
                         if curr < chunk_data.len() {
                             let data_slice = &chunk_data[curr..];
                             if is_compressed {
-                                if let Some(s) = read_limited_zlib_text(data_slice) {
-                                    chunks.insert(key, s);
+                                match read_limited_zlib_text(
+                                    data_slice,
+                                    budget.remaining_decoded_text_bytes(),
+                                ) {
+                                    LimitedZlibText::Text(s) => {
+                                        if let Some(s) = budget.accept_decoded_text(s) {
+                                            chunks.insert(key, s);
+                                        }
+                                    }
+                                    LimitedZlibText::ExceededLimit => budget.exhaust_decoded_text(),
+                                    LimitedZlibText::Invalid => {}
                                 }
                             } else {
-                                chunks.insert(key, String::from_utf8_lossy(data_slice).to_string());
+                                let val = String::from_utf8_lossy(data_slice).to_string();
+                                if let Some(val) = budget.accept_decoded_text(val) {
+                                    chunks.insert(key, val);
+                                }
                             }
                         }
                     }
@@ -458,6 +570,78 @@ mod tests {
         payload
     }
 
+    fn png_fixture() -> Vec<u8> {
+        vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+    }
+
+    fn push_png_chunk(png: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) {
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        png.extend_from_slice(chunk_type);
+        png.extend_from_slice(data);
+        png.extend_from_slice(&[0; 4]);
+    }
+
+    fn push_iend(png: &mut Vec<u8>) {
+        push_png_chunk(png, b"IEND", &[]);
+    }
+
+    fn text_chunk_data(key: &str, value_len: usize, fill: u8) -> Vec<u8> {
+        let mut data = Vec::with_capacity(key.len() + 1 + value_len);
+        data.extend_from_slice(key.as_bytes());
+        data.push(0);
+        data.extend(std::iter::repeat(fill).take(value_len));
+        data
+    }
+
+    fn itxt_uncompressed_data(key: &str, value_len: usize, fill: u8) -> Vec<u8> {
+        let mut data = Vec::with_capacity(key.len() + 5 + value_len);
+        data.extend_from_slice(key.as_bytes());
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.extend(std::iter::repeat(fill).take(value_len));
+        data
+    }
+
+    fn ztxt_chunk_data(key: &str, value: &[u8]) -> Vec<u8> {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(value).unwrap();
+        let compressed_text = encoder.finish().unwrap();
+
+        let mut data = Vec::with_capacity(key.len() + 2 + compressed_text.len());
+        data.extend_from_slice(key.as_bytes());
+        data.push(0);
+        data.push(0);
+        data.extend_from_slice(&compressed_text);
+        data
+    }
+
+    fn itxt_compressed_data(key: &str, value: &[u8]) -> Vec<u8> {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(value).unwrap();
+        let compressed_text = encoder.finish().unwrap();
+
+        let mut data = Vec::with_capacity(key.len() + 5 + compressed_text.len());
+        data.extend_from_slice(key.as_bytes());
+        data.push(0);
+        data.push(1);
+        data.push(0);
+        data.push(0);
+        data.push(0);
+        data.extend_from_slice(&compressed_text);
+        data
+    }
+
     #[test]
     fn test_parse_exif_le_ascii() {
         // Simple case: UserComment directly in IFD0
@@ -561,6 +745,335 @@ mod tests {
         let mut cursor = Cursor::new(png);
         let chunks = extract_png_chunks(&mut cursor).unwrap();
         assert_eq!(chunks.get("Software").map(|s| s.as_str()), Some("Ambit"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_caps_aggregate_text_bytes() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 2) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(&mut png, b"tEXt", b"too_late\0nope");
+        push_png_chunk(&mut png, b"tEXt", b"after_limit\0small");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert_eq!(
+            chunks.get("filler_a").map(|s| s.len()),
+            Some((MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize)
+        );
+        assert!(!chunks.contains_key("too_late"));
+        assert!(!chunks.contains_key("after_limit"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_caps_aggregate_raw_metadata_bytes() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+
+        let filler = vec![0u8; 4 * 1024 * 1024];
+        for _ in 0..8 {
+            push_png_chunk(&mut png, b"eXIf", &filler);
+        }
+
+        push_png_chunk(&mut png, b"tEXt", b"too_late\0nope");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_caps_itxt_decoded_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"iTXt", b"early\0\0\0\0\0ok");
+        push_png_chunk(
+            &mut png,
+            b"iTXt",
+            &itxt_uncompressed_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"iTXt",
+            &itxt_uncompressed_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 2) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(&mut png, b"iTXt", b"too_late\0\0\0\0\0nope");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert_eq!(
+            chunks.get("filler_b").map(|s| s.len()),
+            Some((MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 2) as usize)
+        );
+        assert!(!chunks.contains_key("too_late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_caps_compressed_text_by_remaining_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 2) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(&mut png, b"zTXt", &ztxt_chunk_data("too_late", b"nope"));
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_ztxt_over_limit_exhausts_decoded_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 3) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(&mut png, b"zTXt", &ztxt_chunk_data("too_large", b"nope"));
+        push_png_chunk(&mut png, b"tEXt", b"late\0x");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_large"));
+        assert!(!chunks.contains_key("late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_compressed_itxt_over_limit_exhausts_decoded_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 3) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"iTXt",
+            &itxt_compressed_data("too_large", b"nope"),
+        );
+        push_png_chunk(&mut png, b"tEXt", b"late\0x");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_large"));
+        assert!(!chunks.contains_key("late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_ztxt_over_limit_invalid_utf8_exhausts_decoded_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 3) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"zTXt",
+            &ztxt_chunk_data("too_large_invalid_utf8", &[0xff, 0xff]),
+        );
+        push_png_chunk(&mut png, b"tEXt", b"late\0x");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_large_invalid_utf8"));
+        assert!(!chunks.contains_key("late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_compressed_itxt_over_limit_invalid_utf8_exhausts_decoded_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_a",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2) as usize,
+                b'a',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"tEXt",
+            &text_chunk_data(
+                "filler_b",
+                (MAX_PNG_DECODED_TEXT_TOTAL_BYTES / 2 - 3) as usize,
+                b'b',
+            ),
+        );
+        push_png_chunk(
+            &mut png,
+            b"iTXt",
+            &itxt_compressed_data("too_large_invalid_utf8", &[0xff, 0xff]),
+        );
+        push_png_chunk(&mut png, b"tEXt", b"late\0x");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("too_large_invalid_utf8"));
+        assert!(!chunks.contains_key("late"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_within_limit_invalid_utf8_skips_only_current_chunk() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"zTXt",
+            &ztxt_chunk_data("invalid_utf8", &[0xff]),
+        );
+        push_png_chunk(&mut png, b"tEXt", b"late\0yes");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("invalid_utf8"));
+        assert_eq!(chunks.get("late").map(|s| s.as_str()), Some("yes"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_invalid_compressed_text_does_not_exhaust_budget() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"tEXt", b"early\0ok");
+        push_png_chunk(
+            &mut png,
+            b"zTXt",
+            b"invalid_compressed\0\0not valid deflate",
+        );
+        push_png_chunk(&mut png, b"tEXt", b"late\0yes");
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(chunks.get("early").map(|s| s.as_str()), Some("ok"));
+        assert!(!chunks.contains_key("invalid_compressed"));
+        assert_eq!(chunks.get("late").map(|s| s.as_str()), Some("yes"));
+    }
+
+    #[test]
+    fn test_extract_png_chunks_ztxt_compressed() {
+        let mut png = png_fixture();
+        push_png_chunk(&mut png, b"zTXt", &ztxt_chunk_data("Comment", b"CompressedValue"));
+        push_iend(&mut png);
+
+        let mut cursor = Cursor::new(png);
+        let chunks = extract_png_chunks(&mut cursor).unwrap();
+
+        assert_eq!(
+            chunks.get("Comment").map(|s| s.as_str()),
+            Some("CompressedValue")
+        );
     }
 
     #[test]
