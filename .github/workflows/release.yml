@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "v*"
-      - "ambit-v*"
 
 concurrency:
   group: release-${{ github.ref }}
@@ -14,6 +13,7 @@ jobs:
   publish-tauri:
     permissions:
       contents: write
+    environment: updater-signing
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
 
       - name: install pnpm
         uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
@@ -32,6 +34,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: validate release tag provenance
+        run: node ./scripts/check-release-tag.mjs
 
       - name: install rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable action

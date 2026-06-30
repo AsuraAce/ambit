@@ -13,6 +13,7 @@ concurrency:
 jobs:
   verify-updater-signing:
     name: Verify updater signing secret
+    environment: updater-signing
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
