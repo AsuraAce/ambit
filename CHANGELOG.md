@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.4](https://github.com/AsuraAce/ambit/compare/v0.6.3...v0.6.4) (2026-06-30)
+
+
+### Bug Fixes
+
+* bound PNG metadata parsing budgets ([#163](https://github.com/AsuraAce/ambit/issues/163)) ([9950c65](https://github.com/AsuraAce/ambit/commit/9950c65573b79ea0fba73729a36e7c3bfa3688f3))
+* bound resource metadata scanning ([#162](https://github.com/AsuraAce/ambit/issues/162)) ([3a8c6d8](https://github.com/AsuraAce/ambit/commit/3a8c6d8f21ddc02567870b7610a2fd6b7d0ce2d2))
+* enforce local file boundaries ([#157](https://github.com/AsuraAce/ambit/issues/157)) ([ea2ab30](https://github.com/AsuraAce/ambit/commit/ea2ab30bfafc7ecbee22b91eec38b6a9ef353376))
+* harden civitai cache hash import ([#161](https://github.com/AsuraAce/ambit/issues/161)) ([0f48a81](https://github.com/AsuraAce/ambit/commit/0f48a817a8fd7b4dc4208357db477451f5c651a5))
+* harden jpeg segment parsing ([#159](https://github.com/AsuraAce/ambit/issues/159)) ([6243eaa](https://github.com/AsuraAce/ambit/commit/6243eaab7065c97437bcfd34d6acb4c8958e8210))
+* harden release provenance checks ([#156](https://github.com/AsuraAce/ambit/issues/156)) ([760eea9](https://github.com/AsuraAce/ambit/commit/760eea9424ce165db1f63ee87e30a4a52a4304ee))
+* parameterize image pagination cursors ([#158](https://github.com/AsuraAce/ambit/issues/158)) ([b318cea](https://github.com/AsuraAce/ambit/commit/b318ceae6b1befb74292658ac48fd4ee75d03978))
+* store library database in local appdata ([#155](https://github.com/AsuraAce/ambit/issues/155)) ([e786b86](https://github.com/AsuraAce/ambit/commit/e786b8624573e4439036f7e5e395a50e0251137e))
+
 ## [0.6.3](https://github.com/AsuraAce/ambit/compare/v0.6.2...v0.6.3) (2026-06-23)
 
 
