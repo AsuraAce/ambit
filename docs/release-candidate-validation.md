@@ -1,51 +1,50 @@
 # Release Candidate Validation
 
-Status: In progress
-Last updated: 2026-05-15
+Status: Active
+Last updated: 2026-07-02
 
-This record tracks the release-candidate checks that must pass after the hardening branches are stacked. It separates checks Codex can prove in the workspace from checks that require a real installed Windows app and reachable GitHub Release assets.
+This checklist tracks release-candidate evidence for Ambit public beta builds. It separates checks Codex can prove in the workspace from checks that require a real installed Windows app and unauthenticated release assets.
 
-## Current Evidence
+Do not treat authenticated maintainer access through `gh release download` as updater validation. Installed Ambit clients must be able to reach `latest.json`, the installer URL, and the updater signature without GitHub authentication.
 
-| Area | Result | Evidence |
-| --- | --- | --- |
-| Updater signing secret | Pass | GitHub Actions run `25927212899` completed successfully for `updater-signing-preflight`: <https://github.com/AsuraAce/ambit/actions/runs/25927212899>. |
-| GitHub auth for release inspection | Pass | Local `gh auth status` is authenticated as `AsuraAce` with `repo` and `workflow` scopes. |
-| Existing release assets | Partial | `gh release view v0.5.0` finds `latest.json`, NSIS, MSI, and signature assets. These assets predate the current hardening stack and are not a valid RC for this branch. |
-| Public updater reachability | Blocked | Unauthenticated `Invoke-WebRequest` to `https://github.com/AsuraAce/ambit/releases/download/v0.5.0/latest.json` returned GitHub `Not Found` while the repository is private. The updater cannot rely on private GitHub Release URLs for a public beta. |
-| Browser smoke | Pass | Browser mock mode loaded `http://127.0.0.1:1421/` with title `Ambit \| Local AI Workspace`, no framework overlay, and no current-URL console warnings or errors. |
-| Settings/updater copy | Pass | Settings > Advanced > Interface renders `Automatic Updates`, GitHub Releases startup copy, disabled development update status, `Check for Updates`, and `Reset Onboarding`. |
-| Import modal | Pass | Header import action in browser mock mode opens the safe import education modal; integration buttons and one-time import options render. |
-| Onboarding network disclosure | Pass | Onboarding Privacy step renders local-first, Gemini, GitHub Releases, and CivitAI `Resolve Online` disclosure copy. |
+## Required Evidence
 
-## Release Blocker
+| Area | Required evidence |
+| --- | --- |
+| Version provenance | Release tag, package metadata, Tauri config, installer names, and `latest.json` all use the same `<version>`. |
+| Release workflow | Release workflow completed from a valid `vX.Y.Z` tag whose commit is reachable from `main`. |
+| Updater signing | `updater-signing-preflight` passes with environment-scoped updater signing secrets. |
+| Build gate | `pnpm run verify:release` passes before packaging. |
+| Release assets | GitHub Release contains the Windows setup installer, MSI installer, both `.sig` files, and `latest.json`. |
+| Public updater reachability | Clean unauthenticated requests can fetch `latest.json` and the installer URL referenced by it. |
+| Installed updater flow | A previously installed signed Ambit build can discover, verify, install, relaunch into the RC, and preserve profile data. |
 
-The installed-app updater test is not complete. Before public beta announcement, publish a real release candidate from the current hardening stack to a public, unauthenticated endpoint and verify:
+## Public Endpoint Check
+
+Run this from a shell that is not authenticated to GitHub:
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/AsuraAce/ambit/releases/download/<tag>/latest.json -UseBasicParsing
+Invoke-WebRequest -Uri https://github.com/AsuraAce/ambit/releases/download/<tag>/Ambit_<version>_x64-setup.exe -UseBasicParsing -OutFile $env:TEMP\Ambit_<version>_x64-setup.exe
+```
+
+Confirm:
 
 1. `latest.json` is reachable without GitHub authentication.
 2. The installer URL in `latest.json` is reachable without GitHub authentication.
 3. The signature in `latest.json` verifies with the updater public key embedded in `src-tauri/tauri.conf.json`.
-4. A previously installed signed Ambit build can check for the RC update, show the update prompt, install the update, relaunch, and preserve profile data.
+4. Asset names and URLs match the release tag and version.
 
-Do not treat an authenticated `gh release download` success as updater validation. It only proves the maintainer can see the asset, not that installed public-beta clients can.
+## Installed-App Updater Test
 
-## Manual RC Workflow
+Use this pass before announcing a release candidate as updater-ready:
 
-Use this exact pass before tagging or announcing the beta:
-
-1. Merge the hardening stack into the release branch.
-2. Create a draft or pre-release RC from that release branch.
-3. Attach the Windows NSIS installer, MSI installer, both `.sig` files, and `latest.json`.
-4. Confirm the repository is public, or publish the same assets to another public endpoint configured in the updater.
-5. From a clean unauthenticated shell, run:
-
-   ```powershell
-   Invoke-WebRequest -Uri https://github.com/AsuraAce/ambit/releases/download/<tag>/latest.json -UseBasicParsing
-   Invoke-WebRequest -Uri https://github.com/AsuraAce/ambit/releases/download/<tag>/Ambit_<version>_x64-setup.exe -UseBasicParsing -OutFile $env:TEMP\Ambit_<version>_x64-setup.exe
-   ```
-
-6. Install the previous signed build.
-7. Trigger `Check for Updates` from Settings > Advanced > Interface.
-8. Confirm the update prompt appears, the package installs, the app relaunches, and the existing profile remains available.
-9. Record the RC tag, installed-from version, updated-to version, profile type, and result in `docs/release-test-checklist.md`.
-
+1. Install the previous signed public beta build.
+2. Launch Ambit and confirm the existing profile opens.
+3. Publish or select the RC release whose assets are publicly reachable.
+4. Trigger `Check for Updates` from Settings > Advanced > Interface.
+5. Confirm the update prompt appears.
+6. Install the update through Ambit.
+7. Confirm Ambit relaunches into `<version>`.
+8. Confirm folders, collections, favorites, prompts, thumbnails, and settings remain available.
+9. Record the tag, installed-from version, updated-to version, profile type, and result in `docs/release-test-checklist.md`.

@@ -1,6 +1,6 @@
 # Support
 Status: Active
-Last reviewed: 2026-04-24
+Last reviewed: 2026-07-02
 
 ## Current Offering
 - Ambit is free and open source.
@@ -19,12 +19,11 @@ Use this language consistently in the app, README, and creator pages:
 - Use Ko-fi as the simple one-time tip path outside GitHub.
 - Add Patreon only if you decide to run an actual membership program with recurring benefits, posts, or community access.
 
-## Launch Checklist
-- Replace the Stripe customer support phone number with a dedicated support/business number when available.
-- Review the Ko-fi support email before public release and switch it to a project/creator support address if needed.
-- Keep the in-app copy aligned with the current offer.
+## Maintenance Checklist
+- Keep the in-app, README, and creator-page support copy aligned with the current offer.
 - Keep `.github/FUNDING.yml` synced with the active funding providers.
-- After `AsuraAce/ambit` becomes public, add it under GitHub Sponsors > Profile details > Featured work.
+- Keep public support routes focused on GitHub Issues for bugs and GitHub Releases for packaged builds.
+- If paid support, memberships, or dedicated business contact channels are added later, update this file, the README, and the app copy together.
 
 ## External Page Structure
 ### Support Page
