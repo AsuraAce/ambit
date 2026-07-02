@@ -232,7 +232,7 @@ Status: Deferred
 ### Why Cleanup Is Needed
 - `src/services/repository.ts` still carries a `LocalStorageRepository` and mock-image defaults, but the live desktop app uses `TauriFsRepository` plus SQLite.
 - `src/services/TauriFsRepository.ts`, `src/stores/settingsStore.ts`, and Rust keyring or database code split persistence across JSON, SQLite, and secure OS storage.
-- Windows app data is currently split across Local and Roaming AppData. This is valid Tauri/Windows behavior, but Ambit's large, local-first SQLite library is better suited to Local AppData than Roaming.
+- Windows app data still has a legacy Local/Roaming compatibility boundary. The active SQLite library now prefers Local AppData, while Roaming remains only as a fallback for older data that could not be moved automatically.
 
 ### Current Classification
 - `src/services/repository.ts` is not the canonical desktop persistence path today; it exports `TauriFsRepository` for the shipping app while still carrying a LocalStorage or mock fallback.
@@ -249,7 +249,7 @@ Status: Deferred
 
 ### Safe-Change Warning
 - Persistence changes can silently affect existing user libraries and first-run behavior.
-- Do not change the default database directory without a compatibility migration and rollback-aware testing on an existing Roaming database.
+- Do not change database directory behavior again without a compatibility migration and rollback-aware testing on existing Local and legacy Roaming databases.
 
 ### Suggested Future Direction
 - Make the production Tauri persistence path the obvious canonical path in the frontend.
@@ -282,9 +282,9 @@ Status: In transition
 ### Current State
 - Production config now uses `io.github.asuraace.ambit` as the bundle identifier.
 - Development config remains on `com.ambit.dev`.
-- Release builds run a one-time startup migration before SQL initialization:
-  - Roaming AppData moves from `com.ambit.app` to `io.github.asuraace.ambit` when the new profile has no `images.db`.
-  - Local AppData moves from `com.ambit.app` to `io.github.asuraace.ambit` when the new profile has no `library.json` or `.thumbnails`.
+- Release builds run startup data migrations before SQL initialization:
+  - legacy `com.ambit.app` data moves into `io.github.asuraace.ambit` when the current profile has no conflicting data.
+  - eligible legacy/current Roaming database files move to Local AppData when Local has no active database.
   - Existing new-profile data is never overwritten.
 - Reset/purge and historical migration repair code check both the current and legacy production identifiers during this transition.
 
@@ -300,7 +300,7 @@ Status: In transition
 
 ### Not Part of the Current Task
 - Do not change the dev identifier.
-- Do not move the SQLite database from Roaming to Local AppData as part of this identifier-only migration.
+- Do not remove legacy `com.ambit.app` or Roaming fallback checks until the public-beta upgrade window is intentionally closed.
 
 ## Smart Thumbnail Optimization and Removed Maintenance Tab
 Status: Deferred

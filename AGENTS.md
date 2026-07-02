@@ -1,5 +1,5 @@
 # AGENTS.md
-Agent doc system: agent-doc-system v1.1.0
+Agent doc system: agent-doc-system v1.2.0
 
 ## Purpose
 Ambit is a local-first desktop image manager for large AI-generated image libraries. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.

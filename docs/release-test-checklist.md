@@ -1,7 +1,7 @@
 # Release Test Checklist
 
 Status: Working draft
-Last updated: 2026-05-15
+Last updated: 2026-07-02
 
 Use this checklist for staged release testing of Ambit. It is scoped to the current app shape:
 
@@ -286,12 +286,13 @@ Owner: Shared, leaning user. I can produce and inspect artifacts; you should val
 - [ ] Installed-app updater check can discover, verify, install, and relaunch into the release candidate.
 
 Phase 6 notes:
-- Fresh profile requires clearing both current directories, `AppData\Local\io.github.asuraace.ambit` and `AppData\Roaming\io.github.asuraace.ambit`; settings live under Local, while the main SQLite library lives under Roaming.
-- Identifier migration testing also uses the legacy directories `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`. The packaged release build should move legacy data into the current identifier when the current profile has no conflicting `library.json`, `.thumbnails`, or `images.db` data.
+- Fresh profile testing should clear the current Local AppData directory, `%LOCALAPPDATA%\io.github.asuraace.ambit`. During the public-beta transition, also inspect the current Roaming fallback and legacy `com.ambit.app` Local/Roaming directories when migration behavior is part of the test.
+- The main SQLite library database should be created under Local AppData. Roaming AppData is retained only as a legacy fallback for older data that could not be moved automatically.
+- Identifier migration testing also uses the legacy directories `AppData\Local\com.ambit.app` and `AppData\Roaming\com.ambit.app`. The packaged release build should move eligible legacy data into the current identifier when the current profile has no conflicting `library.json`, `.thumbnails`, or active database data.
 - Conflict testing should pre-create current-profile data and confirm legacy `com.ambit.app` data is not overwritten or deleted.
 - Updater validation requires signing setup, public release assets, and installed-app behavior checks before each public beta release.
-- Current GitHub repository visibility is private as of the 2026-05-15 RC validation pass; unauthenticated updater checks will fail until the release assets are published from a public endpoint.
-- Version state as of this pass: package metadata is `0.5.0`; confirm the final release tag, GitHub Release, updater manifest, and installer metadata all match before publishing.
+- Unauthenticated updater checks require release assets to be published from the configured public endpoint.
+- Confirm the final release tag, GitHub Release, updater manifest, installer metadata, and app version all match before publishing.
 
 ## Sign-Off Summary
 
