@@ -71,7 +71,7 @@ export class LocalStorageRepository implements IRepository {
       smartCollections: [],
       settings: createDefaultAppSettings({
         monitoredFolders: [
-          { id: 'f1', path: 'C:/Users/Creator/ComfyUI/output', isActive: true, imageCount: 1450 },
+          { id: 'f1', path: 'C:/Users/AmbitTester/ComfyUI/output', isActive: true, imageCount: 1450 },
           { id: 'f2', path: 'D:/SD_Outputs/Best', isActive: true, imageCount: 54 }
         ],
         maskedKeywords: ['nsfw', 'blood', 'gore'],

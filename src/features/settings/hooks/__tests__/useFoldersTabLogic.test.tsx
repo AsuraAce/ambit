@@ -124,7 +124,7 @@ describe('useFoldersTabLogic', () => {
             .mockImplementation(updateLastScannedMock);
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AI/Comfy/output/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10 }]
         });
         vi.mocked(processNativePaths).mockResolvedValueOnce({
             images: [],
@@ -142,7 +142,7 @@ describe('useFoldersTabLogic', () => {
             monitoredFolders: [
                 {
                     id: 'folder-1',
-                    path: 'D:/AI/Comfy/output',
+                    path: 'D:/AmbitFixtures/Comfy/output',
                     isActive: true,
                     imageCount: 0,
                     variant: GeneratorTool.COMFYUI,
@@ -157,11 +157,11 @@ describe('useFoldersTabLogic', () => {
         }));
 
         await act(async () => {
-            await result.current.handleRescan('folder-1', 'D:/AI/Comfy/output', GeneratorTool.COMFYUI, false);
+            await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Comfy/output', GeneratorTool.COMFYUI, false);
         });
 
         expect(processNativePaths).toHaveBeenCalledWith(
-            ['D:/AI/Comfy/output/new.png'],
+            ['D:/AmbitFixtures/Comfy/output/new.png'],
             expect.any(String),
             expect.any(Function),
             GeneratorTool.COMFYUI,
@@ -185,14 +185,14 @@ describe('useFoldersTabLogic', () => {
         });
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AI/Comfy/output/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10 }]
         });
         const settings = {
             ...baseSettings,
             monitoredFolders: [
                 {
                     id: 'folder-1',
-                    path: 'D:/AI/Comfy/output',
+                    path: 'D:/AmbitFixtures/Comfy/output',
                     isActive: true,
                     imageCount: 0,
                     variant: GeneratorTool.COMFYUI,
@@ -207,7 +207,7 @@ describe('useFoldersTabLogic', () => {
         }));
 
         await act(async () => {
-            await result.current.handleRescan('folder-1', 'D:/AI/Comfy/output', GeneratorTool.COMFYUI, false);
+            await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Comfy/output', GeneratorTool.COMFYUI, false);
         });
 
         expect(activeRunId).toBeTruthy();
@@ -224,7 +224,7 @@ describe('useFoldersTabLogic', () => {
             const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
 
             act(() => {
-                result.current.setNewFolderPath('D:\\AI\\Cancelled');
+                result.current.setNewFolderPath('D:\\AmbitFixtures\\Cancelled');
             });
 
             act(() => {
@@ -237,14 +237,14 @@ describe('useFoldersTabLogic', () => {
                 await vi.advanceTimersByTimeAsync(500);
             });
 
-            expect(onScanFolder).toHaveBeenCalledWith([{ path: 'D:/AI/Cancelled', variant: GeneratorTool.UNKNOWN }]);
+            expect(onScanFolder).toHaveBeenCalledWith([{ path: 'D:/AmbitFixtures/Cancelled', variant: GeneratorTool.UNKNOWN }]);
             const addUpdate = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
             const addedSettings = addUpdate(baseSettings);
             const finalizeUpdate = setSettings.mock.calls[1][0] as (previous: AppSettings) => AppSettings;
             const finalSettings = finalizeUpdate(addedSettings);
 
             expect(finalSettings.monitoredFolders[0]).toMatchObject({
-                path: 'D:/AI/Cancelled',
+                path: 'D:/AmbitFixtures/Cancelled',
                 initialScanPending: false,
                 initialScanCancelled: true
             });
@@ -259,13 +259,13 @@ describe('useFoldersTabLogic', () => {
         try {
             const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
                 wasCancelled: true,
-                completedSourcePaths: ['D:/AI/Done'],
-                cancelledSourcePaths: ['D:/AI/Cancel']
+                completedSourcePaths: ['D:/AmbitFixtures/Done'],
+                cancelledSourcePaths: ['D:/AmbitFixtures/Cancel']
             }));
             const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
 
             act(() => {
-                result.current.setNewFolderPath('D:\\AI\\Done');
+                result.current.setNewFolderPath('D:\\AmbitFixtures\\Done');
             });
             act(() => {
                 result.current.handleAddFolder({
@@ -273,7 +273,7 @@ describe('useFoldersTabLogic', () => {
                 } as unknown as React.FormEvent);
             });
             act(() => {
-                result.current.setNewFolderPath('D:\\AI\\Cancel');
+                result.current.setNewFolderPath('D:\\AmbitFixtures\\Cancel');
             });
             act(() => {
                 result.current.handleAddFolder({
@@ -286,8 +286,8 @@ describe('useFoldersTabLogic', () => {
             });
 
             expect(onScanFolder).toHaveBeenCalledWith([
-                { path: 'D:/AI/Done', variant: GeneratorTool.UNKNOWN },
-                { path: 'D:/AI/Cancel', variant: GeneratorTool.UNKNOWN }
+                { path: 'D:/AmbitFixtures/Done', variant: GeneratorTool.UNKNOWN },
+                { path: 'D:/AmbitFixtures/Cancel', variant: GeneratorTool.UNKNOWN }
             ]);
 
             const addDone = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
@@ -295,18 +295,18 @@ describe('useFoldersTabLogic', () => {
             const finalizeUpdate = setSettings.mock.calls[2][0] as (previous: AppSettings) => AppSettings;
             const finalSettings = finalizeUpdate(addCancel(addDone(baseSettings)));
 
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AI/Done')).toMatchObject({
-                path: 'D:/AI/Done',
+            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Done')).toMatchObject({
+                path: 'D:/AmbitFixtures/Done',
                 initialScanPending: false,
                 initialScanCancelled: false,
                 lastScanned: expect.any(Number)
             });
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AI/Cancel')).toMatchObject({
-                path: 'D:/AI/Cancel',
+            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Cancel')).toMatchObject({
+                path: 'D:/AmbitFixtures/Cancel',
                 initialScanPending: false,
                 initialScanCancelled: true
             });
-            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AI/Cancel')?.lastScanned).toBeUndefined();
+            expect(finalSettings.monitoredFolders.find(folder => folder.path === 'D:/AmbitFixtures/Cancel')?.lastScanned).toBeUndefined();
         } finally {
             vi.useRealTimers();
         }
@@ -317,12 +317,12 @@ describe('useFoldersTabLogic', () => {
         try {
             const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
                 stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
-                failedPaths: ['D:/AI/Partial/bad.png']
+                failedPaths: ['D:/AmbitFixtures/Partial/bad.png']
             }));
             const { result, setSettings } = renderFoldersHook(baseSettings, onScanFolder);
 
             act(() => {
-                result.current.setNewFolderPath('D:\\AI\\Partial');
+                result.current.setNewFolderPath('D:\\AmbitFixtures\\Partial');
             });
 
             act(() => {
@@ -341,7 +341,7 @@ describe('useFoldersTabLogic', () => {
             const finalSettings = finalizeUpdate(addedSettings);
 
             expect(finalSettings.monitoredFolders[0]).toMatchObject({
-                path: 'D:/AI/Partial',
+                path: 'D:/AmbitFixtures/Partial',
                 initialScanPending: false,
                 initialScanCancelled: false
             });
@@ -355,7 +355,7 @@ describe('useFoldersTabLogic', () => {
     it('clears initial cancellation after a successful manual rescan even when count refresh updates later', async () => {
         const folder = {
             id: 'folder-1',
-            path: 'D:/AI/Cancelled',
+            path: 'D:/AmbitFixtures/Cancelled',
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
@@ -388,7 +388,7 @@ describe('useFoldersTabLogic', () => {
         }));
 
         await act(async () => {
-            await result.current.handleRescan('folder-1', 'D:/AI/Cancelled', GeneratorTool.COMFYUI, false);
+            await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
         });
 
         const updatedFolder = useSettingsStore.getState().settings.monitoredFolders[0];
@@ -401,7 +401,7 @@ describe('useFoldersTabLogic', () => {
     it('keeps manual rescan cancellation flagged when the retry is cancelled again', async () => {
         const folder = {
             id: 'folder-1',
-            path: 'D:/AI/Cancelled',
+            path: 'D:/AmbitFixtures/Cancelled',
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
@@ -414,7 +414,7 @@ describe('useFoldersTabLogic', () => {
         useSettingsStore.setState({ settings });
         const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
             wasCancelled: true,
-            cancelledSourcePaths: ['D:/AI/Cancelled']
+            cancelledSourcePaths: ['D:/AmbitFixtures/Cancelled']
         }));
         const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = update => {
             if (typeof update === 'function') {
@@ -430,7 +430,7 @@ describe('useFoldersTabLogic', () => {
         }));
 
         await act(async () => {
-            await result.current.handleRescan('folder-1', 'D:/AI/Cancelled', GeneratorTool.COMFYUI, false);
+            await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
         });
 
         const updatedFolder = useSettingsStore.getState().settings.monitoredFolders[0];
@@ -442,7 +442,7 @@ describe('useFoldersTabLogic', () => {
     it('makes failed manual rescan retryable without advancing the cursor', async () => {
         const folder = {
             id: 'folder-1',
-            path: 'D:/AI/Cancelled',
+            path: 'D:/AmbitFixtures/Cancelled',
             isActive: true,
             imageCount: 0,
             variant: GeneratorTool.COMFYUI,
@@ -455,7 +455,7 @@ describe('useFoldersTabLogic', () => {
         useSettingsStore.setState({ settings });
         const onScanFolder = vi.fn().mockResolvedValue(emptyImportResult({
             stats: { processed: 1, imported: 0, skipped: 0, errors: 1 },
-            failedPaths: ['D:/AI/Cancelled/bad.png']
+            failedPaths: ['D:/AmbitFixtures/Cancelled/bad.png']
         }));
         const setSettings: React.Dispatch<React.SetStateAction<AppSettings>> = update => {
             if (typeof update === 'function') {
@@ -471,7 +471,7 @@ describe('useFoldersTabLogic', () => {
         }));
 
         await act(async () => {
-            await result.current.handleRescan('folder-1', 'D:/AI/Cancelled', GeneratorTool.COMFYUI, false);
+            await result.current.handleRescan('folder-1', 'D:/AmbitFixtures/Cancelled', GeneratorTool.COMFYUI, false);
         });
 
         const updatedFolder = useSettingsStore.getState().settings.monitoredFolders[0];

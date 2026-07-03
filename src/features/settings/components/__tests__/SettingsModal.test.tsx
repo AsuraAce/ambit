@@ -24,7 +24,7 @@ vi.mock('..', () => ({
                             ...prev.monitoredFolders,
                             {
                                 id: 'folder-1',
-                                path: 'D:/AI/Linked',
+                                path: 'D:/AmbitFixtures/Linked',
                                 isActive: true,
                                 imageCount: 0,
                                 initialScanPending: true
@@ -111,7 +111,7 @@ describe('SettingsModal', () => {
         expect(afterComplete.monitoredFolders).toHaveLength(1);
         expect(afterComplete.monitoredFolders[0]).toMatchObject({
             id: 'folder-1',
-            path: 'D:/AI/Linked',
+            path: 'D:/AmbitFixtures/Linked',
             initialScanPending: false,
             lastScanned: 123
         });

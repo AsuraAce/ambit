@@ -34,7 +34,7 @@ const settings: AppSettings = {
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,
-    resourceFolders: ['D:/AI/Models'],
+    resourceFolders: ['D:/AmbitFixtures/Models'],
 };
 
 describe('FoldersTab', () => {

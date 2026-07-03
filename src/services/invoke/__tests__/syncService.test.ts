@@ -117,7 +117,7 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -164,7 +164,7 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -234,7 +234,7 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -260,11 +260,11 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
             thumbnailSource: 'invokeai',
-            thumbnailUrl: 'D:/AI/art/webUI/invokeai/outputs/images/thumbnails/new-image.webp'
+            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/new-image.webp'
         }));
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([
-            'D:/AI/art/webUI/invokeai/outputs/images/new-image.png'
+            'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
         expect(upsertCollection).toHaveBeenCalledTimes(1);
     });
@@ -319,7 +319,7 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -335,11 +335,11 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
             thumbnailSource: 'invokeai',
-            thumbnailUrl: 'D:/AI/art/webUI/invokeai/outputs/images/thumbnails/startup-image.webp'
+            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/startup-image.webp'
         }));
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([
-            'D:/AI/art/webUI/invokeai/outputs/images/startup-image.png'
+            'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
         ]);
         expect(upsertCollection).toHaveBeenCalledTimes(1);
     });
@@ -382,7 +382,7 @@ describe('syncImages live mode', () => {
         } as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -395,24 +395,24 @@ describe('syncImages live mode', () => {
         expect(result.imported).toBe(6);
         expect(commands.listInvokeaiImages).toHaveBeenCalledTimes(1);
         expect(getImagesByIds).toHaveBeenCalledWith(expect.arrayContaining([
-            'D:/AI/art/webUI/invokeai/outputs/images/flat.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/date.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/txt2img/type.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/ab/hash.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/custom/nested/path/custom.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/2026/04/relative.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/date.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/type.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/hash.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/custom.png'
+            'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/txt2img/type.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/ab/hash.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/custom/nested/path/custom.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/date.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/type.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/hash.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/custom.png'
         ]));
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0].map((image) => image.id)).toEqual([
-            'D:/AI/art/webUI/invokeai/outputs/images/flat.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/date.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/txt2img/type.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/ab/hash.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/custom/nested/path/custom.png',
-            'D:/AI/art/webUI/invokeai/outputs/images/2026/04/relative.png'
+            'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/txt2img/type.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/ab/hash.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/custom/nested/path/custom.png',
+            'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/relative.png'
         ]);
     });
 
@@ -452,7 +452,7 @@ describe('syncImages live mode', () => {
         } as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -496,7 +496,7 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -512,8 +512,8 @@ describe('syncImages live mode', () => {
     });
 
     it('repairs an existing stale flat InvokeAI row when the real file resolves to a subfolder', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/date.png';
-        const resolvedPath = 'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/date.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/date.png';
+        const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [{ name: 'metadata_json' }, { name: 'thumbnail_name' }, { name: 'image_subfolder' }];
@@ -579,7 +579,7 @@ describe('syncImages live mode', () => {
         vi.mocked(moveImagePathIdentity).mockResolvedValue(true);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -607,8 +607,8 @@ describe('syncImages live mode', () => {
     });
 
     it('repairs stale existing rows during a timestamp-filtered manual sync even when there are no import candidates', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/old.png';
-        const resolvedPath = 'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/old.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/old.png';
+        const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/old.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
@@ -680,7 +680,7 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -729,7 +729,7 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -748,8 +748,8 @@ describe('syncImages live mode', () => {
     });
 
     it('repairs stale rows through unique disk fallback when image_subfolder is unavailable', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/legacy.png';
-        const resolvedPath = 'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/legacy.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/legacy.png';
+        const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/legacy.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
@@ -819,7 +819,7 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -842,8 +842,8 @@ describe('syncImages live mode', () => {
     });
 
     it('repairs stale rows when legacy InvokeAI image_name already contains a relative path', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/relative.png';
-        const resolvedPath = 'D:/AI/art/webUI/invokeai/outputs/images/2026/04/18/relative.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/relative.png';
+        const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/relative.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
@@ -910,7 +910,7 @@ describe('syncImages live mode', () => {
         });
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -938,7 +938,7 @@ describe('syncImages live mode', () => {
     });
 
     it('skips stale relative-name repair when one flat source matches multiple resolved targets', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/duplicate.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/duplicate.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
@@ -1008,7 +1008,7 @@ describe('syncImages live mode', () => {
         }]);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {
@@ -1026,7 +1026,7 @@ describe('syncImages live mode', () => {
     });
 
     it('skips stale repair fallback when duplicate basenames make the disk match ambiguous', async () => {
-        const staleFlatPath = 'D:/AI/art/webUI/invokeai/outputs/images/duplicate.png';
+        const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/duplicate.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [
@@ -1088,7 +1088,7 @@ describe('syncImages live mode', () => {
         }]);
 
         const result = await syncImages(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             vi.fn(),
             undefined,
             {

@@ -461,8 +461,8 @@ mod tests {
     #[test]
     fn migration_collapses_slash_variant_disk_rows_and_preserves_customization() {
         let conn = setup_conn();
-        let first_path = "D:/AI/models/loras/Detailer.safetensors";
-        let second_path = "D:/AI/models\\loras\\Detailer.safetensors";
+        let first_path = "D:/AmbitFixtures/Models/loras/Detailer.safetensors";
+        let second_path = "D:/AmbitFixtures/Models\\loras\\Detailer.safetensors";
         let first_hash = format!("file:{first_path}");
         let second_hash = format!("file:{second_path}");
 
@@ -471,7 +471,7 @@ mod tests {
         conn.execute(
             "UPDATE models
              SET thumbnail_path = 'C:/thumbs/detailer.webp',
-                 sidecar_thumbnail_path = 'D:/AI/models/loras/Detailer.preview.png',
+                 sidecar_thumbnail_path = 'D:/AmbitFixtures/Models/loras/Detailer.preview.png',
                  thumbnail_sensitivity_override = 1
              WHERE hash = ?1",
             [&second_hash],
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(rows[0].1.as_deref(), Some("C:/thumbs/detailer.webp"));
         assert_eq!(
             rows[0].2.as_deref(),
-            Some("D:/AI/models/loras/Detailer.preview.png")
+            Some("D:/AmbitFixtures/Models/loras/Detailer.preview.png")
         );
         assert_eq!(rows[0].3, Some(1));
 

@@ -36,7 +36,7 @@ const mocks = vi.hoisted(() => ({
     getInvokeDbSnapshot: vi.fn().mockResolvedValue({
         status: 'ok',
         data: {
-            dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+            dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
             files: []
         }
     }),
@@ -311,12 +311,12 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases'
             });
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockResolvedValueOnce({
@@ -354,7 +354,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 invokeSyncFavorites: false,
                 invokeSyncBoards: false
             });
@@ -391,7 +391,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 invokeSyncFavorites: false,
                 invokeSyncBoards: false
             });
@@ -431,14 +431,14 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI'
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
 
         await waitFor(() => {
             expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
-                ['D:/AI/art/webUI/invokeai/databases'],
+                ['D:/AmbitFixtures/InvokeAI/databases'],
                 expect.any(Function)
             );
         }, { timeout: 3000 });
@@ -448,7 +448,7 @@ describe('Library Integration (Provider Stack)', () => {
         }, { timeout: 3000 });
 
         expect(mocks.syncImages).toHaveBeenCalledWith(
-            'D:/AI/art/webUI/invokeai',
+            'D:/AmbitFixtures/InvokeAI',
             expect.any(Function),
             expect.any(AbortSignal),
             expect.objectContaining({ mode: 'live' })
@@ -463,7 +463,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI'
             });
         });
 
@@ -488,7 +488,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await waitFor(() => {
             expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
-                ['D:/AI/art/webUI/invokeai/databases'],
+                ['D:/AmbitFixtures/InvokeAI/databases'],
                 expect.any(Function)
             );
         }, { timeout: 3000 });
@@ -520,7 +520,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
                 monitoredFolders: [
                     { id: 'watch-1', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 10 }
                 ]
@@ -530,7 +530,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await waitFor(() => {
             expect(mocks.watcherStartWatching).toHaveBeenCalledWith(
-                ['C:/watch', 'D:/AI/art/webUI/invokeai/databases'],
+                ['C:/watch', 'D:/AmbitFixtures/InvokeAI/databases'],
                 expect.any(Function)
             );
             expect(watcherCallback).not.toBeNull();
@@ -567,7 +567,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI'
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
@@ -605,7 +605,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI'
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
@@ -636,14 +636,14 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importOrphans: false
             });
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockResolvedValueOnce({
@@ -696,14 +696,14 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importOrphans: true
             });
         });
 
         await waitFor(() => {
-            expect(hook?.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook?.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
@@ -730,14 +730,14 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 importIntermediates: false,
                 importOrphans: true
             });
         });
 
         await waitFor(() => {
-            expect(hook?.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook?.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
@@ -748,7 +748,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         expect(mocks.scanForOrphans).toHaveBeenCalledWith(
-            'D:/AI/art/webUI/invokeai/databases',
+            'D:/AmbitFixtures/InvokeAI/databases',
             expect.any(Set),
             expect.any(Function),
             expect.objectContaining({ importIntermediates: expect.anything() })
@@ -763,7 +763,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importOrphans: false
             });
@@ -815,7 +815,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook?.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importOrphans: false
             });
@@ -864,12 +864,12 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases'
             });
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockResolvedValueOnce({
@@ -932,7 +932,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases'
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
@@ -1012,7 +1012,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases'
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases'
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
@@ -1041,7 +1041,7 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.syncImages.mockReturnValueOnce(deferred.promise);
 
         await act(async () => {
-            watcherCallback?.(['D:/AI/art/webUI/invokeai/databases/invokeai.db-wal']);
+            watcherCallback?.(['D:/AmbitFixtures/InvokeAI/databases/invokeai.db-wal']);
         });
 
         expect(useLibraryStore.getState().liveWatchSession.phase).toBe('watching');
@@ -1159,19 +1159,19 @@ describe('Library Integration (Provider Stack)', () => {
 
         const files = [
             {
-                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                 exists: true,
                 size: 10,
                 modifiedMs: 100
             },
             {
-                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db-wal',
+                path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db-wal',
                 exists: false,
                 size: 0,
                 modifiedMs: null
             },
             {
-                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db-shm',
+                path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db-shm',
                 exists: false,
                 size: 0,
                 modifiedMs: null
@@ -1180,20 +1180,20 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
             status: 'ok',
             data: {
-                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                 files
             }
         });
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importIntermediates: false,
                 importOrphans: true,
                 syncBoardsToCollections: false,
                 invokeDbSnapshot: {
-                    dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                     lastSyncedAt: 100,
                     importIntermediates: false,
                     importOrphans: false,
@@ -1205,7 +1205,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockClear();
@@ -1226,14 +1226,14 @@ describe('Library Integration (Provider Stack)', () => {
 
         const files = [
             {
-                path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                 exists: true,
                 size: 10,
                 modifiedMs: 100
             }
         ];
         const legacySnapshot = {
-            dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+            dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
             lastSyncedAt: 100,
             importIntermediates: false,
             importOrphans: false,
@@ -1244,7 +1244,7 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
             status: 'ok',
             data: {
-                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                 files
             }
         });
@@ -1260,7 +1260,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importIntermediates: false,
                 importOrphans: false,
@@ -1270,7 +1270,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockClear();
@@ -1297,10 +1297,10 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
             status: 'ok',
             data: {
-                dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                 files: [
                     {
-                        path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                        path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                         exists: false,
                         size: 0,
                         modifiedMs: null
@@ -1311,13 +1311,13 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => {
             hook.setSettings({
-                invokeAiPath: 'D:/AI/art/webUI/invokeai/databases',
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 lastSyncedAt: 100,
                 importIntermediates: false,
                 importOrphans: false,
                 syncBoardsToCollections: false,
                 invokeDbSnapshot: {
-                    dbPath: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                     lastSyncedAt: 100,
                     importIntermediates: false,
                     importOrphans: false,
@@ -1325,7 +1325,7 @@ describe('Library Integration (Provider Stack)', () => {
                     pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
                     files: [
                         {
-                            path: 'D:/AI/art/webUI/invokeai/databases/invokeai.db',
+                            path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
                             exists: true,
                             size: 10,
                             modifiedMs: 100
@@ -1336,7 +1336,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         await waitFor(() => {
-            expect(hook.settings.invokeAiPath).toBe('D:/AI/art/webUI/invokeai/databases');
+            expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
 
         mocks.syncImages.mockClear();

@@ -154,14 +154,14 @@ describe('useResourcesTabLogic', () => {
     });
 
     it('browses resource folders into the resource path field', async () => {
-        openMock.mockResolvedValue('D:\\AI\\Models');
+        openMock.mockResolvedValue('D:\\AmbitFixtures\\Models');
         const { result } = renderResourcesHook();
 
         await act(async () => {
             await result.current.handleBrowseResource();
         });
 
-        expect(result.current.newResourcePath).toBe('D:/AI/Models');
+        expect(result.current.newResourcePath).toBe('D:/AmbitFixtures/Models');
     });
 
     it('scans resources, refreshes touched resource facets, and increments the facet cache version', async () => {
@@ -180,7 +180,7 @@ describe('useResourcesTabLogic', () => {
             });
 
             act(() => {
-                result.current.setNewResourcePath('D:\\AI\\Models');
+                result.current.setNewResourcePath('D:\\AmbitFixtures\\Models');
             });
 
             await act(async () => {
@@ -191,8 +191,8 @@ describe('useResourcesTabLogic', () => {
             });
 
             const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
-            expect(updateSettings(baseSettings).resourceFolders).toEqual(['D:/AI/Models']);
-            expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AI/Models']);
+            expect(updateSettings(baseSettings).resourceFolders).toEqual(['D:/AmbitFixtures/Models']);
+            expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AmbitFixtures/Models']);
             expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
                 ...emptyResources,
                 loras: ['CinematicDetail']
@@ -211,7 +211,7 @@ describe('useResourcesTabLogic', () => {
         try {
             const settings = {
                 ...baseSettings,
-                resourceFolders: ['D:/AI/Checkpoints', 'D:/AI/Loras'],
+                resourceFolders: ['D:/AmbitFixtures/Checkpoints', 'D:/AmbitFixtures/Loras'],
             };
             const { result } = renderResourcesHook(settings);
 
@@ -220,7 +220,7 @@ describe('useResourcesTabLogic', () => {
                 await finishResourceScanTimer(promise);
             });
 
-            expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AI/Checkpoints', 'D:/AI/Loras']);
+            expect(scanResourceThumbnailsMock).toHaveBeenCalledWith(['D:/AmbitFixtures/Checkpoints', 'D:/AmbitFixtures/Loras']);
             expect(refreshFacetCacheForResourcesStrictMock).toHaveBeenCalledWith({
                 ...emptyResources,
                 loras: ['CinematicDetail']
@@ -245,7 +245,7 @@ describe('useResourcesTabLogic', () => {
             const { result } = renderResourcesHook();
 
             act(() => {
-                result.current.setNewResourcePath('D:\\AI\\Unknown');
+                result.current.setNewResourcePath('D:\\AmbitFixtures\\Unknown');
             });
 
             await act(async () => {
@@ -269,7 +269,7 @@ describe('useResourcesTabLogic', () => {
     it('purges only assets not covered by remaining resource folders before removing the path', async () => {
         const settings = {
             ...baseSettings,
-            resourceFolders: ['D:/AI/models', 'D:/AI/models/loras'],
+            resourceFolders: ['D:/AmbitFixtures/Models', 'D:/AmbitFixtures/Models/loras'],
         };
         vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
             status: 'ok',
@@ -287,16 +287,16 @@ describe('useResourcesTabLogic', () => {
         const { result, setSettings } = renderResourcesHook(settings);
 
         await act(async () => {
-            await result.current.handleRemoveResourceFolder('D:/AI/models');
+            await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
         });
 
         expect(commands.purgeResourceFolderAssets).toHaveBeenCalledWith(
-            'D:/AI/models',
-            ['D:/AI/models/loras']
+            'D:/AmbitFixtures/Models',
+            ['D:/AmbitFixtures/Models/loras']
         );
         expect(refreshFacetCacheForResourcesStrictMock).not.toHaveBeenCalled();
         const updateSettings = setSettings.mock.calls[0][0] as (previous: AppSettings) => AppSettings;
-        expect(updateSettings(settings).resourceFolders).toEqual(['D:/AI/models/loras']);
+        expect(updateSettings(settings).resourceFolders).toEqual(['D:/AmbitFixtures/Models/loras']);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
         expect(addToastMock).toHaveBeenCalledWith(
             'Removed resource folder: 2 local assets purged, 1 customized asset preserved',
@@ -307,7 +307,7 @@ describe('useResourcesTabLogic', () => {
     it('keeps the resource folder and facet version unchanged when atomic purge fails', async () => {
         const settings = {
             ...baseSettings,
-            resourceFolders: ['D:/AI/models'],
+            resourceFolders: ['D:/AmbitFixtures/Models'],
         };
         vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
             status: 'error',
@@ -316,7 +316,7 @@ describe('useResourcesTabLogic', () => {
         const { result, setSettings } = renderResourcesHook(settings);
 
         await act(async () => {
-            await result.current.handleRemoveResourceFolder('D:/AI/models');
+            await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
         });
 
         expect(setSettings).not.toHaveBeenCalled();
@@ -328,23 +328,23 @@ describe('useResourcesTabLogic', () => {
     it('serializes resource cleanup and blocks discovery actions until purge completes', async () => {
         const settings = {
             ...baseSettings,
-            resourceFolders: ['D:/AI/models', 'D:/AI/models/loras'],
+            resourceFolders: ['D:/AmbitFixtures/Models', 'D:/AmbitFixtures/Models/loras'],
         };
         const purge = createDeferred<Awaited<ReturnType<typeof commands.purgeResourceFolderAssets>>>();
         vi.mocked(commands.purgeResourceFolderAssets).mockReturnValueOnce(purge.promise);
         const { result, setSettings } = renderResourcesHook(settings);
 
         act(() => {
-            result.current.setNewResourcePath('D:/AI/models/checkpoints');
+            result.current.setNewResourcePath('D:/AmbitFixtures/Models/checkpoints');
         });
 
         let removalPromise!: Promise<void>;
         await act(async () => {
-            removalPromise = result.current.handleRemoveResourceFolder('D:/AI/models');
+            removalPromise = result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
             await Promise.resolve();
         });
 
-        expect(result.current.removingResourcePath).toBe('D:/AI/models');
+        expect(result.current.removingResourcePath).toBe('D:/AmbitFixtures/Models');
 
         await act(async () => {
             await result.current.handleBrowseResource();
@@ -352,7 +352,7 @@ describe('useResourcesTabLogic', () => {
                 preventDefault: vi.fn(),
             } as unknown as React.FormEvent);
             await result.current.handleScanNow();
-            await result.current.handleRemoveResourceFolder('D:/AI/models/loras');
+            await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models/loras');
         });
 
         expect(openMock).not.toHaveBeenCalled();
@@ -383,12 +383,12 @@ describe('useResourcesTabLogic', () => {
         useLibraryStore.setState({ isScanningDiscovery: true });
         const settings = {
             ...baseSettings,
-            resourceFolders: ['D:/AI/models'],
+            resourceFolders: ['D:/AmbitFixtures/Models'],
         };
         const { result, setSettings } = renderResourcesHook(settings);
 
         await act(async () => {
-            await result.current.handleRemoveResourceFolder('D:/AI/models');
+            await result.current.handleRemoveResourceFolder('D:/AmbitFixtures/Models');
         });
 
         expect(commands.purgeResourceFolderAssets).not.toHaveBeenCalled();

@@ -76,8 +76,8 @@ describe('pathUtils', () => {
         });
 
         it('should detect when a path is inside a directory', () => {
-            expect(isPathWithinDirectory('C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit/.thumbnails/file.webp', 'C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit')).toBe(true);
-            expect(isPathWithinDirectory('D:/AI/art/output/image.png', 'C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit')).toBe(false);
+            expect(isPathWithinDirectory('C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/.thumbnails/file.webp', 'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit')).toBe(true);
+            expect(isPathWithinDirectory('D:/AmbitFixtures/art/output/image.png', 'C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit')).toBe(false);
         });
     });
 });
