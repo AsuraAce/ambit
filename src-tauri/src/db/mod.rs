@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn dev_profile_defaults_to_legacy_sql_url() {
         let local_path = Path::new(
-            "C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db",
+            "C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db",
         );
 
         assert_eq!(
@@ -393,12 +393,12 @@ mod tests {
     #[test]
     fn sqlite_url_for_path_normalizes_windows_separators() {
         let local_path = Path::new(
-            "C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db",
+            "C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db",
         );
 
         assert_eq!(
             sqlite_url_for_path(local_path),
-            "sqlite:C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit/images.db"
+            "sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db"
         );
     }
 

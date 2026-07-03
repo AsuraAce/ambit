@@ -25,7 +25,7 @@ describe('database connection', () => {
         vi.clearAllMocks();
         getMainDatabaseUrlMock.mockResolvedValue({
             status: 'ok',
-            data: 'sqlite:C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit/images.db',
+            data: 'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db',
         });
         databaseLoadMock.mockResolvedValue(createDatabaseMock());
     });
@@ -37,7 +37,7 @@ describe('database connection', () => {
 
         expect(getMainDatabaseUrlMock).toHaveBeenCalledTimes(1);
         expect(databaseLoadMock).toHaveBeenCalledWith(
-            'sqlite:C:/Users/Artemis/AppData/Local/io.github.asuraace.ambit/images.db'
+            'sqlite:C:/Users/AmbitTester/AppData/Local/io.github.asuraace.ambit/images.db'
         );
     });
 

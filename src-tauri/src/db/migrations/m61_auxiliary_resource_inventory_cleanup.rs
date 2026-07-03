@@ -147,34 +147,34 @@ mod tests {
         let conn = setup_conn();
         let unsupported = [
             (
-                "D:/AI/models/facerestore/GFPGANv1.4.pth",
+                "D:/AmbitFixtures/Models/facerestore/GFPGANv1.4.pth",
                 "GFPGANv1.4",
             ),
             (
-                "D:/AI/models/facedetection/detection_mobilenet0.25_Final.pth",
+                "D:/AmbitFixtures/Models/facedetection/detection_mobilenet0.25_Final.pth",
                 "detection_mobilenet0.25_Final",
             ),
             (
-                "D:/AI/models/RealESRGAN/RealESRGAN_x4plus.pth",
+                "D:/AmbitFixtures/Models/RealESRGAN/RealESRGAN_x4plus.pth",
                 "RealESRGAN_x4plus",
             ),
-            ("D:/AI/models/SwinIR/SwinIR_4x.pth", "SwinIR_4x"),
+            ("D:/AmbitFixtures/Models/SwinIR/SwinIR_4x.pth", "SwinIR_4x"),
             (
-                "D:/AI/models/LLM/LLaVA/model-00001-of-00004.safetensors",
+                "D:/AmbitFixtures/Models/LLM/LLaVA/model-00001-of-00004.safetensors",
                 "model-00001-of-00004",
             ),
             (
-                "D:/AI/models/florence2/base/pytorch_model.bin",
+                "D:/AmbitFixtures/Models/florence2/base/pytorch_model.bin",
                 "pytorch_model",
             ),
             (
-                "D:/AI/models/T2IAdapter/t2i-adapter-canny-sdxl-1.0/diffusion_pytorch_model.safetensors",
+                "D:/AmbitFixtures/Models/T2IAdapter/t2i-adapter-canny-sdxl-1.0/diffusion_pytorch_model.safetensors",
                 "diffusion_pytorch_model",
             ),
-            ("D:/AI/models/pulid/pulid_flux_v0.9.1.safetensors", "pulid_flux_v0.9.1"),
-            ("D:/AI/models/sams/sam_hq_vit_b.pth", "sam_hq_vit_b"),
+            ("D:/AmbitFixtures/Models/pulid/pulid_flux_v0.9.1.safetensors", "pulid_flux_v0.9.1"),
+            ("D:/AmbitFixtures/Models/sams/sam_hq_vit_b.pth", "sam_hq_vit_b"),
             (
-                "D:/AI/models/SEEDVR2/ema_vae_fp16.safetensors",
+                "D:/AmbitFixtures/Models/SEEDVR2/ema_vae_fp16.safetensors",
                 "ema_vae_fp16",
             ),
         ];
@@ -184,13 +184,13 @@ mod tests {
         }
         insert_disk_model(
             &conn,
-            "D:/AI/models/checkpoints/real_checkpoint.safetensors",
+            "D:/AmbitFixtures/Models/checkpoints/real_checkpoint.safetensors",
             "real_checkpoint",
             "checkpoint",
         );
         insert_disk_model(
             &conn,
-            "D:/AI/models/loras/real_lora.safetensors",
+            "D:/AmbitFixtures/Models/loras/real_lora.safetensors",
             "real_lora",
             "loras",
         );
@@ -229,7 +229,7 @@ mod tests {
         let conn = setup_conn();
         insert_disk_model(
             &conn,
-            "D:/AI/models/loras/facerestore_style.safetensors",
+            "D:/AmbitFixtures/Models/loras/facerestore_style.safetensors",
             "facerestore_style",
             "loras",
         );

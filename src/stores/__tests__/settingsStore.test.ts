@@ -97,7 +97,7 @@ describe('SettingsStore', () => {
     it('should merge base defaults into old saved settings without dropping user values', async () => {
         const savedFolder = {
             id: 'folder-1',
-            path: 'D:/AI/Library',
+            path: 'D:/AmbitFixtures/Library',
             isActive: true,
             imageCount: 42,
         };

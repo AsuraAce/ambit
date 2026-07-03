@@ -71,10 +71,10 @@ describe('AdvancedTab', () => {
         getDbDiagnosticsMock.mockResolvedValue({
             status: 'ok',
             data: {
-                dbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
-                activeDbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
-                localDbPath: 'C:\\Users\\Artemis\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
-                roamingDbPath: 'C:\\Users\\Artemis\\AppData\\Roaming\\io.github.asuraace.ambit\\images.db',
+                dbPath: 'C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                activeDbPath: 'C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                localDbPath: 'C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
+                roamingDbPath: 'C:\\Users\\AmbitTester\\AppData\\Roaming\\io.github.asuraace.ambit\\images.db',
                 isUsingRoamingFallback: false,
                 imageCount: 12,
                 deletedCount: 1,
