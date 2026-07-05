@@ -1,0 +1,134 @@
+name: experimental-unix-builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experimental-unix-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package-${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            platform: ubuntu-22.04
+            bundles: appimage deb
+            artifact_name: Ambit-linux-x64-experimental
+            artifact_globs: >-
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/deb/*.deb
+          - name: macos
+            platform: macos-latest
+            bundles: dmg
+            artifact_name: Ambit-macos-experimental
+            artifact_globs: src-tauri/target/release/bundle/dmg/*.dmg
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: install pnpm
+        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable action
+        with:
+          toolchain: 1.96.0
+
+      - name: cache rust dependencies
+        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: src-tauri
+
+      - name: install linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libcloudproviders-dev \
+            libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libnm-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: verify version consistency
+        run: pnpm run check:versions
+
+      - name: build experimental package
+        shell: bash
+        run: |
+          pnpm tauri build \
+            --ci \
+            --no-sign \
+            --config '{"bundle":{"createUpdaterArtifacts":false}}' \
+            --bundles ${{ matrix.bundles }}
+
+      - name: collect package artifacts
+        shell: bash
+        run: |
+          mkdir -p .tmp/experimental-unix-builds/artifacts
+          shopt -s nullglob
+          files=( ${{ matrix.artifact_globs }} )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No package artifacts matched: ${{ matrix.artifact_globs }}"
+            exit 1
+          fi
+          cp -v "${files[@]}" .tmp/experimental-unix-builds/artifacts/
+
+      - name: write tester notes
+        shell: bash
+        run: |
+          mkdir -p .tmp/experimental-unix-builds
+          cat > .tmp/experimental-unix-builds/TESTER_NOTES.md <<EOF
+          # Ambit Experimental ${{ matrix.name }} Build
+
+          This artifact was built by the manual experimental Unix packaging workflow.
+          It is not an official supported release and is not connected to Ambit's updater.
+
+          Runner OS: ${{ runner.os }}
+          Runner architecture: ${{ runner.arch }}
+          Git ref: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+
+          Please report:
+          - OS version, distro, desktop environment, and package used.
+          - Whether the app installs and launches.
+          - Whether folder import, thumbnail loading, file reveal/open, and settings persistence work.
+          - Whether saving/loading a Gemini API key works if you choose to test keyring behavior.
+          EOF
+
+      - name: upload experimental artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            .tmp/experimental-unix-builds/**
+          if-no-files-found: error
+          retention-days: 14

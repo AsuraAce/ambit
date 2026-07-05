@@ -39,6 +39,7 @@ docs/*
 !docs/assets/**
 !docs/WORKFLOW_SETUP.md
 !docs/architecture.md
+!docs/experimental-unix-builds.md
 !docs/progress.md
 !docs/refactor.md
 !docs/support.md
