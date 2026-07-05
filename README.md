@@ -55,6 +55,8 @@ Ambit is currently in public beta. Current builds are published on [GitHub Relea
 
 Official public beta builds are currently available for **Windows only** while macOS and Linux support is being validated.
 
+Maintainer-triggered Linux and macOS artifacts may appear separately as experimental community test builds.
+
 1.  Download the Windows setup installer (`-setup.exe`) from the release assets.
 2.  Install and launch the app.
 3.  Report bugs or feedback through [GitHub Issues](https://github.com/AsuraAce/ambit/issues).

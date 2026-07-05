@@ -59,6 +59,7 @@ Under **Settings > Actions > General**, use the selected-actions policy, require
 
 - `actions/checkout`
 - `actions/setup-node`
+- `actions/upload-artifact`
 - `actions/create-github-app-token`
 - `pnpm/action-setup`
 - `dtolnay/rust-toolchain`
@@ -113,6 +114,17 @@ Use **Actions > updater-signing-preflight > Run workflow** before publishing. Th
 The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. Release tags must use the exact `vX.Y.Z` format, match `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, and `src-tauri/Cargo.toml`, and point to a commit reachable from `main`.
 
 Release Please remains the normal and preferred tag creator. Do not create manual release tags except for recovery work after confirming the tag target is already on `main` and all version files match.
+
+## Experimental Unix Builds
+
+Use **Actions > experimental-unix-builds > Run workflow** when Linux or macOS community testers need fresh artifacts. This workflow is manual only and uploads short-lived workflow artifacts for packaging validation.
+
+- It does not publish GitHub Releases, release assets, updater signatures, or `latest.json`.
+- It disables updater artifact generation and does not require `TAURI_SIGNING_PRIVATE_KEY`.
+- Linux currently builds AppImage and Debian packages on `ubuntu-22.04`.
+- macOS currently builds an unsigned, non-notarized DMG on `macos-latest`.
+
+Keep tester instructions in `docs/experimental-unix-builds.md`. Do not treat successful experimental packaging as official platform support until install, launch, data path, keyring, file-open, thumbnail, and updater behavior have explicit platform evidence.
 
 ## Startup-Failure Recovery
 
