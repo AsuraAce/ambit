@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a crash, broken workflow, install/update problem, or other app bug.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Ambit. Please include enough detail that the issue can be reproduced or investigated.
+
+        If this is a security vulnerability, do not report it here. Use GitHub Security Advisories or follow `SECURITY.md`.
+  - type: input
+    id: ambit-version
+    attributes:
+      label: Ambit version
+      description: Find this in the app footer, settings/about area, installer filename, or GitHub release.
+      placeholder: "v0.6.4"
+    validations:
+      required: true
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-update-path
+    attributes:
+      label: Install or update path
+      options:
+        - Fresh install
+        - Updated from a previous Ambit version
+        - Built from source
+        - Portable or manual build
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the visible problem, error, or confusing behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A numbered list is best. Include folder/import/update details if relevant.
+      placeholder: |
+        1. Open Ambit
+        2. Add or scan folder ...
+        3. Click ...
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots-logs
+    attributes:
+      label: Screenshots, logs, or diagnostics
+      description: Drag screenshots here, paste relevant logs, or include support diagnostics if they help.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks
+      options:
+        - label: I checked the latest release and this still happens.
+          required: false
+        - label: This started after an Ambit update.
+          required: false
+        - label: I can provide a sample file or sanitized metadata if needed.
+          required: false

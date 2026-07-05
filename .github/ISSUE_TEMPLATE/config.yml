@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/AsuraAce/ambit/security/advisories/new
+    about: Please report suspected vulnerabilities privately instead of opening a public issue.
+  - name: Security policy
+    url: https://github.com/AsuraAce/ambit/blob/main/SECURITY.md
+    about: Read Ambit's security reporting policy and what to include in a private report.

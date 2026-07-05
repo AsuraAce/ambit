@@ -1,0 +1,55 @@
+name: Question or help
+description: Ask for help using Ambit during the public beta.
+title: "[Question]: "
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome during public beta. Please include enough context to make the answer useful.
+
+        If this is a suspected security issue, do not report it here. Use GitHub Security Advisories or follow `SECURITY.md`.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Describe the goal, not just the button or screen.
+    validations:
+      required: true
+  - type: input
+    id: ambit-version
+    attributes:
+      label: Ambit version
+      placeholder: "v0.6.4"
+    validations:
+      required: false
+  - type: dropdown
+    id: related-area
+    attributes:
+      label: Related area
+      options:
+        - Installation or update
+        - Adding folders or importing images
+        - Search and filtering
+        - Metadata or generation data
+        - Collections, favorites, or pins
+        - Viewer or slideshow
+        - Settings or privacy
+        - Other
+    validations:
+      required: false
+  - type: input
+    id: generator
+    attributes:
+      label: Related generator or tool
+      description: Optional, if this is about metadata or generated images.
+      placeholder: "InvokeAI, ComfyUI, A1111, SD.Next, ..."
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, error text, or a short description of your library setup can help.
+    validations:
+      required: false
