@@ -52,57 +52,73 @@ describe('mappingUtils - mapRawChunksToMetadata', () => {
             ]
         });
 
+        const expectNoComfyGraphFields = (result: ReturnType<typeof mapRawChunksToMetadata>) => {
+            expect(result.seed).toBeUndefined();
+            expect(result.steps).toBeUndefined();
+            expect(result.cfg).toBeUndefined();
+            expect(result.sampler).toBeUndefined();
+            expect(result.model).toBeUndefined();
+            expect(result.positivePrompt).toBeUndefined();
+            expect(result.negativePrompt).toBeUndefined();
+            expect(result.loras).toBeUndefined();
+            expect(result.controlNets).toBeUndefined();
+            expect(result.ipAdapters).toBeUndefined();
+        };
+
         it('should handle raw JSON string', () => {
             const result = mapRawChunksToMetadata(comfyWorkflow, GeneratorTool.COMFYUI);
             expect(result.tool).toBe(GeneratorTool.COMFYUI);
-            expect(result.seed).toBe(123456);
-            expect(result.steps).toBe(20);
             expect(result.workflowJson).toBe(comfyWorkflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expectNoComfyGraphFields(result);
         });
 
         it('should handle object with prompt/workflow keys', () => {
             const chunks = { prompt: comfyWorkflow };
             const result = mapRawChunksToMetadata(chunks, GeneratorTool.COMFYUI);
-            expect(result.seed).toBe(123456);
+            expect(result.tool).toBe(GeneratorTool.COMFYUI);
             expect(result.workflowJson).toBe(comfyWorkflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expectNoComfyGraphFields(result);
         });
 
-        it('should format sampler and scheduler with parentheses', () => {
+        it('should not infer sampler or scheduler widgets', () => {
             const workflow = JSON.stringify({
                 nodes: [
                     { id: 1, type: "KSampler", widgets_values: [123, "rand", 20, 7.5, "euler", "karras", 1.0] }
                 ]
             });
             const result = mapRawChunksToMetadata(workflow, GeneratorTool.COMFYUI);
-            expect(result.sampler).toBe("euler (karras)");
+            expect(result.tool).toBe(GeneratorTool.COMFYUI);
+            expect(result.workflowJson).toBe(workflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expectNoComfyGraphFields(result);
         });
 
-        it('should handle KSamplerAdvanced with correct indexes', () => {
-            // Standard KSamplerAdvanced: add_noise(0), seed(1), control(2), steps(3), start(4), end(5), cfg(6), sampler(7), scheduler(8)
+        it('should not infer KSamplerAdvanced widget indexes', () => {
             const workflow = JSON.stringify({
                 nodes: [
                     { id: 1, type: "KSamplerAdvanced", widgets_values: [true, 123456, "fixed", 40, 0, 40, 8.5, "dpmpp_2m", "karras", 1.0] }
                 ]
             });
             const result = mapRawChunksToMetadata(workflow, GeneratorTool.COMFYUI);
-            expect(result.seed).toBe(123456);
-            expect(result.steps).toBe(40);
-            expect(result.cfg).toBe(8.5);
-            expect(result.sampler).toBe("dpmpp_2m (karras)");
+            expect(result.tool).toBe(GeneratorTool.COMFYUI);
+            expect(result.workflowJson).toBe(workflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expectNoComfyGraphFields(result);
         });
 
-        it('should handle Efficiency Nodes (SDParameterGenerator)', () => {
-            // SDParameterGenerator: model(0), clip(1), vae(2), ..., seed(4), steps(5), step_ref(6), cfg(7), sampler(8), scheduler(9)
+        it('should not infer Efficiency Node widgets', () => {
             const workflow = JSON.stringify({
                 nodes: [
                     { id: 1, type: "SDParameterGenerator", widgets_values: ["v1-5.safetensors", "skip", "vae", "empty", 98765, 25, 1, 7.0, "euler_a", "normal", 1] }
                 ]
             });
             const result = mapRawChunksToMetadata(workflow, GeneratorTool.COMFYUI);
-            expect(result.seed).toBe(98765);
-            expect(result.steps).toBe(25);
-            expect(result.cfg).toBe(7.0);
-            expect(result.sampler).toBe("euler_a"); // normal is omitted
+            expect(result.tool).toBe(GeneratorTool.COMFYUI);
+            expect(result.workflowJson).toBe(workflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expectNoComfyGraphFields(result);
         });
     });
 
@@ -129,7 +145,11 @@ describe('mappingUtils - mapRawChunksToMetadata', () => {
             });
             const result = mapRawChunksToMetadata(comfyWorkflow, GeneratorTool.INVOKEAI);
             expect(result.tool).toBe(GeneratorTool.COMFYUI);
-            expect(result.seed).toBe(123456);
+            expect(result.workflowJson).toBe(comfyWorkflow);
+            expect(result.hasWorkflowHint).toBe(true);
+            expect(result.seed).toBeUndefined();
+            expect(result.steps).toBeUndefined();
+            expect(result.sampler).toBeUndefined();
         });
 
         it('should detect A1111 from raw string even if GeneratorTool.UNKNOWN is passed', () => {
