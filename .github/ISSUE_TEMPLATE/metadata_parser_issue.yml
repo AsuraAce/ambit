@@ -1,0 +1,73 @@
+name: Metadata or parser issue
+description: Report missing, incorrect, or confusing metadata, model, LoRA, or resource detection.
+title: "[Metadata]: "
+labels: ["metadata", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Metadata depends on what the generating tool stored in the image. A sample image or sanitized metadata is usually the fastest way to fix parser issues.
+
+        Please remove private prompts or paths before sharing if needed.
+  - type: input
+    id: ambit-version
+    attributes:
+      label: Ambit version
+      placeholder: "v0.6.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: generator
+    attributes:
+      label: Generating tool or metadata source
+      options:
+        - InvokeAI
+        - ComfyUI
+        - A1111 / Stable Diffusion WebUI
+        - SD.Next
+        - Fooocus
+        - Midjourney or external image
+        - Unknown
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: image-format
+    attributes:
+      label: Image format
+      options:
+        - PNG
+        - JPEG / JPG
+        - WebP
+        - Other
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What metadata looks wrong or missing?
+      description: Mention prompts, model, LoRAs, checkpoints, embeddings, ControlNet, IP-adapter, seed, dates, workflow, or filters as relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample image or sanitized metadata
+      description: Attach a small sample image, paste sanitized metadata, or explain why you cannot share it.
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What should Ambit show, filter, or parse instead?
+    validations:
+      required: true
+  - type: textarea
+    id: library-context
+    attributes:
+      label: Library context
+      description: Note if this affects many files, only one generator, or a specific folder/tool setup.
+    validations:
+      required: false
