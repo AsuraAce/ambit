@@ -27,6 +27,14 @@ pub fn extract_from_sampler(
         meta.seed = Some(v);
     } else if let Some(v) = evaluate_number(graph, node, "noise_seed", i64::MAX) {
         meta.seed = Some(v);
+    } else if let Some(noise_id) = get_source_id(graph, node, "noise") {
+        if let Some(noise_node) = graph.get_node(&noise_id) {
+            if let Some(v) = evaluate_number(graph, noise_node, "noise_seed", i64::MAX)
+                .or_else(|| evaluate_number(graph, noise_node, "seed", i64::MAX))
+            {
+                meta.seed = Some(v);
+            }
+        }
     }
 
     let mut sampler = String::new();

@@ -73,6 +73,16 @@ const OFFICIAL_EXAMPLES: &[OfficialExample] = &[
             "fixtures/official_examples/z_image/z_image_turbo_example.chunks.json"
         ),
     },
+    OfficialExample {
+        name: "stable_cascade_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_examples/stable_cascade/stable_cascade__text_to_image.chunks.json"
+        ),
+    },
+    OfficialExample {
+        name: "flux2_example",
+        chunks_json: include_str!("fixtures/official_examples/flux2/flux2_example.chunks.json"),
+    },
 ];
 
 fn load_chunks(example: &OfficialExample) -> HashMap<String, String> {
@@ -121,7 +131,7 @@ fn test_official_examples_extract_expected_metadata() {
         "flux_dev_example",
         ExpectedMetadata {
             model: "flux1_dev",
-            seed: None,
+            seed: Some(219670278747233),
             steps: 20,
             cfg: 0.0,
             sampler: "euler (simple)",
@@ -135,6 +145,7 @@ fn test_official_examples_extract_expected_metadata() {
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (
                 ComfyMetadataField::Sampler,
@@ -509,6 +520,74 @@ fn test_official_examples_extract_expected_metadata() {
             ),
             (
                 ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::ExplicitNode,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "stable_cascade_text_to_image",
+        ExpectedMetadata {
+            model: "stable_cascade_stage_c",
+            seed: Some(314307448448003),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler_ancestral (simple)",
+            positive_prompt:
+                "evening sunset scenery blue sky nature, glass bottle with a fizzy ice cold freezing rainbow liquid in it",
+            negative_prompt: "text, watermark",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "flux2_example",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(435922656034510),
+            steps: 20,
+            cfg: 0.0,
+            sampler: "euler",
+            positive_prompt: r#"cute anime girl with gigantic fennec ears and a big fluffy fox tail with long wavy blonde hair and large blue eyes blonde colored eyelashes wearing a pink sweater a large oversized gold trimmed black winter coat and a long blue maxi skirt and a red scarf, she is happy while singing on stage like an idol while holding a microphone, there are colorful lights, it is a postcard held by a hand in front of a beautiful city at sunset and there is cursive writing that says "Flux 2, Now in ComfyUI""#,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
                 ComfyParseLayer::ExplicitNode,
             ),
         ],

@@ -164,6 +164,28 @@ impl<'a> ComfyEvaluator<'a> {
                         }
                     }
                 }
+                if let Some(conditioning_id) = get_source_id(self.graph, &current_id, "positive") {
+                    if let Some(conditioning_node) = self.graph.get_node(&conditioning_id) {
+                        if get_node_type(conditioning_node) == "StableCascade_StageB_Conditioning" {
+                            if let Some(stage_c_id) =
+                                get_source_id(self.graph, &conditioning_id, "stage_c")
+                            {
+                                if let Some(stage_c_node) = self.graph.get_node(&stage_c_id) {
+                                    let t = get_node_type(stage_c_node);
+                                    if t.contains("KSampler")
+                                        || t == "SamplerCustomAdvanced"
+                                        || t == "SamplerCustom"
+                                        || t.contains("StyleAlignedReferenceSampler")
+                                    {
+                                        current_id = stage_c_id;
+                                        depth += 1;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             break;
         }

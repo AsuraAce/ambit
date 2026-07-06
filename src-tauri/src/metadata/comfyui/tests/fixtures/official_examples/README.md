@@ -21,10 +21,7 @@ Source images:
 - `upscale_models/esrgan_example.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/upscale_models/esrgan_example.png
 - `sd3/sd3.5_simple_example.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/sd3/sd3.5_simple_example.png
 - `z_image/z_image_turbo_example.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/z_image/z_image_turbo_example.png
+- `stable_cascade/stable_cascade__text_to_image.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/stable_cascade/stable_cascade__text_to_image.png
+- `flux2/flux2_example.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/flux2/flux2_example.png
 
 Tests must run offline against these vendored chunks. Refresh fixtures only as an intentional parser-fixture update.
-
-Deferred Phase 7 candidates:
-
-- Stable Cascade official examples, after the Root/Base First multi-stage policy is covered.
-- Flux 2 official examples, after the Root/Base First multi-stage policy is covered.
