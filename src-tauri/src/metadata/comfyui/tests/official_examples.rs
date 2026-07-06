@@ -33,6 +33,22 @@ const OFFICIAL_EXAMPLES: &[OfficialExample] = &[
             "fixtures/official_examples/controlnet/controlnet_example.chunks.json"
         ),
     },
+    OfficialExample {
+        name: "img2img_workflow",
+        chunks_json: include_str!(
+            "fixtures/official_examples/img2img/img2img_workflow.chunks.json"
+        ),
+    },
+    OfficialExample {
+        name: "inpaint_example",
+        chunks_json: include_str!("fixtures/official_examples/inpaint/inpaint_example.chunks.json"),
+    },
+    OfficialExample {
+        name: "embedding_example",
+        chunks_json: include_str!(
+            "fixtures/official_examples/textual_inversion_embeddings/embedding_example.chunks.json"
+        ),
+    },
 ];
 
 fn load_chunks(example: &OfficialExample) -> HashMap<String, String> {
@@ -53,6 +69,9 @@ fn test_official_examples_extract_expected_metadata() {
             negative_prompt: "text, watermark",
             loras: &[],
             control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
@@ -86,6 +105,9 @@ fn test_official_examples_extract_expected_metadata() {
             negative_prompt: "",
             loras: &[],
             control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
@@ -113,6 +135,9 @@ fn test_official_examples_extract_expected_metadata() {
             negative_prompt: "",
             loras: &[],
             control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
@@ -142,6 +167,9 @@ fn test_official_examples_extract_expected_metadata() {
             negative_prompt: "bad hands",
             loras: &["epinoiseoffset_v2", "theovercomer8scontrastfix_sd15"],
             control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
@@ -176,6 +204,9 @@ fn test_official_examples_extract_expected_metadata() {
             negative_prompt: "(hands), text, error, cropped, (worst quality:1.2), (low quality:1.2), normal quality, (jpeg artifacts:1.3), signature, watermark, username, blurry, artist name, monochrome, sketch, censorship, censor, (copyright:1.2), extra legs, (forehead mark) (depth of field) (emotionless) (penis)",
             loras: &[],
             control_nets: &["control_scribble"],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
         },
         &[
             (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
@@ -200,6 +231,120 @@ fn test_official_examples_extract_expected_metadata() {
             ),
         ],
     );
+
+    assert_official_example(
+        "img2img_workflow",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly",
+            seed: Some(280823642470253),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "dpmpp_2m (normal)",
+            positive_prompt: "photograph of victorian woman with wings, sky clouds, meadow grass\n",
+            negative_prompt: "watermark, text\n",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "inpaint_example",
+        ExpectedMetadata {
+            model: "512_inpainting_ema",
+            seed: Some(1040111309094545),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "uni_pc_bh2 (normal)",
+            positive_prompt:
+                "closeup photograph of maine coon (cat:1.2) in the yosemite national park mountains nature",
+            negative_prompt: "watermark, text\n",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "embedding_example",
+        ExpectedMetadata {
+            model: "v2_1_768_ema_pruned",
+            seed: Some(193694018275622),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "uni_pc_bh2 (normal)",
+            positive_prompt:
+                "photograph in the style of embedding:SDA768.pt girl with blonde hair\nlandscape scenery view",
+            negative_prompt: "bad hands",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &["sda768"],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::Embeddings,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
 }
 
 struct ExpectedMetadata {
@@ -212,6 +357,9 @@ struct ExpectedMetadata {
     negative_prompt: &'static str,
     loras: &'static [&'static str],
     control_nets: &'static [&'static str],
+    ip_adapters: &'static [&'static str],
+    embeddings: &'static [&'static str],
+    hypernetworks: &'static [&'static str],
 }
 
 fn assert_official_example(
@@ -260,6 +408,15 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: ExpectedMetadata)
     assert_eq!(
         meta.control_nets, expected.control_nets,
         "{name} ControlNets"
+    );
+    assert_eq!(
+        meta.ip_adapters, expected.ip_adapters,
+        "{name} IP-Adapters"
+    );
+    assert_eq!(meta.embeddings, expected.embeddings, "{name} embeddings");
+    assert_eq!(
+        meta.hypernetworks, expected.hypernetworks,
+        "{name} hypernetworks"
     );
 }
 
