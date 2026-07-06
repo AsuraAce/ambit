@@ -49,6 +49,30 @@ const OFFICIAL_EXAMPLES: &[OfficialExample] = &[
             "fixtures/official_examples/textual_inversion_embeddings/embedding_example.chunks.json"
         ),
     },
+    OfficialExample {
+        name: "hypernetwork_example",
+        chunks_json: include_str!(
+            "fixtures/official_examples/hypernetworks/hypernetwork_example.chunks.json"
+        ),
+    },
+    OfficialExample {
+        name: "esrgan_example",
+        chunks_json: include_str!(
+            "fixtures/official_examples/upscale_models/esrgan_example.chunks.json"
+        ),
+    },
+    OfficialExample {
+        name: "sd3_5_simple_example",
+        chunks_json: include_str!(
+            "fixtures/official_examples/sd3/sd3.5_simple_example.chunks.json"
+        ),
+    },
+    OfficialExample {
+        name: "z_image_turbo_example",
+        chunks_json: include_str!(
+            "fixtures/official_examples/z_image/z_image_turbo_example.chunks.json"
+        ),
+    },
 ];
 
 fn load_chunks(example: &OfficialExample) -> HashMap<String, String> {
@@ -344,6 +368,176 @@ fn test_official_examples_extract_expected_metadata() {
                 ComfyParseLayer::SamplerTraversal,
             ),
         ],
+    );
+
+    assert_official_example(
+        "hypernetwork_example",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly",
+            seed: Some(572636856966402),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "uni_pc_bh2 (normal)",
+            positive_prompt: "woman (fennec ears fox ears:1.1), marble statue, museum",
+            negative_prompt: "text, watermark",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &["dantionmarblestatues_10"],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::Hypernetworks,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "esrgan_example",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly",
+            seed: Some(833543590226030),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt: "masterpiece best quality girl standing in victorian clothing",
+            negative_prompt: "bad hands",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "sd3_5_simple_example",
+        ExpectedMetadata {
+            model: "sd3.5_large_fp8_scaled",
+            seed: Some(585483408983215),
+            steps: 20,
+            cfg: 4.01,
+            sampler: "euler (sgm_uniform)",
+            positive_prompt: "a bottle with a pink and red galaxy inside it on top of a wooden table on a table in the middle of a modern kitchen with a window to the outdoors mountain range bright sun clouds forest",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+        ],
+    );
+
+    assert_official_example(
+        "z_image_turbo_example",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(47447417949230),
+            steps: 9,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: r#"cute anime style girl with massive fluffy fennec ears and a big fluffy tail blonde messy long hair blue eyes wearing a maid outfit with a long black gold leaf pattern dress and a white apron, it is a postcard held by a hand in front of a beautiful realistic city at sunset and there is cursive writing that says "ZImage, Now in ComfyUI""#,
+            negative_prompt: "blurry ugly bad",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+            embeddings: &[],
+            hypernetworks: &[],
+        },
+        &[
+            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+            (
+                ComfyMetadataField::Sampler,
+                ComfyParseLayer::SamplerTraversal,
+            ),
+            (
+                ComfyMetadataField::PositivePrompt,
+                ComfyParseLayer::ExplicitNode,
+            ),
+            (
+                ComfyMetadataField::NegativePrompt,
+                ComfyParseLayer::ExplicitNode,
+            ),
+        ],
+    );
+}
+
+#[test]
+fn test_hypernetwork_official_example_extracts_from_workflow_only() {
+    let example = OFFICIAL_EXAMPLES
+        .iter()
+        .find(|example| example.name == "hypernetwork_example")
+        .expect("official hypernetwork example should be listed");
+    let mut chunks = load_chunks(example);
+    let expected_workflow = chunks
+        .get("workflow")
+        .expect("official fixture should include workflow chunk")
+        .clone();
+    chunks.remove("prompt");
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "v1_5_pruned_emaonly");
+    assert_eq!(meta.hypernetworks, ["dantionmarblestatues_10"]);
+    assert_eq!(meta.workflow_json.as_deref(), Some(expected_workflow.as_str()));
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::Hypernetworks),
+        Some(&ComfyParseLayer::SamplerTraversal)
     );
 }
 

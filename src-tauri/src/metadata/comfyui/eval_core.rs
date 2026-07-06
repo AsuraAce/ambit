@@ -13,6 +13,7 @@ pub fn extract_from_sampler(
     node: &Value,
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
+    hypernetworks: &mut Vec<String>,
 ) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
 
@@ -66,12 +67,20 @@ pub fn extract_from_sampler(
         };
     }
 
-    if let Some(model_name) = trace_model_chain(graph, node, "model", loras, ip_adapters) {
+    if let Some(model_name) =
+        trace_model_chain(graph, node, "model", loras, ip_adapters, hypernetworks)
+    {
         meta.model = model_name;
     } else if let Some(guider_id) = get_source_id(graph, node, "guider") {
         if let Some(guider_node) = graph.get_node(&guider_id) {
-            if let Some(model_name) =
-                trace_model_chain(graph, guider_node, "model", loras, ip_adapters)
+            if let Some(model_name) = trace_model_chain(
+                graph,
+                guider_node,
+                "model",
+                loras,
+                ip_adapters,
+                hypernetworks,
+            )
             {
                 meta.model = model_name;
             }
@@ -147,6 +156,8 @@ pub fn extract_from_sampler(
     meta.loras.dedup();
     meta.ip_adapters.extend(ip_adapters.clone());
     meta.ip_adapters.dedup();
+    meta.hypernetworks.extend(hypernetworks.clone());
+    meta.hypernetworks.dedup();
 
     meta
 }
@@ -157,6 +168,7 @@ pub fn trace_model_chain(
     input_name: &str,
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
+    hypernetworks: &mut Vec<String>,
 ) -> Option<String> {
     let mut current_id = get_source_id(graph, start_node, input_name)?;
 
@@ -178,6 +190,13 @@ pub fn trace_model_chain(
             break;
         } else if t == "Lora Loader (LoraManager)" {
             extract_lora_manager(node, loras);
+            if let Some(next) = get_source_id(graph, node, "model") {
+                current_id = next;
+                continue;
+            }
+            break;
+        } else if t == "HypernetworkLoader" {
+            extract_hypernetwork_loader(node, hypernetworks);
             if let Some(next) = get_source_id(graph, node, "model") {
                 current_id = next;
                 continue;
@@ -271,6 +290,37 @@ pub fn trace_model_chain(
         break;
     }
     None
+}
+
+fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {
+    if let Some(name) = get_node_param(node, "hypernetwork_name").and_then(|v| v.as_str()) {
+        let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+        let strength = get_node_param(node, "strength").and_then(|v| {
+            if let Some(f) = v.as_f64() {
+                Some(f)
+            } else if let Some(i) = v.as_i64() {
+                Some(i as f64)
+            } else if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else {
+                None
+            }
+        });
+
+        let entry = if let Some(s) = strength {
+            if (s - 1.0).abs() > 0.001 {
+                format!("{} ({:.2})", cleaned_name, s)
+            } else {
+                cleaned_name
+            }
+        } else {
+            cleaned_name
+        };
+
+        if !hypernetworks.contains(&entry) {
+            hypernetworks.push(entry);
+        }
+    }
 }
 
 fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) {

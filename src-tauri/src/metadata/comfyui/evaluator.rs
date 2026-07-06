@@ -37,12 +37,14 @@ impl<'a> ComfyEvaluator<'a> {
                     if let Some(root_node) = self.graph.get_node(&root_sampler_id) {
                         let mut loras = Vec::new();
                         let mut ip_adapters = Vec::new();
+                        let mut hypernetworks = Vec::new();
                         let partial = super::eval_core::extract_from_sampler(
                             self.graph,
                             &root_sampler_id,
                             root_node,
                             &mut loras,
                             &mut ip_adapters,
+                            &mut hypernetworks,
                         );
                         meta.merge(partial);
                     }
@@ -64,12 +66,14 @@ impl<'a> ComfyEvaluator<'a> {
                 if !self.is_muted(node) {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
+                    let mut hypernetworks = Vec::new();
                     let partial = super::eval_core::extract_from_sampler(
                         self.graph,
                         id,
                         node,
                         &mut loras,
                         &mut ip_adapters,
+                        &mut hypernetworks,
                     );
                     if partial.steps > 0 || !partial.model.is_empty() {
                         meta.merge(partial);

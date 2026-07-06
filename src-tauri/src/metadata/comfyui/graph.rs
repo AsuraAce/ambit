@@ -427,6 +427,14 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "HypernetworkLoader" {
+            match key {
+                "hypernetwork_name" => return arr.first(),
+                "strength" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         if t == "SDPromptSaver" {
             match key {
                 "ckpt_name" | "model_name" => return arr.get(2),
