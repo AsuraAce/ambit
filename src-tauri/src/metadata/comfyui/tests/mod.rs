@@ -3,6 +3,7 @@ pub mod diagnostics;
 pub mod false_positive_models;
 pub mod general;
 pub mod models;
+pub mod official_examples;
 pub mod prompts;
 pub mod repro_dual_ip_adapter;
 mod repro_ip_adapter;

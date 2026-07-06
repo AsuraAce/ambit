@@ -12,7 +12,15 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
     let mut meta = ImageMetadata::default();
     let mut found = false;
 
-    for (id, node) in graph.nodes() {
+    let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
+    nodes.sort_by(|(left_id, _), (right_id, _)| {
+        match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
+            (Ok(left), Ok(right)) => left.cmp(&right),
+            _ => left_id.cmp(right_id),
+        }
+    });
+
+    for (id, node) in nodes {
         let t = get_node_type(node);
         let t_lower = t.to_lowercase();
 
