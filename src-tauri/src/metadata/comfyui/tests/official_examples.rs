@@ -98,7 +98,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -134,7 +134,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (
                 ComfyMetadataField::Sampler,
@@ -164,7 +164,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -196,7 +196,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -233,7 +233,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -273,7 +273,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -310,7 +310,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -347,7 +347,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -387,7 +387,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &["dantionmarblestatues_10"],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -427,7 +427,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -463,7 +463,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
@@ -495,7 +495,7 @@ fn test_official_examples_extract_expected_metadata() {
             hypernetworks: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::ExplicitNode),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),

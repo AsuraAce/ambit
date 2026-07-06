@@ -23,3 +23,8 @@ Source images:
 - `z_image/z_image_turbo_example.chunks.json`: https://raw.githubusercontent.com/comfyanonymous/ComfyUI_examples/f9431bb000ce792094ff345446e22cac1ea6cef3/z_image/z_image_turbo_example.png
 
 Tests must run offline against these vendored chunks. Refresh fixtures only as an intentional parser-fixture update.
+
+Deferred Phase 7 candidates:
+
+- Stable Cascade official examples, after the Root/Base First multi-stage policy is covered.
+- Flux 2 official examples, after the Root/Base First multi-stage policy is covered.

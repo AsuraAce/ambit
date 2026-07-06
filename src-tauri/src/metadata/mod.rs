@@ -18,7 +18,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 5;
+pub const CURRENT_PARSER_VERSION: u32 = 6;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]
 pub struct ImageMetadata {
