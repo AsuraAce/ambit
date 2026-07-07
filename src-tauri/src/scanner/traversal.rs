@@ -471,7 +471,8 @@ mod tests {
 
         let mut with_stats = Vec::new();
         collect_images_with_stats_recursive(root, &mut with_stats);
-        let mut with_stats_paths: Vec<_> = with_stats.iter().map(|entry| entry.path.clone()).collect();
+        let mut with_stats_paths: Vec<_> =
+            with_stats.iter().map(|entry| entry.path.clone()).collect();
         with_stats_paths.sort();
         assert_eq!(with_stats_paths, expected_absolute);
 

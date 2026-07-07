@@ -477,7 +477,11 @@ mod tests {
 
         assert_eq!(
             urls,
-            vec![expected_local, expected_roaming, LEGACY_MAIN_DB_URL.to_string()]
+            vec![
+                expected_local,
+                expected_roaming,
+                LEGACY_MAIN_DB_URL.to_string()
+            ]
         );
         cleanup(&root);
     }
