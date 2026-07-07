@@ -2,7 +2,8 @@ const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
 const LEGACY_PRODUCTION_IDENTIFIER: &str = "com.ambit.app";
 const MAIN_DATABASE_FILES: [&str; 3] = ["images.db", "images.db-wal", "images.db-shm"];
 const PURGE_MARKER_FILE: &str = ".purge_on_restart";
-const PRODUCTION_IDENTIFIER_PATHS: [&str; 2] = [PRODUCTION_IDENTIFIER, LEGACY_PRODUCTION_IDENTIFIER];
+const PRODUCTION_IDENTIFIER_PATHS: [&str; 2] =
+    [PRODUCTION_IDENTIFIER, LEGACY_PRODUCTION_IDENTIFIER];
 const APP_IDENTIFIER_PATHS: [&str; 5] = [
     PRODUCTION_IDENTIFIER,
     LEGACY_PRODUCTION_IDENTIFIER,
@@ -416,7 +417,10 @@ fn is_production_identifier(identifier: &str) -> bool {
 }
 
 fn push_unique_profile(profiles: &mut Vec<AppProfileDir>, profile: AppProfileDir) {
-    if profiles.iter().any(|existing| existing.path == profile.path) {
+    if profiles
+        .iter()
+        .any(|existing| existing.path == profile.path)
+    {
         return;
     }
     profiles.push(profile);
@@ -1270,7 +1274,10 @@ mod identifier_migration_tests {
 
         assert_eq!(outcome.database_files_deleted, 3);
         assert_eq!(outcome.markers_deleted, 1);
-        assert_eq!(migration_outcome, DatabaseLocalMigrationOutcome::SourceMissing);
+        assert_eq!(
+            migration_outcome,
+            DatabaseLocalMigrationOutcome::SourceMissing
+        );
         assert_db_triplet_missing(&roaming_profile);
         assert!(!local_profile.join("images.db").exists());
         cleanup(&root);

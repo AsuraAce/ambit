@@ -22,7 +22,7 @@ pub async fn get_images_needing_reparse(
             "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json FROM images WHERE (parser_version IS NULL OR parser_version < {}) AND is_deleted = 0 AND original_metadata_json IS NOT NULL AND original_metadata_json != '' LIMIT {}",
             CURRENT_PARSER_VERSION, limit
         )).map_err(|e| e.to_string())?;
-        
+
         let rows = stmt.query_map([], |row| {
             Ok(ImageToReparse {
                 id: row.get(0)?,
@@ -32,7 +32,7 @@ pub async fn get_images_needing_reparse(
         }).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-        
+
         Ok(rows)
     }).await
 }
@@ -73,7 +73,7 @@ pub async fn reparse_metadata_batch(
             let mut update_stmt = tx.prepare_cached(
                 "UPDATE images SET metadata_json = ?1, model_hash = json_extract(?1, '$.modelHash'), model_name = json_extract(?1, '$.model'), tool = json_extract(?1, '$.tool'), resolved_model_name = COALESCE((SELECT m.name FROM models m WHERE m.hash = json_extract(?1, '$.modelHash')), json_extract(?1, '$.model')), steps = CAST(json_extract(?1, '$.steps') AS INTEGER), seed = CAST(json_extract(?1, '$.seed') AS INTEGER), cfg = CAST(json_extract(?1, '$.cfg') AS REAL), sampler = REPLACE(REPLACE(LOWER(json_extract(?1, '$.sampler')), '_', ' '), '-', ' '), generation_type = json_extract(?1, '$.generationType'), parser_version = ?2 WHERE id = ?3"
             ).map_err(|e| e.to_string())?;
-            
+
             for img in &images {
                 processed += 1;
                 match reparse_from_json(&img.original_metadata_json, &img.tool) {

@@ -220,7 +220,10 @@ mod tests {
             .expect("collect seed rows");
 
         assert_eq!(rows.iter().find(|row| row.0 == "zero").unwrap().1, Some(0));
-        assert_eq!(rows.iter().find(|row| row.0 == "known").unwrap().1, Some(123));
+        assert_eq!(
+            rows.iter().find(|row| row.0 == "known").unwrap().1,
+            Some(123)
+        );
         for id in ["missing", "string", "malformed", "bool"] {
             assert_eq!(
                 rows.iter().find(|row| row.0 == id).unwrap().1,

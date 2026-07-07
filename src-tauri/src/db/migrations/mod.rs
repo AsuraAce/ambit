@@ -120,7 +120,8 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_auxiliary_resource_inventory_cleanup_61_pending() {
+    fn database_at_mainline_49_has_migrations_through_auxiliary_resource_inventory_cleanup_61_pending(
+    ) {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
