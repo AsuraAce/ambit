@@ -9,7 +9,7 @@ This page lists common first-run and library issues. When in doubt, prefer actio
 Confirm that you added image sources:
 
 - use Add Images, then Add Folder for a normal folder
-- use Settings, Connections, Folders for monitored folders
+- use Settings > Connections > Folders for monitored folders
 - use Settings, Connections, ComfyUI for a ComfyUI output folder
 - use Settings, Connections, SD WebUI for A1111, Forge, SD.Next, Anapnoe, or archive folders
 - use Settings, Connections, InvokeAI for an InvokeAI root containing `databases/invokeai.db`
@@ -21,7 +21,7 @@ Large folders can take time to scan. Wait for import activity to finish before a
 Try these steps:
 
 1. Confirm the folder path still exists and is accessible.
-2. Rescan the folder from Settings, Connections, Folders.
+2. Rescan the folder from Settings > Connections > Folders.
 3. Use Refresh All Metadata if the files exist but filters or parsed metadata look stale.
 4. For SD WebUI folders, scan again with the correct installation type selected instead of Auto if detection looked wrong.
 
