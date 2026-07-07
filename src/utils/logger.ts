@@ -54,3 +54,14 @@ export const setupGlobalLogging = () => {
         if (getLevelValue() <= LOG_LEVELS.error) originalConsole!.error(...args);
     };
 };
+
+export const resetGlobalLoggingForTests = () => {
+    if (!originalConsole) return;
+
+    console.log = originalConsole.log;
+    console.debug = originalConsole.debug;
+    console.info = originalConsole.info;
+    console.warn = originalConsole.warn;
+    console.error = originalConsole.error;
+    originalConsole = null;
+};
