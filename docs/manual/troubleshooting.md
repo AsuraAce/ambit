@@ -41,9 +41,11 @@ Useful checks:
 
 ## Thumbnails Are Broken
 
-Open Maintenance, then Thumbnails.
+Open Maintenance > Thumbnails.
 
-Use Repair Broken Thumbnails first. If thumbnails still fail, regenerate selected thumbnails or run Regenerate All Unoptimized for the current scope. Settings, Advanced, Support also has an Open Maintenance shortcut.
+Use Repair Broken Thumbnails first. If thumbnails still fail, regenerate selected thumbnails or run Regenerate All Unoptimized for the current scope. Settings > Advanced > Support also has an Open Maintenance shortcut.
+
+For the full repair workflow, see [Maintenance](maintenance.md#thumbnails).
 
 ## Images Show As Missing
 
@@ -55,7 +57,7 @@ Check whether:
 - the file was moved or renamed outside Ambit
 - the monitored folder path changed
 
-If the file is intentionally gone, remove the missing record from Ambit's library. This cleans the catalog entry but does not restore the deleted file.
+If the file is intentionally gone, use Maintenance > Missing to run File Link Audit or Re-Scan Files, then remove the missing record from Ambit's library. This cleans the catalog entry but does not restore the deleted file.
 
 ## Search Does Not Find What I Expected
 
@@ -90,7 +92,7 @@ Online model resolution sends unresolved model hash strings to CivitAI. It does 
 
 ## I Want To Start Over
 
-Open Settings, Advanced, Database and use Purge Database only if you intentionally want to reset Ambit's catalog and linked folders. Read the confirmation carefully. Source image files are not touched, but imported metadata and application state are reset.
+Open Settings > Advanced > Database and use Purge Database only if you intentionally want to reset Ambit's catalog and linked folders. Read the confirmation carefully. Source image files are not touched, but imported metadata and application state are reset.
 
 ## Reporting Issues
 
