@@ -45,6 +45,8 @@ Ambit has connection pages for common local generator tools:
 
 For SD WebUI style folders, Ambit can auto-detect variants such as A1111, Forge, SD.Next, and Anapnoe. If auto-detection is uncertain, select the installation type manually before scanning.
 
+For step-by-step setup and sync behavior, see [Generator Integrations](generator-integrations.md).
+
 ## Resource Folders
 
 Resource folders are managed separately from image folders. Open Settings > Connections > Resources to add model, LoRA, embedding, ControlNet, or IP-Adapter folders. Resource folders build a local asset inventory; they do not import images.

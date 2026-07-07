@@ -23,7 +23,8 @@ The core app is local-first. Image records, metadata, thumbnails, and settings a
 ## Manual Pages
 
 - [Getting Started](getting-started.md): install the public beta, launch Ambit, and complete the first-run wizard.
-- [Adding Folders](adding-folders.md): add monitored image folders, connect generator outputs, and run one-time imports.
+- [Adding Folders](adding-folders.md): add monitored image folders and run one-time imports.
+- [Generator Integrations](generator-integrations.md): connect InvokeAI, ComfyUI, SD WebUI, A1111, Forge, SD.Next, and Anapnoe output locations.
 - [Browsing The Library](browsing-library.md): use grid, timeline, statistics, selection, favorites, pins, and the viewer.
 - [Search, Filters, And Collections](search-filters-collections.md): search prompts and metadata, use facets, and organize images.
 - [Assets And Resource Discovery](assets-resource-discovery.md): understand used assets, local disk inventory, resource folders, and Assets tab scopes.
