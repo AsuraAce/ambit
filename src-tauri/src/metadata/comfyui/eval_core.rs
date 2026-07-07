@@ -1,6 +1,6 @@
 use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
 use super::eval_utils::{evaluate_float, evaluate_number, evaluate_string, get_source_id};
-use super::graph::{get_node_param, get_node_type, ComfyGraph};
+use super::graph::{get_node_param, get_node_type, get_switch_branch_source, ComfyGraph};
 use crate::metadata::utils::{
     extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
 };
@@ -90,8 +90,7 @@ pub fn extract_from_sampler(
                 loras,
                 ip_adapters,
                 hypernetworks,
-            )
-            {
+            ) {
                 meta.model = model_name;
             }
         }
@@ -248,7 +247,13 @@ pub fn trace_model_chain(
         let node = graph.get_node(&current_id)?;
         let t = get_node_type(node);
 
-        if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
+        if t == "ComfySwitchNode" {
+            if let Some(next) = get_switch_branch_source(graph, &current_id, node) {
+                current_id = next;
+                continue;
+            }
+            break;
+        } else if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
             if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                 if !loras.contains(&name) {

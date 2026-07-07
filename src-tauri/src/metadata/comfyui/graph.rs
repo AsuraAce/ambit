@@ -286,6 +286,67 @@ pub fn get_node_title(node: &Value) -> Option<&str> {
         .and_then(|v| v.as_str())
 }
 
+pub fn get_switch_branch_input(
+    graph: &ComfyGraph,
+    node_id: &str,
+    node: &Value,
+) -> Option<&'static str> {
+    resolve_bool_input(graph, node_id, node, "switch").map(|enabled| {
+        if enabled {
+            "on_true"
+        } else {
+            "on_false"
+        }
+    })
+}
+
+pub fn get_switch_branch_source(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
+    let branch = get_switch_branch_input(graph, node_id, node)?;
+    get_source_id(graph, node_id, branch)
+}
+
+fn resolve_bool_input(graph: &ComfyGraph, node_id: &str, node: &Value, key: &str) -> Option<bool> {
+    if let Some(value) = get_node_param(node, key).and_then(value_as_bool) {
+        return Some(value);
+    }
+
+    if let Some(source_id) = get_source_id(graph, node_id, key) {
+        if let Some(source) = graph.get_node(&source_id) {
+            for source_key in ["value", "bool", "BOOLEAN", "switch"] {
+                if let Some(value) = get_node_param(source, source_key).and_then(value_as_bool) {
+                    return Some(value);
+                }
+            }
+
+            if let Some(arr) = source.get("widgets_values").and_then(|v| v.as_array()) {
+                if let Some(value) = arr.first().and_then(value_as_bool) {
+                    return Some(value);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn value_as_bool(value: &Value) -> Option<bool> {
+    value.as_bool().or_else(|| {
+        value
+            .as_i64()
+            .map(|number| number != 0)
+            .or_else(|| value.as_u64().map(|number| number != 0))
+            .or_else(|| {
+                value
+                    .as_str()
+                    .and_then(|text| match text.trim().to_ascii_lowercase().as_str() {
+                        "true" | "1" | "yes" | "on" | "enable" | "enabled" => Some(true),
+                        "false" | "0" | "no" | "off" | "disable" | "disabled" => Some(false),
+                        _ => None,
+                    })
+            })
+    })
+}
+
 pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     // 1. Check in API format "inputs"
     if let Some(val) = node.get("inputs").and_then(|v| v.get(key)) {

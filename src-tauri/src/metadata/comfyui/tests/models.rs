@@ -83,6 +83,94 @@ fn test_extract_comfyui_qwen() {
 }
 
 #[test]
+fn test_extract_comfyui_switch_model_uses_disabled_lora_base() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["10", 0]
+            }
+        },
+        "10": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["11", 0],
+                "on_false": ["12", 0],
+                "on_true": ["13", 0]
+            }
+        },
+        "11": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": false }
+        },
+        "12": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        },
+        "13": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "lora_name": "krea2_darkbrush.safetensors",
+                "strength_model": 0.8,
+                "model": ["12", 0]
+            }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.model, "krea2_turbo_fp8_scaled");
+    assert!(meta.loras.is_empty());
+}
+
+#[test]
+fn test_extract_comfyui_switch_model_collects_enabled_lora() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["10", 0]
+            }
+        },
+        "10": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["11", 0],
+                "on_false": ["12", 0],
+                "on_true": ["13", 0]
+            }
+        },
+        "11": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": true }
+        },
+        "12": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        },
+        "13": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "lora_name": "krea2_darkbrush.safetensors",
+                "strength_model": 0.8,
+                "model": ["12", 0]
+            }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.model, "krea2_turbo_fp8_scaled");
+    assert_eq!(meta.loras, ["krea2_darkbrush"]);
+}
+
+#[test]
 fn test_extract_comfyui_workflow_hypernetwork_loader_strength() {
     let workflow = r#"{
         "last_node_id": 10,

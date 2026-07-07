@@ -26,5 +26,11 @@ Initial fixture sources:
   covering chained IP-Adapter and LoRA model traversal.
 - `prompt_composition.chunks.json`: derived from `prompts.rs`, covering
   JoinStringMulti, TriggerWord Toggle, LoraManager, and smZ prompt extraction.
+- `krea2_turbo_official_template.chunks.json`: exact `prompt` and `workflow`
+  chunks extracted from user-provided image
+  `D:\AI\art\webUI\comfyUI\output\Krea2_turbo_00716_.png`, generated with
+  the official Krea v2 turbo ComfyUI template. Covers nested template node IDs,
+  ComfySwitchNode, StringConcatenate, PreviewAny, and Krea conditioning
+  traversal.
 
 Extraction date: 2026-07-07.

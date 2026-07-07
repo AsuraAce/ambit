@@ -30,6 +30,10 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
         name: "prompt_composition",
         chunks_json: include_str!("fixtures/real_world/prompt_composition.chunks.json"),
     },
+    RealWorldFixture {
+        name: "krea2_turbo_official_template",
+        chunks_json: include_str!("fixtures/real_world/krea2_turbo_official_template.chunks.json"),
+    },
 ];
 
 #[test]
@@ -209,28 +213,84 @@ fn test_real_world_fixtures_extract_expected_metadata() {
     );
 }
 
-struct ExpectedMetadata {
-    model: &'static str,
+#[test]
+fn test_krea2_turbo_official_template_extracts_expected_metadata() {
+    let fixture = get_fixture("krea2_turbo_official_template");
+    let chunks = load_chunks(fixture);
+    let expected_workflow = chunks
+        .get("workflow")
+        .expect("Krea fixture should preserve the workflow chunk");
+    let expected_prompt = prompt_node_string(&chunks, "30:19", "value");
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_metadata(
+        "krea2_turbo_official_template",
+        &meta,
+        ExpectedMetadata {
+            model: "krea2_turbo_fp8_scaled",
+            seed: Some(552211234818773),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: &expected_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+    );
+    assert!(
+        expected_prompt.contains("A lone astronaut standing in a dark, dilapidated spaceship"),
+        "Krea expected prompt should come from the user prompt node"
+    );
+    assert_archival_chunk_preserved(
+        "krea2_turbo_official_template",
+        &meta,
+        &diagnostics,
+        expected_workflow,
+    );
+    for (field, layer) in [
+        (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+        (
+            ComfyMetadataField::Sampler,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+        (
+            ComfyMetadataField::PositivePrompt,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&layer),
+            "krea2_turbo_official_template should record {field:?} from {layer:?}"
+        );
+    }
+}
+
+struct ExpectedMetadata<'a> {
+    model: &'a str,
     seed: Option<i64>,
     steps: u32,
     cfg: f32,
-    sampler: &'static str,
-    positive_prompt: &'static str,
-    negative_prompt: &'static str,
-    loras: &'static [&'static str],
-    control_nets: &'static [&'static str],
-    ip_adapters: &'static [&'static str],
+    sampler: &'a str,
+    positive_prompt: &'a str,
+    negative_prompt: &'a str,
+    loras: &'a [&'a str],
+    control_nets: &'a [&'a str],
+    ip_adapters: &'a [&'a str],
 }
 
 fn assert_real_world_fixture(
     name: &str,
-    expected: ExpectedMetadata,
+    expected: ExpectedMetadata<'_>,
     expected_sources: &[(ComfyMetadataField, ComfyParseLayer)],
 ) {
-    let fixture = REAL_WORLD_FIXTURES
-        .iter()
-        .find(|fixture| fixture.name == name)
-        .expect("real-world fixture should be listed");
+    let fixture = get_fixture(name);
     let chunks = load_chunks(fixture);
     let expected_archival_chunk = chunks
         .get("workflow")
@@ -250,6 +310,13 @@ fn assert_real_world_fixture(
     }
 }
 
+fn get_fixture(name: &str) -> &RealWorldFixture {
+    REAL_WORLD_FIXTURES
+        .iter()
+        .find(|fixture| fixture.name == name)
+        .expect("real-world fixture should be listed")
+}
+
 fn load_chunks(fixture: &RealWorldFixture) -> HashMap<String, String> {
     let raw: HashMap<String, Value> =
         serde_json::from_str(fixture.chunks_json).expect("real-world chunks should be valid JSON");
@@ -264,7 +331,20 @@ fn load_chunks(fixture: &RealWorldFixture) -> HashMap<String, String> {
         .collect()
 }
 
-fn assert_metadata(name: &str, meta: &ImageMetadata, expected: ExpectedMetadata) {
+fn prompt_node_string(chunks: &HashMap<String, String>, node_id: &str, input_name: &str) -> String {
+    let prompt = chunks
+        .get("prompt")
+        .expect("fixture should include prompt chunk");
+    let json: Value = serde_json::from_str(prompt).expect("prompt chunk should be valid JSON");
+    json.get(node_id)
+        .and_then(|node| node.get("inputs"))
+        .and_then(|inputs| inputs.get(input_name))
+        .and_then(|value| value.as_str())
+        .expect("expected prompt node string should exist")
+        .to_string()
+}
+
+fn assert_metadata(name: &str, meta: &ImageMetadata, expected: ExpectedMetadata<'_>) {
     assert_eq!(meta.tool, "ComfyUI", "{name} should be detected as ComfyUI");
     assert_eq!(meta.model, expected.model, "{name} model");
     assert_eq!(meta.seed, expected.seed, "{name} seed");
