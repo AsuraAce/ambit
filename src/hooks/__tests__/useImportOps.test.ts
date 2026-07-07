@@ -230,6 +230,47 @@ describe('useImportOps', () => {
         );
     });
 
+    it('logs and skips startup path imports when there are no paths to process', async () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportPaths([], undefined, { mode: 'startup' });
+        });
+
+        expect(infoSpy).toHaveBeenCalledWith('[ImportOps] Startup path import skipped because no paths were provided.');
+        expect(mocks.getThumbnailDir).not.toHaveBeenCalled();
+        expect(mocks.processNativePaths).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().importRunId).toBeNull();
+        infoSpy.mockRestore();
+    });
+
+    it('logs and skips path imports when another import run is active', async () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const activeRunId = useLibraryStore.getState().beginImportRun({
+            owner: 'other-import',
+            abortController: new AbortController(),
+            progress: { current: 1, total: 2, message: 'Existing import' }
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => {
+            await result.current.handleImportPaths(['C:/watch/new.png']);
+        });
+
+        expect(infoSpy).toHaveBeenCalledWith(
+            '[ImportOps] Path import skipped because another import is active.',
+            {
+                mode: 'manual',
+                pathCount: 1
+            }
+        );
+        expect(activeRunId).toBeTruthy();
+        expect(mocks.processNativePaths).not.toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        infoSpy.mockRestore();
+    });
+
     it('finalizes committed work before returning a cancelled partial folder result', async () => {
         const partialCancel = importResult({
             images: [importedImage('C:/watch-a/imported.png')],
@@ -366,6 +407,7 @@ describe('useImportOps', () => {
     });
 
     it('does not start a manual folder import while another import run is active', async () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const activeRunId = useLibraryStore.getState().beginImportRun({
             owner: 'other-import',
             abortController: new AbortController(),
@@ -380,8 +422,16 @@ describe('useImportOps', () => {
         expect(activeRunId).toBeTruthy();
         expect(mocks.processFoldersUnified).not.toHaveBeenCalled();
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        expect(infoSpy).toHaveBeenCalledWith(
+            '[ImportFolders] Folder import skipped because another import is active.',
+            {
+                mode: 'manual',
+                folderCount: 1
+            }
+        );
         expect(useLibraryStore.getState().importRunId).toBe(activeRunId);
         expect(useLibraryStore.getState().importProgress?.message).toBe('Existing import');
+        infoSpy.mockRestore();
     });
 
     it('uses stable Activity Dock messages for single-folder folder imports', async () => {

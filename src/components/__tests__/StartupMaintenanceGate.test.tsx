@@ -91,7 +91,9 @@ describe('StartupMaintenanceGate', () => {
     });
 
     it('shows an actionable error when database preparation fails', async () => {
-        vi.mocked(getDb).mockRejectedValue(new Error('migration failed'));
+        const startupError = new Error('migration failed');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(getDb).mockRejectedValue(startupError);
 
         render(
             <StartupMaintenanceGate>
@@ -105,5 +107,7 @@ describe('StartupMaintenanceGate', () => {
             expect(screen.getByText('migration failed')).toBeTruthy();
         });
         expect(screen.queryByText('Library ready')).toBeNull();
+        expect(errorSpy).toHaveBeenCalledWith('[Startup] Failed to prepare database', startupError);
+        errorSpy.mockRestore();
     });
 });
