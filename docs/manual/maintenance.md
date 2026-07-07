@@ -78,7 +78,7 @@ Settings, Advanced, Support includes an Open Maintenance shortcut for these repa
 
 ## Metadata Refresh
 
-From Settings, Connections, Folders, use Refresh All Metadata or a folder-level refresh when metadata filters look stale after external changes.
+From Settings > Connections > Folders, use Refresh All Metadata or a folder-level refresh when metadata filters look stale after external changes.
 
 ## Next Step
 

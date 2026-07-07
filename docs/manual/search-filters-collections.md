@@ -63,7 +63,7 @@ The Assets tab can switch between:
 - Local on Disk: resources discovered from configured resource folders.
 - All Assets: both library-used and locally discovered resources.
 
-If Local on Disk is empty, add resource folders from Settings, Connections, Folders.
+If Local on Disk is empty, add resource folders from Settings > Connections > Resources. For setup details and local-only inventory behavior, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## Collections
 
