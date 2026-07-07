@@ -14,7 +14,7 @@ Most Maintenance actions change Ambit's local catalog, not your original image f
 | Prune All Records | Accepts audited missing paths as missing in Ambit's catalog | Not touched and not recovered |
 | Remove from Library, Remove all from Library, duplicate resolution | Removes records from the active library; removed records can appear in Removed when Ambit has enough record data | Kept on disk |
 | Restore to Library | Moves selected Removed records back into the active library | Not touched |
-| Delete File, Delete | Destructive path for selected records; Removed uses Delete File to move source files to OS trash when possible | May be moved to OS trash depending on the action |
+| Delete File in Removed | Destructive path for selected Removed records; moves source files to OS trash when possible | Moved to OS trash when the action succeeds |
 
 If you are unsure, prefer scans, repairs, rescans, and restore actions before actions that remove records or delete files.
 
@@ -92,7 +92,7 @@ Use View Image to inspect a record before cleanup. Use Remove from Library only 
 
 The Intermediates tab appears only when Ambit has images flagged as intermediate outputs, such as images without the expected InvokeAI metadata. Use Global or Filtered scope to control which intermediate records you review.
 
-Use Move to Gallery when an image is a keeper and should stop being treated as an intermediate. Use Delete only when the selected intermediate files are not needed. Delete is the destructive path; prefer Move to Gallery or View Image when you are unsure.
+Use View Image to inspect a record before cleanup. Use Move to Gallery when an image is a keeper and should stop being treated as an intermediate. For intentional source-file deletion, first remove the record from the active library, then review it in Removed and use Delete File.
 
 ## Removed
 
