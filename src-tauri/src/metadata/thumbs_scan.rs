@@ -252,13 +252,18 @@ fn normalized_model_path_parts(model_path: &str) -> (String, Vec<String>) {
 }
 
 fn path_has_segment(parts: &[String], candidates: &[&str]) -> bool {
-    parts
-        .iter()
-        .any(|part| candidates.iter().any(|candidate| part.as_str() == *candidate))
+    parts.iter().any(|part| {
+        candidates
+            .iter()
+            .any(|candidate| part.as_str() == *candidate)
+    })
 }
 
 fn path_or_filename_contains(normalized_path: &str, candidates: &[&str]) -> bool {
-    let filename = normalized_path.rsplit('/').next().unwrap_or(normalized_path);
+    let filename = normalized_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(normalized_path);
     candidates
         .iter()
         .any(|candidate| normalized_path.contains(candidate) || filename.contains(candidate))
@@ -1006,7 +1011,9 @@ fn scan_dir_for_resources(
                     .unwrap_or("")
                     .to_lowercase();
 
-                if is_model_resource_ext(&ext) && resource_type_for_model_path(&path.to_string_lossy()).is_some() {
+                if is_model_resource_ext(&ext)
+                    && resource_type_for_model_path(&path.to_string_lossy()).is_some()
+                {
                     models.push(path.to_string_lossy().to_string());
                 } else if is_sidecar_image_ext(&ext) {
                     images.insert(path.to_string_lossy().to_string());
@@ -1326,7 +1333,11 @@ mod tests {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap();
-            touch_resource(&mut resources, resource_type_for_model_path(path).unwrap(), stem);
+            touch_resource(
+                &mut resources,
+                resource_type_for_model_path(path).unwrap(),
+                stem,
+            );
         }
 
         assert_eq!(resources.checkpoints, vec!["Pony Diffusion V6 XL"]);

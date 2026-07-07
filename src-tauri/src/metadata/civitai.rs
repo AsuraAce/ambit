@@ -312,7 +312,8 @@ fn extract_a1111_cache_entries(
                 }
             }
             if added == 0 {
-                debug_info.push_str("Fallback: top-level object was empty or had non-string values. ");
+                debug_info
+                    .push_str("Fallback: top-level object was empty or had non-string values. ");
             }
         } else {
             debug_info.push_str("Root is not an object. ");
@@ -337,8 +338,7 @@ pub fn import_a1111_cache(
         .unwrap()
         .as_secs();
 
-    let (entries, debug_info, skipped_malformed_hashes) =
-        extract_a1111_cache_entries(&json, now);
+    let (entries, debug_info, skipped_malformed_hashes) = extract_a1111_cache_entries(&json, now);
 
     if entries.is_empty() {
         return Ok(ImportResult {
