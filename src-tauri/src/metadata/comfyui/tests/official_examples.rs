@@ -133,7 +133,7 @@ fn test_official_examples_extract_expected_metadata() {
             model: "flux1_dev",
             seed: Some(219670278747233),
             steps: 20,
-            cfg: 0.0,
+            cfg: 3.5,
             sampler: "euler (simple)",
             positive_prompt: "cute anime girl with massive fluffy fennec ears and a big fluffy tail blonde messy long hair blue eyes wearing a maid outfit with a long black gold leaf pattern dress and a white apron mouth open holding a fancy black forest cake with candles on top in the kitchen of an old dark Victorian mansion lit by candlelight with a bright window to the foggy forest and very expensive stuff everywhere",
             negative_prompt: "",
@@ -147,6 +147,7 @@ fn test_official_examples_extract_expected_metadata() {
             (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
             (
                 ComfyMetadataField::Sampler,
                 ComfyParseLayer::SamplerTraversal,
@@ -568,7 +569,7 @@ fn test_official_examples_extract_expected_metadata() {
             model: "flux2_dev_fp8mixed",
             seed: Some(435922656034510),
             steps: 20,
-            cfg: 0.0,
+            cfg: 4.0,
             sampler: "euler",
             positive_prompt: r#"cute anime girl with gigantic fennec ears and a big fluffy fox tail with long wavy blonde hair and large blue eyes blonde colored eyelashes wearing a pink sweater a large oversized gold trimmed black winter coat and a long blue maxi skirt and a red scarf, she is happy while singing on stage like an idol while holding a microphone, there are colorful lights, it is a postcard held by a hand in front of a beautiful city at sunset and there is cursive writing that says "Flux 2, Now in ComfyUI""#,
             negative_prompt: "",
@@ -582,6 +583,7 @@ fn test_official_examples_extract_expected_metadata() {
             (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
             (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
             (
                 ComfyMetadataField::Sampler,
                 ComfyParseLayer::SamplerTraversal,

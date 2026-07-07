@@ -22,6 +22,8 @@ pub fn extract_from_sampler(
     }
     if let Some(v) = evaluate_float(graph, node, "cfg", 200.0) {
         meta.cfg = v as f32;
+    } else if let Some(v) = extract_connected_flux_guidance(graph, node) {
+        meta.cfg = v as f32;
     }
     if let Some(v) = evaluate_number(graph, node, "seed", i64::MAX) {
         meta.seed = Some(v);
@@ -168,6 +170,68 @@ pub fn extract_from_sampler(
     meta.hypernetworks.dedup();
 
     meta
+}
+
+fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
+    let guider_id = get_source_id(graph, sampler_node, "guider")?;
+    let guider_node = graph.get_node(&guider_id)?;
+    let conditioning_id = get_source_id(graph, guider_node, "conditioning")?;
+    trace_flux_guidance(graph, &conditioning_id, 0)
+}
+
+fn trace_flux_guidance(graph: &ComfyGraph, node_id: &str, depth: u32) -> Option<f64> {
+    if depth > 10 {
+        return None;
+    }
+
+    let node = graph.get_node(node_id)?;
+    if get_node_type(node) == "FluxGuidance" {
+        if let Some(source_id) = get_source_id(graph, node, "guidance") {
+            return graph
+                .get_node(&source_id)
+                .and_then(linked_flux_guidance_value);
+        }
+
+        return evaluate_float(graph, node, "guidance", 200.0)
+            .or_else(|| get_node_param(node, "guidance").and_then(value_as_f64));
+    }
+
+    for input_name in ["conditioning", "CONDITIONING"] {
+        if let Some(next_id) = get_source_id(graph, node, input_name) {
+            if let Some(guidance) = trace_flux_guidance(graph, &next_id, depth + 1) {
+                return Some(guidance);
+            }
+        }
+    }
+
+    None
+}
+
+fn linked_flux_guidance_value(source: &Value) -> Option<f64> {
+    ["value", "float", "guidance"]
+        .iter()
+        .find_map(|key| {
+            get_node_param(source, key).and_then(|value| value_as_bounded_f64(value, 200.0))
+        })
+        .or_else(|| {
+            source
+                .get("widgets_values")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|value| value_as_bounded_f64(value, 200.0))
+        })
+}
+
+fn value_as_bounded_f64(value: &Value, max_limit: f64) -> Option<f64> {
+    value_as_f64(value).filter(|value| *value < max_limit)
+}
+
+fn value_as_f64(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|v| v as f64))
+        .or_else(|| value.as_u64().map(|v| v as f64))
+        .or_else(|| value.as_str().and_then(|v| v.parse::<f64>().ok()))
 }
 
 pub fn trace_model_chain(

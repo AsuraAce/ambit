@@ -435,6 +435,13 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "FluxGuidance" {
+            match key {
+                "guidance" => return arr.first(),
+                _ => {}
+            }
+        }
+
         if t == "SDPromptSaver" {
             match key {
                 "ckpt_name" | "model_name" => return arr.get(2),

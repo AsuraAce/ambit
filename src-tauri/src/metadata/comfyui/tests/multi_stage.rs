@@ -89,7 +89,8 @@ fn connected_sampler_chain_uses_root_sampler_as_primary_metadata() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "base_model");
     assert_eq!(meta.seed, Some(111));
@@ -165,7 +166,8 @@ fn disconnected_sampler_does_not_override_saved_output_traversal() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "saved_output_model");
     assert_eq!(meta.seed, Some(333));
@@ -348,6 +350,410 @@ fn global_scan_text_metadata_wins_over_generic_loader_fallback() {
         &diagnostics,
         ComfyMetadataField::Model,
         ComfyParseLayer::GlobalScan,
+    );
+}
+
+#[test]
+fn connected_flux_guidance_supplies_cfg_for_sampler_custom_advanced() {
+    // Flux-style samplers do not expose CFG directly; the connected guider's
+    // FluxGuidance node is the sampler-traversal source for the same scalar.
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "flux-primary.safetensors" }
+        },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "connected flux prompt" }
+        },
+        "3": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["2", 0],
+                "guidance": 3.5
+            }
+        },
+        "4": {
+            "class_type": "BasicGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "conditioning": ["3", 0]
+            }
+        },
+        "5": {
+            "class_type": "RandomNoise",
+            "inputs": { "noise_seed": 888 }
+        },
+        "6": {
+            "class_type": "KSamplerSelect",
+            "inputs": { "sampler_name": "euler" }
+        },
+        "7": {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "scheduler": "simple",
+                "steps": 20,
+                "model": ["1", 0]
+            }
+        },
+        "8": {
+            "class_type": "EmptyLatentImage",
+            "inputs": { "width": 1024, "height": 1024, "batch_size": 1 }
+        },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["5", 0],
+                "guider": ["4", 0],
+                "sampler": ["6", 0],
+                "sigmas": ["7", 0],
+                "latent_image": ["8", 0]
+            }
+        },
+        "10": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["9", 0] }
+        },
+        "11": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["10", 0] }
+        },
+        "20": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["2", 0],
+                "guidance": 9.9
+            }
+        }
+    }"#;
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.model, "flux_primary");
+    assert_eq!(meta.seed, Some(888));
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.cfg, 3.5);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "connected flux prompt");
+    assert_ne!(meta.cfg, 9.9);
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn linked_flux_guidance_supplies_cfg_for_sampler_custom_advanced() {
+    // ComfyUI can convert FluxGuidance.guidance into a linked widget input; it
+    // should still count as sampler-traversal evidence when the guider is connected.
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "linked-flux.safetensors" }
+        },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "linked flux guidance prompt" }
+        },
+        "3": {
+            "class_type": "PrimitiveFloat",
+            "inputs": { "value": 4.75 }
+        },
+        "4": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["2", 0],
+                "guidance": ["3", 0]
+            }
+        },
+        "5": {
+            "class_type": "BasicGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "conditioning": ["4", 0]
+            }
+        },
+        "6": {
+            "class_type": "RandomNoise",
+            "inputs": { "noise_seed": 999 }
+        },
+        "7": {
+            "class_type": "KSamplerSelect",
+            "inputs": { "sampler_name": "euler" }
+        },
+        "8": {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "scheduler": "simple",
+                "steps": 24,
+                "model": ["1", 0]
+            }
+        },
+        "9": {
+            "class_type": "EmptyLatentImage",
+            "inputs": { "width": 1024, "height": 1024, "batch_size": 1 }
+        },
+        "10": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["6", 0],
+                "guider": ["5", 0],
+                "sampler": ["7", 0],
+                "sigmas": ["8", 0],
+                "latent_image": ["9", 0]
+            }
+        },
+        "11": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["10", 0] }
+        },
+        "12": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["11", 0] }
+        },
+        "20": {
+            "class_type": "FluxGuidance",
+            "inputs": {
+                "conditioning": ["2", 0],
+                "guidance": 9.9
+            }
+        }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.model, "linked_flux");
+    assert_eq!(meta.seed, Some(999));
+    assert_eq!(meta.steps, 24);
+    assert_eq!(meta.cfg, 4.75);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "linked flux guidance prompt");
+    assert_ne!(meta.cfg, 9.9);
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn workflow_flux_guidance_widget_value_supplies_cfg() {
+    // Workflow-only imports rely on FluxGuidance.widgets_values[0] because API
+    // input names are not available in the UI-format node body.
+    let workflow = r#"{
+        "nodes": [
+            {
+                "id": 1,
+                "type": "UNETLoader",
+                "widgets_values": ["flux-ui.safetensors"]
+            },
+            {
+                "id": 2,
+                "type": "CLIPTextEncode",
+                "widgets_values": ["workflow flux prompt"],
+                "outputs": [{ "name": "CONDITIONING", "links": [2] }]
+            },
+            {
+                "id": 3,
+                "type": "FluxGuidance",
+                "inputs": [{ "name": "conditioning", "link": 2 }],
+                "widgets_values": [4.25],
+                "outputs": [{ "name": "CONDITIONING", "links": [3] }]
+            },
+            {
+                "id": 4,
+                "type": "BasicGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "conditioning", "link": 3 }
+                ]
+            },
+            {
+                "id": 5,
+                "type": "RandomNoise",
+                "widgets_values": [123456789]
+            },
+            {
+                "id": 6,
+                "type": "KSamplerSelect",
+                "widgets_values": ["euler"]
+            },
+            {
+                "id": 7,
+                "type": "BasicScheduler",
+                "widgets_values": ["simple", 12, 1.0]
+            },
+            {
+                "id": 8,
+                "type": "EmptyLatentImage",
+                "widgets_values": [1024, 1024, 1]
+            },
+            {
+                "id": 9,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 5 },
+                    { "name": "guider", "link": 4 },
+                    { "name": "sampler", "link": 6 },
+                    { "name": "sigmas", "link": 7 },
+                    { "name": "latent_image", "link": 8 }
+                ]
+            },
+            {
+                "id": 10,
+                "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "link": 9 }]
+            },
+            {
+                "id": 11,
+                "type": "SaveImage",
+                "inputs": [{ "name": "images", "link": 10 }]
+            }
+        ],
+        "links": [
+            [1, 1, 0, 4, 0, "MODEL"],
+            [2, 2, 0, 3, 0, "CONDITIONING"],
+            [3, 3, 0, 4, 1, "CONDITIONING"],
+            [4, 4, 0, 9, 1, "GUIDER"],
+            [5, 5, 0, 9, 0, "NOISE"],
+            [6, 6, 0, 9, 2, "SAMPLER"],
+            [7, 7, 0, 9, 3, "SIGMAS"],
+            [8, 8, 0, 9, 4, "LATENT"],
+            [9, 9, 0, 10, 0, "LATENT"],
+            [10, 10, 0, 11, 0, "IMAGE"]
+        ]
+    }"#;
+    let mut chunks = HashMap::new();
+    chunks.insert("workflow".to_string(), workflow.to_string());
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux_ui");
+    assert_eq!(meta.steps, 12);
+    assert_eq!(meta.cfg, 4.25);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "workflow flux prompt");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn workflow_linked_flux_guidance_input_wins_over_stale_widget_value() {
+    // Converted FluxGuidance widgets can keep an old widgets_values[0]; the
+    // connected guidance input is the live sampler-traversal value.
+    let workflow = r#"{
+        "nodes": [
+            {
+                "id": 1,
+                "type": "UNETLoader",
+                "widgets_values": ["flux-ui-linked.safetensors"]
+            },
+            {
+                "id": 2,
+                "type": "CLIPTextEncode",
+                "widgets_values": ["workflow linked flux prompt"],
+                "outputs": [{ "name": "CONDITIONING", "links": [2] }]
+            },
+            {
+                "id": 3,
+                "type": "PrimitiveFloat",
+                "widgets_values": [4.75],
+                "outputs": [{ "name": "FLOAT", "links": [3] }]
+            },
+            {
+                "id": 4,
+                "type": "FluxGuidance",
+                "inputs": [
+                    { "name": "conditioning", "link": 2 },
+                    { "name": "guidance", "link": 3 }
+                ],
+                "widgets_values": [1.0],
+                "outputs": [{ "name": "CONDITIONING", "links": [4] }]
+            },
+            {
+                "id": 5,
+                "type": "BasicGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "conditioning", "link": 4 }
+                ]
+            },
+            {
+                "id": 6,
+                "type": "RandomNoise",
+                "widgets_values": [444444444]
+            },
+            {
+                "id": 7,
+                "type": "KSamplerSelect",
+                "widgets_values": ["euler"]
+            },
+            {
+                "id": 8,
+                "type": "BasicScheduler",
+                "widgets_values": ["simple", 18, 1.0]
+            },
+            {
+                "id": 9,
+                "type": "EmptyLatentImage",
+                "widgets_values": [1024, 1024, 1]
+            },
+            {
+                "id": 10,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 6 },
+                    { "name": "guider", "link": 5 },
+                    { "name": "sampler", "link": 7 },
+                    { "name": "sigmas", "link": 8 },
+                    { "name": "latent_image", "link": 9 }
+                ]
+            },
+            {
+                "id": 11,
+                "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "link": 10 }]
+            },
+            {
+                "id": 12,
+                "type": "SaveImage",
+                "inputs": [{ "name": "images", "link": 11 }]
+            }
+        ],
+        "links": [
+            [1, 1, 0, 5, 0, "MODEL"],
+            [2, 2, 0, 4, 0, "CONDITIONING"],
+            [3, 3, 0, 4, 1, "FLOAT"],
+            [4, 4, 0, 5, 1, "CONDITIONING"],
+            [5, 5, 0, 10, 1, "GUIDER"],
+            [6, 6, 0, 10, 0, "NOISE"],
+            [7, 7, 0, 10, 2, "SAMPLER"],
+            [8, 8, 0, 10, 3, "SIGMAS"],
+            [9, 9, 0, 10, 4, "LATENT"],
+            [10, 10, 0, 11, 0, "LATENT"],
+            [11, 11, 0, 12, 0, "IMAGE"]
+        ]
+    }"#;
+    let mut chunks = HashMap::new();
+    chunks.insert("workflow".to_string(), workflow.to_string());
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux_ui_linked");
+    assert_eq!(meta.steps, 18);
+    assert_eq!(meta.cfg, 4.75);
+    assert_ne!(meta.cfg, 1.0);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "workflow linked flux prompt");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
     );
 }
 

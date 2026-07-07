@@ -125,6 +125,7 @@ fn test_extract_comfyui_flux_user_case() {
 
     assert_eq!(meta.model, "redcraftcadsupdatedjan18_revealultrav35");
     assert_eq!(meta.steps, 20);
+    assert_eq!(meta.cfg, 3.5);
     assert_eq!(meta.sampler, "euler (simple)"); // Scheduler is linked!
     assert_eq!(meta.positive_prompt, "charcoal drawing, dynamic reference pose of a young woman, lingerie, nativ-american indianer, \n\nshadow play, low key lighting, back lighting, natural lighting, ");
 }
