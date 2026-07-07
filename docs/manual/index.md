@@ -26,8 +26,9 @@ The core app is local-first. Image records, metadata, thumbnails, and settings a
 - [Adding Folders](adding-folders.md): add monitored image folders, connect generator outputs, and run one-time imports.
 - [Browsing The Library](browsing-library.md): use grid, timeline, statistics, selection, favorites, pins, and the viewer.
 - [Search, Filters, And Collections](search-filters-collections.md): search prompts and metadata, use facets, and organize images.
+- [Assets And Resource Discovery](assets-resource-discovery.md): understand used assets, local disk inventory, resource folders, and Assets tab scopes.
 - [Viewer And Metadata](viewer-and-metadata.md): inspect prompts, resources, workflow data, notes, and image versions.
-- [Maintenance](maintenance.md): resolve missing files, duplicates, removed items, untagged records, intermediates, and thumbnail problems.
+- [Maintenance](maintenance.md): resolve missing files, thumbnail optimization, duplicates, removed items, untagged records, and intermediates.
 - [Settings And Privacy](settings-and-privacy.md): understand folders, privacy controls, AI features, update checks, and network behavior.
 - [Troubleshooting](troubleshooting.md): diagnose common first-run, scan, metadata, thumbnail, and privacy issues.
 

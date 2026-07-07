@@ -9,7 +9,7 @@ This page lists common first-run and library issues. When in doubt, prefer actio
 Confirm that you added image sources:
 
 - use Add Images, then Add Folder for a normal folder
-- use Settings, Connections, Folders for monitored folders
+- use Settings > Connections > Folders for monitored folders
 - use Settings, Connections, ComfyUI for a ComfyUI output folder
 - use Settings, Connections, SD WebUI for A1111, Forge, SD.Next, Anapnoe, or archive folders
 - use Settings, Connections, InvokeAI for an InvokeAI root containing `databases/invokeai.db`
@@ -21,7 +21,7 @@ Large folders can take time to scan. Wait for import activity to finish before a
 Try these steps:
 
 1. Confirm the folder path still exists and is accessible.
-2. Rescan the folder from Settings, Connections, Folders.
+2. Rescan the folder from Settings > Connections > Folders.
 3. Use Refresh All Metadata if the files exist but filters or parsed metadata look stale.
 4. For SD WebUI folders, scan again with the correct installation type selected instead of Auto if detection looked wrong.
 
@@ -39,9 +39,9 @@ Useful checks:
 
 ## Thumbnails Are Broken
 
-Open Settings, Advanced, Troubleshooting.
+Open Maintenance, then Thumbnails.
 
-Use Verify Files first. If thumbnails still fail, use Reset All to clear thumbnail references so Ambit can rediscover or regenerate them. Use Verify Library when you want to check source files and thumbnails together.
+Use Repair Broken Thumbnails first. If thumbnails still fail, regenerate selected thumbnails or run Regenerate All Unoptimized for the current scope. Settings, Advanced, Support also has an Open Maintenance shortcut.
 
 ## Images Show As Missing
 
@@ -82,7 +82,7 @@ Gemini is not required for core Ambit browsing, search, metadata parsing, or mai
 
 ## Online Model Resolution Is Disabled Or Busy
 
-Resolve Online is blocked while library work is already running, such as import, sync, scan, thumbnail regeneration, duplicate scan, or background healing. Wait for the current task to finish, then run resolution again.
+Resolve Online is blocked while library work is already running, such as import, sync, scan, thumbnail optimization, duplicate scan, or background healing. Wait for the current task to finish, then run resolution again.
 
 Online model resolution sends unresolved model hash strings to CivitAI. It does not send image files.
 
