@@ -8,21 +8,24 @@ Maintenance helps keep Ambit's catalog aligned with your local files and metadat
 
 Ambit currently exposes these maintenance tabs:
 
+- Missing: find catalog records whose source files are missing.
+- Thumbnails: regenerate unoptimized thumbnails, repair broken thumbnail references, and clean up unused thumbnails.
 - Duplicates: find and resolve duplicate candidates.
 - Untagged: review records with missing or incomplete metadata.
 - Intermediates: review images flagged as intermediates when the tab is visible.
-- Missing: find catalog records whose source files are missing.
 - Removed: restore removed records or permanently delete files when that action is chosen.
 
 ```mermaid
 flowchart TD
     A["Maintenance"] --> B["Duplicates"]
-    A --> C["Untagged"]
-    A --> D["Intermediates"]
-    A --> E["Missing"]
-    A --> F["Removed"]
-    E --> G["Verify library paths"]
-    F --> H["Restore or delete"]
+    A --> C["Thumbnails"]
+    A --> D["Untagged"]
+    A --> E["Intermediates"]
+    A --> F["Missing"]
+    A --> G["Removed"]
+    C --> H["Regenerate or repair"]
+    F --> I["Verify library paths"]
+    G --> J["Restore or delete"]
 ```
 
 ## Duplicates
@@ -30,6 +33,20 @@ flowchart TD
 The Duplicates tab scans for likely duplicate images. Duplicate cleanup is conservative: resolving duplicates removes redundant records from Ambit's library or Removed flow by default rather than deleting original files automatically.
 
 Use Compare when available to inspect candidates before resolving them.
+
+## Thumbnails
+
+The Thumbnails tab finds images that could benefit from thumbnail regeneration. It can work across the whole library or the current filtered view.
+
+Use it to:
+
+- regenerate selected thumbnails
+- regenerate all unoptimized thumbnails in the chosen scope
+- include upgradeable thumbnails when you want higher-quality replacements
+- repair broken thumbnail references
+- clean up unused thumbnail files when the current scope is optimized
+
+Ambit can also heal thumbnails in the background during normal use, so this tab is the manual repair and review surface rather than the only thumbnail path.
 
 ## Missing
 
@@ -51,11 +68,13 @@ Use these tabs to remove, review, or unmark records depending on what the tab of
 
 ## Thumbnail Problems
 
-Ambit performs thumbnail handling in the background. If thumbnails are stale or broken, use Settings, Advanced, Troubleshooting:
+Ambit performs thumbnail handling in the background. If thumbnails are stale or broken, start with Maintenance, Thumbnails:
 
-- Verify Files checks thumbnail paths and resets missing thumbnail references.
-- Reset All clears thumbnail references so Ambit can rediscover or regenerate thumbnails.
-- Verify Library checks source files and thumbnails together.
+- Repair Broken Thumbnails checks thumbnail files on disk and resets missing thumbnail references.
+- Regenerate Selected rebuilds thumbnails for selected records.
+- Regenerate All Unoptimized repairs the chosen scope in batches.
+
+Settings, Advanced, Support includes an Open Maintenance shortcut for these repair tools.
 
 ## Metadata Refresh
 

@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-06-04
+Last reviewed: 2026-07-07
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -306,28 +306,27 @@ Status: In transition
 Status: Deferred
 
 ### Why Cleanup Is Needed
-- Product rule: there is no current Maintenance thumbnail regeneration tab. Thumbnail regeneration is handled by import/native generation, lazy gallery healing, background Smart Thumbnail Optimization, and explicit settings/model/collection thumbnail tools.
-- The visible Maintenance thumbnails tab was removed; `src/features/maintenance/components/MaintenanceTabs.tsx` documents that background healing now owns thumbnail regeneration.
+- Product rule: thumbnail repair is currently split between visible Maintenance tools and background healing. `MaintenanceTabs.tsx` exposes a `Thumbnails` tab, while import/native generation, lazy gallery healing, and background Smart Thumbnail Optimization can also create or improve thumbnails.
 - `src/hooks/useThumbnailQueue.ts` still starts Smart Thumbnail Optimization automatically after a short startup delay when `enableAutoThumbnailHealing` is enabled.
 - The queue processes thumbnails in small batches and pauses during import or sync, but it begins by running full-library unoptimized-thumbnail count queries. On large production libraries, those count scans can still compete with normal browsing and search.
-- Legacy thumbnail-maintenance UI code such as `ThumbnailsTab` and thumbnail scan paths remains in the tree even though it is no longer reachable from the visible maintenance tabs.
-- This mismatch keeps confusing maintainers and agents because the code shape still suggests a removed feature exists.
+- The visible `ThumbnailsTab` owns manual regeneration, broken-reference repair, developer-only thumbnail DB sync, and orphan thumbnail cleanup. Background healing owns automatic optimization.
+- This split keeps confusing maintainers and agents because thumbnail repair paths span visible UI, background startup work, services, and maintenance state.
 
 ### Current Pain Points
 - Startup can feel responsive overall while background thumbnail work still creates intermittent SQLite load shortly after launch.
 - The initial `getUnoptimizedImagesCount` query answers "how many total?" before doing useful work, which is expensive for large libraries and not always necessary.
-- Dead or latent thumbnail maintenance UI code makes it harder to know which thumbnail repair path is canonical.
+- Multiple active thumbnail repair paths make it harder to know which path is canonical for a given user problem.
 
 ### Safe-Change Warning
 - Thumbnail work touches SQLite, filesystem scope, scanner commands, React Query image caches, and user-facing thumbnails. Avoid mixing this cleanup with unrelated maintenance UI work.
-- Do not remove manual Advanced settings actions for clearing or verifying thumbnails unless a replacement workflow is explicitly designed.
-- Do not reintroduce a Maintenance thumbnail regeneration tab unless the product decision is explicitly reopened.
+- Do not remove visible Maintenance thumbnail actions or Advanced maintenance navigation unless a replacement workflow is explicitly designed.
+- Do not move all thumbnail repair into background healing unless the product decision is explicitly reopened.
 
 ### Suggested Future Direction
 - Make Smart Thumbnail Optimization more incremental: fetch and process small candidate batches first, and avoid full-library count scans on startup.
 - Consider deferring background thumbnail healing until the app is idle for longer, until the user enables it explicitly, or until recent startup/import/sync work has settled.
 - Add an indexed or materialized thumbnail-repair candidate path if full scans remain necessary.
-- Remove or quarantine unreachable thumbnail maintenance UI code in a dedicated cleanup after confirming no hidden route still uses it.
+- Clarify ownership between visible thumbnail maintenance, Advanced maintenance navigation, and background healing in a dedicated cleanup.
 
 ### Not Part of the Current Task
 - Do not change thumbnail behavior while stabilizing prod startup and search migration fixes.

@@ -22,21 +22,26 @@ Open Help, then Search Syntax, for the in-app operator list.
 
 Useful operators include:
 
+- `-term` or `!term` excludes a positive-prompt term.
 - `neg:blur` searches the negative prompt.
 - `file:portrait` searches filename or path.
+- `all:anime` searches path and raw metadata.
 - `model:sdxl` filters by model.
 - `lora:detail` filters by LoRA.
+- `cn:pose` or `controlnet:pose` filters by ControlNet.
+- `ip:adapter` or `ipadapter:adapter` filters by IP-Adapter.
 - `tool:invoke` filters by generator.
 - `sampler:euler` filters by sampler.
 - `steps:>30` filters generation steps.
 - `cfg:<7` filters CFG.
 - `seed:12345` filters seed.
 - `date:2026-04` filters by local calendar month.
+- `date:2026-04..2026-06` filters by an inclusive ISO date range.
 - `after:2026-04` and `before:2025` filter date ranges.
 - `w:>1024` and `h:<768` filter dimensions.
 - `upscaled:true` shows upscaled images.
 
-Use ISO dates such as `2026-04-15` to avoid country-specific date ambiguity.
+Use ISO dates such as `2026-04-15` to avoid country-specific date ambiguity. Plain terms combine with AND; `OR` only groups adjacent positive-prompt terms.
 
 ## Filter Panel
 

@@ -35,13 +35,14 @@ Start here for common tasks:
 - Desktop dev app: `pnpm run app:dev`
 - Frontend build: `pnpm run build`
 - Desktop build: `pnpm run app:build`
+- Lint: `pnpm run lint`
 - TypeScript check: `pnpm run typecheck`
 - Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
 - Release verification gate: `pnpm run verify:release`
 
-No dedicated lint script is defined in `package.json`. Production app builds now run `verify:release` before `tauri build --ci`.
+Production app builds run `verify:release` before `tauri build --ci`.
 
 ## Change Policy
 - No `any`. Keep TypeScript strict.
