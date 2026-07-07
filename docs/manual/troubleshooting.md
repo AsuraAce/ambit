@@ -39,9 +39,9 @@ Useful checks:
 
 ## Thumbnails Are Broken
 
-Open Settings, Advanced, Troubleshooting.
+Open Maintenance, then Thumbnails.
 
-Use Verify Files first. If thumbnails still fail, use Reset All to clear thumbnail references so Ambit can rediscover or regenerate them. Use Verify Library when you want to check source files and thumbnails together.
+Use Repair Broken Thumbnails first. If thumbnails still fail, regenerate selected thumbnails or run Regenerate All Unoptimized for the current scope. Settings, Advanced, Support also has an Open Maintenance shortcut.
 
 ## Images Show As Missing
 
@@ -82,7 +82,7 @@ Gemini is not required for core Ambit browsing, search, metadata parsing, or mai
 
 ## Online Model Resolution Is Disabled Or Busy
 
-Resolve Online is blocked while library work is already running, such as import, sync, scan, thumbnail regeneration, duplicate scan, or background healing. Wait for the current task to finish, then run resolution again.
+Resolve Online is blocked while library work is already running, such as import, sync, scan, thumbnail optimization, duplicate scan, or background healing. Wait for the current task to finish, then run resolution again.
 
 Online model resolution sends unresolved model hash strings to CivitAI. It does not send image files.
 
