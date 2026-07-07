@@ -1,6 +1,6 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-05-15
+Last reviewed: 2026-07-07
 
 ## System Overview
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
@@ -29,14 +29,14 @@ Risks: parser heuristics and watcher behavior can create wrong metadata or miss 
 Related docs: `docs/WORKFLOW_SETUP.md`
 
 ### Frontend App Shell and Feature Surfaces
-Purpose: render the desktop UI, modals, viewer, filter panel, maintenance screens, and settings flows.
+Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`
 Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, and Tauri plugins
 Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature
 Related docs: `docs/refactor.md#frontend-state-and-shell-coordination`
 
 ### Query, State, and Persistence Adapters
-Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, and database helper modules.
+Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, thumbnail services, and database helper modules.
 Code: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 Interacts with: `src/features/`, `src/bindings.ts`, `src-tauri/src/db/`, app-local `library.json`
 Risks: state ownership is split across React Query, contexts, Zustand, and repository adapters, which makes duplicate sources of truth easy to introduce

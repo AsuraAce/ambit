@@ -21,7 +21,7 @@ Avoid broad refactors unless the task explicitly calls for them.
 - `src/services/`: persistence adapters, Tauri-facing services, and DB helper modules.
 - `src-tauri/src/`: Rust backend for Tauri commands, SQLite, metadata parsing, scanning, watcher, and security.
 - `.github/workflows/`: release automation.
-- `docs/`: agent docs and release workflow notes.
+- `docs/`: agent docs, user manual, and release workflow notes.
 
 Start here for common tasks:
 - App shell and cross-feature UI orchestration: `src/App.tsx`, `src/components/`, `src/features/`
@@ -35,13 +35,14 @@ Start here for common tasks:
 - Desktop dev app: `pnpm run app:dev`
 - Frontend build: `pnpm run build`
 - Desktop build: `pnpm run app:build`
+- Lint: `pnpm run lint`
 - TypeScript check: `pnpm run typecheck`
 - Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
 - Release verification gate: `pnpm run verify:release`
 
-No dedicated lint script is defined in `package.json`. Production app builds now run `verify:release` before `tauri build --ci`.
+Production app builds run `verify:release` before `tauri build --ci`.
 
 ## Change Policy
 - No `any`. Keep TypeScript strict.
@@ -75,6 +76,7 @@ Use this file as the entry point. Do not bulk-read `docs/` unless one of the rou
 - For active work, constraints, and maintainer-review notes, read `docs/progress.md`.
 - For release automation details, read `docs/WORKFLOW_SETUP.md`.
 - For deferred structural cleanup, read `docs/refactor.md` if present.
+- For user-facing manual coverage, start at `docs/manual/index.md`.
 
 ## Completion Checklist
 Before finishing, confirm:

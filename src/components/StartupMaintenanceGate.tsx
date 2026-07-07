@@ -7,16 +7,21 @@ interface StartupMaintenanceGateProps {
     children: React.ReactNode;
 }
 
+const MAINTENANCE_REVEAL_DELAY_MS = 700;
+
+const STARTUP_PHASE_LABELS: Record<StartupDbPhase, string> = {
+    'Preparing library database': 'Preparing library database',
+    'Updating database schema': 'Preparing database',
+    'Optimizing database': 'Optimizing database',
+    'Loading library': 'Loading library'
+};
+
 const STARTUP_PHASE_COPY: Record<StartupDbPhase, string> = {
     'Preparing library database': 'Checking the local library database before Ambit opens.',
-    'Updating database schema': 'Updating library database. Startup may take longer than usual this time.',
+    'Updating database schema': 'Preparing the local database. Startup may take longer than usual this time.',
     'Optimizing database': 'Optimizing the local database for large libraries.',
     'Loading library': 'Loading your library.'
 };
-
-const nextFrame = () => new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => resolve());
-});
 
 const dismissStaticLoader = () => {
     const loader = document.getElementById('static-loading');
@@ -33,28 +38,39 @@ const dismissStaticLoader = () => {
 export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ children }) => {
     const [phase, setPhase] = React.useState<StartupDbPhase>('Preparing library database');
     const [isReady, setIsReady] = React.useState(isBrowserMockMode());
+    const [isMaintenanceVisible, setIsMaintenanceVisible] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
     React.useEffect(() => {
         if (isReady) return;
 
         let isMounted = true;
+        const revealTimerId = window.setTimeout(() => {
+            if (!isMounted) return;
+
+            dismissStaticLoader();
+            setIsMaintenanceVisible(true);
+        }, MAINTENANCE_REVEAL_DELAY_MS);
 
         const prepareDatabase = async () => {
             try {
                 setPhase('Preparing library database');
-                dismissStaticLoader();
-                await nextFrame();
                 await getDb({
                     onPhase: (nextPhase) => {
                         if (isMounted) setPhase(nextPhase);
                     }
                 });
-                if (isMounted) setIsReady(true);
+                if (isMounted) {
+                    window.clearTimeout(revealTimerId);
+                    setIsReady(true);
+                }
             } catch (err) {
                 console.error('[Startup] Failed to prepare database', err);
                 if (isMounted) {
+                    window.clearTimeout(revealTimerId);
+                    dismissStaticLoader();
                     setError(err instanceof Error ? err.message : String(err));
+                    setIsMaintenanceVisible(true);
                 }
             }
         };
@@ -63,11 +79,16 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
 
         return () => {
             isMounted = false;
+            window.clearTimeout(revealTimerId);
         };
     }, [isReady]);
 
     if (isReady) {
         return <>{children}</>;
+    }
+
+    if (!isMaintenanceVisible) {
+        return null;
     }
 
     return (
@@ -82,7 +103,7 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
                             Startup Maintenance
                         </p>
                         <h1 className="mt-1 text-xl font-black tracking-tight">
-                            {error ? 'Database startup failed' : phase}
+                            {error ? 'Database startup failed' : STARTUP_PHASE_LABELS[phase]}
                         </h1>
                     </div>
                 </div>

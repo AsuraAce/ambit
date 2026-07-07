@@ -4,7 +4,45 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+fn scan_metadata_chunks_for_path(
+    path: &Path,
+    extract_workflow: bool,
+) -> Result<HashMap<String, String>, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut buffer = [0; 12];
+    let _ = file.read(&mut buffer).map_err(|e| e.to_string())?;
+
+    let is_png = buffer[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    let is_jpg = buffer[0..2] == [0xFF, 0xD8];
+    let is_webp = &buffer[0..4] == b"RIFF" && &buffer[8..12] == b"WEBP";
+    let mut chunks = HashMap::new();
+
+    if is_jpg {
+        if let Ok(c) = metadata::scan_jpeg_metadata(path) {
+            chunks.extend(c);
+        }
+    }
+
+    if is_webp && extract_workflow {
+        if let Ok(c) = metadata::scan_webp_metadata(path) {
+            chunks.extend(c);
+        }
+    }
+
+    if is_png && extract_workflow {
+        let mut reader = BufReader::new(file);
+        // IMPORTANT: metadata::extract_png_chunks expects the reader at the start of the file
+        // to verify the 8-byte PNG signature. Do not seek past the header here.
+        reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        if let Ok(c) = metadata::extract_png_chunks(&mut reader) {
+            chunks.extend(c);
+        }
+    }
+
+    Ok(chunks)
+}
 
 pub fn scan_image_internal(
     path: String,
@@ -103,29 +141,7 @@ pub fn scan_image_internal(
         };
     }
 
-    let mut file = File::open(&path).map_err(|e| e.to_string())?;
-    let mut buffer = [0; 8];
-    let _ = file.read_exact(&mut buffer);
-
-    let is_png = buffer == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    let is_jpg = buffer[0..2] == [0xFF, 0xD8];
-    let mut chunks = HashMap::new();
-
-    if is_jpg {
-        if let Ok(c) = metadata::scan_jpeg_metadata(&path_buf) {
-            chunks = c;
-        }
-    }
-
-    if is_png && extract_workflow {
-        let mut reader = BufReader::new(file);
-        // IMPORTANT: metadata::extract_png_chunks expects the reader at the start of the file
-        // to verify the 8-byte PNG signature. Do not seek past the header here.
-        reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-        if let Ok(c) = metadata::extract_png_chunks(&mut reader) {
-            chunks.extend(c);
-        }
-    }
+    let chunks = scan_metadata_chunks_for_path(&path_buf, extract_workflow)?;
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
@@ -264,11 +280,7 @@ pub fn scan_image_workflow(path: String) -> Result<Option<String>, String> {
         return Ok(None);
     }
 
-    let file = File::open(path_obj).map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(file);
-
-    // We use the robust parser which handles headers, decompression, and key-value splitting
-    let chunks = match metadata::extract_png_chunks(&mut reader) {
+    let chunks = match scan_metadata_chunks_for_path(path_obj, true) {
         Ok(c) => c,
         Err(_) => return Ok(None),
     };
@@ -304,9 +316,7 @@ pub fn read_image_metadata(
         return Err("File not found".to_string());
     }
 
-    let file = File::open(path_obj).map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(file);
-    let chunks = metadata::extract_png_chunks(&mut reader)?;
+    let chunks = scan_metadata_chunks_for_path(path_obj, true)?;
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
 
@@ -346,6 +356,8 @@ pub fn read_image_metadata(
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn crc32(data: &[u8]) -> u32 {
         let mut crc = 0xFFFFFFFFu32;
@@ -360,6 +372,67 @@ mod tests {
             }
         }
         !crc
+    }
+
+    fn unique_test_path(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("ambit_{name}_{nanos}"))
+    }
+
+    fn exif_ascii_tags_payload(tags: &[(u16, &str)]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"Exif\0\0");
+        payload.extend_from_slice(b"II");
+        payload.extend_from_slice(&0x2Au16.to_le_bytes());
+        payload.extend_from_slice(&8u32.to_le_bytes());
+
+        payload.extend_from_slice(&(tags.len() as u16).to_le_bytes());
+        let data_start = 8 + 2 + (tags.len() * 12) + 4;
+        let mut data_offset = data_start as u32;
+        let mut data_values = Vec::new();
+
+        for (tag, value) in tags {
+            let mut bytes = value.as_bytes().to_vec();
+            bytes.push(0);
+
+            payload.extend_from_slice(&tag.to_le_bytes());
+            payload.extend_from_slice(&2u16.to_le_bytes());
+            payload.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+
+            if bytes.len() <= 4 {
+                let mut inline = [0; 4];
+                inline[..bytes.len()].copy_from_slice(&bytes);
+                payload.extend_from_slice(&inline);
+            } else {
+                payload.extend_from_slice(&data_offset.to_le_bytes());
+                data_offset += bytes.len() as u32;
+                data_values.extend_from_slice(&bytes);
+            }
+        }
+
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&data_values);
+        payload
+    }
+
+    fn jpeg_image_with_exif(exif_payload: &[u8]) -> Vec<u8> {
+        let image = image::RgbImage::from_pixel(1, 1, image::Rgb([8, 16, 24]));
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .encode_image(&image)
+            .expect("encode test jpeg");
+        assert_eq!(&jpeg[0..2], &[0xFF, 0xD8]);
+
+        let mut result = Vec::new();
+        result.extend_from_slice(&jpeg[0..2]);
+        result.extend_from_slice(&[0xFF, 0xE1]);
+        result.extend_from_slice(&((exif_payload.len() + 2) as u16).to_be_bytes());
+        result.extend_from_slice(exif_payload);
+        result.extend_from_slice(&jpeg[2..]);
+        result
     }
 
     #[test]
@@ -419,6 +492,42 @@ mod tests {
         let metadata = result.metadata.expect("Metadata should exist");
         assert_eq!(metadata.steps, 20);
         assert_eq!(metadata.model, "test-model");
+    }
+
+    #[test]
+    fn test_scan_image_internal_jpeg_comfy_exif_metadata() {
+        let workflow = r#"{"nodes":[]}"#;
+        let prompt = r#"{
+            "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"test-model.safetensors"}},
+            "2":{"class_type":"CLIPTextEncode","inputs":{"text":"positive prompt","clip":["1",1]}},
+            "3":{"class_type":"CLIPTextEncode","inputs":{"text":"negative prompt","clip":["1",1]}},
+            "4":{"class_type":"EmptyLatentImage","inputs":{"width":512,"height":512}},
+            "5":{"class_type":"KSampler","inputs":{"seed":123,"steps":20,"cfg":7.0,"sampler_name":"euler","scheduler":"normal","model":["1",0],"positive":["2",0],"negative":["3",0],"latent_image":["4",0]}},
+            "6":{"class_type":"VAEDecode","inputs":{"samples":["5",0],"vae":["1",2]}},
+            "7":{"class_type":"SaveImage","inputs":{"images":["6",0]}}
+        }"#;
+        let workflow_tag = format!("workflow:{workflow}");
+        let prompt_tag = format!("prompt:{prompt}");
+        let exif = exif_ascii_tags_payload(&[(0x010F, &workflow_tag), (0x0110, &prompt_tag)]);
+        let jpeg = jpeg_image_with_exif(&exif);
+        let path = unique_test_path("jpeg_comfy_exif.jpg");
+        std::fs::write(&path, jpeg).expect("write test jpeg");
+
+        let result =
+            scan_image_internal(path.to_string_lossy().to_string(), None, true, true, None)
+                .unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        let metadata = result.metadata.expect("metadata should exist");
+        assert_eq!(metadata.tool, "ComfyUI");
+        assert_eq!(metadata.workflow_json.as_deref(), Some(workflow));
+        assert_eq!(metadata.steps, 20);
+        assert_eq!(metadata.cfg, 7.0);
+        assert_eq!(metadata.seed, Some(123));
+        assert_eq!(metadata.sampler, "euler (normal)");
+        assert_eq!(metadata.model, "test_model");
+        assert_eq!(metadata.positive_prompt, "positive prompt");
+        assert_eq!(metadata.negative_prompt, "negative prompt");
     }
 
     #[test]
