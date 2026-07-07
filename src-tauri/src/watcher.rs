@@ -62,7 +62,7 @@ pub fn start_native_folder_watcher(
         let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
         if watcher_guard.is_some() {
             *watcher_guard = None;
-            println!("[Rust Watcher] Stopped watcher");
+            log::info!("[Rust Watcher] Stopped watcher");
         }
         return Ok(());
     }
@@ -71,7 +71,7 @@ pub fn start_native_folder_watcher(
 
     if watcher_guard.is_some() {
         *watcher_guard = None;
-        println!("[Rust Watcher] Restarting watcher with new paths...");
+        log::info!("[Rust Watcher] Restarting watcher with new paths...");
     }
 
     let app_handle = app.clone();
@@ -102,7 +102,7 @@ pub fn start_native_folder_watcher(
                             .map(|started_at| started_at.elapsed().as_millis())
                             .unwrap_or(0);
                         let to_emit: Vec<String> = buffer.drain().collect();
-                        println!(
+                        log::info!(
                             "[LiveWatchPerf] watcher batch emitted | reason=throttle | paths={} | age_ms={} | types={}",
                             to_emit.len(),
                             batch_age_ms,
@@ -120,7 +120,7 @@ pub fn start_native_folder_watcher(
                             .map(|started_at| started_at.elapsed().as_millis())
                             .unwrap_or(0);
                         let to_emit: Vec<String> = buffer.drain().collect();
-                        println!(
+                        log::info!(
                             "[LiveWatchPerf] watcher batch emitted | reason=timeout | paths={} | age_ms={} | types={}",
                             to_emit.len(),
                             batch_age_ms,
@@ -195,7 +195,7 @@ pub fn start_native_folder_watcher(
                         .collect();
 
                     if !valid_paths.is_empty() {
-                        println!(
+                        log::info!(
                             "[LiveWatchPerf] watcher event received | kind={} | raw_paths={} | matched_paths={} | types={}",
                             event_kind,
                             raw_path_count,
@@ -206,7 +206,7 @@ pub fn start_native_folder_watcher(
                     }
                 }
             }
-            Err(e) => println!("watch error: {:?}", e),
+            Err(e) => log::error!("[Rust Watcher] watch error: {:?}", e),
         }
     };
 
@@ -219,13 +219,13 @@ pub fn start_native_folder_watcher(
         if path_buf.exists() {
             if let Err(e) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
                 let err_msg = format!("Failed to watch path {}: {}", path_str, e);
-                println!("[Rust Watcher] {}", err_msg);
+                log::error!("[Rust Watcher] {}", err_msg);
                 errors.push(err_msg);
             } else {
-                println!("[Rust Watcher] Added path: {}", path_str);
+                log::info!("[Rust Watcher] Added path: {}", path_str);
             }
         } else {
-            println!("[Rust Watcher] Skipping non-existent path: {}", path_str);
+            log::warn!("[Rust Watcher] Skipping non-existent path: {}", path_str);
         }
     }
 

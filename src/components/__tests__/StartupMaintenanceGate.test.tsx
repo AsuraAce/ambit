@@ -115,7 +115,9 @@ describe('StartupMaintenanceGate', () => {
 
     it('shows an actionable error immediately when database preparation fails', async () => {
         const staticLoader = addStaticLoader();
-        vi.mocked(getDb).mockRejectedValue(new Error('migration failed'));
+        const startupError = new Error('migration failed');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(getDb).mockRejectedValue(startupError);
 
         render(
             <StartupMaintenanceGate>
@@ -132,6 +134,8 @@ describe('StartupMaintenanceGate', () => {
         expect(screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')).toBeTruthy();
         expect(screen.getByText('migration failed')).toBeTruthy();
         expect(screen.queryByText('Library ready')).toBeNull();
+        expect(errorSpy).toHaveBeenCalledWith('[Startup] Failed to prepare database', startupError);
+        errorSpy.mockRestore();
     });
 
     it('skips database preparation in browser mock mode', () => {
