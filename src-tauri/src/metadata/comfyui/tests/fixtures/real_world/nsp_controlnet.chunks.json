@@ -1,0 +1,91 @@
+{
+  "prompt": {
+    "3": {
+      "inputs": {
+        "seed": 273138048298546,
+        "steps": 12,
+        "cfg": 4.0,
+        "sampler_name": "dpmpp_sde",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "model": ["32", 0],
+        "positive": ["151", 0],
+        "negative": ["114", 0],
+        "latent_image": ["70", 0]
+      },
+      "class_type": "KSampler"
+    },
+    "8": {
+      "inputs": { "samples": ["3", 0], "vae": ["20", 0] },
+      "class_type": "VAEDecode"
+    },
+    "9": {
+      "inputs": { "filename_prefix": "hr-fix", "images": ["8", 0] },
+      "class_type": "SaveImage"
+    },
+    "20": {
+      "inputs": { "vae_name": "kl-f8-anime.ckpt" },
+      "class_type": "VAELoader"
+    },
+    "32": {
+      "inputs": {
+        "lora_name": "epiNoiseoffset_v2.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0,
+        "model": ["53", 0],
+        "clip": ["53", 1]
+      },
+      "class_type": "LoraLoader"
+    },
+    "34": {
+      "inputs": {
+        "noodle_key": "::",
+        "seed": 483340363264397,
+        "text": "Alina Smirnov: young dancer on a boat, detailed dress and face",
+        "clip": ["32", 1]
+      },
+      "class_type": "CLIPTextEncode (NSP)"
+    },
+    "53": {
+      "inputs": {
+        "config_name": "v1-inference_clip_skip_2_fp16.yaml",
+        "ckpt_name": "revAnimated_v11.safetensors"
+      },
+      "class_type": "CheckpointLoader"
+    },
+    "70": {
+      "inputs": { "batch_size": 1, "width": 512, "height": 768 },
+      "class_type": "EmptyLatentImage"
+    },
+    "114": {
+      "inputs": {
+        "noodle_key": "__",
+        "seed": 608481745342694,
+        "text": "bad_quality",
+        "clip": ["32", 1]
+      },
+      "class_type": "CLIPTextEncode (NSP)"
+    },
+    "149": {
+      "inputs": { "control_net_name": "control_sd15_openpose.pth" },
+      "class_type": "ControlNetLoader"
+    },
+    "150": {
+      "inputs": { "detect_hand": "enable", "image": ["154", 0] },
+      "class_type": "OpenposePreprocessor"
+    },
+    "151": {
+      "inputs": {
+        "strength": 1.0,
+        "conditioning": ["34", 0],
+        "control_net": ["149", 0],
+        "image": ["150", 0]
+      },
+      "class_type": "ControlNetApply"
+    },
+    "154": {
+      "inputs": { "image": "pose.png" },
+      "class_type": "LoadImage"
+    }
+  }
+}

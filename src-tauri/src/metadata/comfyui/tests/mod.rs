@@ -6,6 +6,7 @@ pub mod models;
 pub mod multi_stage;
 pub mod official_examples;
 pub mod prompts;
+pub mod real_world;
 pub mod repro_dual_ip_adapter;
 mod repro_ip_adapter;
 pub mod repro_issue_1024;

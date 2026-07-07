@@ -1,0 +1,72 @@
+{
+  "workflow": {
+    "last_node_id": 8,
+    "last_link_id": 7,
+    "nodes": [
+      {
+        "id": 1,
+        "type": "CheckpointLoaderSimple",
+        "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [1] }],
+        "widgets_values": ["stylealigned_base.safetensors"]
+      },
+      {
+        "id": 2,
+        "type": "StyleAlignedBatchAlign",
+        "inputs": [{ "name": "model", "type": "MODEL", "link": 1 }],
+        "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [2] }],
+        "widgets_values": ["both", "q+k+v", 1]
+      },
+      {
+        "id": 3,
+        "type": "CLIPTextEncode",
+        "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [3] }],
+        "widgets_values": ["Low poly crystal pine tree, flat background"]
+      },
+      {
+        "id": 4,
+        "type": "CLIPTextEncode",
+        "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [4] }],
+        "widgets_values": ["text, watermark"]
+      },
+      {
+        "id": 5,
+        "type": "EmptyLatentImage",
+        "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [5] }],
+        "widgets_values": [1024, 1024, 1]
+      },
+      {
+        "id": 6,
+        "type": "KSampler",
+        "inputs": [
+          { "name": "model", "type": "MODEL", "link": 2 },
+          { "name": "positive", "type": "CONDITIONING", "link": 3 },
+          { "name": "negative", "type": "CONDITIONING", "link": 4 },
+          { "name": "latent_image", "type": "LATENT", "link": 5 }
+        ],
+        "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [6] }],
+        "widgets_values": [24680013579, "fixed", 28, 6.5, "euler", "normal", 1.0]
+      },
+      {
+        "id": 7,
+        "type": "VAEDecode",
+        "inputs": [{ "name": "samples", "type": "LATENT", "link": 6 }],
+        "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [7] }]
+      },
+      {
+        "id": 8,
+        "type": "SaveImage",
+        "inputs": [{ "name": "images", "type": "IMAGE", "link": 7 }],
+        "widgets_values": ["ComfyUI"]
+      }
+    ],
+    "links": [
+      [1, 1, 0, 2, 0, "MODEL"],
+      [2, 2, 0, 6, 0, "MODEL"],
+      [3, 3, 0, 6, 1, "CONDITIONING"],
+      [4, 4, 0, 6, 2, "CONDITIONING"],
+      [5, 5, 0, 6, 3, "LATENT"],
+      [6, 6, 0, 7, 0, "LATENT"],
+      [7, 7, 0, 8, 0, "IMAGE"]
+    ]
+  }
+}
