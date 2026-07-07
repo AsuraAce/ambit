@@ -9,11 +9,13 @@ Settings controls Ambit's app preferences, integrations, privacy behavior, optio
 The Settings window contains:
 
 - General: app-level preferences.
-- Connections: folders, InvokeAI, SD WebUI, and ComfyUI setup.
+- Connections: folders, Resources, InvokeAI, SD WebUI, and ComfyUI setup.
 - Intelligence: optional AI features and model/prompt configuration.
 - Privacy: content masking behavior and masked keywords.
 - Advanced: database, interface, update, and troubleshooting tools.
 - Dev Tools: development-only tools when enabled.
+
+For image generator setup details, see [Generator Integrations](generator-integrations.md). For model and resource folder setup, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## Local-First Behavior
 

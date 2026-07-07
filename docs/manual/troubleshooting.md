@@ -10,11 +10,13 @@ Confirm that you added image sources:
 
 - use Add Images, then Add Folder for a normal folder
 - use Settings > Connections > Folders for monitored folders
-- use Settings, Connections, ComfyUI for a ComfyUI output folder
-- use Settings, Connections, SD WebUI for A1111, Forge, SD.Next, Anapnoe, or archive folders
-- use Settings, Connections, InvokeAI for an InvokeAI root containing `databases/invokeai.db`
+- use Settings > Connections > ComfyUI for a ComfyUI output folder
+- use Settings > Connections > SD WebUI for A1111, Forge, SD.Next, Anapnoe, or archive folders
+- use Settings > Connections > InvokeAI for an InvokeAI root containing `databases/invokeai.db`
 
 Large folders can take time to scan. Wait for import activity to finish before assuming the scan failed.
+
+For the full generator setup workflow, see [Generator Integrations](generator-integrations.md).
 
 ## A Folder Did Not Scan Correctly
 
