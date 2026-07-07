@@ -1,4 +1,5 @@
 use flate2::read::ZlibDecoder;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -7,6 +8,14 @@ const MAX_PNG_METADATA_CHUNK_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_PNG_DECOMPRESSED_TEXT_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_PNG_METADATA_TOTAL_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_PNG_DECODED_TEXT_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_WEBP_METADATA_CHUNK_BYTES: u32 = 16 * 1024 * 1024;
+const EXIF_HEADER: &[u8; 6] = b"Exif\0\0";
+const TAG_EXIF_IFD: u16 = 0x8769;
+const TAG_USER_COMMENT: u16 = 0x9286;
+const TAG_IMAGE_DESCRIPTION: u16 = 0x010E;
+const TAG_MAKE: u16 = 0x010F;
+const TAG_MODEL: u16 = 0x0110;
+const TAG_SOFTWARE: u16 = 0x0131;
 
 pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
@@ -30,9 +39,9 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
         }
 
         let m_type = marker[1];
-        if m_type == 0xD9 {
+        if m_type == 0xD9 || m_type == 0xDA {
             break;
-        } // EOI
+        } // EOI or SOS
 
         // Length
         let mut len_bytes = [0; 2];
@@ -49,10 +58,8 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
             // APP1 - EXIF
             let mut app1_data = vec![0; len];
             if file.read_exact(&mut app1_data).is_ok() {
-                if app1_data.starts_with(b"Exif\0\0") {
-                    if let Some(comment) = parse_exif(&app1_data[6..]) {
-                        chunks.insert("parameters".to_string(), comment);
-                    }
+                if app1_data.starts_with(EXIF_HEADER) {
+                    merge_missing_chunks(&mut chunks, extract_exif_chunks(&app1_data[6..]));
                 }
             }
         } else {
@@ -63,6 +70,148 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
     }
 
     Ok(chunks)
+}
+
+pub fn scan_webp_metadata(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut header = [0; 12];
+    if file.read_exact(&mut header).is_err() {
+        return Ok(HashMap::new());
+    }
+    if &header[0..4] != b"RIFF" || &header[8..12] != b"WEBP" {
+        return Ok(HashMap::new());
+    }
+
+    let mut chunks = HashMap::new();
+
+    loop {
+        let mut chunk_header = [0; 8];
+        if file.read_exact(&mut chunk_header).is_err() {
+            break;
+        }
+
+        let chunk_type = &chunk_header[0..4];
+        let length = u32::from_le_bytes(
+            chunk_header[4..8]
+                .try_into()
+                .map_err(|_| "Invalid WebP chunk length".to_string())?,
+        );
+
+        if chunk_type == b"EXIF" {
+            if length > MAX_WEBP_METADATA_CHUNK_BYTES {
+                let skip = length as i64 + (length % 2) as i64;
+                if file.seek(SeekFrom::Current(skip)).is_err() {
+                    break;
+                }
+                continue;
+            }
+
+            let mut data = vec![0; length as usize];
+            if file.read_exact(&mut data).is_err() {
+                break;
+            }
+            let exif_data = if data.starts_with(EXIF_HEADER) {
+                &data[6..]
+            } else {
+                &data
+            };
+            merge_missing_chunks(&mut chunks, extract_exif_chunks(exif_data));
+
+            if length % 2 == 1 && file.seek(SeekFrom::Current(1)).is_err() {
+                break;
+            }
+        } else {
+            let skip = length as i64 + (length % 2) as i64;
+            if file.seek(SeekFrom::Current(skip)).is_err() {
+                break;
+            }
+        }
+    }
+
+    Ok(chunks)
+}
+
+fn merge_missing_chunks(base: &mut HashMap<String, String>, incoming: HashMap<String, String>) {
+    for (key, value) in incoming {
+        base.entry(key).or_insert(value);
+    }
+}
+
+fn insert_chunk_if_missing(chunks: &mut HashMap<String, String>, key: &str, value: String) {
+    if !value.trim().is_empty() {
+        chunks.entry(key.to_string()).or_insert(value);
+    }
+}
+
+fn json_value_to_chunk_string(value: &Value) -> String {
+    value
+        .as_str()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn normalize_metadata_text(
+    chunks: &mut HashMap<String, String>,
+    text: &str,
+    fallback_key: Option<&str>,
+) {
+    let text = text.trim_matches('\0').trim();
+    if text.is_empty() {
+        return;
+    }
+
+    let lower = text.to_ascii_lowercase();
+    for (prefix, key) in [
+        ("workflow:", "workflow"),
+        ("prompt:", "prompt"),
+        ("parameters:", "parameters"),
+    ] {
+        if lower.starts_with(prefix) {
+            insert_chunk_if_missing(chunks, key, text[prefix.len()..].trim().to_string());
+            return;
+        }
+    }
+
+    if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(text) {
+        let mut inserted = false;
+
+        if let Some(workflow) = obj.get("workflow") {
+            insert_chunk_if_missing(chunks, "workflow", json_value_to_chunk_string(workflow));
+            inserted = true;
+        }
+        if let Some(prompt) = obj.get("prompt") {
+            insert_chunk_if_missing(chunks, "prompt", json_value_to_chunk_string(prompt));
+            inserted = true;
+        }
+
+        if inserted {
+            return;
+        }
+
+        if obj.contains_key("nodes") {
+            insert_chunk_if_missing(chunks, "workflow", text.to_string());
+            return;
+        }
+
+        if obj.keys().any(|key| key.parse::<u64>().is_ok()) {
+            insert_chunk_if_missing(chunks, "prompt", text.to_string());
+            return;
+        }
+    }
+
+    if let Some(key) = fallback_key {
+        insert_chunk_if_missing(chunks, key, text.to_string());
+    }
+}
+
+fn normalize_exif_entry(chunks: &mut HashMap<String, String>, tag: u16, text: &str) {
+    match tag {
+        TAG_USER_COMMENT => normalize_metadata_text(chunks, text, Some("parameters")),
+        TAG_IMAGE_DESCRIPTION | TAG_MAKE | TAG_MODEL | TAG_SOFTWARE => {
+            normalize_metadata_text(chunks, text, None)
+        }
+        _ => {}
+    }
 }
 
 fn skip_chunk_data_and_crc<R: Seek>(reader: &mut R, length: u64) -> Result<(), String> {
@@ -87,11 +236,7 @@ impl PngMetadataBudget {
             return false;
         }
 
-        if self
-            .raw_chunk_bytes
-            .saturating_add(length)
-            > MAX_PNG_METADATA_TOTAL_CHUNK_BYTES
-        {
+        if self.raw_chunk_bytes.saturating_add(length) > MAX_PNG_METADATA_TOTAL_CHUNK_BYTES {
             self.raw_exhausted = true;
             self.note_limit("maximum aggregate PNG metadata chunk bytes reached");
             return false;
@@ -230,10 +375,10 @@ pub fn extract_png_chunks<R: Read + Seek>(
                     &chunk_data
                 };
 
-                if let Some(comment) =
-                    parse_exif(data_slice).and_then(|comment| budget.accept_decoded_text(comment))
-                {
-                    chunks.insert("parameters".to_string(), comment);
+                for (key, value) in extract_exif_chunks(data_slice) {
+                    if let Some(value) = budget.accept_decoded_text(value) {
+                        chunks.entry(key).or_insert(value);
+                    }
                 }
             } else if let Some(pos) = chunk_data.iter().position(|&x| x == 0) {
                 let key = String::from_utf8_lossy(&chunk_data[0..pos]).to_string();
@@ -319,200 +464,195 @@ pub fn extract_png_chunks<R: Read + Seek>(
     Ok(chunks)
 }
 
-pub fn parse_exif(data: &[u8]) -> Option<String> {
-    // Check for TIFF header
-    let is_little_endian = if data.len() < 8 {
-        return None;
-    } else if data[0] == 0x49 && data[1] == 0x49 {
-        true
-    } else if data[0] == 0x4D && data[1] == 0x4D {
-        false
+#[derive(Clone, Copy)]
+enum TiffEndian {
+    Little,
+    Big,
+}
+
+impl TiffEndian {
+    fn read_u16(self, data: &[u8], offset: usize) -> Option<u16> {
+        let bytes: [u8; 2] = data.get(offset..offset + 2)?.try_into().ok()?;
+        Some(match self {
+            Self::Little => u16::from_le_bytes(bytes),
+            Self::Big => u16::from_be_bytes(bytes),
+        })
+    }
+
+    fn read_u32(self, data: &[u8], offset: usize) -> Option<u32> {
+        let bytes: [u8; 4] = data.get(offset..offset + 4)?.try_into().ok()?;
+        Some(match self {
+            Self::Little => u32::from_le_bytes(bytes),
+            Self::Big => u32::from_be_bytes(bytes),
+        })
+    }
+}
+
+fn tiff_type_size(field_type: u16) -> Option<usize> {
+    match field_type {
+        1 | 2 | 6 | 7 => Some(1),
+        3 | 8 => Some(2),
+        4 | 9 | 11 => Some(4),
+        5 | 10 | 12 => Some(8),
+        _ => None,
+    }
+}
+
+fn decode_user_comment(raw: &[u8], endian: TiffEndian) -> Option<String> {
+    if raw.starts_with(b"UNICODE\0") {
+        let payload = &raw[8..];
+        let u16_vec: Vec<u16> = payload
+            .chunks_exact(2)
+            .map(|chunk| match endian {
+                TiffEndian::Little => u16::from_le_bytes([chunk[0], chunk[1]]),
+                TiffEndian::Big => u16::from_be_bytes([chunk[0], chunk[1]]),
+            })
+            .collect();
+        return String::from_utf16(&u16_vec)
+            .ok()
+            .map(|s| s.trim_end_matches('\0').trim().replace('\0', ""));
+    }
+
+    let payload = if raw.starts_with(b"ASCII\0\0\0") {
+        &raw[8..]
     } else {
-        return None;
+        raw
     };
 
-    let get_u16 = |offset: usize| -> Option<u16> {
-        if offset + 2 > data.len() {
-            return None;
-        }
-        let slice = &data[offset..offset + 2];
-        let arr: [u8; 2] = slice.try_into().ok()?;
-        Some(if is_little_endian {
-            u16::from_le_bytes(arr)
-        } else {
-            u16::from_be_bytes(arr)
-        })
+    Some(
+        String::from_utf8_lossy(payload)
+            .trim_matches('\0')
+            .trim()
+            .replace('\0', ""),
+    )
+}
+
+fn decode_exif_string(
+    data: &[u8],
+    endian: TiffEndian,
+    tag: u16,
+    field_type: u16,
+    count: u32,
+    value_offset: usize,
+    inline_value: &[u8],
+) -> Option<String> {
+    let field_size = tiff_type_size(field_type)?;
+    let total_size = field_size.checked_mul(count as usize)?;
+    let raw = if total_size <= 4 {
+        inline_value.get(..total_size)?
+    } else {
+        data.get(value_offset..value_offset.checked_add(total_size)?)?
     };
 
-    let get_u32 = |offset: usize| -> Option<u32> {
-        if offset + 4 > data.len() {
-            return None;
-        }
-        let slice = &data[offset..offset + 4];
-        let arr: [u8; 4] = slice.try_into().ok()?;
-        Some(if is_little_endian {
-            u32::from_le_bytes(arr)
-        } else {
-            u32::from_be_bytes(arr)
-        })
+    if tag == TAG_USER_COMMENT {
+        return decode_user_comment(raw, endian);
+    }
+
+    match field_type {
+        2 | 7 => Some(
+            String::from_utf8_lossy(raw)
+                .trim_matches('\0')
+                .trim()
+                .replace('\0', ""),
+        ),
+        _ => None,
+    }
+}
+
+fn read_exif_ifd(
+    data: &[u8],
+    offset: usize,
+    endian: TiffEndian,
+    chunks: &mut HashMap<String, String>,
+    visited_offsets: &mut Vec<usize>,
+) {
+    if visited_offsets.contains(&offset) || offset + 2 > data.len() {
+        return;
+    }
+    visited_offsets.push(offset);
+
+    let Some(entry_count) = endian.read_u16(data, offset) else {
+        return;
     };
+    let entries_start = offset + 2;
+    let mut exif_ifd_offset = None;
 
-    if get_u16(2)? != 0x002A {
-        return None;
-    }
-
-    let first_ifd_offset = get_u32(4)? as usize;
-    if first_ifd_offset < 8 || first_ifd_offset >= data.len() {
-        return None;
-    }
-
-    // Helper to read IFD
-    fn read_ifd_internal(data: &[u8], offset: usize, is_le: bool) -> Option<String> {
-        if offset + 2 > data.len() {
-            return None;
-        }
-
-        // Helper closures again inside logic to capture is_le
-        let get_u16_inner = |o: usize| -> Option<u16> {
-            if o + 2 > data.len() {
-                return None;
-            }
-            let s = &data[o..o + 2];
-            let a: [u8; 2] = s.try_into().ok()?;
-            Some(if is_le {
-                u16::from_le_bytes(a)
-            } else {
-                u16::from_be_bytes(a)
-            })
-        };
-        let get_u32_inner = |o: usize| -> Option<u32> {
-            if o + 4 > data.len() {
-                return None;
-            }
-            let s = &data[o..o + 4];
-            let a: [u8; 4] = s.try_into().ok()?;
-            Some(if is_le {
-                u32::from_le_bytes(a)
-            } else {
-                u32::from_be_bytes(a)
-            })
-        };
-
-        let entry_count = get_u16_inner(offset)?;
-        let entries_start = offset + 2;
-
-        let mut exif_ifd_offset = 0;
-
-        for i in 0..entry_count {
-            let entry_offset = entries_start + (i as usize * 12);
-            if entry_offset + 12 > data.len() {
-                break;
-            }
-
-            let tag = get_u16_inner(entry_offset)?;
-            let count = get_u32_inner(entry_offset + 4)?;
-            let value_offset_or_data = get_u32_inner(entry_offset + 8)?;
-
-            if tag == 0x8769 {
-                exif_ifd_offset = value_offset_or_data as usize;
-            }
-
-            if tag == 0x9286 {
-                let data_offset = value_offset_or_data as usize;
-                // Safety check
-                if data_offset + 8 < data.len() {
-                    // Check specific headers
-                    // "UNICODE\0"
-                    let header_slice = &data[data_offset..data_offset + 8];
-                    if header_slice.starts_with(b"UNICODE\0") {
-                        // UTF-16
-                        let payload_start = data_offset + 8;
-                        let payload_len = (count as usize).saturating_sub(8);
-                        let payload_end = payload_start + payload_len;
-
-                        if payload_end <= data.len() {
-                            let payload = &data[payload_start..payload_end];
-                            // Convert [u8] to [u16]
-                            let u16_vec: Vec<u16> = payload
-                                .chunks_exact(2)
-                                .map(|c| {
-                                    if is_le {
-                                        u16::from_le_bytes([c[0], c[1]])
-                                    } else {
-                                        u16::from_be_bytes([c[0], c[1]])
-                                    }
-                                })
-                                .collect();
-
-                            if let Ok(s) = String::from_utf16(&u16_vec) {
-                                let clean = s.trim_end_matches('\0').trim().to_string();
-                                // Further sanitization of null bytes inside
-                                return Some(clean.replace('\0', ""));
-                            }
-                        }
-                    } else if header_slice.starts_with(b"ASCII\0\0\0") {
-                        let payload_start = data_offset + 8;
-                        let payload_len = (count as usize).saturating_sub(8);
-                        if payload_start + payload_len <= data.len() {
-                            let s = String::from_utf8_lossy(
-                                &data[payload_start..payload_start + payload_len],
-                            );
-                            return Some(s.trim_matches('\0').trim().to_string());
-                        }
-                    } else if data[data_offset] == 0 {
-                        // Some writers use no header, just 0 pad if undefined type
-                        let payload_len = count as usize;
-                        if data_offset + payload_len <= data.len() {
-                            let s = String::from_utf8_lossy(
-                                &data[data_offset..data_offset + payload_len],
-                            );
-                            return Some(s.trim_matches('\0').trim().to_string());
-                        }
-                    } else {
-                        // Try raw
-                        let payload_len = count as usize;
-                        if data_offset + payload_len <= data.len() {
-                            let s = String::from_utf8_lossy(
-                                &data[data_offset..data_offset + payload_len],
-                            );
-                            return Some(s.trim_matches('\0').trim().to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        if exif_ifd_offset > 0 {
-            return None;
-        }
-
-        None
-    }
-
-    // Pass 1: Root IFD (IFD0)
-    let res = read_ifd_internal(data, first_ifd_offset, is_little_endian);
-    if res.is_some() {
-        return res;
-    }
-
-    // If we didn't find UserComment in IFD0, check if we found an Exif Pointer.
-    let entry_count = get_u16(first_ifd_offset)?;
-    let entries_start = first_ifd_offset + 2;
     for i in 0..entry_count {
         let entry_offset = entries_start + (i as usize * 12);
         if entry_offset + 12 > data.len() {
             break;
         }
 
-        let tag = get_u16(entry_offset)?;
-        if tag == 0x8769 {
-            let value_offset = get_u32(entry_offset + 8)?;
-            // Call reader on Exif IFD
-            return read_ifd_internal(data, value_offset as usize, is_little_endian);
+        let Some(tag) = endian.read_u16(data, entry_offset) else {
+            continue;
+        };
+        let Some(field_type) = endian.read_u16(data, entry_offset + 2) else {
+            continue;
+        };
+        let Some(count) = endian.read_u32(data, entry_offset + 4) else {
+            continue;
+        };
+        let Some(value_offset_or_data) = endian.read_u32(data, entry_offset + 8) else {
+            continue;
+        };
+
+        if tag == TAG_EXIF_IFD {
+            exif_ifd_offset = Some(value_offset_or_data as usize);
+            continue;
+        }
+
+        if let Some(text) = decode_exif_string(
+            data,
+            endian,
+            tag,
+            field_type,
+            count,
+            value_offset_or_data as usize,
+            &data[entry_offset + 8..entry_offset + 12],
+        ) {
+            normalize_exif_entry(chunks, tag, &text);
         }
     }
 
-    None
+    if let Some(offset) = exif_ifd_offset {
+        read_exif_ifd(data, offset, endian, chunks, visited_offsets);
+    }
+}
+
+fn extract_exif_chunks(data: &[u8]) -> HashMap<String, String> {
+    let mut chunks = HashMap::new();
+    if data.len() < 8 {
+        return chunks;
+    }
+
+    let endian = if &data[0..2] == b"II" {
+        TiffEndian::Little
+    } else if &data[0..2] == b"MM" {
+        TiffEndian::Big
+    } else {
+        return chunks;
+    };
+
+    if endian.read_u16(data, 2) != Some(0x002A) {
+        return chunks;
+    }
+
+    let Some(first_ifd_offset) = endian.read_u32(data, 4).map(|offset| offset as usize) else {
+        return chunks;
+    };
+    if first_ifd_offset < 8 || first_ifd_offset >= data.len() {
+        return chunks;
+    }
+
+    read_exif_ifd(data, first_ifd_offset, endian, &mut chunks, &mut Vec::new());
+
+    chunks
+}
+
+#[cfg(test)]
+fn parse_exif(data: &[u8]) -> Option<String> {
+    let mut chunks = extract_exif_chunks(data);
+    chunks.remove("parameters")
 }
 
 #[cfg(test)]
@@ -535,6 +675,14 @@ mod tests {
         let path = unique_test_path(name);
         fs::write(&path, jpeg).expect("test JPEG should be writable");
         let result = scan_jpeg_metadata(&path);
+        let _ = fs::remove_file(&path);
+        result
+    }
+
+    fn scan_test_webp(name: &str, webp: &[u8]) -> Result<HashMap<String, String>, String> {
+        let path = unique_test_path(name).with_extension("webp");
+        fs::write(&path, webp).expect("test WebP should be writable");
+        let result = scan_webp_metadata(&path);
         let _ = fs::remove_file(&path);
         result
     }
@@ -568,6 +716,59 @@ mod tests {
         payload.extend_from_slice(b"ASCII\0\0\0");
         payload.extend_from_slice(comment);
         payload
+    }
+
+    fn exif_ascii_tags_payload(tags: &[(u16, &str)]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"Exif\0\0");
+        payload.extend_from_slice(b"II");
+        payload.extend_from_slice(&0x2Au16.to_le_bytes());
+        payload.extend_from_slice(&8u32.to_le_bytes());
+
+        payload.extend_from_slice(&(tags.len() as u16).to_le_bytes());
+        let data_start = 8 + 2 + (tags.len() * 12) + 4;
+        let mut data_offset = data_start as u32;
+        let mut data_values = Vec::new();
+
+        for (tag, value) in tags {
+            let mut bytes = value.as_bytes().to_vec();
+            bytes.push(0);
+
+            payload.extend_from_slice(&tag.to_le_bytes());
+            payload.extend_from_slice(&2u16.to_le_bytes());
+            payload.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+
+            if bytes.len() <= 4 {
+                let mut inline = [0; 4];
+                inline[..bytes.len()].copy_from_slice(&bytes);
+                payload.extend_from_slice(&inline);
+            } else {
+                payload.extend_from_slice(&data_offset.to_le_bytes());
+                data_offset += bytes.len() as u32;
+                data_values.extend_from_slice(&bytes);
+            }
+        }
+
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&data_values);
+        payload
+    }
+
+    fn webp_with_exif(exif_payload: &[u8]) -> Vec<u8> {
+        let mut webp = Vec::new();
+        webp.extend_from_slice(b"RIFF");
+        webp.extend_from_slice(&0u32.to_le_bytes());
+        webp.extend_from_slice(b"WEBP");
+        webp.extend_from_slice(b"EXIF");
+        webp.extend_from_slice(&(exif_payload.len() as u32).to_le_bytes());
+        webp.extend_from_slice(exif_payload);
+        if exif_payload.len() % 2 == 1 {
+            webp.push(0);
+        }
+
+        let riff_size = (webp.len() - 8) as u32;
+        webp[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        webp
     }
 
     fn png_fixture() -> Vec<u8> {
@@ -723,6 +924,62 @@ mod tests {
         assert_eq!(
             chunks.get("parameters").map(String::as_str),
             Some("Safe JPEG")
+        );
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_normalizes_comfy_exif_make_model() {
+        let workflow = r#"{"nodes":[]}"#;
+        let prompt = r#"{"1":{"class_type":"KSampler","inputs":{"steps":20}}}"#;
+        let workflow_tag = format!("workflow:{workflow}");
+        let prompt_tag = format!("prompt:{prompt}");
+        let payload =
+            exif_ascii_tags_payload(&[(TAG_MAKE, &workflow_tag), (TAG_MODEL, &prompt_tag)]);
+        let raw_len = (payload.len() + 2) as u16;
+        let jpeg = jpeg_with_segment(0xE1, raw_len, &payload);
+
+        let chunks = scan_test_jpeg("jpeg_comfy_make_model", &jpeg).unwrap();
+
+        assert_eq!(chunks.get("workflow").map(String::as_str), Some(workflow));
+        assert_eq!(chunks.get("prompt").map(String::as_str), Some(prompt));
+        assert!(
+            !chunks.contains_key("parameters"),
+            "Comfy EXIF tags should not be misrouted as A1111 parameters"
+        );
+    }
+
+    #[test]
+    fn test_scan_webp_metadata_normalizes_comfy_exif_make_model() {
+        let workflow = r#"{"nodes":[]}"#;
+        let prompt = r#"{"1":{"class_type":"KSampler","inputs":{"steps":20}}}"#;
+        let workflow_tag = format!("workflow:{workflow}");
+        let prompt_tag = format!("prompt:{prompt}");
+        let payload =
+            exif_ascii_tags_payload(&[(TAG_MAKE, &workflow_tag), (TAG_MODEL, &prompt_tag)]);
+        let webp = webp_with_exif(&payload);
+
+        let chunks = scan_test_webp("webp_comfy_make_model", &webp).unwrap();
+
+        assert_eq!(chunks.get("workflow").map(String::as_str), Some(workflow));
+        assert_eq!(chunks.get("prompt").map(String::as_str), Some(prompt));
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_splits_comfy_json_user_comment() {
+        let workflow = r#"{"nodes":[]}"#;
+        let prompt = r#"{"1":{"class_type":"KSampler","inputs":{"steps":20}}}"#;
+        let comment = format!(r#"{{"workflow":{workflow},"prompt":{prompt}}}"#);
+        let payload = exif_user_comment_payload(comment.as_bytes());
+        let raw_len = (payload.len() + 2) as u16;
+        let jpeg = jpeg_with_segment(0xE1, raw_len, &payload);
+
+        let chunks = scan_test_jpeg("jpeg_comfy_json_user_comment", &jpeg).unwrap();
+
+        assert_eq!(chunks.get("workflow").map(String::as_str), Some(workflow));
+        assert_eq!(chunks.get("prompt").map(String::as_str), Some(prompt));
+        assert!(
+            !chunks.contains_key("parameters"),
+            "recognized Comfy JSON should bypass A1111 parameter fallback"
         );
     }
 
@@ -1025,11 +1282,7 @@ mod tests {
     fn test_extract_png_chunks_within_limit_invalid_utf8_skips_only_current_chunk() {
         let mut png = png_fixture();
         push_png_chunk(&mut png, b"tEXt", b"early\0ok");
-        push_png_chunk(
-            &mut png,
-            b"zTXt",
-            &ztxt_chunk_data("invalid_utf8", &[0xff]),
-        );
+        push_png_chunk(&mut png, b"zTXt", &ztxt_chunk_data("invalid_utf8", &[0xff]));
         push_png_chunk(&mut png, b"tEXt", b"late\0yes");
         push_iend(&mut png);
 
@@ -1064,7 +1317,11 @@ mod tests {
     #[test]
     fn test_extract_png_chunks_ztxt_compressed() {
         let mut png = png_fixture();
-        push_png_chunk(&mut png, b"zTXt", &ztxt_chunk_data("Comment", b"CompressedValue"));
+        push_png_chunk(
+            &mut png,
+            b"zTXt",
+            &ztxt_chunk_data("Comment", b"CompressedValue"),
+        );
         push_iend(&mut png);
 
         let mut cursor = Cursor::new(png);
