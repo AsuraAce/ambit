@@ -23,7 +23,7 @@ Use integrations when you want Ambit to understand an existing generator workspa
 
 ## Monitored Image Folders
 
-Open Settings, then Connections, then Folders to manage image folders.
+Open Settings > Connections > Folders to manage image folders.
 
 In the Folders section you can:
 
@@ -47,7 +47,9 @@ For SD WebUI style folders, Ambit can auto-detect variants such as A1111, Forge,
 
 ## Resource Folders
 
-Settings, Connections, Folders also includes resource discovery. Use this for model, LoRA, embedding, ControlNet, or IP-Adapter folders. Resource folders help Ambit build a local asset inventory, which can make resource filters more useful.
+Resource folders are managed separately from image folders. Open Settings > Connections > Resources to add model, LoRA, embedding, ControlNet, or IP-Adapter folders. Resource folders build a local asset inventory; they do not import images.
+
+For details, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## During Scans
 
