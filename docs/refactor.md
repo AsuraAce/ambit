@@ -302,7 +302,7 @@ Status: In transition
 - Do not change the dev identifier.
 - Do not remove legacy `com.ambit.app` or Roaming fallback checks until the public-beta upgrade window is intentionally closed.
 
-## Smart Thumbnail Optimization and Removed Maintenance Tab
+## Smart Thumbnail Optimization and Thumbnail Maintenance Ownership
 Status: Deferred
 
 ### Why Cleanup Is Needed
