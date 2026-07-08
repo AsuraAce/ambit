@@ -1,7 +1,5 @@
 import { GeneratorTool, ImageMetadata } from '../types';
-import { parseA1111Parameters, parseComfyUIMetadata } from '../services/metadata/mappingUtils';
-
-// ImageMetadata is now imported
+import { parseA1111Parameters } from '../services/metadata/mappingUtils';
 
 export interface ParseResult {
     metadata: Partial<ImageMetadata>;
@@ -102,24 +100,6 @@ type DecompressDeflateResult =
     | { status: 'invalid' };
 
 type MetadataRecord = Record<string, unknown>;
-type WorkflowInput = MetadataRecord & {
-    name?: string;
-    type?: string;
-    link?: string | number | null;
-};
-type WorkflowOutput = MetadataRecord & {
-    links?: unknown[];
-    slot_index?: number;
-};
-type WorkflowNode = MetadataRecord & {
-    id?: string | number;
-    mode?: number;
-    type?: string;
-    class_type?: string;
-    widgets_values?: unknown[];
-    inputs?: unknown;
-    outputs?: unknown;
-};
 type DecompressionStreamConstructor = new (format: 'deflate') => TransformStream<Uint8Array, Uint8Array>;
 type DecompressionGlobal = typeof globalThis & {
     DecompressionStream?: DecompressionStreamConstructor;
@@ -141,17 +121,6 @@ const asStringRecord = (value: unknown): Record<string, string> | undefined => {
 
 const asGeneratorTool = (value: unknown): GeneratorTool | undefined =>
     Object.values(GeneratorTool).includes(value as GeneratorTool) ? value as GeneratorTool : undefined;
-
-const asWorkflowNode = (value: unknown): WorkflowNode => asRecord(value) as WorkflowNode;
-
-const toWorkflowInputs = (value: unknown): WorkflowInput[] =>
-    Array.isArray(value) ? value.map(input => asRecord(input) as WorkflowInput) : [];
-
-const toWorkflowOutputs = (value: unknown): WorkflowOutput[] =>
-    Array.isArray(value) ? value.map(output => asRecord(output) as WorkflowOutput) : [];
-
-const nodeType = (node: WorkflowNode): string =>
-    String(node.type || node.class_type || '').toLowerCase();
 
 const parseJsonRecord = (value: string): MetadataRecord => asRecord(JSON.parse(value));
 
@@ -187,176 +156,6 @@ export const parseSdNextJsonMetadata = (value: string): Partial<ImageMetadata> =
 
 const sanitize = (text: string): string => {
     return text.replace(/\0/g, '').trim();
-};
-
-const findNodeByOutputLink = (nodes: WorkflowNode[], linkId: number | string): { node: WorkflowNode, slotIndex: number } | null => {
-    if (!linkId) return null;
-    for (const node of nodes) {
-        const outputs = toWorkflowOutputs(node.outputs);
-        if (outputs.length > 0) {
-            for (let i = 0; i < outputs.length; i++) {
-                const output = outputs[i];
-                // Loose equality check for links to handle string/number mismatch
-                if (output.links && output.links.some((l: unknown) => l == linkId)) {
-                    return { node, slotIndex: output.slot_index !== undefined ? output.slot_index : i };
-                }
-            }
-        }
-    }
-    return null;
-};
-
-const traceText = (nodes: WorkflowNode[], nodeId: number | string, slotIndex: number, depth = 0): string | null => {
-    if (depth > 20) return null;
-    const node = nodes.find(n => n.id == nodeId); // Loose equality
-    if (!node) return null;
-
-    if (node.mode === 2 || node.mode === 4) return null;
-
-    const type = nodeType(node);
-
-    // 1. Explicit Primitive/String Node Handling
-    if (type === 'primitivenode' || type.includes('primitive') || type === 'string' || type.includes('literal')) {
-        if (node.widgets_values) {
-            const strings = node.widgets_values.filter((v: unknown) => typeof v === 'string');
-            if (strings.length > 0) {
-                return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-            }
-        }
-    }
-
-    // Handle Reroute Nodes
-    if (type === 'reroute' || type.includes('reroute')) {
-        const inputs = toWorkflowInputs(node.inputs);
-        if (inputs.length > 0 && inputs[0].link) {
-            const source = findNodeByOutputLink(nodes, inputs[0].link);
-            if (source && source.node.id !== undefined) return traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-        }
-    }
-
-    if (type.includes('promptreader')) {
-        if (node.widgets_values) {
-            if (slotIndex === 2 && typeof node.widgets_values[3] === 'string') return node.widgets_values[3];
-            if (slotIndex === 3 && typeof node.widgets_values[4] === 'string') return node.widgets_values[4];
-        }
-        const strings = node.widgets_values?.filter((v: unknown) => typeof v === 'string');
-        if (strings && strings.length > 0) return strings[0];
-    }
-
-    // Handle String Concatenation
-    if (type.includes('join') || (type.includes('concat') && type.includes('string')) || type === 'joinstringmulti') {
-        const parts: string[] = [];
-        const inputs = toWorkflowInputs(node.inputs);
-
-        const sortedInputs = [...inputs].sort((a, b) => {
-            if (a.name && b.name) return a.name.localeCompare(b.name, undefined, { numeric: true });
-            return 0;
-        });
-
-        for (const input of sortedInputs) {
-            if (input.link) {
-                const source = findNodeByOutputLink(nodes, input.link);
-                if (source) {
-                    const txt = source.node.id !== undefined ? traceText(nodes, source.node.id, source.slotIndex, depth + 1) : null;
-                    if (txt) parts.push(txt);
-                }
-            }
-        }
-
-        let separator = " ";
-        if (node.widgets_values) {
-            const candidates = node.widgets_values.filter((v: unknown) => typeof v === 'string');
-            const sep = candidates.find((v: string) => v.length < 50 && (v.includes(',') || v.includes('\n') || v === ' '));
-            if (sep !== undefined) separator = sep;
-        }
-
-        if (parts.length > 0) return parts.join(separator);
-    }
-
-    // TextEncode/CLIPText handling
-    if (type.includes('textencode') || type.includes('cliptext') || type.includes('prompt') || type.includes('string') || type.includes('style')) {
-        let tracedResult: string | null = null;
-        const inputs = toWorkflowInputs(node.inputs);
-        const textInput = inputs.find((i) =>
-            (i.name === 'text' || i.name === 'text_g' || i.name === 'text_l' || i.name === 'string' || i.name === 'prompt') && i.link
-        );
-
-        if (textInput?.link !== undefined && textInput.link !== null) {
-            const source = findNodeByOutputLink(nodes, textInput.link);
-            if (source && source.node.id !== undefined) {
-                tracedResult = traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-            }
-        }
-
-        if (tracedResult) return tracedResult;
-
-        if (node.widgets_values) {
-            const strings = node.widgets_values.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0);
-            if (strings.length > 0) {
-                return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-            }
-        }
-    }
-
-    // Conditioning Traversal
-    const inputs = toWorkflowInputs(node.inputs);
-    const candidateInputs = inputs.filter((i) => {
-        const name = (i.name || "").toLowerCase();
-        const iType = (i.type || "").toUpperCase();
-        return name.includes('conditioning') || iType === 'CONDITIONING' || name === 'c' || name === 'input' || name === 'clip';
-    });
-
-    for (const input of candidateInputs) {
-        if (input.link) {
-            const source = findNodeByOutputLink(nodes, input.link);
-            if (source && source.node.id !== undefined) {
-                const res = traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-                if (res) return res;
-            }
-        }
-    }
-
-    if (type === 'getnode' || type === 'get_node') {
-        const varName = node.widgets_values?.[0];
-        if (typeof varName === 'string') {
-            const setNode = nodes.find(n => {
-                const t = nodeType(n);
-                return (t === 'setnode' || t === 'set_node') && n.widgets_values?.[0] === varName;
-            });
-
-            if (setNode) {
-                const setInput = toWorkflowInputs(setNode.inputs).find((i) => i.link);
-                if (setInput?.link !== undefined && setInput.link !== null) {
-                    const source = findNodeByOutputLink(nodes, setInput.link);
-                    if (source && source.node.id !== undefined) return traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-                }
-            }
-        }
-    }
-
-    if (type.includes('concat') && type.includes('text')) {
-        const parts: string[] = [];
-        const inputs = toWorkflowInputs(node.inputs);
-        for (const input of inputs) {
-            if (input.link) {
-                const source = findNodeByOutputLink(nodes, input.link);
-                if (source) {
-                    const txt = source.node.id !== undefined ? traceText(nodes, source.node.id, source.slotIndex, depth + 1) : null;
-                    if (txt) parts.push(txt);
-                }
-            }
-        }
-        if (parts.length > 0) return parts.join(' ');
-    }
-
-    if (node.widgets_values) {
-        const strings = node.widgets_values.filter((v: unknown): v is string => typeof v === 'string' && v.length > 0);
-        if (strings.length > 0) {
-            return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-        }
-    }
-
-    return null;
 };
 
 export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
@@ -422,10 +221,6 @@ export const detectGenerationType = (path: string, currentType?: string): 'txt2i
 
     return 'unknown';
 };
-
-// parseA1111Parameters is now imported
-
-// parseComfyUIMetadata is now imported
 
 const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, extra: ParseResult['extra']) => {
     // Basic InvokeAI parsing helper (Simplified for worker)
@@ -508,6 +303,9 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
     }
     if (!base.workflowJson && secondary.workflowJson) {
         base.workflowJson = secondary.workflowJson;
+    }
+    if (base.hasWorkflowHint === undefined && secondary.hasWorkflowHint !== undefined) {
+        base.hasWorkflowHint = secondary.hasWorkflowHint;
     }
 
     // Merge Loras
@@ -942,18 +740,15 @@ self.onmessage = async (e: MessageEvent) => {
             }
 
             // 3. ComfyUI (Cumulative)
-            const workflow = chunks.workflow || chunks.prompt;
+            const promptWorkflow = chunks.prompt?.trim().startsWith('{') ? chunks.prompt : undefined;
+            const workflow = chunks.workflow || promptWorkflow;
             if (workflow) {
-                try {
-                    const json = JSON.parse(workflow) as unknown;
-                    const secondary: Partial<ImageMetadata> = {};
-                    parseComfyUIMetadata(json, secondary);
-                    secondary.tool = GeneratorTool.COMFYUI;
-                    secondary.workflowJson = workflow;
-                    mergeMetadata(metadata, secondary);
-                    // Finalize tool label
-                    metadata.tool = GeneratorTool.COMFYUI;
-                } catch { }
+                mergeMetadata(metadata, {
+                    tool: GeneratorTool.COMFYUI,
+                    workflowJson: workflow,
+                    hasWorkflowHint: true,
+                });
+                metadata.tool = GeneratorTool.COMFYUI;
             }
 
             // 4. InvokeAI (Cumulative)

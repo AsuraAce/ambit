@@ -1,4 +1,7 @@
-use super::graph::{get_node_input_link, get_node_param, get_node_type, get_source_id, ComfyGraph};
+use super::graph::{
+    get_node_input_link, get_node_param, get_node_type, get_source_id, get_switch_branch_input,
+    ComfyGraph,
+};
 use super::parse_helper::parse_a1111_parameters;
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
@@ -501,6 +504,17 @@ pub fn evaluate_string_node(
         return None;
     }
 
+    if t == "ComfySwitchNode" {
+        if let Some(branch) = get_switch_branch_input(graph, node_id, node) {
+            return trace_text_input(graph, node_id, branch);
+        }
+        return None;
+    }
+
+    if t == "PreviewAny" {
+        return trace_text_input(graph, node_id, "source");
+    }
+
     // JoinStringMulti
     if t == "JoinStringMulti" {
         let mut parts = Vec::new();
@@ -515,6 +529,21 @@ pub fn evaluate_string_node(
             .and_then(|v| v.as_str())
             .unwrap_or(" ");
         return Some(parts.join(delimiter));
+    }
+
+    if t == "StringConcatenate" {
+        let string_a = trace_text_input(graph, node_id, "string_a").unwrap_or_default();
+        let string_b = trace_text_input(graph, node_id, "string_b").unwrap_or_default();
+        let delimiter = get_node_param(node, "delimiter")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if string_a.is_empty() {
+            return Some(string_b);
+        }
+        if string_b.is_empty() {
+            return Some(string_a);
+        }
+        return Some(format!("{}{}{}", string_a, delimiter, string_b));
     }
 
     // Text Concatenate (WAS Node suite)

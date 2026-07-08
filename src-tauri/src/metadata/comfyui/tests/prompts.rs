@@ -63,6 +63,114 @@ fn test_extract_comfyui_complex_prompt() {
 }
 
 #[test]
+fn test_extract_comfyui_switch_string_concatenate_and_preview() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["10", 0],
+                "model": ["20", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": ["11", 0] }
+        },
+        "11": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["12", 0],
+                "on_false": ["13", 0],
+                "on_true": ["14", 0]
+            }
+        },
+        "12": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": false }
+        },
+        "13": {
+            "class_type": "PreviewAny",
+            "inputs": { "source": ["15", 0] }
+        },
+        "15": {
+            "class_type": "StringConcatenate",
+            "inputs": {
+                "string_a": ["16", 0],
+                "string_b": "beta",
+                "delimiter": ", "
+            }
+        },
+        "16": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "alpha" }
+        },
+        "14": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "wrong branch" }
+        },
+        "20": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "alpha, beta");
+}
+
+#[test]
+fn test_extract_comfyui_switch_string_true_branch() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["10", 0],
+                "model": ["20", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": ["11", 0] }
+        },
+        "11": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["12", 0],
+                "on_false": ["13", 0],
+                "on_true": ["14", 0]
+            }
+        },
+        "12": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": true }
+        },
+        "13": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "wrong branch" }
+        },
+        "14": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "chosen prompt" }
+        },
+        "20": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "chosen prompt");
+}
+
+#[test]
 fn test_extract_comfyui_embeddings() {
     let prompt = r#"{
         "3": {

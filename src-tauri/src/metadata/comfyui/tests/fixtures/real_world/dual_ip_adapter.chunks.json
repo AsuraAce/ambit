@@ -1,0 +1,87 @@
+{
+  "prompt": {
+    "18": {
+      "inputs": {
+        "text": "reference portrait prompt",
+        "parser": "comfy",
+        "clip": ["1409", 0]
+      },
+      "class_type": "smZ CLIPTextEncode"
+    },
+    "1114": {
+      "inputs": { "ckpt_name": "portrait_base.safetensors" },
+      "class_type": "CheckpointLoaderSimple"
+    },
+    "1339": {
+      "inputs": {
+        "weight": 0.8,
+        "noise": 0.0,
+        "weight_type": "original",
+        "start_at": 0.0,
+        "end_at": 0.9,
+        "faceid_v2": true,
+        "weight_v2": 1.0,
+        "unfold_batch": false,
+        "ipadapter": ["1343", 0],
+        "clip_vision": ["1340", 0],
+        "insightface": ["1344", 0],
+        "image": ["1868", 0],
+        "model": ["1741", 0]
+      },
+      "class_type": "IPAdapterApplyFaceID"
+    },
+    "1343": {
+      "inputs": { "ipadapter_file": "ip-adapter-faceid-plusv2_sd15.bin" },
+      "class_type": "IPAdapterModelLoader"
+    },
+    "1350": {
+      "inputs": {
+        "weight": 0.4,
+        "noise": 0.0,
+        "weight_type": "original",
+        "start_at": 0.0,
+        "end_at": 0.85,
+        "unfold_batch": false,
+        "ipadapter": ["1351", 0],
+        "clip_vision": ["1340", 0],
+        "image": ["1819", 0],
+        "model": ["1339", 0]
+      },
+      "class_type": "IPAdapterApply"
+    },
+    "1351": {
+      "inputs": { "ipadapter_file": "ip-adapter-full-face_sd15.safetensors" },
+      "class_type": "IPAdapterModelLoader"
+    },
+    "1741": {
+      "inputs": {
+        "lora_name": "ip-adapter-faceid-plusv2_sd15_lora.safetensors",
+        "strength_model": 0.6,
+        "model": ["1114", 0]
+      },
+      "class_type": "LoraLoaderModelOnly"
+    },
+    "9999": {
+      "inputs": {
+        "model": ["1350", 0],
+        "seed": 123,
+        "steps": 20,
+        "cfg": 8.0,
+        "sampler_name": "euler",
+        "scheduler": "normal",
+        "positive": ["18", 0],
+        "negative": ["18", 0],
+        "latent_image": ["1135", 0]
+      },
+      "class_type": "KSampler"
+    },
+    "10000": {
+      "inputs": { "samples": ["9999", 0] },
+      "class_type": "VAEDecode"
+    },
+    "10001": {
+      "inputs": { "images": ["10000", 0] },
+      "class_type": "SaveImage"
+    }
+  }
+}

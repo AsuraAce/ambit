@@ -1,9 +1,14 @@
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import type { ImageMetadata } from '../types';
+import { GeneratorTool } from '../types';
 import { parseA1111Parameters } from '../services/metadata/mappingUtils';
 import { detectGenerationType, parseFilenameMetadata, parseSdNextJsonMetadata } from './metadata.worker';
 
 describe('Metadata Worker Tests', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
 
     describe('detectGenerationType', () => {
         it('should detect txt2img paths', () => {
@@ -95,6 +100,45 @@ describe('Metadata Worker Tests', () => {
             expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: false })).seed).toBeUndefined();
             expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: {} })).seed).toBeUndefined();
             expect(parseSdNextJsonMetadata(JSON.stringify({ prompt: 'p', seed: [] })).seed).toBeUndefined();
+        });
+    });
+
+    describe('ComfyUI fallback', () => {
+        it('should preserve workflow JSON without inferring graph fields', async () => {
+            const workflow = JSON.stringify({
+                nodes: [
+                    { id: 1, type: 'KSampler', widgets_values: [123456, 'random', 20, 7.5, 'euler', 'normal', 1.0] }
+                ]
+            });
+            const postMessage = vi.spyOn(self, 'postMessage').mockImplementation(() => undefined);
+            const handler = self.onmessage;
+            expect(typeof handler).toBe('function');
+
+            await (handler as (event: MessageEvent) => Promise<void>)({
+                data: {
+                    chunks: { prompt: workflow },
+                    filename: 'comfy.png',
+                    requestId: 'comfy-worker-test',
+                },
+            } as MessageEvent);
+
+            type WorkerResponse = {
+                metadata: Partial<ImageMetadata>;
+                requestId?: string;
+            };
+            const response = postMessage.mock.calls[0]?.[0] as WorkerResponse;
+
+            expect(response.requestId).toBe('comfy-worker-test');
+            expect(response.metadata.tool).toBe(GeneratorTool.COMFYUI);
+            expect(response.metadata.workflowJson).toBe(workflow);
+            expect(response.metadata.hasWorkflowHint).toBe(true);
+            expect(response.metadata.seed).toBeUndefined();
+            expect(response.metadata.steps).toBeUndefined();
+            expect(response.metadata.cfg).toBeUndefined();
+            expect(response.metadata.sampler).toBeUndefined();
+            expect(response.metadata.model).toBeUndefined();
+            expect(response.metadata.positivePrompt).toBeUndefined();
+            expect(response.metadata.negativePrompt).toBeUndefined();
         });
     });
 });

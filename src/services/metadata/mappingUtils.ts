@@ -1,21 +1,12 @@
-import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
+import { GeneratorTool, ImageMetadata } from '../../types';
 import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
 
 type MetadataRecord = Record<string, unknown>;
-type ComfyNode = MetadataRecord & {
-    id?: string | number;
-    class_type?: string;
-    type?: string;
-    inputs?: MetadataRecord;
-    widgets_values?: unknown[];
-};
 
 const isRecord = (value: unknown): value is MetadataRecord =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
 const asRecord = (value: unknown): MetadataRecord => isRecord(value) ? value : {};
-
-const asComfyNode = (value: unknown): ComfyNode => asRecord(value) as ComfyNode;
 
 const readString = (record: MetadataRecord, key: string): string | undefined => {
     const value = record[key];
@@ -25,6 +16,21 @@ const readString = (record: MetadataRecord, key: string): string | undefined => 
 const readNumber = (record: MetadataRecord, key: string): number | undefined => {
     const value = record[key];
     return typeof value === 'number' ? value : undefined;
+};
+
+const hasNumericNodeKeys = (record: MetadataRecord): boolean =>
+    Object.keys(record).some(k => !isNaN(Number(k)));
+
+const isComfyWorkflowRecord = (record: MetadataRecord): boolean =>
+    Boolean(record.workflow || (record.prompt && typeof record.prompt === 'object') || record.nodes || hasNumericNodeKeys(record));
+
+const toComfyMetadata = (workflowJson?: string): Partial<ImageMetadata> => {
+    const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI };
+    if (workflowJson) {
+        metadata.workflowJson = workflowJson;
+        metadata.hasWorkflowHint = true;
+    }
+    return metadata;
 };
 
 /**
@@ -42,6 +48,16 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
     // If chunks is a raw string, we might need to parse it (could be JSON object or JSON-escaped string)
     if (typeof chunks === 'string') {
         const trimmed = chunks.trim();
+        if (toolLower.includes('comfy')) {
+            if (trimmed.startsWith('"')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (typeof parsed === 'string') return toComfyMetadata(parsed);
+                } catch { /* ignore and preserve the raw string */ }
+            }
+            return toComfyMetadata(chunks);
+        }
+
         if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
             try {
                 const parsed = JSON.parse(trimmed);
@@ -49,20 +65,16 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
                 // we recurse to handle the unescaped content.
                 // If it parsed as an object, we recurse to use object mapping.
                 if (parsed !== chunks) {
+                    if (isRecord(parsed) && isComfyWorkflowRecord(parsed)) {
+                        return toComfyMetadata(chunks);
+                    }
                     return mapRawChunksToMetadata(parsed, tool);
                 }
             } catch { /* ignore and treat as raw text */ }
         }
 
         // It's a raw string, not JSON-encoded object/string
-        if (toolLower.includes('comfy')) {
-            const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: chunks };
-            try {
-                const json = JSON.parse(chunks);
-                parseComfyUIMetadata(json, metadata);
-            } catch { /* ignore */ }
-            return metadata;
-        } else if (toolLower.includes('invoke')) {
+        if (toolLower.includes('invoke')) {
             return mapRawInvokeMetadata(chunks);
         } else {
             // A1111, SD.Next, Forge etc.
@@ -82,7 +94,7 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
     let detectedTool = tool;
     if (chunkRecord.parameters || chunkRecord.Parameters || chunkRecord.PARAMETERS) {
         detectedTool = GeneratorTool.AUTOMATIC1111;
-    } else if (chunkRecord.workflow || (chunkRecord.prompt && typeof chunkRecord.prompt === 'object') || chunkRecord.nodes || Object.keys(chunkRecord).some(k => !isNaN(Number(k)))) {
+    } else if (isComfyWorkflowRecord(chunkRecord)) {
         detectedTool = GeneratorTool.COMFYUI;
     } else if (chunkRecord.invokeai_metadata || chunkRecord['sd-metadata'] || chunkRecord.dream_metadata || (isRecord(chunkRecord.image) && chunkRecord.image.prompt)) {
         detectedTool = GeneratorTool.INVOKEAI;
@@ -91,10 +103,8 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
     const effectiveToolLower = detectedTool?.toLowerCase() || "";
 
     // 2. ComfyUI flat structure check (no 'prompt'/'workflow' keys, just nodes/IDs)
-    if (effectiveToolLower.includes('comfy') && (chunkRecord.nodes || Object.keys(chunkRecord).some(k => !isNaN(Number(k))))) {
-        const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: JSON.stringify(chunkRecord) };
-        parseComfyUIMetadata(chunkRecord, metadata);
-        return metadata;
+    if (effectiveToolLower.includes('comfy') && (chunkRecord.nodes || hasNumericNodeKeys(chunkRecord))) {
+        return toComfyMetadata(JSON.stringify(chunkRecord));
     }
 
     switch (detectedTool) {
@@ -126,14 +136,9 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
             const workflow = chunkRecord.workflow || chunkRecord.prompt;
             if (workflow) {
                 const workflowStr = typeof workflow === 'string' ? workflow : JSON.stringify(workflow);
-                try {
-                    const json = typeof workflow === 'string' ? JSON.parse(workflow) : workflow;
-                    const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: workflowStr };
-                    parseComfyUIMetadata(json, metadata);
-                    return metadata;
-                } catch { /* ignore */ }
+                return toComfyMetadata(workflowStr);
             }
-            return { tool: GeneratorTool.COMFYUI };
+            return toComfyMetadata();
         }
 
         case GeneratorTool.INVOKEAI: {
@@ -338,141 +343,4 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
         }
     }
     return metadata;
-}
-
-/**
- * Standard ComfyUI parameter parser (extracted from metadata worker).
- */
-export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetadata>) {
-    const root = asRecord(json);
-    const rawNodes = root.nodes
-        ? (Array.isArray(root.nodes) ? root.nodes : Object.values(asRecord(root.nodes)))
-        : Object.values(root);
-    const nodes = rawNodes.map(asComfyNode);
-    const loras = new Set<string>();
-
-    let checkpointNode: ComfyNode | null = null;
-    const candidateSamplers: ComfyNode[] = [];
-
-    for (const node of nodes) {
-        const type = String(node.class_type || node.type || "");
-        const inputs = asRecord(node.inputs);
-
-        if (type === 'KSampler' || type === 'KSamplerAdvanced' || type === 'SDParameterGenerator' || type === 'SDPromptSaver' || (type.includes('KSampler') && !type.includes('Context'))) {
-            candidateSamplers.push(node);
-        }
-
-        if (!checkpointNode && (
-            type === 'CheckpointLoaderSimple' ||
-            type === 'CheckpointLoader' ||
-            type === 'Load Checkpoint' ||
-            type === 'UNETLoader' ||
-            type === 'DiffusersLoader'
-        )) {
-            checkpointNode = node;
-        }
-
-        if (inputs) {
-            Object.keys(inputs).forEach(key => {
-                if (key.startsWith('lora_name')) {
-                    const val = inputs[key];
-                    if (typeof val === 'string' && val !== 'None' && val.length > 0) {
-                        loras.add(val);
-                    }
-                }
-            });
-        }
-    }
-
-    if (loras.size > 0) metadata.loras = Array.from(loras);
-
-    if (candidateSamplers.length > 0) {
-        candidateSamplers.sort((a, b) => {
-            const idA = Number(a.id) || 999999;
-            const idB = Number(b.id) || 999999;
-            return idA - idB;
-        });
-
-        const mainSampler = candidateSamplers[0];
-        const type = String(mainSampler.class_type || mainSampler.type || "");
-        const w = mainSampler.widgets_values;
-
-        if (Array.isArray(w)) {
-            const isAdvanced = type.includes('Advanced');
-
-            if (!isAdvanced && (type.includes('KSampler') || type === 'SDParameterGenerator' || type === 'SDPromptSaver')) {
-                // Standard KSampler or Efficiency Nodes
-                const isEfficiency = type === 'SDParameterGenerator' || type === 'SDPromptSaver';
-                const isPipe = type.includes('Pipe');
-
-                if (isEfficiency) {
-                    const sIdx = (type === 'SDParameterGenerator') ? 4 : 3;
-                    const stIdx = 5;
-                    const cIdx = (type === 'SDParameterGenerator') ? 7 : 6;
-                    const smIdx = (type === 'SDParameterGenerator') ? 8 : 7;
-
-                    if (typeof w[sIdx] === 'number') metadata.seed = w[sIdx];
-                    if (typeof w[stIdx] === 'number') metadata.steps = w[stIdx];
-                    if (typeof w[cIdx] === 'number') metadata.cfg = w[cIdx];
-                    if (typeof w[smIdx] === 'string') {
-                        metadata.sampler = w[smIdx];
-                        if (typeof w[smIdx + 1] === 'string' && w[smIdx + 1] !== 'normal') metadata.sampler += ` (${w[smIdx + 1]})`;
-                    }
-                } else {
-                    // KSampler or KSamplerPipe
-                    const sIdx = isPipe ? 1 : 0;
-                    const stIdx = isPipe ? 3 : 2;
-                    const cIdx = isPipe ? 4 : 3;
-                    const smIdx = isPipe ? 5 : 4;
-                    const schIdx = isPipe ? 6 : 5;
-
-                    if (typeof w[sIdx] === 'number') metadata.seed = w[sIdx];
-                    if (typeof w[stIdx] === 'number') metadata.steps = w[stIdx];
-                    if (typeof w[cIdx] === 'number') metadata.cfg = w[cIdx];
-                    if (typeof w[smIdx] === 'string') {
-                        metadata.sampler = w[smIdx];
-                        if (typeof w[schIdx] === 'string' && w[schIdx] !== 'normal') metadata.sampler += ` (${w[schIdx]})`;
-                    }
-                }
-            } else if (isAdvanced) {
-                // KSamplerAdvanced and variants
-                // Standard KSamplerAdvanced: add_noise(0), seed(1), control(2), steps(3), start(4), end(5), cfg(6), sampler(7), scheduler(8)
-                if (w.length >= 9) {
-                    if (typeof w[1] === 'number') metadata.seed = w[1];
-                    if (typeof w[3] === 'number') metadata.steps = w[3];
-                    if (typeof w[6] === 'number') metadata.cfg = w[6];
-                    if (typeof w[7] === 'string') {
-                        metadata.sampler = w[7];
-                        if (typeof w[8] === 'string' && w[8] !== 'normal') metadata.sampler += ` (${w[8]})`;
-                    }
-                } else if (w.length >= 7) {
-                    // Fallback/Legacy/Simplified advanced
-                    if (typeof w[1] === 'number') metadata.seed = w[1];
-                    if (typeof w[3] === 'number') metadata.steps = w[3];
-                    if (typeof w[4] === 'number') metadata.cfg = w[4];
-                    if (typeof w[5] === 'string') {
-                        metadata.sampler = w[5];
-                        if (typeof w[6] === 'string' && w[6] !== 'normal') metadata.sampler += ` (${w[6]})`;
-                    }
-                }
-            }
-        }
-
-        if (checkpointNode) {
-            if (Array.isArray(checkpointNode.widgets_values) && checkpointNode.widgets_values.length > 0) {
-                const rawName = checkpointNode.widgets_values.find((v: unknown) =>
-                    typeof v === 'string' && /\.(safetensors|ckpt|pt|bin|sft)$/i.test(v)
-                );
-                if (typeof rawName === 'string') {
-                    metadata.model = rawName.replace(/\.(safetensors|ckpt|pt|sft|bin)$/i, '').split(/[\\/]/).pop();
-                }
-            } else if (checkpointNode.inputs) {
-                const inputs = asRecord(checkpointNode.inputs);
-                const rawName = inputs.unet_name || inputs.ckpt_name || inputs.model_name;
-                if (typeof rawName === 'string') {
-                    metadata.model = rawName.replace(/\.(safetensors|ckpt|pt|sft|bin)$/i, '').split(/[\\/]/).pop();
-                }
-            }
-        }
-    }
 }

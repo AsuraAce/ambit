@@ -285,6 +285,7 @@ describe('VirtualGrid gallery motion', () => {
         );
 
         await screen.findByTestId('grid-item-item-0');
+        await waitFor(() => expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('translate3d'));
 
         act(() => {
             gridRef.current?.scrollToItem(5);

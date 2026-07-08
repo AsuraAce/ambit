@@ -5,43 +5,17 @@ import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
+import {
+    isWorkflowGraph,
+    selectWorkflowGraphSource,
+    selectWorkflowJsonForActions,
+    type WorkflowInputs
+} from './workflowGraphUtils';
 
 interface WorkflowInspectorProps {
     image: AIImage;
     onWorkflowLoaded?: (workflowJson: string) => void;
 }
-
-type WorkflowValue = string | number | boolean | null | undefined | Record<string, unknown> | unknown[];
-type WorkflowInputs = Record<string, WorkflowValue> | WorkflowValue[];
-
-interface WorkflowRawNode extends Record<string, unknown> {
-    id?: string | number;
-    type?: string;
-    class_type?: string;
-    _type?: string;
-    node_type?: string;
-    title?: string;
-    label?: string;
-    widgets_values?: WorkflowValue[];
-    inputs?: Record<string, WorkflowValue>;
-    data?: Record<string, WorkflowValue>;
-    _meta?: { title?: string };
-}
-
-interface WorkflowDisplayNode {
-    id: string | number;
-    title: string;
-    type: string;
-    inputs: WorkflowInputs;
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
-
-const isWorkflowRawNode = (value: unknown): value is WorkflowRawNode => isRecord(value);
-
-const asStringValue = (value: unknown, fallback = ''): string =>
-    typeof value === 'string' && value.length > 0 ? value : fallback;
 
 const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -95,47 +69,24 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
-
-    // Helper to validate if JSON is a node graph
-    const isWorkflowGraph = (jsonStr: string): boolean => {
-        try {
-            let parseTarget = jsonStr;
-            if (!jsonStr.trim().startsWith('{') && !jsonStr.trim().startsWith('[')) {
-                // Try to extract JSON blob from mixed content
-                const start = jsonStr.indexOf('{');
-                const end = jsonStr.lastIndexOf('}');
-                if (start !== -1 && end !== -1 && end > start) {
-                    parseTarget = jsonStr.substring(start, end + 1);
-                }
-            }
-
-            const json = JSON.parse(parseTarget) as unknown;
-
-            // Case 1: Standard Node Graph (ComfyUI / InvokeAI)
-            if (isRecord(json) && Array.isArray(json.nodes) && json.nodes.length > 0) return true;
-
-            // Case 2: Flat Object Graph (API formats)
-            // Must contain objects with 'class_type', 'type', 'inputs', or 'widgets_values'
-            if (isRecord(json)) {
-                const keys = Object.keys(json);
-                if (keys.length === 0) return false;
-
-                // Heuristic: At least 50% of top-level values must look like nodes
-                const nodeLikeCount = keys.filter(k => {
-                    const val = json[k];
-                    return isWorkflowRawNode(val) && (
-                        val.class_type || val.type || val.node_type || val.inputs || val.widgets_values
-                    );
-                }).length;
-
-                return nodeLikeCount > 0 && (nodeLikeCount / keys.length) > 0.5;
-            }
-
-            return false;
-        } catch (e) {
-            return false;
-        }
-    };
+    const originalWorkflow = image.originalChunks?.workflow;
+    const originalPrompt = image.originalChunks?.prompt;
+    const originalChunks = useMemo(() => ({
+        ...(originalWorkflow ? { workflow: originalWorkflow } : {}),
+        ...(originalPrompt ? { prompt: originalPrompt } : {})
+    }), [originalWorkflow, originalPrompt]);
+    const workflowJsonForActions = selectWorkflowJsonForActions({
+        localWorkflowJson: localWorkflow,
+        workflowJson: image.metadata.workflowJson,
+        originalChunks
+    });
+    const workflowGraphSource = useMemo(() => selectWorkflowGraphSource({
+        tool: image.metadata.tool,
+        localWorkflowJson: localWorkflow,
+        workflowJson: image.metadata.workflowJson,
+        originalChunks
+    }), [image.metadata.tool, image.metadata.workflowJson, localWorkflow, originalChunks]);
+    const workflowNodes = workflowGraphSource?.nodes ?? [];
 
     // Lazy Load Workflow if missing
     React.useEffect(() => {
@@ -143,7 +94,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         // 1. Data is missing
         // 2. We are not already loading
         // 3. We haven't already attempted this specific image in this session
-        if (!image.metadata.workflowJson && !localWorkflow && !isLoading && hasAttempted.current !== image.id) {
+        if (!workflowJsonForActions && !isLoading && hasAttempted.current !== image.id) {
             // If we have a hint that there is definitely NO workflow, skip and mark as attempted
             if (image.metadata.hasWorkflowHint === false) {
                 hasAttempted.current = image.id;
@@ -178,7 +129,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             };
             loadWorkflow();
         }
-    }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading]);
+    }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
 
     // Sync local state if prop changes OR if image changes
     React.useEffect(() => {
@@ -186,7 +137,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        const wf = localWorkflow || image.metadata.workflowJson;
+        const wf = workflowJsonForActions;
         if (wf) {
             navigator.clipboard.writeText(wf);
             setCopied(true);
@@ -195,7 +146,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     };
 
     const handleDownload = async () => {
-        const wf = localWorkflow || image.metadata.workflowJson;
+        const wf = workflowJsonForActions;
         if (!wf) return;
 
         try {
@@ -218,104 +169,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             console.error('Failed to download workflow', e);
         }
     };
-
-    const workflowNodes = useMemo(() => {
-        const wf = localWorkflow || image.metadata.workflowJson;
-        if (!wf) return [];
-        try {
-            // Robust JSON Extraction: 
-            // Handle cases where the string might be "poisoned" with a keyword or null-bytes
-            let parseTarget = wf;
-            if (!wf.trim().startsWith('{') && !wf.trim().startsWith('[')) {
-                const start = wf.indexOf('{');
-                const end = wf.lastIndexOf('}');
-                if (start !== -1 && end !== -1 && end > start) {
-                    parseTarget = wf.substring(start, end + 1);
-                }
-            }
-
-            const json = JSON.parse(parseTarget) as unknown;
-            const nodes: WorkflowDisplayNode[] = [];
-
-            // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
-            let nodeList: WorkflowRawNode[] = [];
-
-            if (isRecord(json) && Array.isArray(json.nodes)) {
-                nodeList = json.nodes.filter(isWorkflowRawNode);
-            } else if (isRecord(json)) {
-                // If it's a flat object of nodes (InvokeAI API or Comfy API)
-                nodeList = Object.entries(json)
-                    .filter((entry): entry is [string, WorkflowRawNode] => isWorkflowRawNode(entry[1]))
-                    .map(([id, node]) => ({
-                        ...node,
-                        id: node.id || id
-                    }));
-            }
-
-            nodeList.forEach((node) => {
-                const incomingInputs: WorkflowInputs = node.widgets_values || node.inputs || node.data || {};
-                const inputRecord = Array.isArray(incomingInputs) ? {} : incomingInputs;
-
-                // 1. Determine Type
-                let type = asStringValue(node.type || node.class_type || node._type || node.node_type || inputRecord.type || inputRecord.node_type, "Unknown");
-
-                // 2. Determine Title
-                let title = asStringValue(node.title || node.label || node._meta?.title || inputRecord.label || inputRecord.title, type);
-
-                // 3. Refine Generic "Invocation" labels
-                // InvokeAI 4.x often labels EVERYTHING as 'invocation' at the top level
-                if (String(type).toLowerCase() === 'invocation' && (node.node_type || inputRecord.type || inputRecord.node_type)) {
-                    type = asStringValue(node.node_type || inputRecord.type || inputRecord.node_type, type);
-                }
-
-                if (String(title).toLowerCase() === 'invocation') {
-                    if (inputRecord.label) title = asStringValue(inputRecord.label, title);
-                    else if (inputRecord.title) title = asStringValue(inputRecord.title, title);
-                    else if (String(type).toLowerCase() !== 'invocation') title = type;
-                }
-
-                if (type || node.id) {
-                    nodes.push({
-                        id: node.id ?? `${type}-${nodes.length}`,
-                        title,
-                        type,
-                        inputs: incomingInputs
-                    });
-                }
-            });
-
-            // Hybrid Sorting Strategy: Hoist "Hero Nodes" (Sampler, Prompt, etc.)
-            const getNodePriority = (node: WorkflowDisplayNode) => {
-                const t = String(node.type || "").toLowerCase();
-                const l = String(node.title || "").toLowerCase();
-
-                // Tier 1: Samplers / Generation
-                if (t.includes('sampler') || t.includes('denoise') || t.includes('t2l') || t.includes('l2l')) return 1;
-
-                // Tier 2: Prompts / Conditioning
-                if (t.includes('prompt') || t.includes('conditioning') || l.includes('prompt')) return 2;
-
-                // Tier 3: Loaders
-                if (t.includes('loader') || t.includes('checkpoint')) return 3;
-
-                return 10; // Default
-            };
-
-            return nodes.sort((a, b) => {
-                const pA = getNodePriority(a);
-                const pB = getNodePriority(b);
-
-                if (pA !== pB) return pA - pB;
-
-                const idA = String(a.id);
-                const idB = String(b.id);
-                if (!isNaN(Number(idA)) && !isNaN(Number(idB))) return Number(idA) - Number(idB);
-                return idA.localeCompare(idB);
-            });
-        } catch (e) {
-            return [];
-        }
-    }, [image.metadata.workflowJson, localWorkflow]);
 
     const filteredNodes = useMemo(() => {
         if (!searchQuery) return workflowNodes;
@@ -341,7 +194,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                         </div>
                     </div>
 
-                    {(localWorkflow || image.metadata.workflowJson) && (
+                    {workflowJsonForActions && (
                         <div className="flex gap-2">
                             <button
                                 onClick={handleCopy}
@@ -393,7 +246,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
                                     <p className="text-xs text-gray-400 mb-4 text-balance">
                                         {isLoading ? "Reading workflow data from file headers..." :
-                                            (!localWorkflow && !image.metadata.workflowJson)
+                                            !workflowJsonForActions
                                                 ? (image.metadata.hasWorkflowHint === false
                                                     ? "This image was generated without a recorded workflow."
                                                     : "No workflow data was found for this image in the database or file headers.")
@@ -402,11 +255,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                                     : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }
                                     </p>
-                                    {(localWorkflow || image.metadata.workflowJson) && (
+                                    {workflowJsonForActions && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">
                                             <div className="text-[10px] text-gray-400 font-mono uppercase mb-2">JSON Preview</div>
                                             <pre className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 font-mono break-all whitespace-pre-wrap">
-                                                {(localWorkflow || image.metadata.workflowJson || "").substring(0, 1000)}...
+                                                {workflowJsonForActions.substring(0, 1000)}...
                                             </pre>
                                         </div>
                                     )}

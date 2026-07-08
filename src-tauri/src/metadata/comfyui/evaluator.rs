@@ -37,12 +37,14 @@ impl<'a> ComfyEvaluator<'a> {
                     if let Some(root_node) = self.graph.get_node(&root_sampler_id) {
                         let mut loras = Vec::new();
                         let mut ip_adapters = Vec::new();
+                        let mut hypernetworks = Vec::new();
                         let partial = super::eval_core::extract_from_sampler(
                             self.graph,
                             &root_sampler_id,
                             root_node,
                             &mut loras,
                             &mut ip_adapters,
+                            &mut hypernetworks,
                         );
                         meta.merge(partial);
                     }
@@ -64,12 +66,14 @@ impl<'a> ComfyEvaluator<'a> {
                 if !self.is_muted(node) {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
+                    let mut hypernetworks = Vec::new();
                     let partial = super::eval_core::extract_from_sampler(
                         self.graph,
                         id,
                         node,
                         &mut loras,
                         &mut ip_adapters,
+                        &mut hypernetworks,
                     );
                     if partial.steps > 0 || !partial.model.is_empty() {
                         meta.merge(partial);
@@ -157,6 +161,28 @@ impl<'a> ComfyEvaluator<'a> {
                             current_id = source_id;
                             depth += 1;
                             continue;
+                        }
+                    }
+                }
+                if let Some(conditioning_id) = get_source_id(self.graph, &current_id, "positive") {
+                    if let Some(conditioning_node) = self.graph.get_node(&conditioning_id) {
+                        if get_node_type(conditioning_node) == "StableCascade_StageB_Conditioning" {
+                            if let Some(stage_c_id) =
+                                get_source_id(self.graph, &conditioning_id, "stage_c")
+                            {
+                                if let Some(stage_c_node) = self.graph.get_node(&stage_c_id) {
+                                    let t = get_node_type(stage_c_node);
+                                    if t.contains("KSampler")
+                                        || t == "SamplerCustomAdvanced"
+                                        || t == "SamplerCustom"
+                                        || t.contains("StyleAlignedReferenceSampler")
+                                    {
+                                        current_id = stage_c_id;
+                                        depth += 1;
+                                        continue;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
