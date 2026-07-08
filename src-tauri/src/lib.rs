@@ -84,6 +84,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // metadata commands
         metadata::civitai::import_a1111_cache,
         metadata::civitai::resolve_hashes_online,
+        metadata::comfyui::inspect_comfyui_metadata_chunks,
         metadata::models::clear_model_cache,
         metadata::models::cancel_model_resolution,
         metadata::models::cancel_model_discovery,
