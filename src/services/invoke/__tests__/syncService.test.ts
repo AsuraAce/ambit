@@ -148,6 +148,7 @@ describe('syncImages live mode', () => {
     });
 
     it('returns early for no-op startup cycles after candidate detection without counting', async () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [{ name: 'metadata_json' }, { name: 'updated_at' }, { name: 'is_intermediate' }];
@@ -182,6 +183,13 @@ describe('syncImages live mode', () => {
         expect(fetchBoardMappings).not.toHaveBeenCalled();
         expect(getImagesByIds).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
+        expect(infoSpy).toHaveBeenCalledWith(
+            '[Startup Catch-up] Invoke sync skipped; no candidates after saved cursor.',
+            expect.objectContaining({
+                afterTimestamp: 100
+            })
+        );
+        infoSpy.mockRestore();
     });
 
     it('keeps live changed cycles incremental and skips the final full collection sync', async () => {

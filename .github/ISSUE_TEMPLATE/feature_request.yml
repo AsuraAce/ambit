@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest a workflow improvement or new capability for Ambit.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Ambit is in public beta, so concrete workflow problems are especially useful.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the workflow friction or missing capability.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Ambit to do?
+      description: Describe the behavior or UI you imagine.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Large libraries
+        - Search and filtering
+        - Metadata and parsing
+        - Organization and collections
+        - Viewer and slideshow
+        - Import and folder scanning
+        - Settings and diagnostics
+        - Installer or updater
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Tell us what you do today, even if it is messy.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, examples, related tools, or notes about library size can help.
+    validations:
+      required: false

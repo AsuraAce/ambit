@@ -9,11 +9,13 @@ Settings controls Ambit's app preferences, integrations, privacy behavior, optio
 The Settings window contains:
 
 - General: app-level preferences.
-- Connections: folders, InvokeAI, SD WebUI, and ComfyUI setup.
+- Connections: folders, Resources, InvokeAI, SD WebUI, and ComfyUI setup.
 - Intelligence: optional AI features and model/prompt configuration.
 - Privacy: content masking behavior and masked keywords.
 - Advanced: database, interface, update, and troubleshooting tools.
 - Dev Tools: development-only tools when enabled.
+
+For image generator setup details, see [Generator Integrations](generator-integrations.md). For model and resource folder setup, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## Local-First Behavior
 
@@ -61,10 +63,12 @@ Advanced includes:
 - backup settings
 - automatic update controls
 - reset onboarding
-- support diagnostics, including the active library database location
+- support diagnostics, including the active library database and app log locations
 - database reset tools
 
 The database location shown in Support Diagnostics is the local catalog path, not the Ambit installer path. On Windows, Ambit stores the catalog under Local AppData and may show a legacy Roaming AppData fallback only for older installs that could not be moved automatically.
+
+Support Diagnostics also shows the app log file location. Use Show Logs Folder or Copy Diagnostics when collecting details for an issue; the copied diagnostics include paths and aggregate counts, not image prompts or metadata.
 
 Use Purge Database only when you intentionally want to remove all imported metadata and reset application state. The confirmation explains that source image files are not touched, but Ambit's catalog and linked folders are reset.
 
