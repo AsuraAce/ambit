@@ -4,7 +4,17 @@ use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::guidance::GuidanceClassifier;
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashSet;
+
+fn compare_node_ids(left_id: &str, right_id: &str) -> Ordering {
+    match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
+        (Ok(left), Ok(right)) => left.cmp(&right).then_with(|| left_id.cmp(right_id)),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => left_id.cmp(right_id),
+    }
+}
 
 /// Layer 2: Explicit Metadata Nodes
 /// Scans for nodes specifically designed to embed metadata.
@@ -13,12 +23,7 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
     let mut found = false;
 
     let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
-    nodes.sort_by(|(left_id, _), (right_id, _)| {
-        match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
-            (Ok(left), Ok(right)) => left.cmp(&right),
-            _ => left_id.cmp(right_id),
-        }
-    });
+    nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
 
     for (id, node) in nodes {
         let t = get_node_type(node);
@@ -109,7 +114,6 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                 }
             }
         }
-
     }
 
     if found {
@@ -219,12 +223,7 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
     // Generic model discovery is fallback evidence only. Text metadata can be
     // more intentional than an arbitrary disconnected loader node.
     let mut model_nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
-    model_nodes.sort_by(|(left_id, _), (right_id, _)| {
-        match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
-            (Ok(left), Ok(right)) => left.cmp(&right),
-            _ => left_id.cmp(right_id),
-        }
-    });
+    model_nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
 
     for (_id, node) in model_nodes {
         if meta.model != "Unknown" && !meta.model.is_empty() && meta.model != "None" {

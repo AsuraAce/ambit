@@ -1,10 +1,12 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download } from 'lucide-react';
+import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
+import { commands, type ComfyParserDiagnosticsReport } from '../../../bindings';
+import { useSettingsStore } from '../../../stores/settingsStore';
 import {
     isWorkflowGraph,
     selectWorkflowGraphSource,
@@ -16,6 +18,139 @@ interface WorkflowInspectorProps {
     image: AIImage;
     onWorkflowLoaded?: (workflowJson: string) => void;
 }
+
+const formatDiagnosticLabel = (value: string) =>
+    value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatDiagnosticValue = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === '' ? 'None' : String(value);
+
+const ComfyDiagnosticsPanel: React.FC<{
+    imageId: string;
+    chunks?: Record<string, string>;
+}> = ({ imageId, chunks }) => {
+    const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const chunkCount = chunks ? Object.keys(chunks).length : 0;
+
+    React.useEffect(() => {
+        if (!chunks || chunkCount === 0) {
+            setDiagnostics(null);
+            setError(null);
+            setIsLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        setIsLoading(true);
+        setError(null);
+
+        commands.inspectComfyuiMetadataChunks(chunks)
+            .then((result) => {
+                if (cancelled) return;
+                if (result.status === 'ok') {
+                    setDiagnostics(result.data);
+                } else {
+                    setDiagnostics(null);
+                    setError(result.error);
+                }
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                setDiagnostics(null);
+                setError(err instanceof Error ? err.message : String(err));
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [chunks, chunkCount, imageId]);
+
+    const fieldSources = diagnostics
+        ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
+        : [];
+
+    return (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-3 text-xs">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                    <Activity className="w-3.5 h-3.5" />
+                    Parser Diagnostics
+                </div>
+                {diagnostics && (
+                    <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
+                        {diagnostics.graphNodeCount} nodes
+                    </span>
+                )}
+            </div>
+
+            {!chunks || chunkCount === 0 ? (
+                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Raw chunks unavailable.</div>
+            ) : isLoading ? (
+                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Loading diagnostics...</div>
+            ) : error ? (
+                <div className="mt-2 text-rose-700 dark:text-rose-300">Diagnostics unavailable: {error}</div>
+            ) : diagnostics ? (
+                <div className="mt-3 space-y-3 text-amber-950 dark:text-amber-100">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Chunks</div>
+                            <div className="font-mono break-all">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Layers</div>
+                            <div className="font-mono break-all">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Model</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Sampler</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.sampler)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Seed</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.seed)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Steps / CFG</div>
+                            <div className="font-mono break-all">{diagnostics.metadata.steps} / {diagnostics.metadata.cfg}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Positive Prompt</div>
+                        <div className="font-mono line-clamp-3 break-words">{formatDiagnosticValue(diagnostics.metadata.positivePrompt)}</div>
+                    </div>
+
+                    <div>
+                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Field Sources</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                            {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => (
+                                <span
+                                    key={field}
+                                    className="rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-mono text-[10px]"
+                                >
+                                    {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
+                                </span>
+                            )) : (
+                                <span className="text-amber-800/70 dark:text-amber-200/70">None</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+        </div>
+    );
+};
 
 const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -69,6 +204,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
+    const showParserDiagnostics = useSettingsStore((state) => state.settings.devMode === true)
+        && image.metadata.tool === 'ComfyUI';
     const originalWorkflow = image.originalChunks?.workflow;
     const originalPrompt = image.originalChunks?.prompt;
     const originalChunks = useMemo(() => ({
@@ -227,6 +364,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             className="w-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs focus:border-sage-500 focus:ring-1 focus:ring-sage-500/20 outline-none transition-all text-gray-700 dark:text-gray-200"
                         />
                     </div>
+                )}
+
+                {showParserDiagnostics && (
+                    <ComfyDiagnosticsPanel imageId={image.id} chunks={image.originalChunks} />
                 )}
             </div>
 

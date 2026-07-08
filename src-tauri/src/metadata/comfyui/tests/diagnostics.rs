@@ -1,6 +1,7 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
 use crate::metadata::comfyui::{
-    extract_comfyui_metadata, extract_comfyui_metadata_with_diagnostics,
+    build_comfyui_diagnostics_report, extract_comfyui_metadata,
+    extract_comfyui_metadata_with_diagnostics,
 };
 use std::collections::HashMap;
 
@@ -234,4 +235,96 @@ fn test_public_extractor_matches_diagnostic_helper_metadata() {
 
     assert_eq!(diagnostic_meta, public_meta);
     assert!(diagnostics.graph_node_count > 0);
+}
+
+#[test]
+fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["4", 0],
+                "positive": ["6", 0],
+                "seed": 12345,
+                "steps": 25,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "4": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "diagnostic-model.safetensors" }
+        },
+        "6": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "diagnostic prompt" }
+        },
+        "8": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["3", 0] }
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["8", 0] }
+        }
+    }"#;
+    let workflow = r#"{"nodes":[]}"#;
+    let mut chunks = chunks_with_prompt(prompt);
+    chunks.insert("workflow".to_string(), workflow.to_string());
+
+    let report = build_comfyui_diagnostics_report(&chunks);
+
+    assert_eq!(report.chunk_keys, vec!["prompt", "workflow"]);
+    assert!(report.has_prompt_chunk);
+    assert!(report.has_workflow_chunk);
+    assert_eq!(report.graph_node_count, 5);
+    assert_eq!(report.metadata.model, "diagnostic_model");
+    assert_eq!(report.metadata.seed, Some(12345));
+    assert_eq!(report.metadata.steps, 25);
+    assert_eq!(report.metadata.cfg, 7.0);
+    assert_eq!(report.metadata.sampler, "euler (simple)");
+    assert_eq!(report.metadata.positive_prompt, "diagnostic prompt");
+    assert!(report.metadata.has_workflow_json);
+    assert!(report.metadata.has_workflow_hint);
+    assert_eq!(
+        report.attempted_layers,
+        vec!["workflow_chunk", "explicit_node", "sampler_traversal"]
+    );
+    assert_eq!(
+        report
+            .field_sources
+            .get("workflow_json")
+            .map(String::as_str),
+        Some("workflow_chunk")
+    );
+    assert_eq!(
+        report.field_sources.get("model").map(String::as_str),
+        Some("sampler_traversal")
+    );
+    assert_eq!(
+        report
+            .field_sources
+            .get("positive_prompt")
+            .map(String::as_str),
+        Some("sampler_traversal")
+    );
+}
+
+#[test]
+fn test_diagnostics_report_handles_non_graph_chunks_without_panicking() {
+    let mut chunks = HashMap::new();
+    chunks.insert("parameters".to_string(), "not a comfy graph".to_string());
+
+    let report = build_comfyui_diagnostics_report(&chunks);
+
+    assert_eq!(report.chunk_keys, vec!["parameters"]);
+    assert!(!report.has_prompt_chunk);
+    assert!(!report.has_workflow_chunk);
+    assert_eq!(report.graph_node_count, 0);
+    assert!(report.attempted_layers.is_empty());
+    assert!(report.field_sources.is_empty());
+    assert_eq!(report.metadata.tool, "ComfyUI");
+    assert_eq!(report.metadata.model, "Unknown");
+    assert!(!report.metadata.has_workflow_json);
 }

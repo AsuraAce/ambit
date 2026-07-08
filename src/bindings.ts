@@ -456,6 +456,14 @@ async resolveHashesOnline(skipHarvest: boolean) : Promise<Result<ResolutionResul
     else return { status: "error", error: e  as any };
 }
 },
+async inspectComfyuiMetadataChunks(chunks: Partial<{ [key in string]: string }>) : Promise<Result<ComfyParserDiagnosticsReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inspect_comfyui_metadata_chunks", { chunks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearModelCache() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
@@ -565,6 +573,8 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
+export type ComfyMetadataPreview = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; generationType: string; hasWorkflowHint: boolean; hasWorkflowJson: boolean }
+export type ComfyParserDiagnosticsReport = { chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; metadata: ComfyMetadataPreview }
 export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath: string; roamingDbPath: string; appLogDir: string; appLogPath: string; isUsingRoamingFallback: boolean; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
 export type FileEntry = { path: string; modified: number; size: number }
