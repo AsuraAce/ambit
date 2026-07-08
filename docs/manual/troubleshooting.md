@@ -33,11 +33,14 @@ Metadata depends on what the generator embedded in the file. Some images do not 
 
 Useful checks:
 
-- open the image viewer and inspect Info and Workflow tabs
+- open the image viewer and inspect Info, Internal Metadata, and Workflow tabs
 - check whether the image came from a supported generator output
 - refresh metadata for the folder
+- use AI Prompt Recovery only when you intentionally want Gemini to infer a prompt from the image
 - use Untagged maintenance to find records that need review
 - use Online Model Hash Resolution only when you intentionally want CivitAI lookup for unresolved model hashes
+
+For the full inspection and recovery workflow, see [Viewer And Metadata](viewer-and-metadata.md).
 
 ## Thumbnails Are Broken
 
