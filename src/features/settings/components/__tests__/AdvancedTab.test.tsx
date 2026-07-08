@@ -6,6 +6,8 @@ import { AdvancedTab } from '../AdvancedTab';
 
 const addToastMock = vi.hoisted(() => vi.fn());
 const getDbDiagnosticsMock = vi.hoisted(() => vi.fn());
+const showAppLogFolderMock = vi.hoisted(() => vi.fn());
+const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
 const libraryContextMock = vi.hoisted(() => ({
     setSettings: vi.fn(),
     cleanLibrary: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +30,7 @@ vi.mock('../BackupSettings', () => ({
 vi.mock('../../../../bindings', () => ({
     commands: {
         getDbDiagnostics: getDbDiagnosticsMock,
+        showAppLogFolder: showAppLogFolderMock,
     },
 }));
 
@@ -68,6 +71,14 @@ const renderAdvanced = (settings = createSettings(), onClose = vi.fn(), onNaviga
 describe('AdvancedTab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.defineProperty(navigator, 'clipboard', {
+            value: {
+                writeText: clipboardWriteTextMock,
+            },
+            configurable: true,
+        });
+        clipboardWriteTextMock.mockResolvedValue(undefined);
+        showAppLogFolderMock.mockResolvedValue({ status: 'ok', data: null });
         getDbDiagnosticsMock.mockResolvedValue({
             status: 'ok',
             data: {
@@ -75,6 +86,8 @@ describe('AdvancedTab', () => {
                 activeDbPath: 'C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
                 localDbPath: 'C:\\Users\\AmbitTester\\AppData\\Local\\io.github.asuraace.ambit\\images.db',
                 roamingDbPath: 'C:\\Users\\AmbitTester\\AppData\\Roaming\\io.github.asuraace.ambit\\images.db',
+                appLogDir: 'C:\\Users\\AmbitTester\\AppData\\Roaming\\io.github.asuraace.ambit\\logs',
+                appLogPath: 'C:\\Users\\AmbitTester\\AppData\\Roaming\\io.github.asuraace.ambit\\logs\\Ambit.log',
                 isUsingRoamingFallback: false,
                 imageCount: 12,
                 deletedCount: 1,
@@ -119,6 +132,60 @@ describe('AdvancedTab', () => {
             expect(screen.getByText('Legacy Roaming fallback')).not.toBeNull();
             expect(screen.getAllByText(/AppData\\Local\\io\.github\.asuraace\.ambit\\images\.db/)).toHaveLength(2);
         });
+    });
+
+    it('renders app log location and reveals only the backend-resolved logs folder', async () => {
+        renderAdvanced();
+
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('App Logs')).not.toBeNull();
+            expect(screen.getByText(/Ambit\.log/)).not.toBeNull();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /show logs folder/i }));
+
+        await waitFor(() => {
+            expect(showAppLogFolderMock).toHaveBeenCalledWith();
+            expect(addToastMock).toHaveBeenCalledWith('Opened app logs folder', 'success');
+        });
+    });
+
+    it('shows a failure toast when the logs folder cannot be revealed', async () => {
+        showAppLogFolderMock.mockResolvedValue({ status: 'error', error: 'folder unavailable' });
+        renderAdvanced();
+
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+        fireEvent.click(screen.getByRole('button', { name: /show logs folder/i }));
+
+        await waitFor(() => {
+            expect(addToastMock).toHaveBeenCalledWith('Failed to open app logs folder', 'error');
+        });
+    });
+
+    it('copies support diagnostics without image metadata or secret fields', async () => {
+        renderAdvanced(createSettings({ logLevel: 'warn' }));
+
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Ambit\.log/)).not.toBeNull();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /copy diagnostics/i }));
+
+        await waitFor(() => {
+            expect(clipboardWriteTextMock).toHaveBeenCalledOnce();
+            expect(addToastMock).toHaveBeenCalledWith('Diagnostics copied to clipboard', 'success');
+        });
+
+        const payload = clipboardWriteTextMock.mock.calls[0][0] as string;
+        expect(payload).toContain('Ambit Support Diagnostics');
+        expect(payload).toContain('Console log level: warn');
+        expect(payload).toContain('App log file: C:\\Users\\AmbitTester\\AppData\\Roaming\\io.github.asuraace.ambit\\logs\\Ambit.log');
+        expect(payload).toContain('Images: 12');
+        expect(payload).not.toMatch(/prompt|metadata_json|api[_-]?key|secret/i);
     });
 
     it('warns when debug logging is selected', () => {

@@ -2,11 +2,12 @@ use super::run_blocking;
 use crate::db::{resolve_db_path, resolve_db_path_info, resolve_main_database_url};
 use rusqlite::params;
 use sha2::{Digest, Sha256};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 pub struct FileHashBackfillState {
     pub is_cancelled: Arc<AtomicBool>,
@@ -27,6 +28,8 @@ pub struct DbDiagnostics {
     pub active_db_path: String,
     pub local_db_path: String,
     pub roaming_db_path: String,
+    pub app_log_dir: String,
+    pub app_log_path: String,
     pub is_using_roaming_fallback: bool,
     pub image_count: i64,
     pub deleted_count: i64,
@@ -71,6 +74,42 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+fn resolve_app_log_path(log_dir: &Path, app_name: &str) -> PathBuf {
+    log_dir.join(app_name).with_extension("log")
+}
+
+fn ensure_log_directory(log_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(log_dir).map_err(|e| format!("Failed to prepare app log folder: {}", e))
+}
+
+fn open_folder_path(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn get_main_database_url(app: AppHandle) -> Result<String, String> {
@@ -84,6 +123,8 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
     run_blocking(app, move |conn| {
         let path_info = resolve_db_path_info(&app_clone)?;
         let db_path = path_info.active_path.clone();
+        let app_log_dir = app_clone.path().app_log_dir().map_err(|e| e.to_string())?;
+        let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
             .unwrap_or(0);
@@ -113,6 +154,8 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             active_db_path: path_info.active_path.to_string_lossy().to_string(),
             local_db_path: path_info.local_path.to_string_lossy().to_string(),
             roaming_db_path: path_info.roaming_path.to_string_lossy().to_string(),
+            app_log_dir: app_log_dir.to_string_lossy().to_string(),
+            app_log_path: app_log_path.to_string_lossy().to_string(),
             is_using_roaming_fallback: path_info.is_using_roaming_fallback,
             image_count,
             deleted_count,
@@ -122,6 +165,14 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         })
     })
     .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub fn show_app_log_folder(app: AppHandle) -> Result<(), String> {
+    let app_log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    ensure_log_directory(&app_log_dir)?;
+    open_folder_path(&app_log_dir)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -316,7 +367,7 @@ pub async fn purge_database(app: AppHandle) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::hash_file_sha256;
+    use super::{ensure_log_directory, hash_file_sha256, resolve_app_log_path};
     use std::fs::File;
     use std::io::Write;
 
@@ -340,5 +391,30 @@ mod tests {
             first_hash,
             "f10266197016b8e8842aeba6800100997ce04f35a45a3bff974711e9615ea597"
         );
+    }
+
+    #[test]
+    fn app_log_path_matches_tauri_plugin_log_default_name() {
+        let log_dir =
+            std::path::Path::new("C:/Users/Ambit/AppData/Roaming/io.github.asuraace.ambit/logs");
+
+        let log_path = resolve_app_log_path(log_dir, "Ambit");
+
+        assert_eq!(
+            log_path.to_string_lossy().replace('\\', "/"),
+            "C:/Users/Ambit/AppData/Roaming/io.github.asuraace.ambit/logs/Ambit.log"
+        );
+    }
+
+    #[test]
+    fn log_folder_reveal_prepares_only_a_directory_target() {
+        let root = std::env::temp_dir().join("ambit_log_reveal_test");
+        let log_dir = root.join("logs");
+        let _ = std::fs::remove_dir_all(&root);
+
+        ensure_log_directory(&log_dir).unwrap();
+
+        assert!(log_dir.is_dir());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Trash2, History as HistoryIcon, Loader2, Database, AlertTriangle, Monitor, RefreshCw, ExternalLink } from 'lucide-react';
+import { getVersion } from '@tauri-apps/api/app';
+import { Trash2, History as HistoryIcon, Loader2, Database, AlertTriangle, Monitor, RefreshCw, ExternalLink, FolderOpen, Copy } from 'lucide-react';
 import { AppSettings, LogLevel } from '../../../types';
 import { commands, type DbDiagnostics } from '../../../bindings';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -120,6 +121,53 @@ export const AdvancedTab: React.FC<TabProps> = ({
     const handleOpenMaintenance = () => {
         onNavigateToMaintenance();
         onClose?.();
+    };
+
+    const handleShowAppLogFolder = async () => {
+        try {
+            await unwrap(commands.showAppLogFolder());
+            addToast('Opened app logs folder', 'success');
+        } catch (error) {
+            console.error('[Support] Failed to open app logs folder:', error);
+            addToast('Failed to open app logs folder', 'error');
+        }
+    };
+
+    const handleCopyDiagnostics = async () => {
+        if (!dbDiagnostics) {
+            addToast('Diagnostics are still loading', 'info');
+            return;
+        }
+
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard is not available');
+            }
+
+            const version = await getVersion().catch(() => 'unknown');
+            const diagnosticsText = [
+                `${APP_NAME} Support Diagnostics`,
+                `App version: ${version}`,
+                `Console log level: ${settings.logLevel || 'info'}`,
+                `Active catalog: ${dbDiagnostics.activeDbPath || dbDiagnostics.dbPath}`,
+                `Local AppData target: ${dbDiagnostics.localDbPath}`,
+                `Legacy Roaming fallback: ${dbDiagnostics.roamingDbPath}`,
+                `Using Roaming fallback: ${dbDiagnostics.isUsingRoamingFallback ? 'yes' : 'no'}`,
+                `App log folder: ${dbDiagnostics.appLogDir}`,
+                `App log file: ${dbDiagnostics.appLogPath}`,
+                `Images: ${dbDiagnostics.imageCount}`,
+                `Deleted images: ${dbDiagnostics.deletedCount}`,
+                `Models: ${dbDiagnostics.modelCount}`,
+                `Facet cache rows: ${dbDiagnostics.cacheCount}`,
+                `Images missing tool metadata: ${dbDiagnostics.toolNullCount}`,
+            ].join('\n');
+
+            await navigator.clipboard.writeText(diagnosticsText);
+            addToast('Diagnostics copied to clipboard', 'success');
+        } catch (error) {
+            console.error('[Support] Failed to copy diagnostics:', error);
+            addToast('Failed to copy diagnostics', 'error');
+        }
     };
 
     React.useEffect(() => {
@@ -350,6 +398,52 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                     Loading database location...
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-6 space-y-3">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-bold text-gray-900 dark:text-gray-200">App Logs</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        Runtime logs are written to Ambit's app log folder for support investigations.
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleShowAppLogFolder()}
+                                        className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+                                    >
+                                        <FolderOpen className="w-3.5 h-3.5" /> Show Logs Folder
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleCopyDiagnostics()}
+                                        disabled={!dbDiagnostics}
+                                        className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                    >
+                                        <Copy className="w-3.5 h-3.5" /> Copy Diagnostics
+                                    </button>
+                                </div>
+                            </div>
+
+                            {dbDiagnostics ? (
+                                <div className="rounded-lg bg-gray-50 p-3 text-xs dark:bg-black/20">
+                                    <div className="font-bold uppercase tracking-wider text-gray-400">App log file</div>
+                                    <div className="mt-1 break-all font-mono text-gray-700 dark:text-gray-300">
+                                        {dbDiagnostics.appLogPath}
+                                    </div>
+                                </div>
+                            ) : dbDiagnosticsError ? (
+                                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                    Could not load app log location: {dbDiagnosticsError}
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Loading app log location...
                                 </div>
                             )}
                         </div>
