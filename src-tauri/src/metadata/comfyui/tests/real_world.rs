@@ -1,6 +1,6 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer};
-use crate::metadata::comfyui::extract_comfyui_metadata_with_diagnostics;
-use crate::metadata::ImageMetadata;
+use crate::metadata::comfyui::{extract_comfyui_metadata_with_diagnostics, merge_comfyui_metadata};
+use crate::metadata::{extract_a1111_metadata, ImageMetadata};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -33,6 +33,24 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
     RealWorldFixture {
         name: "krea2_turbo_official_template",
         chunks_json: include_str!("fixtures/real_world/krea2_turbo_official_template.chunks.json"),
+    },
+    RealWorldFixture {
+        name: "format_parity_webp_flat",
+        chunks_json: include_str!("fixtures/real_world/format_parity_webp_flat.chunks.json"),
+    },
+    RealWorldFixture {
+        name: "format_parity_jpeg_flat",
+        chunks_json: include_str!("fixtures/real_world/format_parity_jpeg_flat.chunks.json"),
+    },
+    RealWorldFixture {
+        name: "format_parity_png_save_metadata",
+        chunks_json: include_str!(
+            "fixtures/real_world/format_parity_png_save_metadata.chunks.json"
+        ),
+    },
+    RealWorldFixture {
+        name: "krea2_turbo_regular_saveimage",
+        chunks_json: include_str!("fixtures/real_world/krea2_turbo_regular_saveimage.chunks.json"),
     },
 ];
 
@@ -268,6 +286,221 @@ fn test_krea2_turbo_official_template_extracts_expected_metadata() {
             diagnostics.field_sources.get(&field),
             Some(&layer),
             "krea2_turbo_official_template should record {field:?} from {layer:?}"
+        );
+    }
+}
+
+#[test]
+fn test_format_parity_flat_jpeg_webp_parameters_parse_cfg_and_unknown_prompts() {
+    for fixture_name in ["format_parity_jpeg_flat", "format_parity_webp_flat"] {
+        let fixture = get_fixture(fixture_name);
+        let chunks = load_chunks(fixture);
+        let parameters = chunks
+            .get("parameters")
+            .expect("flat image fixture should include parameters");
+        let meta = extract_a1111_metadata(parameters, None);
+
+        assert_eq!(meta.tool, "ComfyUI", "{fixture_name} tool");
+        assert_eq!(
+            meta.model, "ArrogantBastard_ponyV33SS",
+            "{fixture_name} model"
+        );
+        assert_eq!(meta.steps, 20, "{fixture_name} steps");
+        assert_eq!(meta.cfg, 8.0, "{fixture_name} cfg");
+        assert_eq!(meta.seed, Some(0), "{fixture_name} seed");
+        assert_eq!(meta.sampler, "euler_simple", "{fixture_name} sampler");
+        assert_eq!(
+            meta.positive_prompt, "",
+            "{fixture_name} should treat literal unknown as missing positive prompt"
+        );
+        assert_eq!(
+            meta.negative_prompt, "",
+            "{fixture_name} should treat literal unknown as missing negative prompt"
+        );
+    }
+}
+
+#[test]
+fn test_format_parity_png_graph_overrides_stale_flat_save_metadata() {
+    let fixture = get_fixture("format_parity_png_save_metadata");
+    let chunks = load_chunks(fixture);
+    let expected_workflow = chunks
+        .get("workflow")
+        .expect("format parity PNG should include workflow chunk");
+    let expected_prompt = prompt_node_string(&chunks, "30:19", "value");
+    let parameters = chunks
+        .get("parameters")
+        .expect("format parity PNG should include flat parameters");
+
+    let mut merged = extract_a1111_metadata(parameters, None);
+    let diagnostics = merge_comfyui_metadata(&mut merged, &chunks);
+
+    assert_metadata(
+        "format_parity_png_save_metadata",
+        &merged,
+        ExpectedMetadata {
+            model: "krea2_turbo_fp8_scaled",
+            seed: Some(582731718186426),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: &expected_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+    );
+    assert!(
+        !merged.positive_prompt.eq_ignore_ascii_case("unknown"),
+        "format parity PNG should not preserve the stale saver prompt sentinel"
+    );
+    assert_eq!(
+        merged.model_hash, None,
+        "format parity PNG should not retain the stale flat hash after graph model override"
+    );
+    assert_eq!(
+        merged.workflow_json.as_deref(),
+        Some(expected_workflow.as_str()),
+        "format parity PNG should preserve exact workflow JSON"
+    );
+    for (field, layer) in [
+        (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+        (
+            ComfyMetadataField::Sampler,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+        (
+            ComfyMetadataField::PositivePrompt,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&layer),
+            "format parity PNG should record {field:?} from {layer:?}"
+        );
+    }
+}
+
+#[test]
+fn test_trusted_graph_model_preserves_flat_hash_when_model_matches() {
+    let parameters =
+        "Steps: 12, Model: explicit_model, Model hash: matching_hash, Version: ComfyUI";
+    let prompt = r#"{
+        "1": {
+            "class_type": "SDParameterGenerator",
+            "inputs": {
+                "ckpt_name": "explicit_model.safetensors"
+            }
+        }
+    }"#;
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let mut merged = extract_a1111_metadata(parameters, None);
+    let diagnostics = merge_comfyui_metadata(&mut merged, &chunks);
+
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::ExplicitNode)
+    );
+    assert_eq!(merged.model, "explicit_model");
+    assert_eq!(merged.model_hash.as_deref(), Some("matching_hash"));
+}
+
+#[test]
+fn test_global_scan_model_does_not_override_known_flat_model() {
+    let parameters = "flat prompt\nNegative prompt: flat negative\nSteps: 12, Sampler: euler, CFG Scale: 7.0, Seed: 42, Model: trusted_flat_model, Version: ComfyUI";
+    let prompt = r#"{
+        "1": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {
+                "ckpt_name": "wrong_disconnected_loader.safetensors"
+            }
+        },
+        "2": {
+            "class_type": "String",
+            "inputs": {
+                "value": "disconnected prompt"
+            }
+        }
+    }"#;
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let mut merged = extract_a1111_metadata(parameters, None);
+    let diagnostics = merge_comfyui_metadata(&mut merged, &chunks);
+
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::GlobalScan),
+        "synthetic graph should only provide model through weak global scan"
+    );
+    assert_eq!(
+        merged.model, "trusted_flat_model",
+        "weak ComfyUI global scan should not replace a known flat model"
+    );
+    assert!(
+        !merged.model.contains("wrong_disconnected_loader"),
+        "disconnected loader model should not win merge precedence"
+    );
+}
+
+#[test]
+fn test_krea2_regular_saveimage_remains_sampler_traversal() {
+    let fixture = get_fixture("krea2_turbo_regular_saveimage");
+    let chunks = load_chunks(fixture);
+    let expected_workflow = chunks
+        .get("workflow")
+        .expect("Krea regular fixture should include workflow chunk");
+    let expected_prompt = prompt_node_string(&chunks, "30:19", "value");
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_metadata(
+        "krea2_turbo_regular_saveimage",
+        &meta,
+        ExpectedMetadata {
+            model: "krea2_turbo_fp8_scaled",
+            seed: Some(784968955782057),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: &expected_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+    );
+    assert_archival_chunk_preserved(
+        "krea2_turbo_regular_saveimage",
+        &meta,
+        &diagnostics,
+        expected_workflow,
+    );
+    for (field, layer) in [
+        (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+        (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+        (
+            ComfyMetadataField::Sampler,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+        (
+            ComfyMetadataField::PositivePrompt,
+            ComfyParseLayer::SamplerTraversal,
+        ),
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&layer),
+            "regular Krea SaveImage should record {field:?} from {layer:?}"
         );
     }
 }

@@ -1,4 +1,4 @@
-use super::ImageMetadata;
+use super::{merge_metadata, ImageMetadata};
 use std::collections::{BTreeMap, HashMap};
 
 mod conditioning;
@@ -23,6 +23,43 @@ use self::strategies::{global_scan, scan_explicit_nodes};
 
 pub fn extract_comfyui_metadata(chunks: &HashMap<String, String>) -> ImageMetadata {
     extract_comfyui_metadata_with_diagnostics(chunks).0
+}
+
+pub(crate) fn merge_comfyui_metadata(
+    base: &mut ImageMetadata,
+    chunks: &HashMap<String, String>,
+) -> ComfyParseDiagnostics {
+    let (comfy_meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(chunks);
+    let original_model = base.model.clone();
+    let trusted_model = diagnostics
+        .field_sources
+        .get(&ComfyMetadataField::Model)
+        .is_some_and(|layer| {
+            matches!(
+                layer,
+                ComfyParseLayer::ExplicitNode | ComfyParseLayer::SamplerTraversal
+            )
+        });
+    let trusted_model_override = if trusted_model && is_known_model(&comfy_meta.model) {
+        Some((comfy_meta.model.clone(), comfy_meta.model_hash.clone()))
+    } else {
+        None
+    };
+
+    merge_metadata(base, comfy_meta);
+
+    if let Some((model, model_hash)) = trusted_model_override {
+        if original_model != model || model_hash.is_some() {
+            base.model_hash = model_hash;
+        }
+        base.model = model;
+    }
+
+    diagnostics
+}
+
+fn is_known_model(model: &str) -> bool {
+    !model.is_empty() && model != "Unknown" && model != "None"
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]

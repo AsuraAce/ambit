@@ -95,6 +95,7 @@ impl<'a> ComfyEvaluator<'a> {
                 || t == "PreviewImage"
                 || t == "ImageSave"
                 || t == "SDPromptSaver"
+                || t == "Save Image w/Metadata"
                 || t.contains("SaveImage")
             {
                 nodes.push(id.clone());

@@ -32,5 +32,27 @@ Initial fixture sources:
   the official Krea v2 turbo ComfyUI template. Covers nested template node IDs,
   ComfySwitchNode, StringConcatenate, PreviewAny, and Krea conditioning
   traversal.
+- `format_parity_jpeg_flat.chunks.json`: exact flat `parameters` chunk
+  extracted from user-provided JPEG
+  `D:\AI\art\webUI\comfyUI\output\2026-07-08-153627_0.jpeg`, generated via
+  `Save Image w/Metadata`. Covers EXIF-only ComfyUI metadata with stale saver
+  defaults.
+- `format_parity_webp_flat.chunks.json`: exact flat `parameters` chunk
+  extracted from user-provided WebP
+  `D:\AI\art\webUI\comfyUI\output\2026-07-08-153754_0.webp`, generated via
+  `Save Image w/Metadata`. Covers the matching WebP EXIF-only path.
+- `format_parity_png_save_metadata.chunks.json`: exact `parameters`, `prompt`,
+  and `workflow` chunks extracted from user-provided PNG
+  `D:\AI\art\webUI\comfyUI\output\2026-07-08-153346_0.png`, generated via
+  `Save Image w/Metadata`. Covers graph traversal overriding stale flat saver
+  metadata.
+- `krea2_turbo_regular_saveimage.chunks.json`: exact `prompt` and `workflow`
+  chunks extracted from user-provided PNG
+  `D:\AI\art\webUI\comfyUI\output\Krea2_turbo_00719_.png`, generated via the
+  regular ComfyUI `SaveImage` node. Covers the same Krea template path without
+  the metadata saver node.
 
-Extraction date: 2026-07-07.
+Extraction dates:
+
+- 2026-07-07: initial real-world fixture batch.
+- 2026-07-08: Krea/format-parity fixtures from user-provided local images.

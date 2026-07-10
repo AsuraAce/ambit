@@ -1,4 +1,4 @@
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -120,13 +120,13 @@ impl ComfyParseDiagnostics {
         self.record_field(
             ComfyMetadataField::PositivePrompt,
             before.positive_prompt != after.positive_prompt,
-            !after.positive_prompt.trim().is_empty(),
+            !is_missing_prompt_value(&after.positive_prompt),
             layer,
         );
         self.record_field(
             ComfyMetadataField::NegativePrompt,
             before.negative_prompt != after.negative_prompt,
-            !after.negative_prompt.trim().is_empty(),
+            !is_missing_prompt_value(&after.negative_prompt),
             layer,
         );
         self.record_field(

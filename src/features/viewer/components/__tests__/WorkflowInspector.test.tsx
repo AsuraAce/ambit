@@ -1,11 +1,12 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { WorkflowInspector } from '../WorkflowInspector';
 
 const mockInspectComfyuiMetadataChunks = vi.hoisted(() => vi.fn());
 const mockSettings = vi.hoisted(() => ({ devMode: true }));
+const mockClipboardWriteText = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -109,10 +110,15 @@ const makeImage = (tool: GeneratorTool = GeneratorTool.COMFYUI): AIImage => ({
 describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
         mockSettings.devMode = true;
+        mockClipboardWriteText.mockReset();
         mockInspectComfyuiMetadataChunks.mockReset();
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
             data: diagnosticsReport
+        });
+        Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText: mockClipboardWriteText },
+            configurable: true
         });
     });
 
@@ -126,6 +132,61 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             workflow: workflowJson,
             prompt: promptJson
         });
+    });
+
+    it('copies compact parser diagnostics without raw chunk bodies', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Copy parser diagnostics summary'));
+
+        await waitFor(() => {
+            expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);
+        });
+        const copied = mockClipboardWriteText.mock.calls[0][0] as string;
+        const parsed = JSON.parse(copied) as {
+            imageId: string;
+            chunkKeys: string[];
+            chunkLengths: Record<string, number>;
+            graphNodeCount: number;
+            fieldSources: Record<string, string>;
+            metadata: { model: string };
+            chunks?: unknown;
+            prompt?: unknown;
+            workflow?: unknown;
+        };
+
+        expect(parsed.imageId).toBe('C:/library/comfy.png');
+        expect(parsed.chunkKeys).toEqual(['prompt', 'workflow']);
+        expect(parsed.chunkLengths).toEqual({
+            prompt: promptJson.length,
+            workflow: workflowJson.length
+        });
+        expect(parsed.graphNodeCount).toBe(2);
+        expect(parsed.fieldSources.model).toBe('sampler_traversal');
+        expect(parsed.metadata.model).toBe('diagnostic_model');
+        expect(parsed).not.toHaveProperty('chunks');
+        expect(parsed).not.toHaveProperty('prompt');
+        expect(parsed).not.toHaveProperty('workflow');
+        expect(await screen.findByText('Copied')).toBeTruthy();
+    });
+
+    it('marks sampler fallback diagnostics as weaker evidence', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                fieldSources: {
+                    ...diagnosticsReport.fieldSources,
+                    seed: 'sampler_fallback'
+                }
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(
+            await screen.findByTitle('Sampler fallback: found by scanning samplers, weaker than saved-output traversal.')
+        ).toBeTruthy();
     });
 
     it('hides parser diagnostics outside developer mode', () => {

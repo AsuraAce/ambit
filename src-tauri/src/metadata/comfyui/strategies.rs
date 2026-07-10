@@ -2,7 +2,7 @@ use super::conditioning::evaluate_string_node;
 use super::graph::{get_node_param, get_node_title, get_node_type, ComfyGraph};
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::guidance::GuidanceClassifier;
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashSet;
@@ -93,14 +93,15 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                         if let Some(neg_part) = text.split("Negative prompt:").nth(1) {
                             if let Some(end) = neg_part.find("Steps:") {
                                 let neg_clean = neg_part[..end].trim();
-                                if !neg_clean.is_empty() && meta.negative_prompt.is_empty() {
+                                if !is_missing_prompt_value(neg_clean)
+                                    && meta.negative_prompt.is_empty()
+                                {
                                     meta.negative_prompt = neg_clean.to_string();
                                 }
                             }
                         }
                     } else if !text.to_lowercase().starts_with("negative prompt:") {
-                        let lower = text.to_lowercase();
-                        if lower != "undefined" && lower != "null" && lower != "none" {
+                        if !is_missing_prompt_value(&text) {
                             meta.positive_prompt = text;
                             found = true;
                         }
@@ -109,8 +110,10 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             } else if title_lower.contains("negative") {
                 let mut visited = HashSet::new();
                 if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
-                    meta.negative_prompt = text;
-                    found = true;
+                    if !is_missing_prompt_value(&text) {
+                        meta.negative_prompt = text;
+                        found = true;
+                    }
                 }
             }
         }
@@ -186,7 +189,9 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                     if let Some(neg_part) = text.split("Negative prompt:").nth(1) {
                         if let Some(end) = neg_part.find("Steps:") {
                             let neg_clean = neg_part[..end].trim();
-                            if !neg_clean.is_empty() && meta.negative_prompt.is_empty() {
+                            if !is_missing_prompt_value(neg_clean)
+                                && meta.negative_prompt.is_empty()
+                            {
                                 meta.negative_prompt = neg_clean.to_string();
                             }
                         }
@@ -196,22 +201,30 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
                 }
 
                 if is_negative {
-                    if meta.negative_prompt.trim().is_empty() && text.trim().len() > 2 {
+                    if meta.negative_prompt.trim().is_empty()
+                        && !is_missing_prompt_value(&text)
+                        && text.trim().len() > 2
+                    {
                         meta.negative_prompt = text;
                     }
                 } else if meta.positive_prompt.trim().is_empty() {
                     // Heuristic: If text starts with "negative", treat as negative
                     if text.to_lowercase().starts_with("negative prompt:") {
-                        if meta.negative_prompt.trim().is_empty() && text.trim().len() > 2 {
+                        if meta.negative_prompt.trim().is_empty()
+                            && !is_missing_prompt_value(&text)
+                            && text.trim().len() > 2
+                        {
                             meta.negative_prompt = text;
                         }
                     } else if text.to_lowercase().starts_with("negative") {
-                        if meta.negative_prompt.trim().is_empty() && text.trim().len() > 2 {
+                        if meta.negative_prompt.trim().is_empty()
+                            && !is_missing_prompt_value(&text)
+                            && text.trim().len() > 2
+                        {
                             meta.negative_prompt = text;
                         }
                     } else if text.trim().len() > 2 {
-                        let lower = text.to_lowercase();
-                        if lower != "undefined" && lower != "null" && lower != "none" {
+                        if !is_missing_prompt_value(&text) {
                             meta.positive_prompt = text;
                         }
                     }
