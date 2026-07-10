@@ -40,6 +40,10 @@ pub(crate) fn merge_comfyui_metadata(
 
     let (mut graph_meta, graph_diagnostics) = extract_comfyui_graph_with_diagnostics(chunks);
     diagnostics.graph_node_count = graph_diagnostics.graph_node_count;
+    diagnostics.selected_output_candidate_count = graph_diagnostics.selected_output_candidate_count;
+    diagnostics.unique_output_root_sampler_count =
+        graph_diagnostics.unique_output_root_sampler_count;
+    diagnostics.output_ambiguous = graph_diagnostics.output_ambiguous;
     for layer in &graph_diagnostics.attempted_layers {
         diagnostics.attempt(*layer);
     }
@@ -644,7 +648,11 @@ fn extract_comfyui_graph_with_diagnostics(
     // Only run if we are missing critical info, OR if we want to fill in gaps.
     diagnostics.attempt(ComfyParseLayer::SamplerTraversal);
     let evaluator = ComfyEvaluator::new(&graph);
-    let traversal_meta = evaluator.extract();
+    let (traversal_meta, output_diagnostics) = evaluator.extract_with_output_diagnostics();
+    diagnostics.selected_output_candidate_count =
+        output_diagnostics.selected_output_candidate_count;
+    diagnostics.unique_output_root_sampler_count = output_diagnostics.unique_root_sampler_count;
+    diagnostics.output_ambiguous = output_diagnostics.ambiguous;
     let before = ComfyMetadataSnapshot::from_metadata(&meta);
     meta.merge_if_missing(traversal_meta);
     diagnostics.record_diff(&before, &meta, ComfyParseLayer::SamplerTraversal);

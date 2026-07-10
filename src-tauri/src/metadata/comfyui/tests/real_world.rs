@@ -214,19 +214,19 @@ fn test_real_world_fixtures_extract_expected_metadata() {
             ip_adapters: &[],
         },
         &[
-            (ComfyMetadataField::Model, ComfyParseLayer::SamplerFallback),
-            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerFallback),
-            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerFallback),
-            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerFallback),
+            (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+            (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
             (
                 ComfyMetadataField::Sampler,
-                ComfyParseLayer::SamplerFallback,
+                ComfyParseLayer::SamplerTraversal,
             ),
             (
                 ComfyMetadataField::PositivePrompt,
-                ComfyParseLayer::SamplerFallback,
+                ComfyParseLayer::SamplerTraversal,
             ),
-            (ComfyMetadataField::Loras, ComfyParseLayer::SamplerFallback),
+            (ComfyMetadataField::Loras, ComfyParseLayer::SamplerTraversal),
         ],
     );
 }

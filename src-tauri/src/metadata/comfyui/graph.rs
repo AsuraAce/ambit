@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 /// Normalizes ComfyUI metadata into a graph representation.
@@ -209,15 +210,32 @@ impl ComfyGraph {
 }
 
 // Helpers
+pub(crate) fn compare_node_ids(left_id: &str, right_id: &str) -> Ordering {
+    match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
+        (Ok(left), Ok(right)) => left.cmp(&right).then_with(|| left_id.cmp(right_id)),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => left_id.cmp(right_id),
+    }
+}
+
 pub fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
+    get_node_input_links(node, key).into_iter().next()
+}
+
+pub(crate) fn get_node_input_links(node: &Value, key: &str) -> Vec<String> {
     // 0. Check pre-resolved check inputs
     if let Some(val) = node.get("_resolved_inputs").and_then(|m| m.get(key)) {
         if let Some(id) = val.as_str() {
-            return Some(id.to_string());
+            return vec![id.to_string()];
         }
         if let Some(arr) = val.as_array() {
-            if let Some(id) = arr.first().and_then(|v| v.as_str()) {
-                return Some(id.to_string());
+            let ids: Vec<String> = arr
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect();
+            if !ids.is_empty() {
+                return ids;
             }
         }
     }
@@ -227,19 +245,19 @@ pub fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
             if let Some(arr) = link.as_array() {
                 if !arr.is_empty() {
                     if let Some(s) = arr[0].as_str() {
-                        return Some(s.to_string());
+                        return vec![s.to_string()];
                     }
                     if let Some(n) = arr[0].as_u64() {
-                        return Some(n.to_string());
+                        return vec![n.to_string()];
                     }
                 }
             }
             if let Some(s) = link.as_str() {
-                return Some(s.to_string());
+                return vec![s.to_string()];
             }
         }
     }
-    None
+    Vec::new()
 }
 
 /// Helper to resolve links (including wireless)

@@ -45,6 +45,9 @@ pub(crate) enum ComfyMetadataField {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ComfyParseDiagnostics {
     pub(crate) graph_node_count: usize,
+    pub(crate) selected_output_candidate_count: usize,
+    pub(crate) unique_output_root_sampler_count: usize,
+    pub(crate) output_ambiguous: bool,
     pub(crate) attempted_layers: Vec<ComfyParseLayer>,
     pub(crate) field_sources: BTreeMap<ComfyMetadataField, ComfyParseLayer>,
 }
