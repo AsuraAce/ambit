@@ -109,6 +109,9 @@ describe('processTargetedFiles', () => {
     });
 
     it('returns touched facet types for new and updated live imports', async () => {
+        const nowSpy = vi.spyOn(Date, 'now')
+            .mockReturnValueOnce(1000)
+            .mockReturnValueOnce(2000);
         const result = await processTargetedFiles(
             [
                 'C:/library/updated-image.png',
@@ -116,6 +119,7 @@ describe('processTargetedFiles', () => {
             ],
             { forceRescan: true }
         );
+        nowSpy.mockRestore();
 
         expect(result.stats.imported).toBe(2);
         expect(result.wasCancelled).toBe(false);
