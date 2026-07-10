@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/AsuraAce/ambit/compare/v0.6.4...v0.7.0) (2026-07-10)
+
+
+### Features
+
+* add ComfyUI parser diagnostics ([#188](https://github.com/AsuraAce/ambit/issues/188)) ([d450999](https://github.com/AsuraAce/ambit/commit/d450999effcef0543270b9d1fb4e04a4eb36006d))
+* improve comfyui metadata reliability ([#187](https://github.com/AsuraAce/ambit/issues/187)) ([aa61601](https://github.com/AsuraAce/ambit/commit/aa616010ce2f1f6e9abf99ca6c1a1d9024624e38))
+
+
+### Bug Fixes
+
+* **deps:** update crossbeam-epoch ([#190](https://github.com/AsuraAce/ambit/issues/190)) ([2997fc6](https://github.com/AsuraAce/ambit/commit/2997fc6e66969075e6f6709363da8c099f31e840))
+* improve ComfyUI metadata format parity ([#189](https://github.com/AsuraAce/ambit/issues/189)) ([02aae34](https://github.com/AsuraAce/ambit/commit/02aae3454773e70aac38c5d7b39cdad1a9950861))
+* improve runtime logging diagnostics ([#181](https://github.com/AsuraAce/ambit/issues/181)) ([4ad2cdb](https://github.com/AsuraAce/ambit/commit/4ad2cdb2ad02a91bcae09e9d72877ab5e80b60ff))
+* improve support log diagnostics ([#185](https://github.com/AsuraAce/ambit/issues/185)) ([653c436](https://github.com/AsuraAce/ambit/commit/653c436ff3f13592531e4229412e926de5b9967d))
+* parse embedded metadata in jpeg and webp ([#179](https://github.com/AsuraAce/ambit/issues/179)) ([3f2a3b6](https://github.com/AsuraAce/ambit/commit/3f2a3b604ac095dae6464a79ebf148dfadb9f691))
+* prevent startup maintenance flicker ([#177](https://github.com/AsuraAce/ambit/issues/177)) ([a79c43b](https://github.com/AsuraAce/ambit/commit/a79c43be44dd63cc2cfe830d6af2aeb72ad60fef))
+
 ## [0.6.4](https://github.com/AsuraAce/ambit/compare/v0.6.3...v0.6.4) (2026-06-30)
 
 

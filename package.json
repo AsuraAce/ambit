@@ -2,7 +2,7 @@
   "name": "ambit",
   "private": true,
   "description": "High-performance local AI image manager for large AI-generated image libraries.",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "type": "module",
   "author": "AsuraAce",
   "license": "GPL-3.0-only",
