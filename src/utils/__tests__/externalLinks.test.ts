@@ -31,6 +31,7 @@ describe('externalLinks', () => {
     });
 
     it.each([
+        'not a url',
         'javascript:alert(1)',
         'data:text/html,<script>alert(1)</script>',
         'file:///C:/Windows/System32/calc.exe',

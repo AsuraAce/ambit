@@ -102,24 +102,6 @@ type DecompressDeflateResult =
     | { status: 'invalid' };
 
 type MetadataRecord = Record<string, unknown>;
-type WorkflowInput = MetadataRecord & {
-    name?: string;
-    type?: string;
-    link?: string | number | null;
-};
-type WorkflowOutput = MetadataRecord & {
-    links?: unknown[];
-    slot_index?: number;
-};
-type WorkflowNode = MetadataRecord & {
-    id?: string | number;
-    mode?: number;
-    type?: string;
-    class_type?: string;
-    widgets_values?: unknown[];
-    inputs?: unknown;
-    outputs?: unknown;
-};
 type DecompressionStreamConstructor = new (format: 'deflate') => TransformStream<Uint8Array, Uint8Array>;
 type DecompressionGlobal = typeof globalThis & {
     DecompressionStream?: DecompressionStreamConstructor;
@@ -141,17 +123,6 @@ const asStringRecord = (value: unknown): Record<string, string> | undefined => {
 
 const asGeneratorTool = (value: unknown): GeneratorTool | undefined =>
     Object.values(GeneratorTool).includes(value as GeneratorTool) ? value as GeneratorTool : undefined;
-
-const asWorkflowNode = (value: unknown): WorkflowNode => asRecord(value) as WorkflowNode;
-
-const toWorkflowInputs = (value: unknown): WorkflowInput[] =>
-    Array.isArray(value) ? value.map(input => asRecord(input) as WorkflowInput) : [];
-
-const toWorkflowOutputs = (value: unknown): WorkflowOutput[] =>
-    Array.isArray(value) ? value.map(output => asRecord(output) as WorkflowOutput) : [];
-
-const nodeType = (node: WorkflowNode): string =>
-    String(node.type || node.class_type || '').toLowerCase();
 
 const parseJsonRecord = (value: string): MetadataRecord => asRecord(JSON.parse(value));
 
@@ -187,176 +158,6 @@ export const parseSdNextJsonMetadata = (value: string): Partial<ImageMetadata> =
 
 const sanitize = (text: string): string => {
     return text.replace(/\0/g, '').trim();
-};
-
-const findNodeByOutputLink = (nodes: WorkflowNode[], linkId: number | string): { node: WorkflowNode, slotIndex: number } | null => {
-    if (!linkId) return null;
-    for (const node of nodes) {
-        const outputs = toWorkflowOutputs(node.outputs);
-        if (outputs.length > 0) {
-            for (let i = 0; i < outputs.length; i++) {
-                const output = outputs[i];
-                // Loose equality check for links to handle string/number mismatch
-                if (output.links && output.links.some((l: unknown) => l == linkId)) {
-                    return { node, slotIndex: output.slot_index !== undefined ? output.slot_index : i };
-                }
-            }
-        }
-    }
-    return null;
-};
-
-const traceText = (nodes: WorkflowNode[], nodeId: number | string, slotIndex: number, depth = 0): string | null => {
-    if (depth > 20) return null;
-    const node = nodes.find(n => n.id == nodeId); // Loose equality
-    if (!node) return null;
-
-    if (node.mode === 2 || node.mode === 4) return null;
-
-    const type = nodeType(node);
-
-    // 1. Explicit Primitive/String Node Handling
-    if (type === 'primitivenode' || type.includes('primitive') || type === 'string' || type.includes('literal')) {
-        if (node.widgets_values) {
-            const strings = node.widgets_values.filter((v: unknown) => typeof v === 'string');
-            if (strings.length > 0) {
-                return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-            }
-        }
-    }
-
-    // Handle Reroute Nodes
-    if (type === 'reroute' || type.includes('reroute')) {
-        const inputs = toWorkflowInputs(node.inputs);
-        if (inputs.length > 0 && inputs[0].link) {
-            const source = findNodeByOutputLink(nodes, inputs[0].link);
-            if (source && source.node.id !== undefined) return traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-        }
-    }
-
-    if (type.includes('promptreader')) {
-        if (node.widgets_values) {
-            if (slotIndex === 2 && typeof node.widgets_values[3] === 'string') return node.widgets_values[3];
-            if (slotIndex === 3 && typeof node.widgets_values[4] === 'string') return node.widgets_values[4];
-        }
-        const strings = node.widgets_values?.filter((v: unknown) => typeof v === 'string');
-        if (strings && strings.length > 0) return strings[0];
-    }
-
-    // Handle String Concatenation
-    if (type.includes('join') || (type.includes('concat') && type.includes('string')) || type === 'joinstringmulti') {
-        const parts: string[] = [];
-        const inputs = toWorkflowInputs(node.inputs);
-
-        const sortedInputs = [...inputs].sort((a, b) => {
-            if (a.name && b.name) return a.name.localeCompare(b.name, undefined, { numeric: true });
-            return 0;
-        });
-
-        for (const input of sortedInputs) {
-            if (input.link) {
-                const source = findNodeByOutputLink(nodes, input.link);
-                if (source) {
-                    const txt = source.node.id !== undefined ? traceText(nodes, source.node.id, source.slotIndex, depth + 1) : null;
-                    if (txt) parts.push(txt);
-                }
-            }
-        }
-
-        let separator = " ";
-        if (node.widgets_values) {
-            const candidates = node.widgets_values.filter((v: unknown) => typeof v === 'string');
-            const sep = candidates.find((v: string) => v.length < 50 && (v.includes(',') || v.includes('\n') || v === ' '));
-            if (sep !== undefined) separator = sep;
-        }
-
-        if (parts.length > 0) return parts.join(separator);
-    }
-
-    // TextEncode/CLIPText handling
-    if (type.includes('textencode') || type.includes('cliptext') || type.includes('prompt') || type.includes('string') || type.includes('style')) {
-        let tracedResult: string | null = null;
-        const inputs = toWorkflowInputs(node.inputs);
-        const textInput = inputs.find((i) =>
-            (i.name === 'text' || i.name === 'text_g' || i.name === 'text_l' || i.name === 'string' || i.name === 'prompt') && i.link
-        );
-
-        if (textInput?.link !== undefined && textInput.link !== null) {
-            const source = findNodeByOutputLink(nodes, textInput.link);
-            if (source && source.node.id !== undefined) {
-                tracedResult = traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-            }
-        }
-
-        if (tracedResult) return tracedResult;
-
-        if (node.widgets_values) {
-            const strings = node.widgets_values.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0);
-            if (strings.length > 0) {
-                return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-            }
-        }
-    }
-
-    // Conditioning Traversal
-    const inputs = toWorkflowInputs(node.inputs);
-    const candidateInputs = inputs.filter((i) => {
-        const name = (i.name || "").toLowerCase();
-        const iType = (i.type || "").toUpperCase();
-        return name.includes('conditioning') || iType === 'CONDITIONING' || name === 'c' || name === 'input' || name === 'clip';
-    });
-
-    for (const input of candidateInputs) {
-        if (input.link) {
-            const source = findNodeByOutputLink(nodes, input.link);
-            if (source && source.node.id !== undefined) {
-                const res = traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-                if (res) return res;
-            }
-        }
-    }
-
-    if (type === 'getnode' || type === 'get_node') {
-        const varName = node.widgets_values?.[0];
-        if (typeof varName === 'string') {
-            const setNode = nodes.find(n => {
-                const t = nodeType(n);
-                return (t === 'setnode' || t === 'set_node') && n.widgets_values?.[0] === varName;
-            });
-
-            if (setNode) {
-                const setInput = toWorkflowInputs(setNode.inputs).find((i) => i.link);
-                if (setInput?.link !== undefined && setInput.link !== null) {
-                    const source = findNodeByOutputLink(nodes, setInput.link);
-                    if (source && source.node.id !== undefined) return traceText(nodes, source.node.id, source.slotIndex, depth + 1);
-                }
-            }
-        }
-    }
-
-    if (type.includes('concat') && type.includes('text')) {
-        const parts: string[] = [];
-        const inputs = toWorkflowInputs(node.inputs);
-        for (const input of inputs) {
-            if (input.link) {
-                const source = findNodeByOutputLink(nodes, input.link);
-                if (source) {
-                    const txt = source.node.id !== undefined ? traceText(nodes, source.node.id, source.slotIndex, depth + 1) : null;
-                    if (txt) parts.push(txt);
-                }
-            }
-        }
-        if (parts.length > 0) return parts.join(' ');
-    }
-
-    if (node.widgets_values) {
-        const strings = node.widgets_values.filter((v: unknown): v is string => typeof v === 'string' && v.length > 0);
-        if (strings.length > 0) {
-            return strings.reduce((a: string, b: string) => a.length > b.length ? a : b);
-        }
-    }
-
-    return null;
 };
 
 export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> => {
@@ -467,26 +268,6 @@ const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, 
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 
-const parseInvokeDreamCommand = (cmd: string, metadata: Partial<ImageMetadata>) => {
-    const promptMatch = cmd.match(/^"(.+?)"/);
-    if (promptMatch) {
-        metadata.positivePrompt = promptMatch[1];
-        // Very basic dream parser
-        const rest = cmd.substring(promptMatch[0].length);
-        const negMatch = rest.match(/\[([^\]]+)\]/);
-        if (negMatch) metadata.negativePrompt = negMatch[1];
-
-        const steps = rest.match(/-s\s*(\d+)/);
-        if (steps) metadata.steps = parseInt(steps[1]);
-
-        const cfg = rest.match(/-C\s*([\d.]+)/);
-        if (cfg) metadata.cfg = parseFloat(cfg[1]);
-
-        const seed = rest.match(/-S\s*(\d+)/);
-        if (seed) metadata.seed = parseInt(seed[1]);
-    }
-};
-
 const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
         base.tool = secondary.tool;
@@ -554,80 +335,6 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
     if (base.hiresSteps === undefined) base.hiresSteps = secondary.hiresSteps;
     if (base.hiresUpscaler === undefined) base.hiresUpscaler = secondary.hiresUpscaler;
     if (base.modelHash === undefined) base.modelHash = secondary.modelHash;
-};
-
-const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
-    const chunks: Record<string, string> = {};
-    if (buffer.length < 8) return chunks;
-
-    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-    // Verify PNG header
-    if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) {
-        return chunks;
-    }
-
-    const budget = createPngMetadataBudget();
-    let pos = 8;
-    while (pos + 8 < buffer.length) {
-        const length = view.getUint32(pos);
-        const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
-        pos += 8;
-        const dataEnd = pos + length;
-
-        if (dataEnd + 4 > buffer.length) break;
-
-        if (isPngMetadataChunk(type)) {
-            if (!allowPngMetadataChunk(budget, length)) {
-                pos += length + 4;
-                continue;
-            }
-        }
-
-        if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
-            const data = buffer.slice(pos, dataEnd);
-            const nullPos = data.indexOf(0);
-            if (nullPos !== -1) {
-                const key = textDecoder.decode(data.slice(0, nullPos));
-                if (type === 'tEXt') {
-                    acceptPngDecodedText(
-                        chunks,
-                        budget,
-                        key,
-                        textDecoder.decode(data.slice(nullPos + 1)),
-                    );
-                } else if (type === 'iTXt') {
-                    // iTXt: Keyword (null) CompressionFlag (1) CompressionMethod (1) Language (null) TranslatedKeyword (null) Text
-                    const isCompressed = data[nullPos + 1] === 1;
-                    let textStart = nullPos + 3;
-                    // Find end of lang
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++;
-                    // Find end of trans
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++;
-
-                    if (isCompressed) {
-                        // Decompression would require a lib like fflate in the worker.
-                        // For now we skip compressed iTXt if not available.
-                    } else if (textStart <= data.byteLength) {
-                        acceptPngDecodedText(
-                            chunks,
-                            budget,
-                            key,
-                            textDecoder.decode(data.slice(textStart)),
-                        );
-                    }
-                }
-                // zTXt would also need decompression.
-            }
-        } else if (type === 'IEND') {
-            break;
-        }
-
-        pos += length + 4; // Data + CRC
-    }
-    return chunks;
 };
 
 const parseExifData = (data: Uint8Array): string | null => {

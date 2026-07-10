@@ -64,6 +64,58 @@ const ztxtData = (key: string, compressed: Bytes = new Uint8Array([1, 2, 3])): U
 const itxtCompressedData = (key: string, compressed: Bytes = new Uint8Array([1, 2, 3])): Uint8Array =>
     concat([textEncoder.encode(key), new Uint8Array([0, 1, 0, 0, 0]), compressed]);
 
+const exifUserCommentData = (comment: string): Uint8Array => {
+    const encodedComment = concat([
+        textEncoder.encode('ASCII'),
+        new Uint8Array([0, 0, 0]),
+        textEncoder.encode(comment),
+    ]);
+    const dataOffset = 26;
+    const result = new Uint8Array(dataOffset + encodedComment.byteLength);
+    const view = new DataView(result.buffer);
+
+    result[0] = 0x49;
+    result[1] = 0x49;
+    view.setUint16(2, 0x002a, true);
+    view.setUint32(4, 8, true);
+    view.setUint16(8, 1, true);
+
+    const entryOffset = 10;
+    view.setUint16(entryOffset, 0x9286, true);
+    view.setUint16(entryOffset + 2, 7, true);
+    view.setUint32(entryOffset + 4, encodedComment.byteLength, true);
+    view.setUint32(entryOffset + 8, dataOffset, true);
+    view.setUint32(22, 0, true);
+    result.set(encodedComment, dataOffset);
+
+    return result;
+};
+
+const exifUserCommentBytes = (
+    encodedComment: Bytes,
+    littleEndian = true,
+): Uint8Array => {
+    const dataOffset = 26;
+    const result = new Uint8Array(dataOffset + encodedComment.byteLength);
+    const view = new DataView(result.buffer);
+
+    result[0] = littleEndian ? 0x49 : 0x4d;
+    result[1] = littleEndian ? 0x49 : 0x4d;
+    view.setUint16(2, 0x002a, littleEndian);
+    view.setUint32(4, 8, littleEndian);
+    view.setUint16(8, 1, littleEndian);
+
+    const entryOffset = 10;
+    view.setUint16(entryOffset, 0x9286, littleEndian);
+    view.setUint16(entryOffset + 2, 7, littleEndian);
+    view.setUint32(entryOffset + 4, encodedComment.byteLength, littleEndian);
+    view.setUint32(entryOffset + 8, dataOffset, littleEndian);
+    view.setUint32(22, 0, littleEndian);
+    result.set(encodedComment, dataOffset);
+
+    return result;
+};
+
 const stubDeflateResult = (chunks: Bytes[]) => {
     const mockReader = {
         read: vi.fn(),
@@ -135,6 +187,61 @@ describe('decompressDeflate Security Limits', () => {
         expect(mockReader.cancel).toHaveBeenCalled();
         expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Decompression limit exceeded'));
     });
+
+    it('should fail closed when decompression is unavailable or disabled by size limits', async () => {
+        vi.stubGlobal('DecompressionStream', undefined);
+
+        await expect(decompressDeflate(new Uint8Array([0]))).resolves.toEqual({ status: 'invalid' });
+        await expect(decompressDeflate(new Uint8Array([0]), 0)).resolves.toEqual({ status: 'over-limit' });
+    });
+
+    it('should ignore non-byte stream chunks while collecting decompressed bytes', async () => {
+        const mockReader = {
+            read: vi.fn()
+                .mockResolvedValueOnce({ done: false, value: 'not-bytes' })
+                .mockResolvedValueOnce({ done: false, value: new Uint8Array([4, 5]) })
+                .mockResolvedValueOnce({ done: true, value: undefined }),
+            cancel: vi.fn(),
+        };
+        const mockStream = {
+            getReader: () => mockReader,
+        };
+
+        vi.stubGlobal('DecompressionStream', vi.fn().mockImplementation(function() {
+            return {
+                writable: {},
+                readable: mockStream,
+            };
+        }));
+        vi.stubGlobal('Response', vi.fn().mockImplementation(function() {
+            return {
+                body: {
+                    pipeThrough: vi.fn().mockReturnValue(mockStream),
+                },
+            };
+        }));
+
+        const result = await decompressDeflate(new Uint8Array([0]));
+
+        expect(result.status).toBe('ok');
+        if (result.status === 'ok') {
+            expect(result.data).toEqual(new Uint8Array([4, 5]));
+        }
+    });
+
+    it('should fail closed when the browser response has no readable body', async () => {
+        vi.stubGlobal('DecompressionStream', vi.fn().mockImplementation(function() {
+            return {
+                writable: {},
+                readable: {},
+            };
+        }));
+        vi.stubGlobal('Response', vi.fn().mockImplementation(function() {
+            return { body: null };
+        }));
+
+        await expect(decompressDeflate(new Uint8Array([0]))).resolves.toEqual({ status: 'invalid' });
+    });
 });
 
 describe('parsePngChunksEnhanced Security Limits', () => {
@@ -163,6 +270,66 @@ describe('parsePngChunksEnhanced Security Limits', () => {
         expect(chunks.Keyword).toBe('Value');
         expect(mockReader.read).toHaveBeenCalled();
         expect(chunks.Compressed).toBe('CompressedValue');
+    });
+
+    it('should ignore invalid or truncated PNG buffers without throwing', async () => {
+        await expect(parsePngChunksEnhanced(new Uint8Array([1, 2, 3]))).resolves.toEqual({});
+        await expect(parsePngChunksEnhanced(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).resolves.toEqual({});
+        await expect(parsePngChunksEnhanced(pngFile(pngChunk('tEXt', textEncoder.encode('NoNull'))).slice(0, 20))).resolves.toEqual({});
+    });
+
+    it('should extract A1111 parameters from PNG eXIf UserComment metadata', async () => {
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('eXIf', exifUserCommentData('Prompt\nSteps: 20, Seed: 123')),
+        ));
+
+        expect(chunks.parameters).toBe('Prompt\nSteps: 20, Seed: 123');
+    });
+
+    it('should decode EXIF UserComment variants used by different generators', async () => {
+        const unicodeComment = concat([
+            textEncoder.encode('UNICODE\0'),
+            new Uint8Array([0, 80, 0, 114, 0, 111, 0, 109, 0, 112, 0, 116]),
+        ]);
+        const undefinedHeaderComment = concat([
+            new Uint8Array(8),
+            textEncoder.encode('Undefined header prompt'),
+        ]);
+        const rawComment = textEncoder.encode('Raw prompt');
+
+        await expect(parsePngChunksEnhanced(pngFile(
+            pngChunk('eXIf', exifUserCommentBytes(unicodeComment, false)),
+        ))).resolves.toMatchObject({ parameters: 'Prompt' });
+        await expect(parsePngChunksEnhanced(pngFile(
+            pngChunk('eXIf', exifUserCommentBytes(undefinedHeaderComment)),
+        ))).resolves.toMatchObject({ parameters: 'Undefined header prompt' });
+        await expect(parsePngChunksEnhanced(pngFile(
+            pngChunk('eXIf', exifUserCommentBytes(rawComment)),
+        ))).resolves.toMatchObject({ parameters: 'Raw prompt' });
+    });
+
+    it('should decompress compressed iTXt metadata with the supported deflate method', async () => {
+        const compressedValue = Uint8Array.from(textEncoder.encode('Compressed iTXt Value'));
+        const mockReader = stubDeflateResult([compressedValue]);
+
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('iTXt', itxtCompressedData('CompressedKeyword')),
+        ));
+
+        expect(mockReader.read).toHaveBeenCalled();
+        expect(chunks.CompressedKeyword).toBe('Compressed iTXt Value');
+    });
+
+    it('should skip compressed text chunks with unsupported compression methods', async () => {
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('zTXt', concat([textEncoder.encode('z'), new Uint8Array([0, 1, 1, 2, 3])])),
+            pngChunk('iTXt', concat([textEncoder.encode('i'), new Uint8Array([0, 1, 1, 0, 0, 1, 2, 3])])),
+            pngChunk('tEXt', textEncoder.encode('NoNullSeparator')),
+        ));
+
+        expect(chunks.z).toBeUndefined();
+        expect(chunks.i).toBeUndefined();
+        expect(chunks.NoNullSeparator).toBeUndefined();
     });
 
     it('should preserve early text chunks and drop late chunks after the decoded aggregate budget', async () => {

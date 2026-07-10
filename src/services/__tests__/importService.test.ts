@@ -1,14 +1,19 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { processFoldersUnified, processNativePaths, processTargetedFiles } from '../importService';
+import { processFoldersUnified, processNativePaths, processTargetedFiles, processWebFiles, scanResourceThumbnails } from '../importService';
 import { GeneratorTool } from '../../types';
 
 const mocks = vi.hoisted(() => ({
     listen: vi.fn(),
     scanDirectoryWithStats: vi.fn(),
+    getFileSizesBulk: vi.fn(),
+    scanModelThumbnails: vi.fn(),
     scanImagesBulk: vi.fn(),
+    parseImageFile: vi.fn(),
     insertImagesBatch: vi.fn(),
     getExistingMetadata: vi.fn(),
-    rebuildFacetCache: vi.fn()
+    rebuildFacetCache: vi.fn(),
+    dbSelect: vi.fn(),
+    incrementFacetCacheVersion: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -22,12 +27,14 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 vi.mock('../../bindings', () => ({
     commands: {
-        scanDirectoryWithStats: mocks.scanDirectoryWithStats
+        scanDirectoryWithStats: mocks.scanDirectoryWithStats,
+        getFileSizesBulk: mocks.getFileSizesBulk,
+        scanModelThumbnails: mocks.scanModelThumbnails
     }
 }));
 
 vi.mock('../metadataParser', () => ({
-    parseImageFile: vi.fn(),
+    parseImageFile: mocks.parseImageFile,
     scanImageNative: vi.fn(),
     scanImagesBulk: mocks.scanImagesBulk
 }));
@@ -39,12 +46,37 @@ vi.mock('../db/imageRepo', () => ({
     rebuildFacetCache: mocks.rebuildFacetCache
 }));
 
+vi.mock('../db/connection', () => ({
+    getDb: vi.fn(async () => ({
+        select: mocks.dbSelect
+    }))
+}));
+
+vi.mock('../../stores/libraryStore', () => ({
+    useLibraryStore: {
+        getState: vi.fn(() => ({
+            incrementFacetCacheVersion: mocks.incrementFacetCacheVersion
+        }))
+    }
+}));
+
 describe('processTargetedFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.listen.mockResolvedValue(vi.fn());
         mocks.insertImagesBatch.mockResolvedValue(undefined);
         mocks.rebuildFacetCache.mockResolvedValue(0);
+        mocks.dbSelect.mockResolvedValue([]);
+        mocks.getFileSizesBulk.mockResolvedValue([100]);
+        mocks.scanModelThumbnails.mockResolvedValue({
+            status: 'ok',
+            data: {
+                scanned: 0,
+                matched: 0,
+                updated: 0,
+                missing: []
+            }
+        });
         mocks.scanDirectoryWithStats.mockResolvedValue({
             status: 'ok',
             data: [
@@ -106,6 +138,99 @@ describe('processTargetedFiles', () => {
                 originalChunks: {}
             }
         ]);
+    });
+
+    it('skips database duplicates before scanning so rescans do not rewrite unchanged paths', async () => {
+        mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/existing.png' }]);
+        mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: { tool: 'ComfyUI', model: 'Fresh Model' },
+                timestamp: 5000,
+                width: 512,
+                height: 512,
+                fileSize: 555,
+                thumbnail: 'C:/thumbs/fresh.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-fresh',
+                originalChunks: {}
+            }
+        ]);
+
+        const result = await processTargetedFiles([
+            'C:/library/existing.png',
+            'C:/library/fresh.png'
+        ]);
+
+        expect(result.stats.skipped).toBe(1);
+        expect(result.stats.imported).toBe(1);
+        expect(result.handledPaths).toEqual(['C:/library/fresh.png']);
+        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+            ['C:/library/fresh.png'],
+            '',
+            true,
+            true,
+            undefined,
+            expect.any(String)
+        );
+    });
+
+    it('preserves user row state and avoids upsert when timestamp and size are unchanged', async () => {
+        mocks.getExistingMetadata.mockResolvedValueOnce(new Map([
+            [
+                'C:/library/unchanged.png',
+                {
+                    timestamp: 7000,
+                    fileSize: 777,
+                    metadataJson: JSON.stringify({ tool: 'ComfyUI', model: 'Stable Model' }),
+                    isFavorite: true,
+                    isPinned: true,
+                    boardId: 'board-1',
+                    groupId: 'group-1',
+                    notes: 'keep me'
+                }
+            ]
+        ]));
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: { tool: 'ComfyUI', model: 'Stable Model' },
+                timestamp: 7000,
+                width: 1024,
+                height: 768,
+                fileSize: 777,
+                thumbnail: 'C:/thumbs/unchanged.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-unchanged',
+                originalChunks: {}
+            }
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/unchanged.png'], { forceRescan: true });
+
+        expect(result.stats.imported).toBe(0);
+        expect(result.handledPaths).toEqual(['C:/library/unchanged.png']);
+        expect(result.images[0]).toMatchObject({
+            isFavorite: true,
+            isPinned: true,
+            boardId: 'board-1',
+            groupId: 'group-1',
+            notes: 'keep me'
+        });
+        expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('accounts failed metadata batches as failed paths without pretending import succeeded', async () => {
+        mocks.scanImagesBulk.mockRejectedValueOnce(new Error('native scanner failed'));
+
+        const result = await processTargetedFiles(
+            ['C:/library/a.png', 'C:/library/b.png'],
+            { forceRescan: true }
+        );
+
+        expect(result.stats.errors).toBe(2);
+        expect(result.stats.imported).toBe(0);
+        expect(result.failedPaths).toEqual(['C:/library/a.png', 'C:/library/b.png']);
+        expect(result.completedSourcePaths).toEqual([]);
     });
 
     it('returns touched facet types for new and updated live imports', async () => {
@@ -530,5 +655,149 @@ describe('processTargetedFiles', () => {
 
         expect(progressMessages).toContain('Matching metadata progress');
         expect(progressMessages).not.toContain('Stale metadata progress');
+    });
+
+    it('falls back to treating a failed directory scan as a direct image file', async () => {
+        mocks.scanDirectoryWithStats.mockRejectedValueOnce(new Error('not a directory'));
+        mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: { tool: 'ComfyUI', model: 'Direct Model' },
+                timestamp: 9000,
+                width: 640,
+                height: 640,
+                fileSize: 999,
+                thumbnail: 'C:/thumbs/direct.webp',
+                thumbnailSource: 'ambit',
+                microThumbnail: 'mini-direct',
+                originalChunks: {}
+            }
+        ]);
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/drop/direct.png', variant: GeneratorTool.COMFYUI }],
+            { forceRescan: true }
+        );
+
+        expect(result.completedSourcePaths).toEqual(['C:/drop/direct.png']);
+        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+            ['C:/drop/direct.png'],
+            '',
+            true,
+            true,
+            GeneratorTool.COMFYUI,
+            expect.any(String)
+        );
+    });
+
+    it('marks empty non-image sources complete and reports no valid images', async () => {
+        const progressMessages: string[] = [];
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({
+            status: 'ok',
+            data: []
+        });
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library/readme.txt' }],
+            {
+                onProgress: (_current, _total, message) => {
+                    if (message) progressMessages.push(message);
+                }
+            }
+        );
+
+        expect(result.stats.processed).toBe(0);
+        expect(result.completedSourcePaths).toEqual(['C:/library/readme.txt']);
+        expect(progressMessages).toContain('No valid images found.');
+        expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
+    });
+
+    it('imports browser files with metadata defaults and counts parse errors', async () => {
+        const originalCreateObjectUrl = URL.createObjectURL;
+        const originalImage = globalThis.Image;
+        class TestImage {
+            width = 321;
+            height = 654;
+            onload: (() => void) | null = null;
+
+            set src(_value: string) {
+                queueMicrotask(() => this.onload?.());
+            }
+        }
+        URL.createObjectURL = vi.fn((file: Blob) => `blob://${(file as File).name}`);
+        vi.stubGlobal('Image', TestImage);
+        mocks.parseImageFile
+            .mockResolvedValueOnce({
+                metadata: { positivePrompt: 'browser prompt' },
+                extra: { isFavorite: true }
+            })
+            .mockRejectedValueOnce(new Error('bad browser file'));
+
+        try {
+            const result = await processWebFiles([
+                new File(['ok'], 'ok.png', { type: 'image/png', lastModified: 1234 }),
+                new File(['bad'], 'bad.jpg', { type: 'image/jpeg', lastModified: 5678 }),
+                new File(['skip'], 'notes.txt', { type: 'text/plain' })
+            ]);
+
+            expect(result.stats).toEqual({
+                processed: 3,
+                imported: 1,
+                skipped: 0,
+                errors: 1
+            });
+            expect(result.images[0].id).toMatch(/^imported_\d+_0$/);
+            expect(result.images[0]).toMatchObject({
+                url: 'blob://ok.png',
+                thumbnailUrl: 'blob://ok.png',
+                filename: 'ok.png',
+                width: 321,
+                height: 654,
+                isFavorite: true,
+                metadata: {
+                    tool: GeneratorTool.UNKNOWN,
+                    model: 'Unknown',
+                    steps: 0,
+                    cfg: 0,
+                    sampler: 'Unknown',
+                    positivePrompt: 'browser prompt',
+                    negativePrompt: '',
+                    generationType: 'unknown'
+                }
+            });
+        } finally {
+            URL.createObjectURL = originalCreateObjectUrl;
+            vi.stubGlobal('Image', originalImage);
+        }
+    });
+
+    it('delegates resource thumbnail scans through the generated command wrapper', async () => {
+        mocks.scanModelThumbnails.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                scanned: 2,
+                matched: 1,
+                updated: 1,
+                missing: ['C:/models/missing.safetensors']
+            }
+        });
+
+        await expect(scanResourceThumbnails(['C:/models/a.safetensors'])).resolves.toEqual({
+            scanned: 2,
+            matched: 1,
+            updated: 1,
+            missing: ['C:/models/missing.safetensors']
+        });
+        expect(mocks.scanModelThumbnails).toHaveBeenCalledWith(['C:/models/a.safetensors']);
+    });
+
+    it('rethrows resource thumbnail scan failures for the maintenance UI to surface', async () => {
+        const failure = new Error('thumbnail scan failed');
+        mocks.scanModelThumbnails.mockResolvedValueOnce({
+            status: 'error',
+            error: failure
+        });
+
+        await expect(scanResourceThumbnails(['C:/models/a.safetensors'])).rejects.toThrow(failure);
     });
 });
