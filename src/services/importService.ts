@@ -863,9 +863,10 @@ export const processTargetedFiles = async (
     if (paths.length === 0) return result;
     const targetedImportStartedAt = liveWatchNow();
 
+    const targetedImportTimestamp = Date.now();
     const entries: FileEntry[] = paths.map(p => ({ 
         path: p, 
-        modified: Date.now(), 
+        modified: targetedImportTimestamp,
         size: 0 // Will be read by rust metadata extractor anyway
     }));
 
