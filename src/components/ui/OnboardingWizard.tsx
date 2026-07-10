@@ -91,7 +91,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     };
 
     const handleBack = () => {
-        if (step > 1) setStep(step - 1);
+        setStep(step - 1);
     };
 
     return (

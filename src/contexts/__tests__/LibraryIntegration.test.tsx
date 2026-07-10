@@ -7,7 +7,9 @@ import { useSync } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import type { InvokeDbSnapshotState } from '../../types';
+import { useCollectionStore } from '../../stores/collectionStore';
+import { QueryClient } from '@tanstack/react-query';
+import type { Collection, InvokeDbSnapshotState } from '../../types';
 import { INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../../services/invoke/dbSnapshot';
 
 // --- Extensive Mocks for Integration ---
@@ -24,6 +26,8 @@ const mocks = vi.hoisted(() => ({
     rebuildFacetCacheStrict: vi.fn().mockResolvedValue(0),
     rebuildFacetCacheIncrementalBatchStrict: vi.fn().mockResolvedValue(0),
     refreshFacetCacheForResourcesStrict: vi.fn().mockResolvedValue(0),
+    purgeLibrary: vi.fn().mockResolvedValue('Library purge scheduled.'),
+    browserMockMode: false,
     watcherStartWatching: vi.fn().mockResolvedValue({}),
     watcherStopWatching: vi.fn().mockResolvedValue(undefined),
     processTargetedFiles: vi.fn().mockResolvedValue({
@@ -90,6 +94,8 @@ vi.mock('../../bindings', () => ({
         saveApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         deleteApiKey: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         refreshPrivacyMaskIndex: vi.fn().mockResolvedValue({ status: 'ok', data: { changed: false, updated: 0 } }),
+        getMainDatabaseUrl: vi.fn().mockResolvedValue({ status: 'ok', data: 'sqlite:test.db' }),
+        registerLibraryPath: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
         getInvokeDbSnapshot: (...args: unknown[]) => mocks.getInvokeDbSnapshot(...args),
     }
 }));
@@ -124,7 +130,12 @@ vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheStrict: (...args: any[]) => mocks.rebuildFacetCacheStrict(...args),
     rebuildFacetCacheIncrementalBatchStrict: (...args: any[]) => mocks.rebuildFacetCacheIncrementalBatchStrict(...args),
     refreshFacetCacheForResourcesStrict: (...args: any[]) => mocks.refreshFacetCacheForResourcesStrict(...args),
+    purgeLibrary: (...args: unknown[]) => mocks.purgeLibrary(...args),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue(false)
+}));
+
+vi.mock('../../services/runtime', () => ({
+    isBrowserMockMode: () => mocks.browserMockMode,
 }));
 
 // 3. Service Mocks
@@ -176,6 +187,31 @@ const createNoopInvokeSyncResult = () => ({
     }
 });
 
+const createTargetedResult = ({
+    handledPaths = [] as string[],
+    failedPaths = [] as string[],
+    imported = 0,
+} = {}) => ({
+    images: [],
+    stats: { processed: handledPaths.length + failedPaths.length, imported, skipped: 0, errors: failedPaths.length },
+    handledPaths,
+    failedPaths,
+    touchedFacetTypes: imported > 0 ? ['loras'] : [],
+    touchedFacetResources: {
+        checkpoints: [],
+        loras: imported > 0 ? ['CinematicDetail'] : [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: []
+    }
+});
+
+const defaultSetCollections = useCollectionStore.getInitialState().setCollections;
+const defaultRefreshCollections = useCollectionStore.getInitialState().refreshCollections;
+const defaultRefreshCollectionThumbnails = useCollectionStore.getInitialState().refreshCollectionThumbnails;
+
 // --- Test Consumer ---
 const TestConsumer = ({ onHook }: { onHook: (hook: any) => void }) => {
     const hook = useLibraryContext();
@@ -198,8 +234,15 @@ const SyncTestConsumer = ({ onHook }: { onHook: (hook: SyncHook) => void }) => {
 describe('Library Integration (Provider Stack)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.browserMockMode = false;
+        mocks.purgeLibrary.mockResolvedValue('Library purge scheduled.');
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
         useSettingsStore.setState(useSettingsStore.getInitialState(), true);
+        useCollectionStore.setState({
+            setCollections: defaultSetCollections,
+            refreshCollections: defaultRefreshCollections,
+            refreshCollectionThumbnails: defaultRefreshCollectionThumbnails,
+        });
         // Reset location reload to prevent errors
         Object.defineProperty(window, 'location', {
             configurable: true,
@@ -393,17 +436,23 @@ describe('Library Integration (Provider Stack)', () => {
             hook?.setSettings({
                 invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
                 invokeSyncFavorites: false,
-                invokeSyncBoards: false
+                invokeSyncBoards: false,
+                starredAs: '' as 'favorite'
             });
         });
 
-        mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            maxTimestamp: undefined as unknown as number,
+        });
 
         await act(async () => {
             await hook?.startInvokeSync({
                 mode: 'manual',
                 syncFavorites: true,
-                syncBoards: true
+                syncBoards: true,
+                afterTimestamp: null,
+                importIntermediates: true,
             });
         });
 
@@ -414,7 +463,10 @@ describe('Library Integration (Provider Stack)', () => {
             expect.objectContaining({
                 mode: 'manual',
                 syncFavorites: true,
-                syncBoards: true
+                syncBoards: true,
+                afterTimestamp: null,
+                importIntermediates: true,
+                starredAs: 'favorite',
             })
         );
     });
@@ -1347,5 +1399,726 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('rejects useSync outside its provider', () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const Consumer = () => {
+            useSync();
+            return null;
+        };
+
+        expect(() => render(<Consumer />)).toThrow('useSync must be used within SyncProvider');
+        consoleError.mockRestore();
+    });
+
+    it('guards every sync operation in browser mock mode', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        mocks.browserMockMode = true;
+
+        await act(async () => {
+            await syncHook?.startInvokeSync();
+            await expect(syncHook?.startTargetedLiveSync(['C:/images/live.png'])).resolves.toEqual({
+                handledPaths: [],
+                failedPaths: [],
+                importedCount: 0,
+            });
+            await syncHook?.cleanLibrary();
+        });
+
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+        expect(mocks.processTargetedFiles).not.toHaveBeenCalled();
+        expect(mocks.purgeLibrary).not.toHaveBeenCalled();
+    });
+
+    it('returns immediately for empty targeted paths and delegates cancellation to the store', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+
+        await expect(syncHook?.startTargetedLiveSync([])).resolves.toEqual({
+            handledPaths: [],
+            failedPaths: [],
+            importedCount: 0,
+        });
+        const controller = new AbortController();
+        useLibraryStore.getState().setSyncAbortController(controller);
+        act(() => syncHook?.cancelSync());
+
+        expect(controller.signal.aborted).toBe(true);
+        expect(mocks.processTargetedFiles).not.toHaveBeenCalled();
+    });
+
+    it('merges targeted paths and perf contexts while an active drain is running', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+
+        await act(async () => {
+            libraryHook?.setSettings({
+                monitoredFolders: [{ id: 'watch-1', path: 'C:/watch', isActive: true, imageCount: 0 }],
+            });
+        });
+        await waitFor(() => expect(libraryHook?.settings.monitoredFolders).toHaveLength(1));
+
+        const firstDeferred = createDeferred<ReturnType<typeof createTargetedResult>>();
+        mocks.processTargetedFiles
+            .mockReturnValueOnce(firstDeferred.promise)
+            .mockImplementationOnce(async (paths: string[], options: { onProgress?: (current: number, total: number, message?: string) => void }) => {
+                options.onProgress?.(1, 1);
+                return createTargetedResult({
+                    handledPaths: ['C:/watch/a.png', ...paths],
+                    failedPaths: ['C:/watch/a.png'],
+                    imported: 2,
+                });
+            });
+
+        let firstPromise!: Promise<Awaited<ReturnType<SyncHook['startTargetedLiveSync']>>>;
+        let secondPromise!: Promise<Awaited<ReturnType<SyncHook['startTargetedLiveSync']>>>;
+        let thirdPromise!: Promise<Awaited<ReturnType<SyncHook['startTargetedLiveSync']>>>;
+        await act(async () => {
+            firstPromise = syncHook!.startTargetedLiveSync(['C:\\watch\\a.png'], {
+                cycleId: 'first',
+                source: 'watcher',
+                firstEventAt: 10,
+                lastEventAt: 20,
+                eventCount: 1,
+                pathCount: 1,
+            });
+            await Promise.resolve();
+            secondPromise = syncHook!.startTargetedLiveSync(['C:\\watch\\b.png'], {
+                cycleId: 'second',
+                source: 'other',
+                firstEventAt: 5,
+                lastEventAt: 30,
+                eventCount: 2,
+                pathCount: 2,
+            });
+            thirdPromise = syncHook!.startTargetedLiveSync(['C:\\watch\\c.png'], {
+                cycleId: 'third',
+                source: 'third-source',
+                firstEventAt: 3,
+                lastEventAt: 40,
+                eventCount: 3,
+                pathCount: 3,
+            });
+        });
+
+        await act(async () => {
+            firstDeferred.resolve(createTargetedResult({ failedPaths: ['C:/watch/a.png'] }));
+            await Promise.resolve();
+        });
+        const [firstResult, secondResult, thirdResult] = await act(async () => Promise.all([firstPromise, secondPromise, thirdPromise]));
+
+        expect(firstResult).toEqual(secondResult);
+        expect(firstResult).toEqual(thirdResult);
+        expect(firstResult).toEqual({
+            handledPaths: ['C:/watch/a.png', 'C:/watch/b.png', 'C:/watch/c.png'],
+            failedPaths: [],
+            importedCount: 2,
+        });
+        expect(mocks.processTargetedFiles).toHaveBeenNthCalledWith(
+            1,
+            ['C:/watch/a.png'],
+            expect.objectContaining({ forceRescan: true, waitForStableFiles: true }),
+        );
+        expect(mocks.processTargetedFiles).toHaveBeenNthCalledWith(
+            2,
+            ['C:/watch/b.png', 'C:/watch/c.png'],
+            expect.objectContaining({
+                perfContext: expect.objectContaining({
+                    cycleId: 'second',
+                    source: 'other',
+                    firstEventAt: 3,
+                    lastEventAt: 40,
+                    eventCount: 5,
+                    pathCount: 5,
+                    mergedCycleCount: 2,
+                }),
+            }),
+        );
+        expect(useSettingsStore.getState().settings.monitoredFolders[0].lastScanned).toEqual(expect.any(Number));
+    });
+
+    it('returns failed normalized paths when targeted import throws', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        mocks.processTargetedFiles.mockRejectedValueOnce(new Error('import failed'));
+
+        const result = await syncHook!.startTargetedLiveSync(['C:\\watch\\broken.png'], {
+            cycleId: 'failed-targeted',
+            source: 'watcher',
+            firstEventAt: 1,
+            lastEventAt: 2,
+            eventCount: 1,
+            pathCount: 1,
+        });
+
+        expect(result).toEqual({
+            handledPaths: [],
+            failedPaths: ['C:/watch/broken.png'],
+            importedCount: 0,
+        });
+
+        mocks.processTargetedFiles.mockRejectedValueOnce(new Error('second import failed'));
+        await expect(syncHook!.startTargetedLiveSync(['C:/watch/no-context.png'])).resolves.toEqual({
+            handledPaths: [],
+            failedPaths: ['C:/watch/no-context.png'],
+            importedCount: 0,
+        });
+        expect(consoleError).toHaveBeenCalledWith('[LiveSync] Targeted sync failed', expect.any(Error));
+        consoleError.mockRestore();
+    });
+
+    it('purges library state and persists clean settings', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+
+        await act(async () => syncHook?.cleanLibrary());
+
+        expect(mocks.watcherStopWatching).toHaveBeenCalledOnce();
+        expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+            images: [],
+            collections: [],
+            smartCollections: [],
+            settings: expect.objectContaining({
+                monitoredFolders: [],
+                lastSyncedAt: null,
+                enableAutoThumbnailHealing: true,
+                hasCompletedOnboarding: false,
+            }),
+        }));
+        expect(mocks.purgeLibrary).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        new Error('purge failed'),
+        'unknown purge failure',
+    ])('contains purge failures without rejecting: %s', async (failure) => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        mocks.purgeLibrary.mockRejectedValueOnce(failure);
+
+        await expect(syncHook?.cleanLibrary()).resolves.toBeUndefined();
+
+        expect(consoleError).toHaveBeenCalledWith('[Purge] Purge failed:', failure);
+        consoleError.mockRestore();
+    });
+
+    it('queues one merged Invoke live rerun while a live cycle is active', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => {
+            hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' });
+        });
+
+        const firstDeferred = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();
+        mocks.syncImages
+            .mockReturnValueOnce(firstDeferred.promise)
+            .mockResolvedValueOnce(createNoopInvokeSyncResult());
+        let firstPromise!: Promise<void>;
+        await act(async () => {
+            firstPromise = hook!.startInvokeSync({
+                mode: 'live',
+                perfContext: {
+                    cycleId: 'active',
+                    firstEventAt: 10,
+                    lastEventAt: 20,
+                    eventCount: 1,
+                    pathCount: 1,
+                    debounceScheduledAt: 10,
+                    debounceDelayMs: 25,
+                    debounceFireDelayMs: 30,
+                },
+            });
+            await Promise.resolve();
+            await hook?.startInvokeSync({ mode: 'live' });
+            await hook?.startInvokeSync({
+                mode: 'live',
+                perfContext: {
+                    cycleId: 'queued-a',
+                    firstEventAt: 8,
+                    lastEventAt: 25,
+                    eventCount: 2,
+                    pathCount: 2,
+                    debounceScheduledAt: 8,
+                    debounceDelayMs: 25,
+                    debounceFireDelayMs: 35,
+                },
+            });
+            await hook?.startInvokeSync({
+                mode: 'live',
+                perfContext: {
+                    cycleId: 'queued-b',
+                    firstEventAt: 5,
+                    lastEventAt: 30,
+                    eventCount: 3,
+                    pathCount: 3,
+                    debounceScheduledAt: 5,
+                    debounceDelayMs: 25,
+                    debounceFireDelayMs: 40,
+                },
+            });
+        });
+        expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            firstDeferred.resolve(createNoopInvokeSyncResult());
+            await firstPromise;
+        });
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(2));
+
+        expect(mocks.syncImages).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                mode: 'live',
+                perfContext: expect.objectContaining({
+                    cycleId: 'queued-a',
+                    firstEventAt: 5,
+                    lastEventAt: 30,
+                    eventCount: 5,
+                    pathCount: 5,
+                    mergedCycleCount: 2,
+                }),
+            }),
+        );
+    });
+
+    it('uses default perf metadata for queued Invoke and targeted reruns without contexts', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+
+        const invokeDeferred = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();
+        mocks.syncImages
+            .mockReturnValueOnce(invokeDeferred.promise)
+            .mockResolvedValueOnce(createNoopInvokeSyncResult());
+        let activeInvoke!: Promise<void>;
+        await act(async () => {
+            activeInvoke = libraryHook!.startInvokeSync({ mode: 'live' });
+            await Promise.resolve();
+            await libraryHook?.startInvokeSync({ mode: 'live' });
+        });
+        await act(async () => {
+            invokeDeferred.resolve(createNoopInvokeSyncResult());
+            await activeInvoke;
+        });
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(2));
+        expect(mocks.syncImages).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'live', perfContext: undefined }),
+        );
+
+        const targetedDeferred = createDeferred<ReturnType<typeof createTargetedResult>>();
+        mocks.processTargetedFiles
+            .mockReturnValueOnce(targetedDeferred.promise)
+            .mockResolvedValueOnce(createTargetedResult({ handledPaths: ['C:/watch/b.png'] }));
+        let activeTargeted!: Promise<Awaited<ReturnType<SyncHook['startTargetedLiveSync']>>>;
+        let queuedTargeted!: Promise<Awaited<ReturnType<SyncHook['startTargetedLiveSync']>>>;
+        await act(async () => {
+            activeTargeted = syncHook!.startTargetedLiveSync(['C:/watch/a.png']);
+            await Promise.resolve();
+            queuedTargeted = syncHook!.startTargetedLiveSync(['C:/watch/b.png']);
+        });
+        await act(async () => {
+            targetedDeferred.resolve(createTargetedResult({ handledPaths: ['C:/watch/a.png'] }));
+            await Promise.all([activeTargeted, queuedTargeted]);
+        });
+        expect(mocks.processTargetedFiles).toHaveBeenCalledTimes(2);
+    });
+
+    it('syncs board changes, orphan progress, and manual facet state', async () => {
+        const setCollectionsSpy = vi.fn(useCollectionStore.getState().setCollections);
+        useCollectionStore.setState({ setCollections: setCollectionsSpy });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+                syncBoardsToCollections: true,
+                importOrphans: true,
+                importIntermediates: true,
+            });
+        });
+        await waitFor(() => expect(hook?.settings.syncBoardsToCollections).toBe(true));
+
+        mocks.syncImages.mockImplementationOnce(async (
+            _path: string,
+            onProgress: (current: number, total: number, message?: string) => void,
+        ) => {
+            onProgress(1, 2, 'Reading database');
+            return {
+                imported: 1,
+                updated: 1,
+                maxTimestamp: 200,
+                syncedIds: new Set(['image-a']),
+                boardMapping: new Map([
+                    ['existing-board', { name: 'Renamed board', createdAt: 1 }],
+                    ['new-board', { name: 'New board', createdAt: 0 }],
+                    ['same-board', { name: 'Same name', createdAt: 1 }],
+                ]),
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: {
+                    checkpoints: [],
+                    loras: ['Detail'],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: [],
+                },
+            };
+        });
+        mocks.scanForOrphans.mockImplementationOnce(async (
+            _path: string,
+            _syncedIds: Set<string>,
+            onProgress: (phase: string, current: number, total: number) => void,
+        ) => {
+            onProgress('Scanning orphans', 1, 1);
+            return 1;
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'manual', importOrphans: true }));
+
+        expect(mocks.scanForOrphans).toHaveBeenCalledOnce();
+        expect(mocks.rebuildFacetCache).toHaveBeenCalledOnce();
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        const boardUpdater = [...setCollectionsSpy.mock.calls]
+            .reverse()
+            .map(call => call[0])
+            .find((update): update is (previous: Collection[]) => Collection[] => typeof update === 'function');
+        if (!boardUpdater) throw new Error('Missing board collection updater');
+        const boardCollections = boardUpdater([{
+            id: 'existing-board',
+            name: 'Old name',
+            imageIds: [],
+            createdAt: 1,
+        }, {
+            id: 'same-board',
+            name: 'Same name',
+            imageIds: [],
+            createdAt: 1,
+        }]);
+        expect(boardCollections).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: 'existing-board', name: 'Renamed board' }),
+            expect.objectContaining({ id: 'new-board', name: 'New board' }),
+        ]));
+    });
+
+    it('preserves the collection array when synced board names are unchanged', async () => {
+        const setCollectionsSpy = vi.fn(useCollectionStore.getState().setCollections);
+        useCollectionStore.setState({ setCollections: setCollectionsSpy });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            syncBoardsToCollections: true,
+        }));
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            boardMapping: new Map([['same-board', { name: 'Same name', createdAt: 1 }]]),
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'manual' }));
+
+        const boardUpdater = [...setCollectionsSpy.mock.calls]
+            .reverse()
+            .map(call => call[0])
+            .find((update): update is (previous: Collection[]) => Collection[] => typeof update === 'function');
+        if (!boardUpdater) throw new Error('Missing unchanged-board updater');
+        const previous: Collection[] = [{
+            id: 'same-board',
+            name: 'Same name',
+            imageIds: [],
+            createdAt: 1,
+        }];
+        expect(boardUpdater(previous)).toBe(previous);
+    });
+
+    it('marks manual cache rebuild failures as sync errors', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            imported: 1,
+            syncedIds: new Set(['image-a']),
+        });
+        mocks.rebuildFacetCache.mockRejectedValueOnce(new Error('cache failed'));
+
+        await act(async () => hook?.startInvokeSync({ mode: 'manual' }));
+
+        expect(useLibraryStore.getState().syncStatus).toBe('error');
+        expect(consoleError).toHaveBeenCalledWith('[Sync] Failed to rebuild facet cache after sync', expect.any(Error));
+        consoleError.mockRestore();
+    });
+
+    it.each([
+        { failure: new Error('Aborted'), expectedStatus: 'idle' as const, mode: 'manual' as const },
+        { failure: new Error('database failed'), expectedStatus: 'error' as const, mode: 'manual' as const },
+        { failure: 'unknown sync failure', expectedStatus: 'error' as const, mode: 'manual' as const },
+        { failure: new Error('live failed'), expectedStatus: 'error' as const, mode: 'live' as const },
+    ])('handles Invoke sync failure $failure', async ({ failure, expectedStatus, mode }) => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+        mocks.syncImages.mockRejectedValueOnce(failure);
+
+        await act(async () => hook?.startInvokeSync({ mode }));
+
+        expect(useLibraryStore.getState().syncStatus).toBe(expectedStatus);
+        consoleError.mockRestore();
+    });
+
+    it('suppresses a second manual sync while the first is active', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+        const deferred = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();
+        mocks.syncImages.mockReturnValueOnce(deferred.promise);
+        let firstPromise!: Promise<void>;
+        await act(async () => {
+            firstPromise = hook!.startInvokeSync({ mode: 'manual' });
+            await Promise.resolve();
+        });
+        await waitFor(() => expect(useLibraryStore.getState().syncStatus).toBe('syncing'));
+
+        await hook?.startInvokeSync({ mode: 'manual' });
+        expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            deferred.resolve(createNoopInvokeSyncResult());
+            await firstPromise;
+        });
+    });
+
+    it('falls back from a failed startup snapshot check and reports visible startup progress', async () => {
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollections, refreshCollectionThumbnails });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            syncBoardsToCollections: true,
+            importOrphans: false,
+        }));
+        mocks.getInvokeDbSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
+        mocks.syncImages.mockImplementationOnce(async (
+            _path: string,
+            onProgress: (current: number, total: number, message?: string) => void,
+        ) => {
+            onProgress(1, 2, 'Startup progress');
+            return {
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: 200,
+                syncedIds: new Set(['image-a']),
+                boardMapping: new Map([['new-board', { name: 'New board', createdAt: 1 }]]),
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: {
+                    checkpoints: [],
+                    loras: ['Detail'],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: [],
+                },
+            };
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'startup' }));
+
+        expect(consoleWarn).toHaveBeenCalledWith(
+            '[Startup Catch-up] Invoke DB snapshot check failed; falling back to SQLite sync.',
+            expect.any(Error),
+        );
+        expect(useLibraryStore.getState().syncProgress.total).toBe(1);
+        expect(refreshCollections).toHaveBeenCalledOnce();
+        expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
+        consoleWarn.mockRestore();
+    });
+
+    it('contains snapshot persistence failures after a no-op startup refresh', async () => {
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            importOrphans: false,
+            lastSyncedAt: 123,
+        }));
+        mocks.getInvokeDbSnapshot
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: {
+                    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+                    files: [{
+                        path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+                        exists: true,
+                        size: 10,
+                        modifiedMs: 100,
+                    }],
+                },
+            })
+            .mockRejectedValueOnce(new Error('snapshot save failed'));
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            touchedFacetTypes: ['loras'],
+            touchedFacetResources: {
+                checkpoints: [],
+                loras: ['Detail'],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            },
+        });
+        mocks.refreshFacetCacheForResourcesStrict.mockResolvedValueOnce(1);
+
+        await act(async () => hook?.startInvokeSync({ mode: 'startup' }));
+
+        expect(consoleWarn).toHaveBeenCalledWith(
+            '[Startup Catch-up] Failed to persist Invoke DB snapshot.',
+            expect.any(Error),
+        );
+        consoleWarn.mockRestore();
+    });
+
+    it('keeps changed startup sync invisible when progress has no total', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            importOrphans: false,
+            lastSyncedAt: 123,
+        }));
+        mocks.syncImages.mockImplementationOnce(async (
+            _path: string,
+            onProgress: (current: number, total: number, message?: string) => void,
+        ) => {
+            onProgress(0, 0);
+            return {
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                maxTimestamp: undefined as unknown as number,
+                syncedIds: new Set(['image-a']),
+                touchedFacetTypes: ['loras'],
+                touchedFacetResources: {
+                    checkpoints: [],
+                    loras: ['Detail'],
+                    embeddings: [],
+                    hypernetworks: [],
+                    controlNets: [],
+                    ipAdapters: [],
+                    tools: [],
+                },
+            };
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'startup' }));
+
+        expect(useLibraryStore.getState().syncStatus).toBe('complete');
+        expect(useLibraryStore.getState().syncProgress).toEqual({
+            current: 1,
+            total: 1,
+            message: undefined,
+        });
+    });
+
+    it('falls back to full facets and reports asynchronous live refresh failures', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        const refreshCollectionThumbnails = vi.fn().mockRejectedValue(new Error('thumbnail refresh failed'));
+        useCollectionStore.setState({ refreshCollections, refreshCollectionThumbnails });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        renderSyncStack(h => hook = h, h => syncHook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            syncBoardsToCollections: true,
+        }));
+        const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
+            .mockRejectedValue(new Error('invalidate failed'));
+        mocks.rebuildFacetCacheIncrementalBatchStrict.mockRejectedValueOnce(new Error('incremental failed'));
+        mocks.rebuildFacetCacheStrict.mockResolvedValueOnce(1);
+        mocks.syncImages.mockImplementationOnce(async (
+            _path: string,
+            onProgress: (current: number, total: number, message?: string) => void,
+        ) => {
+            onProgress(1, 1);
+            return {
+                ...createNoopInvokeSyncResult(),
+                imported: 1,
+                syncedIds: new Set(['image-a']),
+                boardMapping: new Map([['board', { name: 'Board', createdAt: 1 }]]),
+                touchedFacetTypes: ['loras'],
+            };
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'live' }));
+        await waitFor(() => expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledOnce());
+        await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+            '[Sync] Live image refresh invalidation failed',
+            expect.any(Error),
+        ));
+        await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+            '[Sync] Failed to refresh collection thumbnails after live Invoke sync',
+            expect.any(Error),
+        ));
+        expect(refreshCollections).toHaveBeenCalledOnce();
+        expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
+
+        act(() => useSettingsStore.setState(state => ({
+            settings: {
+                ...state.settings,
+                monitoredFolders: undefined as unknown as [],
+            },
+        })));
+        mocks.processTargetedFiles.mockResolvedValueOnce(createTargetedResult({
+            handledPaths: ['C:/watch/a.png'],
+        }));
+        await syncHook!.startTargetedLiveSync(['C:/watch/a.png']);
+        await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+            '[LiveSync] Generic live image refresh invalidation failed',
+            expect.any(Error),
+        ));
+
+        invalidateSpy.mockRestore();
+        consoleError.mockRestore();
     });
 });
