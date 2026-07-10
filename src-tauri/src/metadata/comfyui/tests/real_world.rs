@@ -399,6 +399,7 @@ fn test_trusted_graph_model_preserves_flat_hash_when_model_matches() {
         }
     }"#;
     let mut chunks = HashMap::new();
+    chunks.insert("parameters".to_string(), parameters.to_string());
     chunks.insert("prompt".to_string(), prompt.to_string());
 
     let mut merged = extract_a1111_metadata(parameters, None);
@@ -430,6 +431,7 @@ fn test_global_scan_model_does_not_override_known_flat_model() {
         }
     }"#;
     let mut chunks = HashMap::new();
+    chunks.insert("parameters".to_string(), parameters.to_string());
     chunks.insert("prompt".to_string(), prompt.to_string());
 
     let mut merged = extract_a1111_metadata(parameters, None);
@@ -437,8 +439,8 @@ fn test_global_scan_model_does_not_override_known_flat_model() {
 
     assert_eq!(
         diagnostics.field_sources.get(&ComfyMetadataField::Model),
-        Some(&ComfyParseLayer::GlobalScan),
-        "synthetic graph should only provide model through weak global scan"
+        Some(&ComfyParseLayer::FlatParameters),
+        "the retained flat model should report its selected provenance"
     );
     assert_eq!(
         merged.model, "trusted_flat_model",

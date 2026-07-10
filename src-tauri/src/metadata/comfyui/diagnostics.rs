@@ -3,11 +3,25 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ComfyParseLayer {
+    FlatParameters,
     WorkflowChunk,
     ExplicitNode,
     SamplerTraversal,
     SamplerFallback,
     GlobalScan,
+}
+
+impl ComfyParseLayer {
+    pub(crate) fn precedence(self) -> u8 {
+        match self {
+            Self::ExplicitNode => 5,
+            Self::SamplerTraversal => 4,
+            Self::FlatParameters => 3,
+            Self::SamplerFallback => 2,
+            Self::GlobalScan => 1,
+            Self::WorkflowChunk => 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -180,7 +194,11 @@ impl ComfyParseDiagnostics {
         has_value: bool,
         layer: ComfyParseLayer,
     ) {
-        if changed && has_value {
+        let is_stronger_source = self
+            .field_sources
+            .get(&field)
+            .is_none_or(|current| layer.precedence() > current.precedence());
+        if changed && has_value && is_stronger_source {
             self.field_sources.insert(field, layer);
         }
     }
