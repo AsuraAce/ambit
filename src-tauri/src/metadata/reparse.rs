@@ -3,9 +3,7 @@
 //! Re-parses image metadata from stored `original_metadata_json` without file I/O.
 //! Used when parser logic improves to extract better data from existing images.
 
-use super::{
-    extract_a1111_metadata, extract_comfyui_metadata, extract_invokeai_metadata, ImageMetadata,
-};
+use super::{extract_a1111_metadata, extract_invokeai_metadata, ImageMetadata};
 use std::collections::HashMap;
 
 /// Result of re-parsing metadata from stored JSON.
@@ -43,48 +41,63 @@ pub fn reparse_from_json(original_json: &str, tool: &str) -> Option<ReparseResul
 /// Re-parse ComfyUI metadata from stored JSON.
 /// The stored format is typically the "prompt" or "workflow" JSON.
 fn reparse_comfyui(original_json: &str) -> Option<ImageMetadata> {
-    // ComfyUI stores its workflow/prompt as JSON
-    // We need to reconstruct the chunks HashMap that the parser expects
     let mut chunks = HashMap::new();
 
-    // Try to parse as JSON to see if it's a workflow or prompt structure
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(original_json) {
-        let mut found_any = false;
-        // Collect both if present
-        if let Some(wf) = parsed.get("workflow") {
-            let val = if let Some(s) = wf.as_str() {
-                s.to_string()
-            } else {
-                wf.to_string()
-            };
-            chunks.insert("workflow".to_string(), val);
-            found_any = true;
-        }
-        if let Some(prompt) = parsed.get("prompt") {
-            let val = if let Some(s) = prompt.as_str() {
-                s.to_string()
-            } else {
-                prompt.to_string()
-            };
-            chunks.insert("prompt".to_string(), val);
-            found_any = true;
+        if let Some(envelope) = parsed.as_object().filter(|object| {
+            [
+                "parameters",
+                "Parameters",
+                "PARAMETERS",
+                "prompt",
+                "workflow",
+            ]
+            .iter()
+            .any(|key| object.contains_key(*key))
+        }) {
+            let parameters = ["parameters", "Parameters", "PARAMETERS"]
+                .iter()
+                .find_map(|key| envelope.get(*key).and_then(|value| value.as_str()));
+            let mut metadata = parameters
+                .map(|text| extract_a1111_metadata(text, Some("ComfyUI".to_string())))
+                .unwrap_or_else(|| ImageMetadata {
+                    tool: "ComfyUI".to_string(),
+                    ..ImageMetadata::default()
+                });
+
+            for key in ["prompt", "workflow"] {
+                if let Some(value) = envelope.get(key) {
+                    let chunk = value
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| value.to_string());
+                    chunks.insert(key.to_string(), chunk);
+                }
+            }
+
+            if !chunks.is_empty() {
+                super::comfyui::merge_comfyui_metadata(&mut metadata, &chunks);
+            }
+
+            metadata.tool = "ComfyUI".to_string();
+            return Some(metadata);
         }
 
-        // Fallback: If neither was found, assume the whole thing is the JSON
-        if !found_any {
-            // Check if it's a string type (double encoded)
-            if let Some(s) = parsed.as_str() {
-                chunks.insert("prompt".to_string(), s.to_string());
-            } else {
-                chunks.insert("prompt".to_string(), original_json.to_string());
-            }
+        // Preserve legacy rows that stored a raw or double-encoded graph instead
+        // of the normal chunk envelope.
+        if let Some(graph) = parsed.as_str() {
+            chunks.insert("prompt".to_string(), graph.to_string());
+        } else {
+            chunks.insert("prompt".to_string(), original_json.to_string());
         }
     } else {
         // If it's not valid JSON, treat it as a raw workflow/prompt string
         chunks.insert("prompt".to_string(), original_json.to_string());
     }
 
-    let metadata = extract_comfyui_metadata(&chunks);
+    let mut metadata = ImageMetadata::default();
+    super::comfyui::merge_comfyui_metadata(&mut metadata, &chunks);
+    metadata.tool = "ComfyUI".to_string();
     Some(metadata)
 }
 
@@ -107,6 +120,11 @@ fn reparse_a1111(original_json: &str, tool: Option<String>) -> Option<ImageMetad
         // If it's a JSON object with a "parameters" field
         if let Some(params) = parsed.get("parameters").and_then(|p| p.as_str()) {
             params.to_string()
+        } else if parsed.as_object().is_some_and(|object| object.is_empty()) {
+            return Some(ImageMetadata {
+                tool: tool.unwrap_or_else(|| "Automatic1111".to_string()),
+                ..ImageMetadata::default()
+            });
         } else {
             original_json.to_string()
         }
@@ -157,6 +175,19 @@ mod tests {
     }
 
     #[test]
+    fn test_reparse_empty_chunk_map_is_not_a_prompt() {
+        let result = reparse_from_json("{}", "Unknown").expect("reparse empty metadata");
+
+        assert_eq!(result.metadata.tool, "Unknown");
+        assert_eq!(result.metadata.model, "Unknown");
+        assert!(result.metadata.positive_prompt.is_empty());
+        assert!(result.metadata.negative_prompt.is_empty());
+        assert!(result.metadata.raw_parameters.is_none());
+        assert!(result.metadata.workflow_json.is_none());
+        assert!(!result.metadata.has_workflow_hint);
+    }
+
+    #[test]
     fn test_reparse_restores_explicit_zero_seed() {
         let result = reparse_from_json("a cat\nSteps: 20, CFG scale: 7, Seed: 0", "Automatic1111")
             .expect("reparse metadata");
@@ -193,5 +224,113 @@ mod tests {
             result.metadata.workflow_json,
             Some("prompt_content".to_string())
         );
+    }
+
+    #[test]
+    fn test_reparse_comfyui_parameters_only_preserves_flat_generation_data() {
+        let original =
+            include_str!("comfyui/tests/fixtures/real_world/format_parity_webp_flat.chunks.json");
+        let result = reparse_from_json(original, "ComfyUI").expect("reparse metadata");
+
+        assert_eq!(result.metadata.tool, "ComfyUI");
+        assert_eq!(result.metadata.model, "ArrogantBastard_ponyV33SS");
+        assert_eq!(result.metadata.model_hash.as_deref(), Some("ed5932e68b"));
+        assert_eq!(result.metadata.steps, 20);
+        assert_eq!(result.metadata.cfg, 8.0);
+        assert_eq!(result.metadata.sampler, "euler_simple");
+        assert_eq!(result.metadata.seed, Some(0));
+        assert!(result.metadata.positive_prompt.is_empty());
+        assert!(result.metadata.negative_prompt.is_empty());
+        assert!(result.metadata.workflow_json.is_none());
+        assert!(!result.metadata.has_workflow_hint);
+    }
+
+    #[test]
+    fn test_reparse_comfyui_mixed_chunks_uses_scanner_merge_precedence() {
+        let prompt = serde_json::json!({
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": { "ckpt_name": "graph-model.safetensors" }
+            },
+            "2": {
+                "class_type": "CLIPTextEncode",
+                "inputs": { "text": "graph positive", "clip": ["1", 1] }
+            },
+            "3": {
+                "class_type": "CLIPTextEncode",
+                "inputs": { "text": "graph negative", "clip": ["1", 1] }
+            },
+            "4": {
+                "class_type": "EmptyLatentImage",
+                "inputs": { "width": 512, "height": 512, "batch_size": 1 }
+            },
+            "5": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "negative": ["3", 0],
+                    "latent_image": ["4", 0],
+                    "seed": 123,
+                    "steps": 8,
+                    "cfg": 1.5,
+                    "sampler_name": "euler",
+                    "scheduler": "simple",
+                    "denoise": 1.0
+                }
+            },
+            "6": {
+                "class_type": "VAEDecode",
+                "inputs": { "samples": ["5", 0], "vae": ["1", 2] }
+            },
+            "7": {
+                "class_type": "SaveImage",
+                "inputs": { "images": ["6", 0], "filename_prefix": "test" }
+            }
+        });
+        let prompt_json = prompt.to_string();
+        let original = serde_json::json!({
+            "parameters": "unknown\nNegative prompt: unknown\nSteps: 20, Sampler: stale_sampler, CFG scale: 8.0, Seed: 0, Model: stale-model.safetensors, Version: ComfyUI",
+            "prompt": prompt_json
+        })
+        .to_string();
+
+        let result = reparse_from_json(&original, "ComfyUI").expect("reparse metadata");
+
+        assert_eq!(result.metadata.model, "graph_model");
+        assert_eq!(result.metadata.steps, 8);
+        assert_eq!(result.metadata.cfg, 1.5);
+        assert_eq!(result.metadata.seed, Some(123));
+        assert_eq!(result.metadata.sampler, "euler (simple)");
+        assert_eq!(result.metadata.positive_prompt, "graph positive");
+        assert_eq!(result.metadata.negative_prompt, "graph negative");
+        assert_eq!(
+            result.metadata.workflow_json.as_deref(),
+            Some(prompt_json.as_str())
+        );
+        assert!(result.metadata.has_workflow_hint);
+    }
+
+    #[test]
+    fn test_reparse_comfyui_preserves_raw_and_double_encoded_graphs() {
+        let graph = serde_json::json!({
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": { "ckpt_name": "legacy-model.safetensors" }
+            }
+        })
+        .to_string();
+        let encoded = serde_json::to_string(&graph).expect("encode graph");
+
+        for original in [&graph, &encoded] {
+            let result = reparse_from_json(original, "ComfyUI").expect("reparse metadata");
+            assert_eq!(result.metadata.tool, "ComfyUI");
+            assert_eq!(result.metadata.model, "legacy_model");
+            assert_eq!(
+                result.metadata.workflow_json.as_deref(),
+                Some(graph.as_str())
+            );
+            assert!(result.metadata.has_workflow_hint);
+        }
     }
 }

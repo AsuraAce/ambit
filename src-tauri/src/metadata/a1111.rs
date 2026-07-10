@@ -1,7 +1,7 @@
 use super::utils::{
     extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
 };
-use super::ImageMetadata;
+use super::{is_missing_prompt_value, ImageMetadata};
 
 fn split_a1111_params(s: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -114,12 +114,12 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
     }
 
     let pos_final = positive_parts.join("\n").trim().to_string();
-    if pos_final != "undefined" {
+    if !is_missing_prompt_value(&pos_final) {
         meta.positive_prompt = pos_final;
     }
 
     let neg_final = negative_prompt.trim().to_string();
-    if neg_final != "undefined" {
+    if !is_missing_prompt_value(&neg_final) {
         meta.negative_prompt = neg_final;
     }
 
@@ -143,6 +143,14 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
             if let Some((key, val)) = pair.split_once(": ") {
                 let key = key.trim();
                 let val = val.trim().trim_matches('"');
+                if key.eq_ignore_ascii_case("CFG scale") || key.eq_ignore_ascii_case("CFG") {
+                    let c: f32 = val.parse().unwrap_or(0.0);
+                    if c > 0.0 {
+                        meta.cfg = c;
+                    }
+                    continue;
+                }
+
                 match key {
                     "Steps" => {
                         let s: u32 = val.parse().unwrap_or(0);
@@ -171,12 +179,6 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                             meta.sampler = format!("Unknown ({})", val);
                         } else if !meta.sampler.to_lowercase().contains(&val.to_lowercase()) {
                             meta.sampler = format!("{}_{}", meta.sampler, val);
-                        }
-                    }
-                    "CFG scale" => {
-                        let c: f32 = val.parse().unwrap_or(0.0);
-                        if c > 0.0 {
-                            meta.cfg = c;
                         }
                     }
                     "Seed" => {
@@ -464,6 +466,21 @@ mod tests {
         let raw = "Positive prompt here\nSteps: 20";
         let meta = extract_a1111_metadata(raw, Some("Anapnoe".to_string()));
         assert_eq!(meta.tool, "Anapnoe");
+    }
+
+    #[test]
+    fn test_extract_comfy_flat_parameters_cfg_scale_and_unknown_prompts() {
+        let raw = "unknown\nNegative prompt: unknown\nSteps: 20, Sampler: euler_simple, CFG Scale: 8.0, Seed: 0, Size: 512x512, Model hash: ed5932e68b, Model: ArrogantBastard_ponyV33SS, Version: ComfyUI";
+        let meta = extract_a1111_metadata(raw, None);
+
+        assert_eq!(meta.tool, "ComfyUI");
+        assert_eq!(meta.model, "ArrogantBastard_ponyV33SS");
+        assert_eq!(meta.steps, 20);
+        assert_eq!(meta.cfg, 8.0);
+        assert_eq!(meta.seed, Some(0));
+        assert_eq!(meta.sampler, "euler_simple");
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(meta.negative_prompt, "");
     }
 
     #[test]

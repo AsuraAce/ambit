@@ -25,6 +25,51 @@ const formatDiagnosticLabel = (value: string) =>
 const formatDiagnosticValue = (value: string | number | null | undefined) =>
     value === null || value === undefined || value === '' ? 'None' : String(value);
 
+const getDiagnosticLayerBadgeClass = (layer: string | null | undefined) => {
+    switch (layer) {
+        case 'sampler_traversal':
+            return 'border-emerald-300/70 dark:border-emerald-400/30 bg-emerald-50/80 dark:bg-emerald-500/10 text-emerald-900 dark:text-emerald-200';
+        case 'sampler_fallback':
+            return 'border-orange-300/80 dark:border-orange-400/40 bg-orange-50/90 dark:bg-orange-500/15 text-orange-900 dark:text-orange-100';
+        case 'global_scan':
+            return 'border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 text-rose-900 dark:text-rose-100';
+        case 'explicit_node':
+            return 'border-sky-300/70 dark:border-sky-400/30 bg-sky-50/80 dark:bg-sky-500/10 text-sky-900 dark:text-sky-100';
+        default:
+            return 'border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 text-amber-950 dark:text-amber-100';
+    }
+};
+
+const getDiagnosticLayerTitle = (layer: string | null | undefined) => {
+    if (layer === 'sampler_fallback') {
+        return 'Sampler fallback: found by scanning samplers, weaker than saved-output traversal.';
+    }
+    if (layer === 'sampler_traversal') {
+        return 'Sampler traversal: found by following the saved image output path.';
+    }
+    return formatDiagnosticLabel(layer ?? '');
+};
+
+const buildDiagnosticsClipboardPayload = (
+    imageId: string,
+    chunks: Record<string, string> | undefined,
+    diagnostics: ComfyParserDiagnosticsReport
+) => {
+    const chunkLengths = Object.fromEntries(
+        Object.entries(chunks ?? {}).map(([key, value]) => [key, value.length])
+    ) as Record<string, number>;
+
+    return {
+        imageId,
+        chunkKeys: diagnostics.chunkKeys,
+        chunkLengths,
+        graphNodeCount: diagnostics.graphNodeCount,
+        attemptedLayers: diagnostics.attemptedLayers,
+        fieldSources: diagnostics.fieldSources,
+        metadata: diagnostics.metadata
+    };
+};
+
 const ComfyDiagnosticsPanel: React.FC<{
     imageId: string;
     chunks?: Record<string, string>;
@@ -32,6 +77,7 @@ const ComfyDiagnosticsPanel: React.FC<{
     const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
     const chunkCount = chunks ? Object.keys(chunks).length : 0;
 
     React.useEffect(() => {
@@ -74,6 +120,15 @@ const ComfyDiagnosticsPanel: React.FC<{
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
         : [];
 
+    const handleCopyDiagnostics = async () => {
+        if (!diagnostics) return;
+
+        const payload = buildDiagnosticsClipboardPayload(imageId, chunks, diagnostics);
+        await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+        setCopiedDiagnostics(true);
+        setTimeout(() => setCopiedDiagnostics(false), 2000);
+    };
+
     return (
         <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-3 text-xs">
             <div className="flex items-center justify-between gap-3">
@@ -81,11 +136,23 @@ const ComfyDiagnosticsPanel: React.FC<{
                     <Activity className="w-3.5 h-3.5" />
                     Parser Diagnostics
                 </div>
-                {diagnostics && (
-                    <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
-                        {diagnostics.graphNodeCount} nodes
-                    </span>
-                )}
+                <div className="flex items-center gap-2">
+                    {diagnostics && (
+                        <>
+                            <button
+                                onClick={handleCopyDiagnostics}
+                                title="Copy parser diagnostics summary"
+                                className="flex items-center gap-1 rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-amber-900 dark:text-amber-200 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                            >
+                                {copiedDiagnostics ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                {copiedDiagnostics ? 'Copied' : 'Copy Diagnostics'}
+                            </button>
+                            <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
+                                {diagnostics.graphNodeCount} nodes
+                            </span>
+                        </>
+                    )}
+                </div>
             </div>
 
             {!chunks || chunkCount === 0 ? (
@@ -137,7 +204,8 @@ const ComfyDiagnosticsPanel: React.FC<{
                             {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => (
                                 <span
                                     key={field}
-                                    className="rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-mono text-[10px]"
+                                    title={getDiagnosticLayerTitle(layer)}
+                                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
                                 >
                                     {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
                                 </span>

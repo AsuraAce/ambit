@@ -1,4 +1,4 @@
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 
 pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
@@ -18,15 +18,15 @@ pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
             let pos_part = &pre_steps[..neg_idx];
             let neg_part = &pre_steps[neg_idx + "negative prompt:".len()..];
 
-            if !pos_part.trim().is_empty() && pos_part.trim() != "undefined" {
+            if !is_missing_prompt_value(pos_part) {
                 meta.positive_prompt = pos_part.trim().to_string();
             }
-            if !neg_part.trim().is_empty() && neg_part.trim() != "undefined" {
+            if !is_missing_prompt_value(neg_part) {
                 meta.negative_prompt = neg_part.trim().to_string();
             }
         } else {
             // No negative prompt label, everything before Steps is positive
-            if !pre_steps.trim().is_empty() && pre_steps.trim() != "undefined" {
+            if !is_missing_prompt_value(pre_steps) {
                 meta.positive_prompt = pre_steps.trim().to_string();
             }
         }
@@ -39,15 +39,17 @@ pub fn parse_a1111_parameters(text: &str) -> ImageMetadata {
     for part in parts {
         let part = part.trim();
         if let Some((key, val)) = part.split_once(": ") {
+            if key.eq_ignore_ascii_case("CFG scale") || key.eq_ignore_ascii_case("CFG") {
+                if let Ok(v) = val.trim().parse::<f32>() {
+                    meta.cfg = v;
+                }
+                continue;
+            }
+
             match key {
                 "Steps" => {
                     if let Ok(v) = val.trim().parse::<u32>() {
                         meta.steps = v;
-                    }
-                }
-                "CFG scale" => {
-                    if let Ok(v) = val.trim().parse::<f32>() {
-                        meta.cfg = v;
                     }
                 }
                 "Seed" => {

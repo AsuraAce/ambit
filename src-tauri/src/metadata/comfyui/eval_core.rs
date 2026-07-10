@@ -4,7 +4,7 @@ use super::graph::{get_node_param, get_node_type, get_switch_branch_source, Comf
 use crate::metadata::utils::{
     extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
 };
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 
 pub fn extract_from_sampler(
@@ -97,15 +97,12 @@ pub fn extract_from_sampler(
     }
 
     let pos = find_reachable_prompts(graph, node_id, "positive");
-    if !pos.is_empty() {
-        let lower = pos.to_lowercase();
-        if lower != "undefined" && lower != "null" && lower != "none" {
-            meta.positive_prompt = pos;
-        }
+    if !is_missing_prompt_value(&pos) {
+        meta.positive_prompt = pos;
     }
 
     let neg = find_reachable_prompts(graph, node_id, "negative");
-    if !neg.is_empty() {
+    if !is_missing_prompt_value(&neg) {
         meta.negative_prompt = neg;
     }
 
@@ -145,11 +142,8 @@ pub fn extract_from_sampler(
     if meta.positive_prompt.is_empty() {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             let pos_guider = find_reachable_prompts(graph, &guider_id, "conditioning");
-            if !pos_guider.is_empty() {
-                let lower = pos_guider.to_lowercase();
-                if lower != "undefined" && lower != "null" && lower != "none" {
-                    meta.positive_prompt = pos_guider;
-                }
+            if !is_missing_prompt_value(&pos_guider) {
+                meta.positive_prompt = pos_guider;
             }
         }
     }

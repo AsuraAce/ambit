@@ -115,7 +115,9 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     groupId: image.groupId || null,
     boardId: image.boardId || null,
     notes: image.notes || null,
-    originalMetadataJson: image.originalChunks ? JSON.stringify(image.originalChunks) : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
+    originalMetadataJson: image.originalChunks
+        ? (Object.keys(image.originalChunks).length > 0 ? JSON.stringify(image.originalChunks) : null)
+        : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
     isCorrupt: !!image.isCorrupt
 });

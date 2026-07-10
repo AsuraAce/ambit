@@ -173,8 +173,7 @@ pub fn scan_image_internal(
 
     // 3. ComfyUI (Cumulative Merge & Tool Finalization)
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-        let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
-        metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
+        metadata::comfyui::merge_comfyui_metadata(&mut parsed_metadata, &chunks);
 
         // Finalize tool label
         parsed_metadata.tool = "ComfyUI".to_string();
@@ -342,8 +341,7 @@ pub fn read_image_metadata(
 
     // 3. ComfyUI (Cumulative Merge & Tool Finalization)
     if chunks.contains_key("prompt") || chunks.contains_key("workflow") {
-        let comfy_meta = metadata::extract_comfyui_metadata(&chunks);
-        metadata::merge_metadata(&mut parsed_metadata, comfy_meta);
+        metadata::comfyui::merge_comfyui_metadata(&mut parsed_metadata, &chunks);
 
         // Finalize tool label: ComfyUI chunks exist, so it's a ComfyUI generation
         parsed_metadata.tool = "ComfyUI".to_string();
