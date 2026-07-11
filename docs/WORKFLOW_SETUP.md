@@ -111,7 +111,7 @@ Use **Actions > updater-signing-preflight > Run workflow** before publishing. Th
 6. Merge the release PR only when a release should be published.
 7. Confirm the generated `vX.Y.Z` tag starts `release.yml`.
 
-The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. Release tags must use the exact `vX.Y.Z` format, match `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, and `src-tauri/Cargo.toml`, and point to a commit reachable from `main`.
+The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. It copies the matching version section from `CHANGELOG.md` into the updater metadata so installed apps can show the same release notes. Release tags must use the exact `vX.Y.Z` format, match `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, and `src-tauri/Cargo.toml`, and point to a commit reachable from `main`.
 
 Release Please remains the normal and preferred tag creator. Do not create manual release tags except for recovery work after confirming the tag target is already on `main` and all version files match.
 

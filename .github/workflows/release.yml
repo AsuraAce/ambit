@@ -92,6 +92,20 @@ jobs:
           fi
           rm -f .tmp/updater-signing-smoke-test.txt .tmp/updater-signing-smoke-test.txt.sig
 
+      - name: extract updater release notes
+        id: release-notes
+        shell: pwsh
+        run: |
+          $notes = node ./scripts/extract-release-notes.mjs $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $delimiter = "ambit_release_notes_$([Guid]::NewGuid().ToString('N'))"
+          "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $notes | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,7 +114,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Ambit ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download the latest version of Ambit."
+          releaseBody: ${{ steps.release-notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
