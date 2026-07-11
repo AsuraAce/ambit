@@ -54,6 +54,10 @@ Masked keywords are matched against prompts. Add only terms you actually want Am
 
 Intelligence features are off unless configured. When enabled, Ambit can use Gemini for tasks such as prompt analysis or variation ideas. These actions are on-demand and depend on your own Gemini API key.
 
+Create or view a key in [Google AI Studio](https://aistudio.google.com/apikey). A free tier is available for eligible accounts and regions, with model and usage limits. Keys entered through Ambit are stored in the OS keyring; credentials supplied through the environment are read but not saved by Ambit. Images or prompts are sent to Google only when you verify the key or run a Gemini feature, and Google handles those requests under the terms of your AI Studio plan.
+
+A securely stored key is shown as **API key configured** when you return to onboarding or Settings. **API key verified and saved** confirms a successful verification in the current session; it does not guarantee that Google will continue accepting the key indefinitely.
+
 If an AI action fails, confirm that the key is saved, the key verifies successfully, and the network is available.
 
 ## Advanced Tools
@@ -62,7 +66,7 @@ Advanced includes:
 
 - backup settings
 - automatic update controls
-- reset onboarding
+- Restart onboarding, which closes Settings and immediately opens a fresh wizard at Step 1
 - support diagnostics, including the active library database and app log locations
 - database reset tools
 

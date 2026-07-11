@@ -208,6 +208,25 @@ describe('AdvancedTab', () => {
         expect(onClose).toHaveBeenCalled();
     });
 
+    it('restarts onboarding immediately without changing unrelated settings', () => {
+        const settings = createSettings({ hideImportModal: true });
+        const onClose = vi.fn();
+        renderAdvanced(settings, onClose);
+
+        fireEvent.click(screen.getByRole('button', { name: 'interface' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Restart onboarding' }));
+
+        expect(libraryContextMock.setSettings).toHaveBeenCalledOnce();
+        const update = libraryContextMock.setSettings.mock.calls[0][0] as (current: AppSettings) => AppSettings;
+        expect(update(settings)).toEqual({
+            ...settings,
+            hasCompletedOnboarding: false,
+            hideImportModal: false,
+        });
+        expect(onClose).toHaveBeenCalledOnce();
+        expect(addToastMock).toHaveBeenCalledWith('Onboarding restarted.', 'info');
+    });
+
     it('labels destructive database actions as a danger zone', () => {
         renderAdvanced();
 

@@ -55,8 +55,6 @@ export default function App() {
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    // Track if user has finished onboarding in this session (even if they chose "Show on Startup")
-    const [hasDismissedOnboarding, setHasDismissedOnboarding] = useState(false);
 
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
@@ -446,15 +444,17 @@ export default function App() {
             />
 
             {/* Overlays & Portals */}
-            <OnboardingWizard
-                isOpen={!settings.hasCompletedOnboarding && !hasDismissedOnboarding}
-                onComplete={(s) => {
-                    setSettings(p => ({ ...p, ...s }));
-                    setHasDismissedOnboarding(true);
-                    addToast("Setup complete!", "success");
-                }}
-                onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
-            />
+            {!settings.hasCompletedOnboarding ? (
+                <OnboardingWizard
+                    isOpen={!modals.modals.settings}
+                    onComplete={(s) => {
+                        setSettings(p => ({ ...p, ...s }));
+                        setIsImportModalOpen(true);
+                        addToast("Setup complete!", "success");
+                    }}
+                    onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
+                />
+            ) : null}
             <ImportModal
                 isOpen={isImportModalOpen}
                 onClose={() => setIsImportModalOpen(false)}

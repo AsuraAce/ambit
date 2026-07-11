@@ -299,11 +299,11 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             </div>
                         </div>
 
-                        {/* Reset Onboarding */}
+                        {/* Restart Onboarding */}
                         <div className="p-6 flex items-center justify-between">
                             <div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset Onboarding</div>
-                                <div className="text-xs text-gray-500 mt-1">Show the onboarding wizard again on next reload.</div>
+                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Restart onboarding</div>
+                                <div className="text-xs text-gray-500 mt-1">Close Settings and start the onboarding wizard again.</div>
                             </div>
                             <button
                                 type="button"
@@ -313,11 +313,12 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                         hasCompletedOnboarding: false,
                                         hideImportModal: false
                                     }));
-                                    addToast('Onboarding reset. Reload to see wizard.', 'info');
+                                    onClose?.();
+                                    addToast('Onboarding restarted.', 'info');
                                 }}
                                 className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
                             >
-                                <HistoryIcon className="w-3.5 h-3.5" /> Reset Wizard
+                                <HistoryIcon className="w-3.5 h-3.5" /> Restart onboarding
                             </button>
                         </div>
                     </div>

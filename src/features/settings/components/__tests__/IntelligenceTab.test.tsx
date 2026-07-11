@@ -1,25 +1,50 @@
 import * as React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '../../../../test/testUtils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import type { AppSettings } from '../../../../types';
 import { IntelligenceTab } from '../IntelligenceTab';
 
+const addToastMock = vi.hoisted(() => vi.fn());
+const verifyApiKeyMock = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../../hooks/useToast', () => ({
     useToast: () => ({
-        addToast: vi.fn(),
+        addToast: addToastMock,
     }),
 }));
 
+const settingsStoreMock = vi.hoisted(() => ({
+    geminiApiKey: null as string | null,
+    setGeminiApiKey: vi.fn(),
+}));
+
+const apiKeyInputPropsMock = vi.hoisted(() => vi.fn());
+
+interface MockApiKeyInputProps {
+    isVerifying: boolean;
+    status: string;
+    onVerify: () => Promise<void>;
+}
+
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: () => ({
-        geminiApiKey: null,
-        setGeminiApiKey: vi.fn(),
-    }),
+    useSettingsStore: () => settingsStoreMock,
 }));
 
 vi.mock('../../../../components/ui/ApiKeyInput', () => ({
-    ApiKeyInput: () => <div>API key input</div>,
+    ApiKeyInput: (props: MockApiKeyInputProps) => {
+        apiKeyInputPropsMock(props);
+        return <div>API key input: {props.status}</div>;
+    },
 }));
+
+vi.mock('../../../../services/geminiService', () => ({
+    verifyApiKey: verifyApiKeyMock,
+}));
+
+const getLatestApiKeyInputProps = (): MockApiKeyInputProps => {
+    const calls = apiKeyInputPropsMock.mock.calls;
+    return calls[calls.length - 1][0] as MockApiKeyInputProps;
+};
 
 const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     hasCompletedOnboarding: true,
@@ -52,6 +77,13 @@ const getOptionLabels = (select: HTMLSelectElement): string[] =>
     Array.from(select.options).map(option => option.textContent ?? '');
 
 describe('IntelligenceTab', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        settingsStoreMock.geminiApiKey = null;
+        settingsStoreMock.setGeminiApiKey.mockResolvedValue(undefined);
+        verifyApiKeyMock.mockResolvedValue({ valid: true });
+    });
+
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -98,5 +130,75 @@ describe('IntelligenceTab', () => {
 
         expect(screen.queryByText('AI Model (Dev Mode)')).toBeNull();
         expect(screen.queryByText('Thinking Effort (Dev Mode)')).toBeNull();
+    });
+
+    it('passes configured status to the shared input for a stored key', () => {
+        settingsStoreMock.geminiApiKey = 'stored-key';
+
+        render(<Harness initialSettings={createSettings()} />);
+
+        expect(screen.getByText('API key input: configured')).not.toBeNull();
+        expect(apiKeyInputPropsMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'configured' }));
+    });
+
+    it('does not report success until secure key storage resolves', async () => {
+        let resolveStorage: (() => void) | undefined;
+        settingsStoreMock.geminiApiKey = 'stored-key';
+        settingsStoreMock.setGeminiApiKey.mockImplementationOnce(() => new Promise<void>((resolve) => {
+            resolveStorage = resolve;
+        }));
+        render(<Harness initialSettings={createSettings()} />);
+
+        let verificationPromise: Promise<void> | undefined;
+        await act(async () => {
+            verificationPromise = getLatestApiKeyInputProps().onVerify();
+            await Promise.resolve();
+        });
+
+        expect(verifyApiKeyMock).toHaveBeenCalled();
+        expect(getLatestApiKeyInputProps().status).not.toBe('success');
+        expect(getLatestApiKeyInputProps().isVerifying).toBe(true);
+
+        await act(async () => {
+            resolveStorage?.();
+            await verificationPromise;
+        });
+
+        await waitFor(() => {
+            expect(getLatestApiKeyInputProps().status).toBe('success');
+            expect(addToastMock).toHaveBeenCalledWith('API Key verified and saved securely', 'success');
+        });
+    });
+
+    it('shows an error without a success state when secure storage fails', async () => {
+        settingsStoreMock.geminiApiKey = 'stored-key';
+        settingsStoreMock.setGeminiApiKey.mockRejectedValueOnce(new Error('Keyring unavailable'));
+        render(<Harness initialSettings={createSettings()} />);
+
+        await act(async () => {
+            await getLatestApiKeyInputProps().onVerify();
+        });
+
+        expect(getLatestApiKeyInputProps().status).toBe('error');
+        expect(apiKeyInputPropsMock.mock.calls.some(([props]) => (
+            props as MockApiKeyInputProps
+        ).status === 'success')).toBe(false);
+        expect(addToastMock).toHaveBeenCalledWith('Keyring unavailable', 'error');
+    });
+
+    it('describes environment keys without claiming they are stored', () => {
+        vi.stubEnv('API_KEY', 'environment-key');
+        render(<Harness initialSettings={createSettings()} />);
+
+        expect(screen.getByText(/Ambit reads this API key from your environment and does not save it/)).not.toBeNull();
+        expect(screen.queryByText(/stored locally in the OS keyring/)).toBeNull();
+    });
+
+    it('retains keyring wording for keys entered through Settings', () => {
+        vi.stubEnv('API_KEY', '');
+        render(<Harness initialSettings={createSettings()} />);
+
+        expect(screen.getByText(/stored locally in the OS keyring/)).not.toBeNull();
+        expect(screen.queryByText(/reads this API key from your environment/)).toBeNull();
     });
 });

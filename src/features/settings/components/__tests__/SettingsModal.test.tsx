@@ -117,6 +117,54 @@ describe('SettingsModal', () => {
         });
     });
 
+    it('claims focus on its named close control when opened', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Settings' }));
+    });
+
+    it('restores focus to the launcher when closed', () => {
+        const launcher = document.createElement('button');
+        document.body.append(launcher);
+        launcher.focus();
+        const modalProps = {
+            onClose: vi.fn(),
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const { rerender } = render(<SettingsModal isOpen={true} {...modalProps} />);
+
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Settings' }));
+
+        rerender(<SettingsModal isOpen={false} {...modalProps} />);
+
+        expect(document.activeElement).toBe(launcher);
+        launcher.remove();
+    });
+
     it('loads the Dev Tools panel only after selecting it in dev builds', async () => {
         vi.stubEnv('DEV', true);
 
