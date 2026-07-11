@@ -516,7 +516,7 @@ export const buildSqlWhereClause = (
     return {
         where,
         params,
-        collectionId: isManualOnly ? filters.collectionId ?? undefined : undefined,
+        collectionId: isManualOnly ? filters.collectionId as string : undefined,
         loraName: singleLoraName
     };
 };

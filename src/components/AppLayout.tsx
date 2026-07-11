@@ -151,10 +151,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             return;
         }
 
-        if (filterPanelTransitionTimerRef.current !== null) {
-            window.clearTimeout(filterPanelTransitionTimerRef.current);
-        }
-
         setIsFilterPanelLayoutTransitioning(true);
         filterPanelTransitionTimerRef.current = window.setTimeout(() => {
             filterPanelTransitionTimerRef.current = null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSqlWhereClause } from '../sqlHelpers';
+import { buildSqlWhereClause, normalizeResourceReferenceForFilter, resourceReferenceEqualsSql, resourceReferenceSql } from '../sqlHelpers';
 import { FilterState, Collection, GeneratorTool } from '../../types';
 
 describe('sqlHelpers', () => {
@@ -20,6 +20,13 @@ describe('sqlHelpers', () => {
     };
 
     describe('buildSqlWhereClause', () => {
+        it('normalizes weighted and colon resource references and builds canonical SQL', () => {
+            expect(normalizeResourceReferenceForFilter(' Detailer (0.75) ')).toBe('Detailer');
+            expect(normalizeResourceReferenceForFilter('Embedding:1.2')).toBe('Embedding');
+            expect(normalizeResourceReferenceForFilter('Plain')).toBe('Plain');
+            expect(resourceReferenceSql('resource_name')).toContain("instr(resource_name, ' (')");
+            expect(resourceReferenceEqualsSql('resource_name')).toContain('COLLATE NOCASE = ?');
+        });
         it('should return base conditions by default', () => {
             const { where, params } = buildSqlWhereClause(defaultFilters, false, 'blur', []);
             expect(where).toContain('is_deleted = 0');
@@ -248,6 +255,51 @@ describe('sqlHelpers', () => {
                 expect(params).toEqual([20]);
             });
 
+            it.each([
+                ['steps:<30', 'steps < ?', 30],
+                ['steps:20', 'steps = ?', 20],
+                ['cfg:>6.5', 'cfg > ?', 6.5],
+                ['cfg:<8', 'cfg < ?', 8],
+                ['w:>512', 'width > ?', 512],
+                ['width:<2048', 'width < ?', 2048],
+                ['width:1024', 'width = ?', 1024],
+                ['h:>512', 'height > ?', 512],
+                ['height:<2048', 'height < ?', 2048],
+                ['height:768', 'height = ?', 768],
+                ['neg:blur', 'negative_prompt LIKE ?', '%blur%'],
+                ['negative:noise', 'negative_prompt LIKE ?', '%noise%'],
+                ['file:image.png', 'path LIKE ?', '%image.png%'],
+                ['filename:portrait', 'path LIKE ?', '%portrait%'],
+                ['path:/output/', 'path LIKE ?', '%/output/%'],
+                ['sampler:euler', 'sampler LIKE ?', '%euler%'],
+                ['tool:comfy', 'tool LIKE ?', '%comfy%'],
+                ['lora:detail', 'image_loras', '%detail%'],
+                ['cn:canny', 'image_controlnets', '%canny%'],
+                ['controlnet:depth', 'image_controlnets', '%depth%'],
+                ['ip:face', 'image_ipadapters', '%face%'],
+                ['ipadapter:style', 'image_ipadapters', '%style%'],
+                ['upscaled:true', "json_extract(metadata_json, '$.upscaled') = ?", 1],
+                ['upscaled:false', "json_extract(metadata_json, '$.upscaled') = ?", 0],
+            ] as const)('parses scoped search token %s', (searchQuery, sqlFragment, expectedParam) => {
+                const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery }, false, 'blur', []);
+                expect(where).toContain(sqlFragment);
+                expect(params).toContain(expectedParam);
+            });
+
+            it('handles model and all-field scoped searches in positive and negative forms', () => {
+                const model = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'model:pony' }, false, 'blur', []);
+                expect(model.where).toContain('(resolved_model_name LIKE ? OR json_extract(metadata_json, \'$.model\') LIKE ?)');
+                expect(model.params).toEqual(['%pony%', '%pony%']);
+
+                const all = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'all:detail' }, false, 'blur', []);
+                expect(all.where).toContain('(path LIKE ? OR metadata_json LIKE ?)');
+                expect(all.params).toEqual(['%detail%', '%detail%']);
+
+                const negative = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-all:secret' }, false, 'blur', []);
+                expect(negative.where).toContain('(path NOT LIKE ? AND metadata_json NOT LIKE ?)');
+                expect(negative.params).toEqual(['%secret%', '%secret%']);
+            });
+
             it('should search the scalar seed column without loading metadata JSON', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'seed:123' }, false, 'blur', []);
 
@@ -292,6 +344,18 @@ describe('sqlHelpers', () => {
                 const promptMatches = where.match(/positive_prompt LIKE \?/g) ?? [];
                 expect(promptMatches).toHaveLength(1);
                 expect(params).toEqual(['%orc%']);
+            });
+
+            it('skips unknown scoped tokens and handles leading or interrupted OR operators', () => {
+                const unknown = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'unknown:value' }, false, 'blur', []);
+                expect(unknown.params).toEqual([]);
+
+                const leading = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'OR orc' }, false, 'blur', []);
+                expect(leading.params).toEqual(['%orc%']);
+
+                const interrupted = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'orc OR model:pony' }, false, 'blur', []);
+                expect(interrupted.where).toContain('positive_prompt LIKE ?');
+                expect(interrupted.where).toContain('resolved_model_name LIKE ?');
             });
 
             it('should handle exact date search syntax', () => {
@@ -367,6 +431,13 @@ describe('sqlHelpers', () => {
                 const beforeYear = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'before:2026' }, false, 'blur', []);
                 expect(beforeYear.where).toContain('(timestamp < ?)');
                 expect(beforeYear.params).toEqual([new Date(2027, 0, 1).getTime()]);
+            });
+
+            it('negates date and scoped numeric search tokens', () => {
+                const date = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-before:2026-04-30' }, false, 'blur', []);
+                expect(date.where).toContain('NOT (timestamp < ?)');
+                const steps = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-steps:20' }, false, 'blur', []);
+                expect(steps.where).toContain('NOT (steps = ?)');
             });
         });
 
@@ -453,6 +524,85 @@ describe('sqlHelpers', () => {
                     new Date(2026, 4, 1).getTime()
                 ]);
             });
+
+            it('applies smart collection manual exclusions', () => {
+                const collection: Collection = {
+                    id: 'smart-exclusions', name: 'Smart exclusions', imageIds: [], createdAt: 1,
+                    filters: { ...defaultFilters, favoritesOnly: true },
+                    manualExclusions: ['image-1', 'image-2']
+                };
+                const result = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: collection.id }, false, 'blur', [], [collection]
+                );
+                expect(result.where).toContain('id NOT IN (?,?)');
+                expect(result.params).toEqual(['image-1', 'image-2']);
+            });
+        });
+
+        it('handles Unknown models, tool Match All, aliases, ranges, sampler and generation filters', () => {
+            const filters: FilterState = {
+                ...defaultFilters,
+                models: ['Unknown'],
+                tools: [GeneratorTool.COMFYUI, GeneratorTool.INVOKEAI],
+                embeddings: ['Easy', 'Bad'],
+                hypernetworks: ['Hyper A', 'Hyper B'],
+                controlNets: ['Canny', 'Depth'],
+                ipAdapters: ['Face', 'Style'],
+                samplers: ['DPM++_2M-Karras'],
+                generationTypes: ['txt2img', 'img2img'],
+                minSteps: 10, maxSteps: 40, minCfg: 3, maxCfg: 12,
+                matchModes: {
+                    tools: 'all', embeddings: 'all', hypernetworks: 'all', controlNets: 'all', ipAdapters: 'all'
+                },
+                assetFilterAliases: {
+                    embeddings: { Easy: [' Easy ', 'easy', '', 'Easy (1.0)'] },
+                    hypernetworks: { 'Hyper A': ['Hyper A', 'Hyper A:0.8'] },
+                    controlNets: { Canny: ['Canny', 'Canny (0.5)'] },
+                    ipAdapters: { Face: ['Face', 'Face:0.7'] }
+                }
+            };
+            const { where, params } = buildSqlWhereClause(filters, false, 'blur', []);
+            expect(where).toContain("resolved_model_name IS NULL");
+            expect(where).toContain('tool = ? COLLATE NOCASE AND tool = ? COLLATE NOCASE');
+            expect(where).toContain('steps >= ?');
+            expect(where).toContain('steps <= ?');
+            expect(where).toContain('cfg >= ?');
+            expect(where).toContain('cfg <= ?');
+            expect(where).toContain('sampler = ?');
+            expect(where).toContain('generation_type = ?');
+            expect(params).toContain('dpm++ 2m karras');
+        });
+
+        it('omits every explicitly excluded facet category', () => {
+            const filters: FilterState = {
+                ...defaultFilters,
+                models: ['Flux'], tools: [GeneratorTool.COMFYUI], loras: ['Lora A', 'Lora B'],
+                embeddings: ['Embed'], hypernetworks: ['Hyper'], controlNets: ['Canny'],
+                ipAdapters: ['Face'], samplers: ['Euler'], generationTypes: ['txt2img']
+            };
+            const result = buildSqlWhereClause(
+                filters, false, 'blur', [], undefined, false,
+                ['models', 'tools', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'samplers', 'generationTypes']
+            );
+            expect(result.where).not.toContain('resolved_model_name = ?');
+            expect(result.where).not.toContain('image_loras');
+            expect(result.where).not.toContain('sampler = ?');
+            expect(result.params).toEqual([]);
+        });
+
+        it('allows intermediates and grids and uses Match Any for ControlNet and IP-Adapter filters', () => {
+            const result = buildSqlWhereClause({
+                ...defaultFilters,
+                showIntermediates: true,
+                showGrids: true,
+                controlNets: ['Canny', 'Depth'],
+                ipAdapters: ['Face', 'Style'],
+                matchModes: { controlNets: 'any', ipAdapters: 'any' }
+            }, false, 'blur', []);
+            expect(result.where).not.toContain('is_intermediate_gen');
+            expect(result.where).not.toContain('is_grid_gen');
+            expect(result.where).toContain('image_controlnets');
+            expect(result.where).toContain(') OR EXISTS (');
         });
 
         describe('Match Modes', () => {

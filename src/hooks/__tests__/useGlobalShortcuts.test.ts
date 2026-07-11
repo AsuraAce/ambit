@@ -190,6 +190,13 @@ describe('useGlobalShortcuts', () => {
         expect(mockActions.setSelectedImageIndex).not.toHaveBeenCalled();
     });
 
+    it('leaves the viewer closed when Space has no image target', () => {
+        renderHook(() => useGlobalShortcuts(defaultProps));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+        expect(mockActions.setSelectedImageIndex).not.toHaveBeenCalled();
+        expect(mockActions.onCloseViewer).not.toHaveBeenCalled();
+    });
+
     it('blocks select-all in maintenance and dashboard and supports Meta+A', () => {
         const images = [{ id: '1' }] as unknown as AIImage[];
         for (const viewMode of ['maintenance', 'dashboard'] as const) {
@@ -277,6 +284,14 @@ describe('useGlobalShortcuts', () => {
         list.unmount();
         renderHook(() => useGlobalShortcuts(defaultProps));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    });
+
+    it('ignores unrelated keys while grid navigation is available', () => {
+        const grid: VirtualGridHandle = { navigate: vi.fn(), scrollToItem: vi.fn() };
+        renderHook(() => useGlobalShortcuts({ ...defaultProps, gridRef: { current: grid } }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q' }));
+        expect(grid.navigate).not.toHaveBeenCalled();
+        expect(grid.scrollToItem).not.toHaveBeenCalled();
     });
 
     it('removes the global listener on unmount', () => {
