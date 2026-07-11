@@ -12,6 +12,7 @@ const commandMocks = vi.hoisted(() => ({
 
 const settingsContextMocks = vi.hoisted(() => ({
     resourceSortOptions: {} as Record<string, SidebarSortOption>,
+    resourceViewModes: { loras: 'list' } as Record<string, 'list' | 'grid'>,
     setSettings: vi.fn()
 }));
 
@@ -22,7 +23,7 @@ vi.mock('../../../../bindings', () => ({
 vi.mock('../../../../contexts/SettingsContext', () => ({
     useSettings: () => ({
         settings: {
-            resourceViewModes: { loras: 'list' },
+            resourceViewModes: settingsContextMocks.resourceViewModes,
             resourceSortOptions: settingsContextMocks.resourceSortOptions,
             maskingMode: 'blur'
         },
@@ -53,6 +54,7 @@ const filters: FilterState = {
 
 beforeEach(() => {
     settingsContextMocks.resourceSortOptions = {};
+    settingsContextMocks.resourceViewModes = { loras: 'list' };
     settingsContextMocks.setSettings.mockClear();
 });
 
@@ -591,5 +593,353 @@ describe('ResourceSection asset sorting', () => {
         });
 
         expectResourceOrder(['OlderHighUse', 'NewerLowUse']);
+    });
+});
+
+describe('ResourceSection interactions and remaining states', () => {
+    const renderBasic = (overrides: Partial<ComponentProps<typeof ResourceSection>> = {}) => {
+        const props: ComponentProps<typeof ResourceSection> = {
+            title: 'Resources',
+            type: 'loras',
+            filters,
+            setFilters: vi.fn(),
+            data: [{ name: 'Alpha', count: 3, hash: 'hash-alpha' }],
+            isOpen: true,
+            onToggle: vi.fn(),
+            ...overrides
+        };
+        return { ...render(<ResourceSection {...props} />), props };
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        commandMocks.setResourceThumbnailSensitivity.mockResolvedValue({ status: 'ok', data: null });
+        commandMocks.unsetModelThumbnail.mockResolvedValue({ status: 'ok', data: null });
+        commandMocks.clearAllThumbnails.mockResolvedValue({ status: 'ok', data: null });
+    });
+
+    it('keeps content closed and delegates header toggling', () => {
+        const { props } = renderBasic({ isOpen: false });
+        expect(screen.queryByText('Alpha')).toBeNull();
+        fireEvent.click(screen.getByText('Resources'));
+        expect(props.onToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists view mode changes and renders the configured grid view', () => {
+        const first = renderBasic();
+        fireEvent.click(screen.getByTitle('Switch to Grid View'));
+        const update = settingsContextMocks.setSettings.mock.calls[0][0];
+        expect(update({ resourceViewModes: { loras: 'list' } }).resourceViewModes.loras).toBe('grid');
+        first.unmount();
+
+        settingsContextMocks.resourceViewModes = { loras: 'grid' };
+        renderBasic({ data: [{ name: 'Grid Item', count: 2, thumbnailPath: 'thumb.webp', isLocalDisk: true }] });
+        expect(screen.getByTitle('Switch to List View')).toBeTruthy();
+        expect(screen.getByTitle('Grid Item')).toBeTruthy();
+        expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
+        expect(screen.getByLabelText('Local asset on disk')).toBeTruthy();
+    });
+
+    it('adds and removes aliased selections while preserving alias groups', () => {
+        let current: FilterState = { ...filters, loras: [] };
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const item = { name: 'Alpha', count: 3, filterAliases: ['alpha alias'] };
+        const first = renderBasic({ filters: current, setFilters, data: [item] });
+        fireEvent.click(screen.getByText('Alpha'));
+        expect(current.loras).toEqual(['Alpha']);
+        expect(current.assetFilterAliases?.loras?.Alpha).toEqual(['Alpha', 'alpha alias']);
+        first.unmount();
+
+        const second = renderBasic({ filters: current, setFilters, data: [item] });
+        fireEvent.click(screen.getByText('Alpha'));
+        expect(current.loras).toEqual([]);
+        expect(current.assetFilterAliases?.loras?.Alpha).toBeUndefined();
+        second.unmount();
+    });
+
+    it('toggles match mode between all and any', () => {
+        let current = { ...filters };
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        const first = renderBasic({ filters: current, setFilters });
+        fireEvent.click(screen.getByTitle(/Match Any/));
+        expect(current.matchModes?.loras).toBe('all');
+        first.unmount();
+
+        const second = renderBasic({ filters: current, setFilters });
+        fireEvent.click(screen.getByTitle(/Match All/));
+        expect(current.matchModes?.loras).toBe('any');
+        second.unmount();
+    });
+
+    it('opens, filters, and closes search while clearing the query', async () => {
+        renderBasic({ data: [{ name: 'Alpha', count: 2 }, { name: 'Beta', count: 1 }] });
+        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'alp' } });
+        expect(screen.getByText('Alpha')).toBeTruthy();
+        await waitFor(() => expect(screen.queryByText('Beta')).toBeNull());
+        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        expect(screen.queryByPlaceholderText('Search LoRAs...')).toBeNull();
+        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        expect((screen.getByPlaceholderText('Search LoRAs...') as HTMLInputElement).value).toBe('');
+        expect(screen.getByText('Beta')).toBeTruthy();
+    });
+
+    it('renders empty, no-match, and loading messages for every singular label', () => {
+        const types: Array<[ComponentProps<typeof ResourceSection>['type'], string]> = [
+            ['loras', 'LoRAs'], ['embeddings', 'Embeddings'], ['checkpoints', 'Checkpoints'],
+            ['controlNets', 'ControlNets'], ['ipAdapters', 'IP-Adapters'], ['hypernetworks', 'Hypernetworks']
+        ];
+        for (const [type, label] of types) {
+            const view = renderBasic({ type, data: [] });
+            expect(screen.getByText(`No ${label} found`)).toBeTruthy();
+            view.unmount();
+        }
+
+        const noMatch = renderBasic({ data: [{ name: 'Alpha', count: 1 }] });
+        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'zzz' } });
+        expect(screen.getByText('No matching LoRAs')).toBeTruthy();
+        noMatch.unmount();
+
+        renderBasic({ data: [], isLoading: true });
+        expect(screen.getByText('Loading LoRAs...')).toBeTruthy();
+    });
+
+    it('paginates resource items in batches of thirty', () => {
+        const data = Array.from({ length: 31 }, (_, index) => ({ name: `Item ${String(index).padStart(2, '0')}`, count: 31 - index }));
+        renderBasic({ data });
+        expect(screen.queryByText('Item 30')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /show more/i }));
+        expect(screen.getByText('Item 30')).toBeTruthy();
+    });
+
+    it.each([
+        ['count_asc', ['Low', 'High']],
+        ['name_asc', ['Alpha', 'Zulu']],
+        ['name_desc', ['Zulu', 'Alpha']],
+        ['recent_desc', ['Recent', 'Old']],
+        ['recent_asc', ['Old', 'Recent']],
+        ['added_asc', ['Old', 'Recent']]
+    ] as const)('sorts using %s', (sort, order) => {
+        const expectedOrder: readonly string[] = order;
+        setResourceSort(sort);
+        renderBasic({ data: [
+            { name: expectedOrder.includes('Alpha') ? 'Zulu' : 'High', count: 10, lastUsedAt: 20, createdAt: 20 },
+            { name: expectedOrder.includes('Alpha') ? 'Alpha' : 'Low', count: 1, lastUsedAt: 10, createdAt: 10 },
+            ...(expectedOrder.includes('Recent') ? [
+                { name: 'Recent', count: 2, lastUsedAt: 20, createdAt: 20 },
+                { name: 'Old', count: 2, lastUsedAt: 10, createdAt: 10 }
+            ] : [])
+        ] });
+        expectResourceOrder([...order]);
+    });
+
+    it('persists a sort selection from the dropdown', () => {
+        renderBasic();
+        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.click(screen.getByText('Name (A-Z)'));
+        const update = settingsContextMocks.setSettings.mock.calls.at(-1)?.[0];
+        expect(update({ resourceSortOptions: {} }).resourceSortOptions.loras).toBe('name_asc');
+    });
+
+    it('dismisses the context menu only for outside clicks', () => {
+        renderBasic();
+        fireEvent.contextMenu(screen.getByText('Alpha'));
+        fireEvent.mouseDown(screen.getByText('Use Preview'));
+        expect(screen.getByText('Use Preview')).toBeTruthy();
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByText('Use Preview')).toBeNull();
+    });
+
+    it.each([
+        ['checkpoints', 'name:Alpha', 'checkpoint'],
+        ['loras', 'lora_Alpha', 'loras'],
+        ['embeddings', 'emb_Alpha', 'embeddings'],
+        ['hypernetworks', 'hyper_Alpha', 'hypernetworks'],
+        ['controlNets', 'cnet_Alpha', 'control_nets'],
+        ['ipAdapters', 'ipad_Alpha', 'ip_adapters']
+    ] as const)('maps %s fallback hashes and backend types', async (type, hash, backendType) => {
+        renderBasic({
+            type,
+            data: [{ name: 'Alpha', count: 1, isManual: 1, isUserOverride: 1 }]
+        });
+        fireEvent.contextMenu(screen.getByText('Alpha'));
+        fireEvent.click(screen.getByText('Use Dynamic'));
+        await waitFor(() => expect(commandMocks.clearAllThumbnails).toHaveBeenCalledWith(hash, 'Alpha', backendType));
+    });
+
+    it('logs command failures without closing the context menu', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        commandMocks.unsetModelThumbnail.mockResolvedValueOnce({ status: 'error', error: 'preview failed' });
+        commandMocks.clearAllThumbnails.mockRejectedValueOnce(new Error('dynamic failed'));
+        commandMocks.setResourceThumbnailSensitivity.mockResolvedValueOnce({ status: 'error', error: 'privacy failed' });
+        renderBasic({ data: [{ name: 'Alpha', count: 1, isManual: 1, isUserOverride: 1 }] });
+
+        fireEvent.contextMenu(screen.getByText('Alpha'));
+        fireEvent.click(screen.getByText('Use Preview'));
+        await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to reset thumbnail', expect.any(Error)));
+        fireEvent.click(screen.getByText('Use Dynamic'));
+        await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to clear all thumbnails', expect.any(Error)));
+        fireEvent.click(screen.getByText('Mask Thumbnail'));
+        await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to update thumbnail privacy', expect.any(Error)));
+        errorSpy.mockRestore();
+    });
+
+    it('covers selected, inventory-only, sidecar, and preview-url grid items', () => {
+        settingsContextMocks.resourceViewModes = { loras: 'grid' };
+        let current = { ...filters, loras: ['selected alias'] };
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        renderBasic({
+            filters: current,
+            setFilters,
+            assetScope: 'all',
+            data: [
+                { name: 'Selected', count: 2, filterAliases: ['selected alias'], thumbnailPath: 'selected.webp' },
+                { name: 'Inventory', count: 0, isLocalDisk: true, thumbnailPath: 'sidecar.webp', thumbnailSource: 'sidecar' },
+                { name: 'Preview', count: 1, isLocalDisk: true, previewUrl: 'preview.webp', thumbnailSource: 'sidecar' },
+                { name: 'No Thumb', count: 1 }
+            ]
+        });
+
+        expect(screen.getByTitle('Inventory has no indexed library images')).toBeTruthy();
+        expect(screen.getByLabelText('Local only: no indexed library images. Preview from sidecar image.')).toBeTruthy();
+        expect(screen.getByLabelText('Local asset on disk. Preview from sidecar image.')).toBeTruthy();
+        fireEvent.click(screen.getByTitle('Selected'));
+        expect(current.loras).toEqual([]);
+        fireEvent.contextMenu(screen.getByTitle('Preview'));
+        expect(screen.getByText('Use Preview')).toBeTruthy();
+    });
+
+    it('keeps selected zero-count resources visible while excluding invalid and unavailable assets', () => {
+        renderBasic({
+            filters: { ...filters, loras: ['SelectedZero'] },
+            assetScope: 'used',
+            validNames: ['Allowed'],
+            data: [
+                { name: 'SelectedZero', count: 0 },
+                { name: 'Allowed', count: 1 },
+                { name: 'Rejected', count: 1 },
+                { name: 'UnusedLocal', count: 0, isLocalDisk: true }
+            ]
+        });
+        expect(screen.getByText('SelectedZero')).toBeTruthy();
+        expect(screen.getByText('Allowed')).toBeTruthy();
+        expect(screen.queryByText('Rejected')).toBeNull();
+        expect(screen.queryByText('UnusedLocal')).toBeNull();
+    });
+
+    it('excludes nonlocal unused resources from all scope', () => {
+        const first = renderBasic({
+            assetScope: 'all',
+            data: [{ name: 'Unavailable', count: 0 }, { name: 'Local', count: 0, isLocalDisk: true }]
+        });
+        expect(screen.queryByText('Unavailable')).toBeNull();
+        expect(screen.getByText('Local')).toBeTruthy();
+        first.unmount();
+    });
+
+    it('uses zero and alternate date fallbacks for recent and added sorting', () => {
+        setResourceSort('recent_desc');
+        const first = renderBasic({ data: [
+            { name: 'No Recent', count: 1 },
+            { name: 'Has Recent', count: 1, lastUsedAt: 10 }
+        ] });
+        expectResourceOrder(['Has Recent', 'No Recent']);
+        first.unmount();
+
+        setResourceSort('recent_asc');
+        const second = renderBasic({ data: [
+            { name: 'No Recent', count: 1 },
+            { name: 'Has Recent', count: 1, lastUsedAt: 10 }
+        ] });
+        expectResourceOrder(['No Recent', 'Has Recent']);
+        second.unmount();
+
+        setResourceSort('added_desc');
+        const third = renderBasic({ assetScope: 'all', data: [
+            { name: 'Created Fallback', count: 0, isLocalDisk: true, createdAt: 20 },
+            { name: 'Modified Fallback', count: 1, localModifiedAt: 10 },
+            { name: 'No Date', count: 1 }
+        ] });
+        expectResourceOrder(['Created Fallback', 'Modified Fallback', 'No Date']);
+        third.unmount();
+    });
+
+    it('renders context action enabled and disabled states from thumbnail metadata', () => {
+        renderBasic({ data: [{
+            name: 'Alpha', count: 1, isManual: 0, hasSidecar: 1, isUserOverride: 0,
+            thumbnailSensitivityOverride: 0
+        }] });
+        fireEvent.contextMenu(screen.getByText('Alpha'));
+        expect((screen.getByText('Use Preview').closest('button') as HTMLButtonElement).disabled).toBe(false);
+        expect((screen.getByText('Use Dynamic').closest('button') as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByText('Always Show Thumbnail').closest('button') as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByText('Reset Thumbnail Privacy').closest('button') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('persists grid-to-list switching', () => {
+        settingsContextMocks.resourceViewModes = { loras: 'grid' };
+        renderBasic();
+        fireEvent.click(screen.getByTitle('Switch to List View'));
+        const update = settingsContextMocks.setSettings.mock.calls[0][0];
+        expect(update({ resourceViewModes: { loras: 'grid' } }).resourceViewModes.loras).toBe('list');
+    });
+
+    it('defaults absent filter arrays while adding a selection', () => {
+        const sparse = { ...filters } as Partial<FilterState>;
+        delete sparse.loras;
+        let current = sparse as FilterState;
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
+        renderBasic({ filters: current, setFilters });
+        fireEvent.click(screen.getByText('Alpha'));
+        expect(current.loras).toEqual(['Alpha']);
+    });
+
+    it('sorts missing recent and local added dates with name tie-breakers', () => {
+        setResourceSort('recent_desc');
+        const first = renderBasic({ data: [{ name: 'Beta', count: 1 }, { name: 'Alpha', count: 1 }] });
+        expectResourceOrder(['Alpha', 'Beta']);
+        first.unmount();
+
+        setResourceSort('recent_asc');
+        const second = renderBasic({ data: [{ name: 'Beta', count: 1 }, { name: 'Alpha', count: 1 }] });
+        expectResourceOrder(['Alpha', 'Beta']);
+        second.unmount();
+
+        setResourceSort('added_desc');
+        const third = renderBasic({ assetScope: 'local', data: [
+            { name: 'Beta', count: 0, isLocalDisk: true },
+            { name: 'Alpha', count: 0, isLocalDisk: true }
+        ] });
+        expectResourceOrder(['Alpha', 'Beta']);
+        third.unmount();
+    });
+
+    it('renders checkpoint names and pagination states in grid mode', () => {
+        settingsContextMocks.resourceViewModes = { checkpoints: 'grid', loras: 'grid' };
+        const checkpoint = renderBasic({ type: 'checkpoints', data: [{ name: 'model.safetensors', count: 1 }] });
+        expect(screen.getByTitle('model.safetensors')).toBeTruthy();
+        checkpoint.unmount();
+
+        const many = renderBasic({ data: Array.from({ length: 31 }, (_, index) => ({ name: `Grid ${index}`, count: 31 - index })) });
+        expect(screen.getByRole('button', { name: /show more/i }).className).toContain('col-span-3');
+        many.unmount();
+
+        const empty = renderBasic({ data: [] });
+        expect(screen.getByText('No LoRAs found').className).toContain('col-span-3');
+        empty.unmount();
+
+        renderBasic({ data: [], isLoading: true });
+        expect(screen.getByText('Loading LoRAs...').parentElement?.className).toContain('col-span-3');
+    });
+
+    it('handles a dynamic-thumbnail status error', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        commandMocks.clearAllThumbnails.mockResolvedValueOnce({ status: 'error', error: 'dynamic status failed' });
+        renderBasic({ data: [{ name: 'Alpha', count: 1, isManual: 1 }] });
+        fireEvent.contextMenu(screen.getByText('Alpha'));
+        fireEvent.click(screen.getByText('Use Dynamic'));
+        await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to clear all thumbnails', expect.any(Error)));
+        errorSpy.mockRestore();
     });
 });

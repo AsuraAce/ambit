@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useCollectionOperations } from '../useCollectionOperations';
 import { AIImage, Collection, FilterState, SmartCollection } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
+import { QueryClient } from '@tanstack/react-query';
 
 // --- Mocks ---
 
@@ -44,6 +45,9 @@ describe('useCollectionOperations', () => {
     const mockRefreshCollections = vi.fn();
     const mockSetFilters = vi.fn();
     const mockSetImages = vi.fn();
+    let dispatchedCollections: Collection[];
+    let dispatchedFilters: FilterState;
+    let dispatchedImages: AIImage[];
 
     const mockCollections: Collection[] = [
         { id: 'col1', name: 'Collection 1', createdAt: 100, source: 'ambit', count: 5, imageIds: ['img1'] },
@@ -84,6 +88,18 @@ describe('useCollectionOperations', () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        dispatchedCollections = [...mockCollections];
+        dispatchedFilters = createDefaultFilters();
+        dispatchedImages = [makeImage({ id: 'img1' }), makeImage({ id: 'img2' })];
+        mockSetAllCollections.mockImplementation((update: React.SetStateAction<Collection[]>) => {
+            dispatchedCollections = typeof update === 'function' ? update(dispatchedCollections) : update;
+        });
+        mockSetFilters.mockImplementation((update: React.SetStateAction<FilterState>) => {
+            dispatchedFilters = typeof update === 'function' ? update(dispatchedFilters) : update;
+        });
+        mockSetImages.mockImplementation((update: React.SetStateAction<AIImage[]>) => {
+            dispatchedImages = typeof update === 'function' ? update(dispatchedImages) : update;
+        });
         const collectionRepo = await import('../../services/db/collectionRepo');
         (collectionRepo.upsertCollection as any).mockResolvedValue(undefined);
         (collectionRepo.deleteCollectionFromDb as any).mockResolvedValue(undefined);
@@ -622,5 +638,188 @@ describe('useCollectionOperations', () => {
             expect(mockRefreshCollections).toHaveBeenCalledWith(true);
             expect(mockAddToast).toHaveBeenCalledWith('Thumbnail reset', 'info');
         });
+    });
+
+    it('no-ops every collection mutation when its collection is missing', async () => {
+        const { result } = renderHook(() => useCollectionOperations(props));
+        await act(async () => {
+            await result.current.updateCollectionFilters('missing', smartFilters);
+            await result.current.deleteCollection('missing');
+            await result.current.renameCollection('missing', 'Name');
+            await result.current.setCollectionColor('missing', 'red');
+            await result.current.toggleArchiveCollection('missing');
+            await result.current.togglePinCollection('missing');
+            await result.current.addImagesToCollection(['img1'], 'missing');
+            await result.current.removeImagesFromCollection(['img1'], 'missing');
+            await result.current.moveImagesBetweenCollections(['img1'], 'missing', 'col1');
+            await result.current.moveImagesBetweenCollections(['img1'], 'col1', 'missing');
+        });
+        expect(mockSetAllCollections).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes self-referencing smart filters and converts collections to static', async () => {
+        const { upsertCollection } = await import('../../services/db/collectionRepo');
+        const { result } = renderHook(() => useCollectionOperations(props));
+        await act(async () => result.current.updateCollectionFilters('col1', { ...smartFilters, collectionId: 'col1' }));
+        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ collectionId: null }) }));
+        expect(mockRefreshSmartCounts).toHaveBeenCalledWith(expect.objectContaining({ collectionIds: ['col1'] }));
+
+        await act(async () => result.current.updateCollectionFilters('col1', undefined));
+        expect(mockAddToast).toHaveBeenCalledWith('Collection converted to static', 'success');
+    });
+
+    it('keeps unrelated entries during successful and failed scalar updates', async () => {
+        const { upsertCollection } = await import('../../services/db/collectionRepo');
+        const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        const multiProps = { ...props, collections: [...mockCollections, extra] };
+        dispatchedCollections = [...multiProps.collections];
+        const { result } = renderHook(() => useCollectionOperations(multiProps));
+        await act(async () => result.current.renameCollection('col1', 'Renamed'));
+        await act(async () => result.current.setCollectionColor('col1', undefined));
+        await act(async () => result.current.togglePinCollection('col1'));
+        vi.mocked(upsertCollection).mockRejectedValueOnce(new Error('archive failed'));
+        await act(async () => result.current.toggleArchiveCollection('col1'));
+        expect(dispatchedCollections.find(collection => collection.id === 'extra')).toBeTruthy();
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to update archive status', 'error');
+    });
+
+    it('unarchives collections and exercises zero-count add, remove, and move calculations', async () => {
+        const archived = { ...mockCollections[0], count: 0, isArchived: true };
+        const target = { id: 'target', name: 'Target', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [archived, target] }));
+        await act(async () => result.current.toggleArchiveCollection('col1'));
+        expect(mockAddToast).toHaveBeenCalledWith('Collection unarchived', 'info');
+        await act(async () => result.current.addImagesToCollection(['a'], 'col1'));
+        await act(async () => result.current.removeImagesFromCollection(['a', 'b'], 'col1'));
+        await act(async () => result.current.moveImagesBetweenCollections(['a'], 'col1', 'target'));
+        expect(mockAddToast).toHaveBeenCalledWith('Moved images to Target', 'success');
+    });
+
+    it('uses the smart-save alias and supports image URL thumbnail fallback', async () => {
+        const { result } = renderHook(() => useCollectionOperations(props));
+        await act(async () => result.current.saveSmartCollection('Saved Smart', smartFilters));
+        expect(mockAddToast).toHaveBeenCalledWith('Collection "Saved Smart" created', 'success');
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage({ thumbnailUrl: '' })));
+        const thumbnailUpdater = mockSetAllCollections.mock.calls.at(-1)?.[0] as (collections: Collection[]) => Collection[];
+        expect(thumbnailUpdater(mockCollections)[0].thumbnail).toBe('asset://C:/images/img2.png');
+    });
+
+    it('logs background thumbnail reconciliation and invalidation failures', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries').mockRejectedValue(new Error('invalidate failed'));
+        mockRefreshCollections.mockRejectedValue(new Error('refresh failed'));
+        const collectionsWithThumbnail = [{ ...mockCollections[0], customThumbnail: 'img2' }];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: collectionsWithThumbnail }));
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage()));
+        await act(async () => Promise.resolve());
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to reconcile collection thumbnail state', expect.any(Error));
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to invalidate image queries after thumbnail update', expect.any(Error));
+
+        await act(async () => result.current.resetCollectionThumbnail('col1'));
+        await act(async () => Promise.resolve());
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to reconcile collection thumbnail reset', expect.any(Error));
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to invalidate image queries after thumbnail reset', expect.any(Error));
+        invalidateSpy.mockRestore();
+        errorSpy.mockRestore();
+    });
+
+    it('rolls back failed adds while preserving unrelated collections', async () => {
+        const { addImagesToCollection } = await import('../../services/db/collectionRepo');
+        vi.mocked(addImagesToCollection).mockRejectedValueOnce(new Error('add failed'));
+        const zero = { ...mockCollections[0], count: 0 };
+        const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        dispatchedCollections = [zero, extra];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [zero, extra] }));
+        await act(async () => result.current.addImagesToCollection(['img'], 'col1'));
+        expect(dispatchedCollections).toEqual([zero, extra]);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to add to collection', 'error');
+    });
+
+    it('updates non-self filters and rolls them back alongside unrelated collections', async () => {
+        const { upsertCollection } = await import('../../services/db/collectionRepo');
+        const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        dispatchedCollections = [...mockCollections, extra];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [...mockCollections, extra] }));
+        await act(async () => result.current.updateCollectionFilters('col1', { ...smartFilters, collectionId: 'extra' }));
+        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ collectionId: 'extra' }) }));
+
+        vi.mocked(upsertCollection).mockRejectedValueOnce(new Error('filters failed'));
+        await act(async () => result.current.updateCollectionFilters('col1', smartFilters));
+        expect(dispatchedCollections.find(collection => collection.id === 'extra')).toBeTruthy();
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to update filters', 'error');
+    });
+
+    it('uses empty exclusion and count fallbacks when removing from an inactive smart collection', async () => {
+        const smart: SmartCollection = {
+            id: 'smart', name: 'Smart', createdAt: 1, source: 'ambit', count: 0, imageIds: [], filters: smartFilters
+        };
+        dispatchedCollections = [smart];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [], smartCollections: [smart], activeCollectionId: null }));
+        await act(async () => result.current.removeImagesFromCollection(['img'], 'smart'));
+        const { upsertCollection } = await import('../../services/db/collectionRepo');
+        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ manualExclusions: ['img'] }));
+        expect(mockSetImages).not.toHaveBeenCalled();
+    });
+
+    it('rolls back both ends of a failed move with zero-count fallbacks', async () => {
+        const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
+        vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('move failed'));
+        const source = { ...mockCollections[0], count: 0 };
+        const target = { id: 'target', name: 'Target', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        const extra = { id: 'extra', name: 'Extra', createdAt: 3, source: 'ambit' as const, count: 1, imageIds: [] };
+        dispatchedCollections = [source, target, extra];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [source, target, extra], activeCollectionId: null }));
+        await act(async () => result.current.moveImagesBetweenCollections(['img'], 'col1', 'target'));
+        expect(dispatchedCollections).toEqual([source, target, extra]);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
+    });
+
+    it('preserves unrelated collections in thumbnail set and reset updaters', async () => {
+        const target = { ...mockCollections[0], customThumbnail: 'old' };
+        const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        dispatchedCollections = [target, extra];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [target, extra] }));
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage()));
+        expect(dispatchedCollections.find(collection => collection.id === 'extra')).toBeTruthy();
+        await act(async () => result.current.resetCollectionThumbnail('col1'));
+        expect(dispatchedCollections.find(collection => collection.id === 'extra')).toBeTruthy();
+    });
+
+    it('preserves unrelated collections across every remaining rollback path', async () => {
+        const repo = await import('../../services/db/collectionRepo');
+        const target = { ...mockCollections[0], customThumbnail: 'old' };
+        const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        const resetState = () => { dispatchedCollections = [target, extra]; };
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [target, extra] }));
+
+        resetState();
+        vi.mocked(repo.upsertCollection).mockRejectedValueOnce(new Error('rename'));
+        await act(async () => result.current.renameCollection('col1', 'Renamed'));
+        expect(dispatchedCollections[1]).toBe(extra);
+
+        resetState();
+        vi.mocked(repo.upsertCollection).mockRejectedValueOnce(new Error('color'));
+        await act(async () => result.current.setCollectionColor('col1', 'red'));
+        expect(dispatchedCollections[1]).toBe(extra);
+
+        resetState();
+        vi.mocked(repo.upsertCollection).mockRejectedValueOnce(new Error('pin'));
+        await act(async () => result.current.togglePinCollection('col1'));
+        expect(dispatchedCollections[1]).toBe(extra);
+
+        resetState();
+        vi.mocked(repo.removeImagesFromCollection).mockRejectedValueOnce(new Error('remove'));
+        await act(async () => result.current.removeImagesFromCollection(['img'], 'col1'));
+        expect(dispatchedCollections[1]).toBe(extra);
+
+        resetState();
+        vi.mocked(repo.setCollectionCustomThumbnail).mockRejectedValueOnce(new Error('thumbnail'));
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage()))
+        expect(dispatchedCollections[1]).toBe(extra);
+
+        resetState();
+        vi.mocked(repo.setCollectionCustomThumbnail).mockRejectedValueOnce(new Error('reset'));
+        await act(async () => result.current.resetCollectionThumbnail('col1'));
+        expect(dispatchedCollections[1]).toBe(extra);
     });
 });

@@ -115,7 +115,7 @@ export const useImportOps = ({
         });
         if (!importRunId) {
             addToast('Import already in progress', 'info');
-            if (e.target) e.target.value = "";
+            e.target.value = "";
             return;
         }
 
@@ -139,7 +139,7 @@ export const useImportOps = ({
             addToast("Import failed", "error");
         } finally {
             finishImportRun(importRunId);
-            if (e.target) e.target.value = "";
+            e.target.value = "";
         }
     }, [beginImportRun, setImportProgressForRun, finishImportRun, extractNativePaths, commitImportResult, addToast]);
 

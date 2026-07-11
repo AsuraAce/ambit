@@ -118,7 +118,6 @@ export const MetadataInfoTab = ({
     };
 
     const hasModifications = () => {
-        if (!image.originalMetadata || isLoading) return false;
         return (
             isModified('positivePrompt') ||
             isModified('negativePrompt')
@@ -136,11 +135,9 @@ export const MetadataInfoTab = ({
     };
 
     const handleCopyWorkflow = () => {
-        if (image.metadata.workflowJson) {
-            navigator.clipboard.writeText(image.metadata.workflowJson);
-            setCopiedWorkflow(true);
-            setTimeout(() => setCopiedWorkflow(false), 2000);
-        }
+        navigator.clipboard.writeText(image.metadata.workflowJson!);
+        setCopiedWorkflow(true);
+        setTimeout(() => setCopiedWorkflow(false), 2000);
     };
 
     const handleCopyGenData = () => {
