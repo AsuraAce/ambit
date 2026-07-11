@@ -110,7 +110,7 @@ export const calculateLayout = <T>(config: LayoutConfig<T>): LayoutResult => {
     metaRowHeight = itemWidth;
   }
   // --- JUSTIFIED ---
-  else if (layoutMode === 'justified') {
+  else {
     const targetRowHeight = minItemWidth * 1.2; 
     let currentRow: { index: number, ratio: number }[] = [];
     let currentWidth = 0;

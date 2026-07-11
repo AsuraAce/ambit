@@ -312,7 +312,7 @@ describe('VirtualGrid gallery motion', () => {
     });
 
     it('navigates sequentially and spatially with boundary protection', async () => {
-        const { container } = createScrollContainer(300);
+        const { container, scrollTo } = createScrollContainer(300);
         const scrollContainerRef = { current: container };
         const gridRef = React.createRef<VirtualGridHandle>();
 
@@ -345,6 +345,10 @@ describe('VirtualGrid gallery motion', () => {
         expect(container.scrollTo).not.toHaveBeenCalled();
         act(() => gridRef.current?.scrollToItem(-1));
         expect(container.scrollTo).not.toHaveBeenCalled();
+
+        container.scrollTop = 500;
+        act(() => gridRef.current?.scrollToItem(0));
+        expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
     });
 
     it('handles an empty layout and a missing scroll container safely', async () => {
@@ -463,8 +467,101 @@ describe('VirtualGrid gallery motion', () => {
 
         await new Promise(resolve => window.setTimeout(resolve, 40));
         act(() => emitResize(observedResizeTarget as Element, Number.NaN));
+        await new Promise(resolve => window.setTimeout(resolve, 10));
+        await new Promise(resolve => window.setTimeout(resolve, 40));
         act(() => emitResize(observedResizeTarget as Element, 550));
+        await new Promise(resolve => window.setTimeout(resolve, 10));
         expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('0px, 110px');
+    });
+
+    it('handles empty resize observations and clears scroll-motion suppression', async () => {
+        const { container } = createScrollContainer();
+        const scrollContainerRef = { current: container };
+        render(
+            <VirtualGrid<TestItem>
+                items={createItems(12)}
+                layout="grid"
+                minItemWidth={100}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+            />
+        );
+        await screen.findByTestId('grid-item-item-0');
+        const root = getGridRoot();
+        Object.defineProperty(root, 'offsetTop', { value: 75, configurable: true });
+
+        act(() => resizeObserverCallback?.([], resizeObserverInstance as ResizeObserver));
+        act(() => container.dispatchEvent(new Event('scroll')));
+        act(() => container.dispatchEvent(new Event('scroll')));
+        await new Promise(resolve => window.setTimeout(resolve, 150));
+
+        expect(screen.getByTestId('grid-item-item-0')).toBeTruthy();
+    });
+
+    it('replaces queued resize frames and defers their width while suspended', async () => {
+        let nextFrameId = 1;
+        const frameCallbacks = new Map<number, FrameRequestCallback>();
+        const cancelFrame = vi.fn((id: number) => frameCallbacks.delete(id));
+        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+            const id = nextFrameId++;
+            frameCallbacks.set(id, callback);
+            return id;
+        }));
+        vi.stubGlobal('cancelAnimationFrame', cancelFrame);
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+        const { container } = createScrollContainer();
+        const scrollContainerRef = { current: container };
+        const items = createItems(12);
+        const { rerender } = render(
+            <VirtualGrid<TestItem>
+                items={items}
+                layout="grid"
+                minItemWidth={100}
+                gap={0}
+                padding={0}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+            />
+        );
+
+        now.mockReturnValue(1040);
+        act(() => emitResize(observedResizeTarget as Element, 500));
+        expect(cancelFrame).toHaveBeenCalled();
+        act(() => emitResize(observedResizeTarget as Element, 501));
+
+        rerender(
+            <VirtualGrid<TestItem>
+                items={items}
+                layout="grid"
+                minItemWidth={100}
+                gap={0}
+                padding={0}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+                suspendResizeLayout
+            />
+        );
+        act(() => {
+            for (const [id, callback] of [...frameCallbacks]) {
+                frameCallbacks.delete(id);
+                callback(performance.now());
+            }
+        });
+        rerender(
+            <VirtualGrid<TestItem>
+                items={items}
+                layout="grid"
+                minItemWidth={100}
+                gap={0}
+                padding={0}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+                suspendResizeLayout={false}
+            />
+        );
+
+        await waitFor(() => expect(screen.getByTestId('grid-item-item-5').style.transform).toContain('0px, 100px'));
+        now.mockRestore();
     });
 
     it('supports background clicks and additive drag-range selection', async () => {
@@ -540,5 +637,54 @@ describe('VirtualGrid gallery motion', () => {
         fireEvent.mouseUp(window);
 
         expect(onBackgroundClick).not.toHaveBeenCalled();
+    });
+
+    it('tolerates missing selection callbacks and refs lost before queued movement', async () => {
+        const { container } = createScrollContainer();
+        const scrollContainerRef: React.RefObject<HTMLElement | null> = { current: container };
+        const addedListeners = new Map<string, EventListener>();
+        const addListener = vi.spyOn(window, 'addEventListener').mockImplementation((type, listener) => {
+            if (type === 'mousemove' || type === 'mouseup') {
+                addedListeners.set(type, listener as EventListener);
+            }
+        });
+        const { unmount } = render(
+            <VirtualGrid<TestItem>
+                items={createItems(2)}
+                layout="grid"
+                minItemWidth={100}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+            />
+        );
+        await screen.findByTestId('grid-item-item-0');
+        const root = getGridRoot();
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(gridRect());
+
+        fireEvent.mouseDown(root, { button: 0, clientX: 10, clientY: 10 });
+        addedListeners.get('mouseup')?.(new MouseEvent('mouseup'));
+
+        fireEvent.mouseDown(root, { button: 0, clientX: 10, clientY: 10 });
+        unmount();
+        scrollContainerRef.current = null;
+        addedListeners.get('mousemove')?.(new MouseEvent('mousemove', { clientX: 30, clientY: 30 }));
+
+        expect(addListener).toHaveBeenCalled();
+    });
+
+    it('does not begin background selection without a scroll container', async () => {
+        const scrollContainerRef: React.RefObject<HTMLElement | null> = { current: null };
+        const { container } = render(
+            <VirtualGrid<TestItem>
+                items={[]}
+                layout="grid"
+                minItemWidth={100}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+            />
+        );
+
+        fireEvent.mouseDown(container.firstElementChild as Element, { button: 0 });
+        expect(container.firstElementChild).toBeTruthy();
     });
 });

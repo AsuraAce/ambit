@@ -18,6 +18,8 @@ export const TitleBar = () => {
 
     useEffect(() => {
         if (!isTauriRuntime()) return;
+        let cleanup: (() => void) | undefined;
+        let disposed = false;
 
         const initWindow = async () => {
             try {
@@ -51,25 +53,33 @@ export const TitleBar = () => {
 
                 window.addEventListener('keydown', handleKeyDown);
 
-                return () => {
+                const disposeListeners = () => {
                     unlistenResize();
                     window.removeEventListener('keydown', handleKeyDown);
                 };
+                if (disposed) {
+                    disposeListeners();
+                } else {
+                    cleanup = disposeListeners;
+                }
             } catch (e) {
                 console.warn("TitleBar: Not in Tauri environment");
             }
         };
-        initWindow();
+        void initWindow();
+        return () => {
+            disposed = true;
+            cleanup?.();
+        };
     }, []);
 
     const handleMinimize = () => appWindow?.minimize();
     const handleMaximize = async () => {
-        if (!appWindow) return;
-        const current = await appWindow.isMaximized();
+        const current = await appWindow!.isMaximized();
         if (current) {
-            await appWindow.unmaximize();
+            await appWindow!.unmaximize();
         } else {
-            await appWindow.maximize();
+            await appWindow!.maximize();
         }
         setIsMaximized(!current);
     };

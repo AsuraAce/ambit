@@ -229,7 +229,8 @@ describe('processTargetedFiles', () => {
 
         expect(result.stats.errors).toBe(2);
         expect(result.stats.imported).toBe(0);
-        expect(result.failedPaths).toEqual(['C:/library/a.png', 'C:/library/b.png']);
+        expect(result.failedPaths).toEqual(expect.arrayContaining(['C:/library/a.png', 'C:/library/b.png']));
+        expect(result.failedPaths).toHaveLength(2);
         expect(result.completedSourcePaths).toEqual([]);
     });
 

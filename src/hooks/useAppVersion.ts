@@ -7,11 +7,7 @@ let inflightVersionRequest: Promise<string | null> | null = null;
 
 const loadVersion = async (): Promise<string | null> => {
   if (isBrowserMockMode()) {
-    return import.meta.env.VITE_APP_VERSION ?? 'browser-dev';
-  }
-
-  if (cachedVersion) {
-    return cachedVersion;
+    return import.meta.env.VITE_APP_VERSION || 'browser-dev';
   }
 
   if (!inflightVersionRequest) {

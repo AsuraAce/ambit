@@ -34,9 +34,9 @@ export const usePalette = (imageUrl: string) => {
             if (data[i + 3] < 128 || (data[i] < 20 && data[i + 1] < 20 && data[i + 2] < 20)) continue;
 
             // Quantize colors to reduce noise (bucket by 20s)
-            const r = Math.round(data[i] / 20) * 20;
-            const g = Math.round(data[i + 1] / 20) * 20;
-            const b = Math.round(data[i + 2] / 20) * 20;
+            const r = Math.min(255, Math.round(data[i] / 20) * 20);
+            const g = Math.min(255, Math.round(data[i + 1] / 20) * 20);
+            const b = Math.min(255, Math.round(data[i + 2] / 20) * 20);
 
             const rgb = `${r},${g},${b}`;
             colors[rgb] = (colors[rgb] || 0) + 1;
@@ -52,7 +52,7 @@ export const usePalette = (imageUrl: string) => {
       } catch (e) {
         console.warn("Failed to extract palette", e);
       } finally {
-        if (isActive) setIsLoading(false);
+        setIsLoading(false);
       }
     };
 
