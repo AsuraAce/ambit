@@ -464,7 +464,7 @@ pub fn extract_png_chunks<R: Read + Seek>(
     Ok(chunks)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum TiffEndian {
     Little,
     Big,
@@ -498,19 +498,106 @@ fn tiff_type_size(field_type: u16) -> Option<usize> {
     }
 }
 
+fn clean_user_comment_text(text: &str) -> String {
+    text.trim_matches('\0').trim().replace('\0', "")
+}
+
+fn has_recognizable_metadata_shape(text: &str) -> bool {
+    if text.contains("Steps: ") {
+        return true;
+    }
+
+    let mut recognized_chunks = HashMap::new();
+    normalize_metadata_text(&mut recognized_chunks, text, None);
+    !recognized_chunks.is_empty()
+}
+
+fn decode_utf16_user_comment(payload: &[u8], endian: TiffEndian) -> Option<String> {
+    if payload.len() % 2 != 0 {
+        return None;
+    }
+
+    let code_units = payload.chunks_exact(2).map(|chunk| match endian {
+        TiffEndian::Little => u16::from_le_bytes([chunk[0], chunk[1]]),
+        TiffEndian::Big => u16::from_be_bytes([chunk[0], chunk[1]]),
+    });
+
+    String::from_utf16(&code_units.collect::<Vec<_>>())
+        .ok()
+        .map(|text| clean_user_comment_text(&text))
+}
+
+fn infer_utf16_endian(payload: &[u8]) -> Option<TiffEndian> {
+    let mut big_endian_ascii_pairs = 0usize;
+    let mut little_endian_ascii_pairs = 0usize;
+
+    for pair in payload.chunks_exact(2).take(512) {
+        match pair {
+            [0, value] if matches!(*value, b'\t' | b'\n' | b'\r' | b' '..=b'~') => {
+                big_endian_ascii_pairs += 1;
+            }
+            [value, 0] if matches!(*value, b'\t' | b'\n' | b'\r' | b' '..=b'~') => {
+                little_endian_ascii_pairs += 1;
+            }
+            _ => {}
+        }
+    }
+
+    if big_endian_ascii_pairs >= 2
+        && big_endian_ascii_pairs > little_endian_ascii_pairs.saturating_mul(2)
+    {
+        Some(TiffEndian::Big)
+    } else if little_endian_ascii_pairs >= 2
+        && little_endian_ascii_pairs > big_endian_ascii_pairs.saturating_mul(2)
+    {
+        Some(TiffEndian::Little)
+    } else {
+        None
+    }
+}
+
 fn decode_user_comment(raw: &[u8], endian: TiffEndian) -> Option<String> {
     if raw.starts_with(b"UNICODE\0") {
         let payload = &raw[8..];
-        let u16_vec: Vec<u16> = payload
-            .chunks_exact(2)
-            .map(|chunk| match endian {
-                TiffEndian::Little => u16::from_le_bytes([chunk[0], chunk[1]]),
-                TiffEndian::Big => u16::from_be_bytes([chunk[0], chunk[1]]),
-            })
-            .collect();
-        return String::from_utf16(&u16_vec)
+
+        if let Some(bom_payload) = payload.strip_prefix(&[0xFE, 0xFF]) {
+            return decode_utf16_user_comment(bom_payload, TiffEndian::Big);
+        }
+        if let Some(bom_payload) = payload.strip_prefix(&[0xFF, 0xFE]) {
+            return decode_utf16_user_comment(bom_payload, TiffEndian::Little);
+        }
+
+        let utf8_candidate = std::str::from_utf8(payload)
             .ok()
-            .map(|s| s.trim_end_matches('\0').trim().replace('\0', ""));
+            .map(clean_user_comment_text);
+        if payload.len() % 2 != 0 {
+            return utf8_candidate;
+        }
+
+        let inferred_endian = infer_utf16_endian(payload);
+        let utf16_candidate = decode_utf16_user_comment(payload, endian);
+        if inferred_endian == Some(endian) && utf16_candidate.is_some() {
+            return utf16_candidate;
+        }
+
+        let inferred_candidate = inferred_endian
+            .filter(|inferred| *inferred != endian)
+            .and_then(|inferred| decode_utf16_user_comment(payload, inferred));
+
+        if inferred_candidate
+            .as_deref()
+            .is_some_and(has_recognizable_metadata_shape)
+        {
+            return inferred_candidate;
+        }
+        if utf8_candidate
+            .as_deref()
+            .is_some_and(has_recognizable_metadata_shape)
+        {
+            return utf8_candidate;
+        }
+
+        return utf16_candidate.or(inferred_candidate).or(utf8_candidate);
     }
 
     let payload = if raw.starts_with(b"ASCII\0\0\0") {
@@ -519,12 +606,7 @@ fn decode_user_comment(raw: &[u8], endian: TiffEndian) -> Option<String> {
         raw
     };
 
-    Some(
-        String::from_utf8_lossy(payload)
-            .trim_matches('\0')
-            .trim()
-            .replace('\0', ""),
-    )
+    Some(clean_user_comment_text(&String::from_utf8_lossy(payload)))
 }
 
 fn decode_exif_string(
@@ -695,7 +777,7 @@ mod tests {
         jpeg
     }
 
-    fn exif_user_comment_payload(comment: &[u8]) -> Vec<u8> {
+    fn exif_user_comment_raw_payload(comment: &[u8]) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(b"Exif\0\0");
         payload.extend_from_slice(b"II");
@@ -705,7 +787,7 @@ mod tests {
         payload.extend_from_slice(&1u16.to_le_bytes());
         payload.extend_from_slice(&0x9286u16.to_le_bytes());
         payload.extend_from_slice(&7u16.to_le_bytes());
-        payload.extend_from_slice(&((8 + comment.len()) as u32).to_le_bytes());
+        payload.extend_from_slice(&(comment.len() as u32).to_le_bytes());
         payload.extend_from_slice(&30u32.to_le_bytes());
         payload.extend_from_slice(&0u32.to_le_bytes());
 
@@ -713,9 +795,29 @@ mod tests {
             payload.push(0);
         }
 
-        payload.extend_from_slice(b"ASCII\0\0\0");
         payload.extend_from_slice(comment);
         payload
+    }
+
+    fn exif_user_comment_payload(comment: &[u8]) -> Vec<u8> {
+        let mut tagged_comment = b"ASCII\0\0\0".to_vec();
+        tagged_comment.extend_from_slice(comment);
+        exif_user_comment_raw_payload(&tagged_comment)
+    }
+
+    fn unicode_user_comment(payload: &[u8]) -> Vec<u8> {
+        let mut comment = b"UNICODE\0".to_vec();
+        comment.extend_from_slice(payload);
+        comment
+    }
+
+    fn utf16_bytes(text: &str, endian: TiffEndian) -> Vec<u8> {
+        text.encode_utf16()
+            .flat_map(|code_unit| match endian {
+                TiffEndian::Little => code_unit.to_le_bytes(),
+                TiffEndian::Big => code_unit.to_be_bytes(),
+            })
+            .collect()
     }
 
     fn exif_ascii_tags_payload(tags: &[(u16, &str)]) -> Vec<u8> {
@@ -844,6 +946,119 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_user_comment_infers_utf16_endian_independently_of_tiff() {
+        let text = "Steps: 4, Sampler: Euler, Character: \u{4e2d}, Emoji: \u{1f680}";
+
+        let big_endian = unicode_user_comment(&utf16_bytes(text, TiffEndian::Big));
+        assert_eq!(
+            decode_user_comment(&big_endian, TiffEndian::Little).as_deref(),
+            Some(text),
+            "CivitAI-style UTF-16BE comments must not inherit little-endian TIFF order"
+        );
+
+        let little_endian = unicode_user_comment(&utf16_bytes(text, TiffEndian::Little));
+        assert_eq!(
+            decode_user_comment(&little_endian, TiffEndian::Big).as_deref(),
+            Some(text),
+            "UTF-16LE comments must not inherit big-endian TIFF order"
+        );
+    }
+
+    #[test]
+    fn test_decode_user_comment_bom_overrides_tiff_endian() {
+        let text = "BOM metadata \u{4e2d}";
+
+        let mut big_endian_payload = vec![0xFE, 0xFF];
+        big_endian_payload.extend_from_slice(&utf16_bytes(text, TiffEndian::Big));
+        let big_endian = unicode_user_comment(&big_endian_payload);
+        assert_eq!(
+            decode_user_comment(&big_endian, TiffEndian::Little).as_deref(),
+            Some(text)
+        );
+
+        let mut little_endian_payload = vec![0xFF, 0xFE];
+        little_endian_payload.extend_from_slice(&utf16_bytes(text, TiffEndian::Little));
+        let little_endian = unicode_user_comment(&little_endian_payload);
+        assert_eq!(
+            decode_user_comment(&little_endian, TiffEndian::Big).as_deref(),
+            Some(text)
+        );
+    }
+
+    #[test]
+    fn test_decode_user_comment_accepts_utf8_behind_unicode_tag() {
+        for (text, expected_parity) in [("odd", 1), ("Steps: 4", 0), ("caf\u{e9}\nSteps: 4", 0)] {
+            assert_eq!(
+                text.len() % 2,
+                expected_parity,
+                "the fixture must exercise its intended byte-length branch"
+            );
+            let comment = unicode_user_comment(text.as_bytes());
+            assert_eq!(
+                decode_user_comment(&comment, TiffEndian::Little).as_deref(),
+                Some(text),
+                "valid UTF-8 must survive a contradictory UNICODE tag"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_user_comment_prefers_declared_utf16_when_utf8_is_ambiguous() {
+        let text = "\u{4e2d}";
+
+        for endian in [TiffEndian::Big, TiffEndian::Little] {
+            let comment = unicode_user_comment(&utf16_bytes(text, endian));
+            assert_eq!(
+                decode_user_comment(&comment, endian).as_deref(),
+                Some(text),
+                "valid standard UTF-16 must win when its bytes also form valid UTF-8"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_user_comment_ignores_control_bytes_as_endian_evidence() {
+        let text = "\u{0100}\u{0100}";
+
+        for endian in [TiffEndian::Big, TiffEndian::Little] {
+            let comment = unicode_user_comment(&utf16_bytes(text, endian));
+            assert_eq!(
+                decode_user_comment(&comment, endian).as_deref(),
+                Some(text),
+                "non-printable bytes must not be counted as opposite-endian ASCII"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_user_comment_keeps_tiff_order_when_inferred_text_is_not_metadata() {
+        let text = "\u{4100}\u{4100}";
+
+        for endian in [TiffEndian::Big, TiffEndian::Little] {
+            let comment = unicode_user_comment(&utf16_bytes(text, endian));
+            assert_eq!(
+                decode_user_comment(&comment, endian).as_deref(),
+                Some(text),
+                "printable NUL-lane evidence alone must not override valid TIFF-ordered UTF-16"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_user_comment_rejects_incomplete_invalid_unicode_payload() {
+        let comment = unicode_user_comment(&[0xFF]);
+        assert_eq!(decode_user_comment(&comment, TiffEndian::Little), None);
+    }
+
+    #[test]
+    fn test_decode_user_comment_preserves_ascii_tag_behavior() {
+        assert_eq!(
+            decode_user_comment(b"ASCII\0\0\0  Safe JPEG\0", TiffEndian::Little).as_deref(),
+            Some("Safe JPEG")
+        );
+    }
+
+    #[test]
     fn test_parse_exif_le_ascii() {
         // Simple case: UserComment directly in IFD0
         let mut data = vec![0u8; 100];
@@ -924,6 +1139,39 @@ mod tests {
         assert_eq!(
             chunks.get("parameters").map(String::as_str),
             Some("Safe JPEG")
+        );
+    }
+
+    #[test]
+    fn test_scan_jpeg_metadata_reads_civitai_utf16be_user_comment() {
+        let parameters = "portrait\nNegative prompt: blur\nSteps: 24, Sampler: Euler";
+        let comment = unicode_user_comment(&utf16_bytes(parameters, TiffEndian::Big));
+        let payload = exif_user_comment_raw_payload(&comment);
+        let raw_len = (payload.len() + 2) as u16;
+        let jpeg = jpeg_with_segment(0xE1, raw_len, &payload);
+
+        let chunks = scan_test_jpeg("jpeg_civitai_utf16be", &jpeg).unwrap();
+
+        assert_eq!(
+            chunks.get("parameters").map(String::as_str),
+            Some(parameters),
+            "little-endian TIFF must preserve CivitAI's UTF-16BE UserComment"
+        );
+    }
+
+    #[test]
+    fn test_scan_webp_metadata_reads_civitai_utf16be_user_comment() {
+        let parameters = "portrait\nNegative prompt: blur\nSteps: 24, Sampler: Euler";
+        let comment = unicode_user_comment(&utf16_bytes(parameters, TiffEndian::Big));
+        let payload = exif_user_comment_raw_payload(&comment);
+        let webp = webp_with_exif(&payload);
+
+        let chunks = scan_test_webp("webp_civitai_utf16be", &webp).unwrap();
+
+        assert_eq!(
+            chunks.get("parameters").map(String::as_str),
+            Some(parameters),
+            "WebP EXIF must use the same robust UserComment decoding as JPEG"
         );
     }
 
