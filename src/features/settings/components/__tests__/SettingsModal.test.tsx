@@ -138,6 +138,72 @@ describe('SettingsModal', () => {
         expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Settings' }));
     });
 
+    it('renders its normal dark blurred backdrop by default', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        const modalLayer = screen.getByRole('button', { name: 'Close Settings' }).closest('.fixed');
+
+        expect(modalLayer).not.toBeNull();
+        expect(modalLayer?.className).toContain('bg-black/60');
+        expect(modalLayer?.className).toContain('dark:bg-black/80');
+        expect(modalLayer?.className).toContain('backdrop-blur-sm');
+        expect(modalLayer?.className).not.toContain('bg-transparent');
+    });
+
+    it('uses the onboarding-owned backdrop without adding another tint or blur', () => {
+        const launcher = document.createElement('button');
+        document.body.append(launcher);
+        launcher.focus();
+        const onClose = vi.fn();
+        const modalProps = {
+            onClose,
+            hasExternalBackdrop: true,
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const { rerender } = render(<SettingsModal isOpen={true} {...modalProps} />);
+
+        const closeButton = screen.getByRole('button', { name: 'Close Settings' });
+        const modalLayer = closeButton.closest('.fixed');
+
+        expect(modalLayer).not.toBeNull();
+        expect(modalLayer?.className).toContain('bg-transparent');
+        expect(modalLayer?.className).not.toContain('bg-black/60');
+        expect(modalLayer?.className).not.toContain('dark:bg-black/80');
+        expect(modalLayer?.className).not.toContain('backdrop-blur-sm');
+        expect(document.activeElement).toBe(closeButton);
+
+        fireEvent.click(modalLayer as Element);
+        expect(onClose).toHaveBeenCalledOnce();
+
+        rerender(<SettingsModal isOpen={false} {...modalProps} />);
+        expect(document.activeElement).toBe(launcher);
+        launcher.remove();
+    });
+
     it('restores focus to the launcher when closed', () => {
         const launcher = document.createElement('button');
         document.body.append(launcher);
