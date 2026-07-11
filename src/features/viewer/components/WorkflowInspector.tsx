@@ -35,6 +35,8 @@ const getDiagnosticLayerBadgeClass = (layer: string | null | undefined) => {
             return 'border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 text-rose-900 dark:text-rose-100';
         case 'explicit_node':
             return 'border-sky-300/70 dark:border-sky-400/30 bg-sky-50/80 dark:bg-sky-500/10 text-sky-900 dark:text-sky-100';
+        case 'flat_parameters':
+            return 'border-violet-300/70 dark:border-violet-400/30 bg-violet-50/80 dark:bg-violet-500/10 text-violet-900 dark:text-violet-100';
         default:
             return 'border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 text-amber-950 dark:text-amber-100';
     }
@@ -46,6 +48,9 @@ const getDiagnosticLayerTitle = (layer: string | null | undefined) => {
     }
     if (layer === 'sampler_traversal') {
         return 'Sampler traversal: found by following the saved image output path.';
+    }
+    if (layer === 'flat_parameters') {
+        return 'Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.';
     }
     return formatDiagnosticLabel(layer ?? '');
 };
