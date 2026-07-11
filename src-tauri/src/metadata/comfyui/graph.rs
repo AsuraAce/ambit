@@ -2,6 +2,8 @@ use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use super::workflow_normalizer::normalize_workflow;
+
 /// Normalizes ComfyUI metadata into a graph representation.
 pub struct ComfyGraph {
     pub(crate) nodes: HashMap<String, Value>,
@@ -38,148 +40,110 @@ impl ComfyGraph {
         if nodes_map.is_empty() {
             if let Some(workflow_json) = chunks.get("workflow") {
                 if let Ok(json) = serde_json::from_str::<Value>(workflow_json) {
-                    // Link Map: Link ID -> (Source Node ID, Type)
-                    let mut link_source_map = HashMap::new();
-                    if let Some(links) = json.get("links").and_then(|v| v.as_array()) {
-                        for link in links {
-                            if let Some(arr) = link.as_array() {
-                                if arr.len() >= 2 {
-                                    if let (Some(link_id), Some(source_id)) =
-                                        (arr[0].as_i64(), arr[1].as_i64())
-                                    {
-                                        let link_type = if arr.len() > 5 {
-                                            arr[5].as_str().unwrap_or("*").to_string()
-                                        } else {
-                                            "*".to_string()
-                                        };
-                                        link_source_map
-                                            .insert(link_id, (source_id.to_string(), link_type));
-                                    }
-                                }
+                    if let Some(normalized) = normalize_workflow(&json) {
+                        let mut incoming = HashMap::new();
+                        let mut incoming_by_link = HashMap::new();
+                        for edge in &normalized.edges {
+                            incoming.insert(
+                                (edge.target_id.clone(), edge.target_slot),
+                                (edge.source_id.clone(), edge.link_type.clone()),
+                            );
+                            if let Some(link_id) = &edge.link_id {
+                                incoming_by_link.insert(
+                                    (edge.target_id.clone(), link_id.clone()),
+                                    (edge.source_id.clone(), edge.link_type.clone()),
+                                );
                             }
                         }
-                    }
 
-                    // Pre-pass: Find SetNode variables (Name -> Source Node ID, Type)
-                    let mut var_map = HashMap::new();
-                    if let Some(nodes_arr) = json.get("nodes").and_then(|v| v.as_array()) {
-                        for node in nodes_arr {
-                            if let Some(t) = node.get("type").and_then(|v| v.as_str()) {
-                                if t == "SetNode" {
-                                    if let Some(var_name) = node
-                                        .get("widgets_values")
-                                        .and_then(|v| v.get(0))
-                                        .and_then(|v| v.as_str())
-                                    {
-                                        // Link is in inputs[0] usually
-                                        if let Some(inputs) =
-                                            node.get("inputs").and_then(|v| v.as_array())
-                                        {
-                                            for input in inputs {
-                                                if let Some(link_id) =
-                                                    input.get("link").and_then(|v| v.as_i64())
-                                                {
-                                                    if let Some((source_id, link_type)) =
-                                                        link_source_map.get(&link_id)
-                                                    {
-                                                        var_map.insert(
-                                                            var_name.to_string(),
-                                                            (source_id.clone(), link_type.clone()),
-                                                        );
-                                                    }
-                                                }
-                                            }
+                        let mut var_map = HashMap::new();
+                        for node in &normalized.nodes {
+                            if get_node_type(node) != "SetNode" {
+                                continue;
+                            }
+                            let Some(id) = node.get("id").and_then(value_as_id) else {
+                                continue;
+                            };
+                            let Some(var_name) = node
+                                .get("widgets_values")
+                                .and_then(|value| value.get(0))
+                                .and_then(Value::as_str)
+                            else {
+                                continue;
+                            };
+                            if let Some((source_id, link_type)) = incoming.get(&(id, 0)) {
+                                var_map.insert(
+                                    var_name.to_string(),
+                                    (source_id.clone(), link_type.clone()),
+                                );
+                            }
+                        }
+
+                        for mut node in normalized.nodes {
+                            let Some(id) = node.get("id").and_then(value_as_id) else {
+                                continue;
+                            };
+                            let node_type = get_node_type(&node).to_string();
+                            let mut resolved = serde_json::Map::new();
+
+                            if let Some(inputs) = node.get("inputs").and_then(Value::as_array) {
+                                for (slot, input) in inputs.iter().enumerate() {
+                                    let Some(name) = input.get("name").and_then(Value::as_str)
+                                    else {
+                                        continue;
+                                    };
+                                    let linked_source = input
+                                        .get("link")
+                                        .and_then(value_as_id)
+                                        .and_then(|link_id| {
+                                            incoming_by_link.get(&(id.clone(), link_id))
+                                        })
+                                        .or_else(|| incoming.get(&(id.clone(), slot)));
+                                    if let Some((source_id, _)) = linked_source {
+                                        let value = resolved
+                                            .entry(name.to_string())
+                                            .or_insert(Value::Array(Vec::new()));
+                                        if let Some(values) = value.as_array_mut() {
+                                            values.push(Value::String(source_id.clone()));
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
 
-                    // Process Nodes
-                    if let Some(nodes_arr) = json.get("nodes").and_then(|v| v.as_array()) {
-                        for node in nodes_arr {
-                            if let Some(id) =
-                                node.get("id").and_then(|v| v.as_u64()).or_else(|| {
-                                    node.get("id").and_then(|v| v.as_i64()).map(|v| v as u64)
-                                })
-                            {
-                                let mut node_obj = node.clone();
-                                let t = node.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                                let mut resolved = serde_json::Map::new();
-
-                                // Resolve Links
-                                if let Some(inputs) = node.get("inputs").and_then(|v| v.as_array())
+                            if node_type == "GetNode" {
+                                if let Some(var_name) = node
+                                    .get("widgets_values")
+                                    .and_then(|value| value.get(0))
+                                    .and_then(Value::as_str)
                                 {
-                                    for input in inputs {
-                                        if let Some(name) =
-                                            input.get("name").and_then(|v| v.as_str())
-                                        {
-                                            if let Some(link_id) =
-                                                input.get("link").and_then(|v| v.as_i64())
-                                            {
-                                                if let Some((source_node_id, _)) =
-                                                    link_source_map.get(&link_id)
-                                                {
-                                                    // Handle multiple inputs with same name (like in Prompts Everywhere)
-                                                    let val = resolved
-                                                        .entry(name.to_string())
-                                                        .or_insert(Value::Array(Vec::new()));
-                                                    if let Some(arr) = val.as_array_mut() {
-                                                        arr.push(Value::String(
-                                                            source_node_id.clone(),
-                                                        ));
-                                                    }
-                                                }
-                                            }
+                                    if let Some((source_id, link_type)) = var_map.get(var_name) {
+                                        resolved.insert(
+                                            var_name.to_string(),
+                                            Value::String(source_id.clone()),
+                                        );
+                                        resolved.insert(
+                                            "source".to_string(),
+                                            Value::String(source_id.clone()),
+                                        );
+                                        if !link_type.is_empty() && link_type != "*" {
+                                            resolved.insert(
+                                                link_type.clone(),
+                                                Value::String(source_id.clone()),
+                                            );
                                         }
                                     }
                                 }
-
-                                // Virtual Inputs for GetNode
-                                if t == "GetNode" {
-                                    if let Some(var_name) = node
-                                        .get("widgets_values")
-                                        .and_then(|v| v.get(0))
-                                        .and_then(|v| v.as_str())
-                                    {
-                                        if let Some((source_id, link_type)) = var_map.get(var_name)
-                                        {
-                                            resolved.insert(
-                                                var_name.to_string(),
-                                                Value::String(source_id.clone()),
-                                            );
-                                            resolved.insert(
-                                                "source".to_string(),
-                                                Value::String(source_id.clone()),
-                                            );
-                                            // Inject type as key for robust type-based traversal (e.g. "CONDITIONING")
-                                            if !link_type.is_empty() && link_type != "*" {
-                                                resolved.insert(
-                                                    link_type.clone(),
-                                                    Value::String(source_id.clone()),
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if let Some(obj) = node_obj.as_object_mut() {
-                                    obj.insert(
-                                        "_resolved_inputs".to_string(),
-                                        Value::Object(resolved),
-                                    );
-                                }
-
-                                nodes_map.insert(id.to_string(), node_obj);
                             }
+
+                            if let Some(object) = node.as_object_mut() {
+                                object.insert(
+                                    "_resolved_inputs".to_string(),
+                                    Value::Object(resolved),
+                                );
+                            }
+                            nodes_map.insert(id, node);
                         }
                     }
-
-                    // Post-Process: Flatten GetNode chains (Optional, but helps if evaluator checks type)
-                    // If a node points to a GetNode, we can replace the link with the GetNode's source.
-                    // (Logic omitted for simplicity, relying on evaluator traversing "source" input of GetNode)
                 }
             }
         }
@@ -290,6 +254,14 @@ pub fn get_node_id(node: &Value) -> String {
         .unwrap_or_default()
 }
 
+fn value_as_id(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| value.as_i64().map(|id| id.to_string()))
+        .or_else(|| value.as_u64().map(|id| id.to_string()))
+}
+
 pub fn get_node_type(node: &Value) -> &str {
     node.get("class_type")
         .or_else(|| node.get("type"))
@@ -369,6 +341,23 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     // 1. Check in API format "inputs"
     if let Some(val) = node.get("inputs").and_then(|v| v.get(key)) {
         return Some(val);
+    }
+
+    // UI workflows retain widget defaults even when the input is linked. The
+    // link is authoritative, so evaluators must follow `_resolved_inputs`.
+    if node
+        .get("_resolved_inputs")
+        .and_then(|inputs| inputs.get(key))
+        .is_some()
+    {
+        return None;
+    }
+
+    if let Some(value) = node
+        .get("_widget_overrides")
+        .and_then(|overrides| overrides.get(key))
+    {
+        return Some(value);
     }
 
     // 2. Check in UI format "widgets_values"

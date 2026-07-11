@@ -10,6 +10,7 @@ mod graph;
 mod heuristics;
 mod parse_helper;
 mod strategies;
+mod workflow_normalizer;
 
 #[cfg(test)]
 mod tests;

@@ -17,3 +17,4 @@ pub mod strategies;
 pub mod subgraph_repro;
 pub mod test_workflow_repro;
 pub mod ui_format;
+pub mod workflow_subgraphs;
