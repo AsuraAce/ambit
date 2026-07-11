@@ -268,7 +268,7 @@ const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, 
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 
-const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
+export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
         base.tool = secondary.tool;
     }
@@ -337,7 +337,7 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
     if (base.modelHash === undefined) base.modelHash = secondary.modelHash;
 };
 
-const parseExifData = (data: Uint8Array): string | null => {
+export const parseExifData = (data: Uint8Array): string | null => {
     // Basic EXIF parser focused on UserComment (0x9286)
     // EXIF blob usually starts with TIFF header if it's raw
     // or 'Exif\0\0' if it's JPEG APP1 style, but PNG 'eXIf' chunk is just the raw block (TIFF header).
@@ -505,6 +505,7 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
         const dataEnd = pos + length;
 
         if (dataEnd + 4 > buffer.length) break;
+        if (type === 'IEND') break;
 
         if (isPngMetadataChunk(type)) {
             if (!allowPngMetadataChunk(budget, length)) {
@@ -600,8 +601,6 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
             if (exifComment && !chunks['parameters']) {
                 acceptPngDecodedText(chunks, budget, 'parameters', exifComment);
             }
-        } else if (type === 'IEND') {
-            break;
         }
 
         pos += length + 4; // Data + CRC
@@ -698,9 +697,7 @@ self.onmessage = async (e: MessageEvent) => {
         // This prevents false positives for non-AI images (photos, archived art).
 
         // Path-based generation type detection (A1111 standard)
-        if (!metadata.generationType || metadata.generationType === 'unknown') {
-            metadata.generationType = detectGenerationType(path || '', metadata.generationType);
-        }
+        metadata.generationType = detectGenerationType(path || '');
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });
 

@@ -359,10 +359,36 @@ describe('parsePngChunksEnhanced Security Limits', () => {
             pngChunk('tEXt', textChunkData('early', 'ok')),
             ...Array.from({ length: 8 }, () => pngChunk('eXIf', rawFiller)),
             pngChunk('tEXt', textChunkData('too_late', 'nope')),
+            pngChunk('tEXt', textChunkData('after_limit', 'nope')),
         ));
 
         expect(chunks.early).toBe('ok');
         expect(chunks.too_late).toBeUndefined();
+        expect(chunks.after_limit).toBeUndefined();
+    });
+
+    it('should reject a single metadata chunk above the raw chunk limit', async () => {
+        vi.stubGlobal('console', { warn: vi.fn(), error: vi.fn(), log: vi.fn() });
+        const oversized = new Uint8Array(16 * 1024 * 1024 + 1);
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('eXIf', oversized),
+            pngChunk('tEXt', textChunkData('after', 'ok')),
+        ));
+        expect(chunks).toEqual({ after: 'ok' });
+    });
+
+    it('should scan non-empty iTXt language and translated keyword fields', async () => {
+        const data = concat([
+            textEncoder.encode('localized'),
+            new Uint8Array([0, 0, 0]),
+            textEncoder.encode('en'),
+            new Uint8Array([0]),
+            textEncoder.encode('Translated'),
+            new Uint8Array([0]),
+            textEncoder.encode('Localized value'),
+        ]);
+        await expect(parsePngChunksEnhanced(pngFile(pngChunk('iTXt', data))))
+            .resolves.toMatchObject({ localized: 'Localized value' });
     });
 
     it('should cap uncompressed iTXt by the decoded aggregate budget', async () => {
@@ -442,13 +468,57 @@ describe('parsePngChunksEnhanced Security Limits', () => {
         const chunks = await parsePngChunksEnhanced(pngFile(
             pngChunk('tEXt', textChunkData('early', 'ok')),
             pngChunk('zTXt', ztxtData('too_large')),
+            pngChunk('zTXt', ztxtData('still_too_large')),
             pngChunk('tEXt', textChunkData('late', 'x')),
         ));
 
         expect(mockReader.cancel).toHaveBeenCalled();
         expect(chunks.early).toBe('ok');
         expect(chunks.too_large).toBeUndefined();
+        expect(chunks.still_too_large).toBeUndefined();
         expect(chunks.late).toBeUndefined();
+    });
+
+    it('should skip malformed compressed chunks without null separators', async () => {
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('zTXt', textEncoder.encode('missing-null')),
+            pngChunk('iTXt', textEncoder.encode('missing-null')),
+        ));
+        expect(chunks).toEqual({});
+    });
+
+    it('should reject iTXt whose language fields run beyond the chunk payload', async () => {
+        const malformed = concat([
+            textEncoder.encode('key'),
+            new Uint8Array([0, 0, 0]),
+            textEncoder.encode('unterminated-language'),
+        ]);
+        await expect(parsePngChunksEnhanced(pngFile(pngChunk('iTXt', malformed))))
+            .resolves.toEqual({});
+    });
+
+    it('should skip invalid compressed iTXt without exhausting the decoded budget', async () => {
+        stubInvalidDeflate();
+        const chunks = await parsePngChunksEnhanced(pngFile(
+            pngChunk('iTXt', itxtCompressedData('invalid')),
+            pngChunk('tEXt', textChunkData('late', 'yes')),
+        ));
+        expect(chunks).toEqual({ late: 'yes' });
+    });
+
+    it('should stop at an explicit IEND even when trailing bytes remain', async () => {
+        const png = concat([
+            new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+            pngChunk('IEND'),
+            pngChunk('tEXt', textChunkData('after-iend', 'ignored')),
+        ]);
+        await expect(parsePngChunksEnhanced(png)).resolves.toEqual({});
+    });
+
+    it('should ignore ordinary non-metadata PNG chunks', async () => {
+        await expect(parsePngChunksEnhanced(pngFile(
+            pngChunk('IDAT', new Uint8Array([1, 2, 3])),
+        ))).resolves.toEqual({});
     });
 
     it('should exhaust decoded budget after over-limit compressed iTXt decompression', async () => {

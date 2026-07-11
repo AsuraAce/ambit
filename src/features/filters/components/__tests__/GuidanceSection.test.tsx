@@ -193,4 +193,83 @@ describe('GuidanceSection', () => {
             'generic-reference.bin'
         ]);
     });
+
+    it('classifies every supported ControlNet subtype and generic path fallback', () => {
+        const models = [
+            'controlnet-canny.safetensors',
+            'controlnet-canny-second.safetensors',
+            'control_depth.ckpt',
+            'cnet-pose.pth',
+            'soft_edge-control.bin',
+            'control-lineart.pt',
+            'normal-control.safetensors',
+            'inpaint-control.safetensors',
+            'tile-control.safetensors',
+            'segmentation-control.safetensors',
+            'shuffle-control.safetensors',
+            'recolor-control.safetensors',
+            'mlsd-control.safetensors',
+            'controlnet-unknown.safetensors',
+            'C:/models/custom/controlnet/model.safetensors',
+            'mystery.safetensors'
+        ];
+        queryMocks.data = { controlNets: models, ipAdapters: [] };
+        const harness = createHarness(createFilters({ controlNets: models }));
+        render(<GuidanceSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} isOpen onToggle={vi.fn()} />);
+
+        for (const label of ['Canny', 'Depth', 'Pose', 'Scribble', 'Lineart', 'Normal', 'Inpaint', 'Tile', 'Seg', 'Shuffle', 'Recolor', 'MLSD', 'Other']) {
+            expect(screen.getByText(label)).toBeTruthy();
+        }
+        fireEvent.click(screen.getByText('MLSD'));
+        expect(harness.getCurrentFilters().controlNets).not.toContain('mlsd-control.safetensors');
+    });
+
+    it('classifies every supported IP-Adapter subtype', () => {
+        const models = [
+            'ip-adapter-faceid-plus.bin',
+            'ip-adapter-faceid-plus-second.bin',
+            'face-id-model.bin',
+            'face-plus-model.bin',
+            'portrait-model.bin',
+            'ip-adapter-vit-h.bin',
+            'ip-adapter-style.bin',
+            'ip-adapter-composition.bin',
+            'ip-adapter-light.bin',
+            'full-face-model.bin',
+            'ip-adapter-basic.bin',
+            'unclassified.bin'
+        ];
+        queryMocks.data = { controlNets: [], ipAdapters: models };
+        const harness = createHarness(createFilters({ ipAdapters: models }));
+        render(<GuidanceSection filters={harness.getCurrentFilters()} setFilters={harness.setFilters} isOpen onToggle={vi.fn()} />);
+
+        for (const label of ['FaceID Plus', 'FaceID', 'Plus Face', 'Portrait', 'Plus', 'Style', 'Comp', 'Light', 'Full Face', 'Standard', 'Other']) {
+            expect(screen.getByText(label)).toBeTruthy();
+        }
+        fireEvent.click(screen.getByText('Comp'));
+        expect(harness.getCurrentFilters().ipAdapters).not.toContain('ip-adapter-composition.bin');
+    });
+
+    it('collapses the IP-Adapter group and suppresses empty state while loading', () => {
+        queryMocks.data = { controlNets: [], ipAdapters: ['ip-adapter-basic.bin'] };
+        queryMocks.isLoading = true;
+        const view = render(<GuidanceSection filters={createFilters()} setFilters={vi.fn()} isOpen onToggle={vi.fn()} />);
+        fireEvent.click(screen.getByText(/IP-Adapters \(1\)/));
+        expect(screen.queryByText('Standard')).toBeNull();
+
+        queryMocks.data = { controlNets: [], ipAdapters: [] };
+        view.rerender(<GuidanceSection filters={createFilters()} setFilters={vi.fn()} isOpen onToggle={vi.fn()} />);
+        expect(screen.queryByText('No guidance data available')).toBeNull();
+    });
+
+    it('handles empty names and selected models absent from available ranges', () => {
+        queryMocks.data = { controlNets: [''], ipAdapters: [''] };
+        render(<GuidanceSection
+            filters={createFilters({ controlNets: ['missing-control'], ipAdapters: ['missing-adapter'] })}
+            setFilters={vi.fn()}
+            isOpen
+            onToggle={vi.fn()}
+        />);
+        expect(screen.getAllByText('Other')).toHaveLength(2);
+    });
 });

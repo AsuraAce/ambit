@@ -89,8 +89,8 @@ export const shouldTrashThumbnail = (
     if (!thumbnailPath) return false;
     if (!imagePath) return true;
 
-    const normalizedImagePath = normalizePath(urlToPath(imagePath) || imagePath);
-    const normalizedThumbnailPath = normalizePath(urlToPath(thumbnailPath) || thumbnailPath);
+    const normalizedImagePath = normalizePath(urlToPath(imagePath));
+    const normalizedThumbnailPath = normalizePath(urlToPath(thumbnailPath));
 
     return normalizedImagePath.toLowerCase() !== normalizedThumbnailPath.toLowerCase();
 };
@@ -104,7 +104,7 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     fileHash: image.fileHash || null,
     timestamp: image.timestamp,
     metadataJson: JSON.stringify(image.metadata),
-    thumbnailPath: urlToPath(image.thumbnailUrl) ?? '',
+    thumbnailPath: urlToPath(image.thumbnailUrl),
     microThumbnail: image.microThumbnail || null,
     thumbnailSource: image.thumbnailSource || null,
     isFavorite: !!image.isFavorite,
@@ -125,9 +125,7 @@ const persistImageRecords = async (
     db: Awaited<ReturnType<typeof getDb>>
 ) => {
     const CHUNK_SIZE = 5000;
-    if (records.length > 0) {
-        console.log(`[RepoDebug] Saving batch. First record originalMetadataJson:`, records[0].originalMetadataJson ? records[0].originalMetadataJson.substring(0, 100) : 'NULL');
-    }
+    console.log(`[RepoDebug] Saving batch. First record originalMetadataJson:`, records[0].originalMetadataJson ? records[0].originalMetadataJson.substring(0, 100) : 'NULL');
 
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
         const chunk = records.slice(i, i + CHUNK_SIZE);
@@ -843,8 +841,6 @@ export const deleteImage = async (id: string) => {
 };
 
 const removeTombstones = async (db: Awaited<ReturnType<typeof getDb>>, ids: string[]) => {
-    if (ids.length === 0) return;
-
     for (const chunk of chunkItems(ids)) {
         const placeholders = chunk.map(() => '?').join(',');
         await db.execute(`DELETE FROM removed_images WHERE id IN (${placeholders})`, chunk);
@@ -1273,7 +1269,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
     return await dbMutex.dispatch(async () => {
         const db = await getDb();
         let retries = 3;
-        while (retries > 0) {
+        while (true) {
             try {
                 const result = await db.execute(
                     'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
@@ -1295,7 +1291,6 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
                 }
             }
         }
-        return 0;
     });
 };
 
