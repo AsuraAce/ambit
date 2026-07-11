@@ -40,8 +40,8 @@ jobs:
       - name: verify version consistency
         run: pnpm check:versions
 
-      - name: test release tag guard
-        run: node --test scripts/check-release-tag.node-test.mjs
+      - name: test release automation scripts
+        run: node --test scripts/check-release-tag.node-test.mjs scripts/extract-release-notes.node-test.mjs
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile

@@ -3,11 +3,25 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ComfyParseLayer {
+    FlatParameters,
     WorkflowChunk,
     ExplicitNode,
     SamplerTraversal,
     SamplerFallback,
     GlobalScan,
+}
+
+impl ComfyParseLayer {
+    pub(crate) fn precedence(self) -> u8 {
+        match self {
+            Self::ExplicitNode => 5,
+            Self::SamplerTraversal => 4,
+            Self::FlatParameters => 3,
+            Self::SamplerFallback => 2,
+            Self::GlobalScan => 1,
+            Self::WorkflowChunk => 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -31,6 +45,9 @@ pub(crate) enum ComfyMetadataField {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ComfyParseDiagnostics {
     pub(crate) graph_node_count: usize,
+    pub(crate) selected_output_candidate_count: usize,
+    pub(crate) unique_output_root_sampler_count: usize,
+    pub(crate) output_ambiguous: bool,
     pub(crate) attempted_layers: Vec<ComfyParseLayer>,
     pub(crate) field_sources: BTreeMap<ComfyMetadataField, ComfyParseLayer>,
 }
@@ -180,7 +197,11 @@ impl ComfyParseDiagnostics {
         has_value: bool,
         layer: ComfyParseLayer,
     ) {
-        if changed && has_value {
+        let is_stronger_source = self
+            .field_sources
+            .get(&field)
+            .is_none_or(|current| layer.precedence() > current.precedence());
+        if changed && has_value && is_stronger_source {
             self.field_sources.insert(field, layer);
         }
     }

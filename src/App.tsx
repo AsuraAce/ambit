@@ -4,7 +4,6 @@ import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
-import { UpdateDialog } from './components/ui/UpdateDialog';
 import { OnboardingWizard } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
@@ -37,6 +36,7 @@ import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
+const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
 
 export default function App() {
     const { addToast } = useToast();
@@ -541,17 +541,19 @@ export default function App() {
             />
 
             {updater.update && (
-                <UpdateDialog
-                    isOpen={updater.isDialogOpen}
-                    currentVersion={appVersion}
-                    availableVersion={updater.update.version}
-                    notes={updater.update.body}
-                    publishedAt={updater.update.date}
-                    status={updater.status}
-                    errorMessage={updater.errorMessage}
-                    onClose={updater.dismissUpdateDialog}
-                    onInstall={updater.installUpdate}
-                />
+                <React.Suspense fallback={null}>
+                    <UpdateDialog
+                        isOpen={updater.isDialogOpen}
+                        currentVersion={appVersion}
+                        availableVersion={updater.update.version}
+                        notes={updater.update.body}
+                        publishedAt={updater.update.date}
+                        status={updater.status}
+                        errorMessage={updater.errorMessage}
+                        onClose={updater.dismissUpdateDialog}
+                        onInstall={updater.installUpdate}
+                    />
+                </React.Suspense>
             )}
 
             <React.Suspense fallback={null}>

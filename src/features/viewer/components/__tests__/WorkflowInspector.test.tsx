@@ -189,6 +189,25 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         ).toBeTruthy();
     });
 
+    it('identifies retained flat parameters as medium-confidence evidence', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                fieldSources: {
+                    ...diagnosticsReport.fieldSources,
+                    seed: 'flat_parameters'
+                }
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(
+            await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
+        ).toBeTruthy();
+    });
+
     it('hides parser diagnostics outside developer mode', () => {
         mockSettings.devMode = false;
 
