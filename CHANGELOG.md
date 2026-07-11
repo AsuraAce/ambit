@@ -14,6 +14,8 @@
 
 * harden ComfyUI metadata graph extraction ([#194](https://github.com/AsuraAce/ambit/issues/194)) ([e76e05a](https://github.com/AsuraAce/ambit/commit/e76e05a353bdd0b97c441e0183eeebd75cc2b7a1))
 * **metadata:** decode EXIF user comments robustly ([#195](https://github.com/AsuraAce/ambit/issues/195)) ([8172644](https://github.com/AsuraAce/ambit/commit/81726449358c9d702780bb04319d69f530168753))
+
+  Thanks to [@SifeYassine](https://github.com/SifeYassine) for reporting the issue and sharing the diagnostic insight that led to this fix.
 * stabilize targeted import ordering ([#191](https://github.com/AsuraAce/ambit/issues/191)) ([4975b85](https://github.com/AsuraAce/ambit/commit/4975b85f7d72a7206696697cae453c98e843a6fb))
 
 ## [0.7.0](https://github.com/AsuraAce/ambit/compare/v0.6.4...v0.7.0) (2026-07-10)
