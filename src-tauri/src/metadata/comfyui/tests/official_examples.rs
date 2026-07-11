@@ -11,7 +11,9 @@ struct OfficialExample {
 const OFFICIAL_EXAMPLES: &[OfficialExample] = &[
     OfficialExample {
         name: "sdxl_simple_example",
-        chunks_json: include_str!("fixtures/official_examples/sdxl/sdxl_simple_example.chunks.json"),
+        chunks_json: include_str!(
+            "fixtures/official_examples/sdxl/sdxl_simple_example.chunks.json"
+        ),
     },
     OfficialExample {
         name: "flux_dev_example",
@@ -99,7 +101,8 @@ fn test_official_examples_extract_expected_metadata() {
             steps: 25,
             cfg: 8.0,
             sampler: "euler (normal)",
-            positive_prompt: "evening sunset scenery blue sky nature, glass bottle with a galaxy in it",
+            positive_prompt:
+                "evening sunset scenery blue sky nature, glass bottle with a galaxy in it",
             negative_prompt: "text, watermark",
             loras: &[],
             control_nets: &[],
@@ -186,7 +189,7 @@ fn test_official_examples_extract_expected_metadata() {
             ),
             (
                 ComfyMetadataField::PositivePrompt,
-                ComfyParseLayer::ExplicitNode,
+                ComfyParseLayer::SamplerTraversal,
             ),
         ],
     );
@@ -517,11 +520,11 @@ fn test_official_examples_extract_expected_metadata() {
             ),
             (
                 ComfyMetadataField::PositivePrompt,
-                ComfyParseLayer::ExplicitNode,
+                ComfyParseLayer::SamplerTraversal,
             ),
             (
                 ComfyMetadataField::NegativePrompt,
-                ComfyParseLayer::ExplicitNode,
+                ComfyParseLayer::SamplerTraversal,
             ),
         ],
     );
@@ -590,7 +593,7 @@ fn test_official_examples_extract_expected_metadata() {
             ),
             (
                 ComfyMetadataField::PositivePrompt,
-                ComfyParseLayer::ExplicitNode,
+                ComfyParseLayer::SamplerTraversal,
             ),
         ],
     );
@@ -613,7 +616,10 @@ fn test_hypernetwork_official_example_extracts_from_workflow_only() {
 
     assert_eq!(meta.model, "v1_5_pruned_emaonly");
     assert_eq!(meta.hypernetworks, ["dantionmarblestatues_10"]);
-    assert_eq!(meta.workflow_json.as_deref(), Some(expected_workflow.as_str()));
+    assert_eq!(
+        meta.workflow_json.as_deref(),
+        Some(expected_workflow.as_str())
+    );
     assert_eq!(
         diagnostics
             .field_sources
@@ -684,10 +690,7 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: ExpectedMetadata)
         meta.control_nets, expected.control_nets,
         "{name} ControlNets"
     );
-    assert_eq!(
-        meta.ip_adapters, expected.ip_adapters,
-        "{name} IP-Adapters"
-    );
+    assert_eq!(meta.ip_adapters, expected.ip_adapters, "{name} IP-Adapters");
     assert_eq!(meta.embeddings, expected.embeddings, "{name} embeddings");
     assert_eq!(
         meta.hypernetworks, expected.hypernetworks,
