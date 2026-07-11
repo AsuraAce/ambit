@@ -21,13 +21,13 @@ On first launch, Ambit shows an onboarding wizard. The wizard introduces:
 - local-first privacy behavior
 - content masking for prompts containing configured keywords
 
-You can skip optional integrations during onboarding and set them up later from Settings.
+You can skip optional integrations and Gemini setup during onboarding and configure them later from Settings. If you enable Gemini during onboarding, verify the API key before continuing. After setup, Ambit opens the Add Images flow so you can connect a generator, add a folder, or select individual files.
 
 ```mermaid
 flowchart TD
     A["Install Ambit"] --> B["Launch app"]
-    B --> C["Complete or skip onboarding"]
-    C --> D["Add image folders"]
+    B --> C["Complete onboarding"]
+    C --> D["Choose how to add images"]
     D --> E["Scan and catalog images"]
     E --> F["Browse, search, and inspect metadata"]
 ```
@@ -50,7 +50,9 @@ Ambit keeps source image files where they already are. It stores a local catalog
 
 On Windows, the installer folder is only where the Ambit application is installed. The library catalog database is application data and lives under Local AppData, normally `%LOCALAPPDATA%\io.github.asuraace.ambit\images.db`. Installing Ambit to another folder or drive does not move the library database.
 
-Sensitive values such as a Gemini API key are stored locally through the OS keyring path Ambit uses rather than being required in the repository or source code.
+Gemini API keys entered through Ambit are stored locally through the OS keyring. Credentials supplied through the environment are read but not saved by Ambit, and no key needs to be committed to the repository or source code.
+
+You can create or view a key in [Google AI Studio](https://aistudio.google.com/apikey). A free tier is available for eligible accounts and regions, with model and usage limits. Gemini requests are handled by Google under the terms of your AI Studio plan.
 
 ## Next Step
 

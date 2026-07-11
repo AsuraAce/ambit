@@ -37,6 +37,11 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
     const [isVerifying, setIsVerifying] = React.useState(false);
     const [verificationStatus, setVerificationStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
     const [verificationError, setVerificationError] = React.useState<string | null>(null);
+    const apiKeyInputStatus = verificationStatus === 'idle'
+        && !!geminiApiKey
+        && localApiKey.trim() === geminiApiKey
+        ? 'configured'
+        : verificationStatus;
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const effectiveAiModel = getEffectiveAiModel(settings);
     const effectiveAiThinkingMode = getEffectiveAiThinkingMode(settings);
@@ -98,9 +103,9 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
             const { verifyApiKey } = await import('../../../services/geminiService');
             const result = await verifyApiKey(localApiKey, effectiveAiModel);
             if (result.valid) {
-                setVerificationStatus('success');
                 // Save to secure keyring on successful verification
                 await setGeminiApiKey(localApiKey);
+                setVerificationStatus('success');
                 addToast('API Key verified and saved securely', 'success');
             } else {
                 setVerificationStatus('error');
@@ -148,7 +153,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                                 onChange={handleApiKeyChange}
                                 onVerify={handleVerifyKey}
                                 isVerifying={isVerifying}
-                                status={verificationStatus}
+                                status={apiKeyInputStatus}
                                 error={verificationError}
                                 isEnvKey={isEnvKey}
                                 onTestEnvKey={() => {
@@ -225,7 +230,9 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             )}
 
                             <p className="text-xs text-gray-500 mt-2">
-                                Use your own Gemini API key. Your key is stored locally in the OS keyring, and requests are sent only when you verify the key or run an AI feature.
+                                {isEnvKey
+                                    ? 'Ambit reads this API key from your environment and does not save it. Requests are sent only when you test the key or run an AI feature.'
+                                    : 'Use your own Gemini API key. Your key is stored locally in the OS keyring, and requests are sent only when you verify the key or run an AI feature.'}
                             </p>
                         </div>
                     )}

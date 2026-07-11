@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Monitor, Shield, Terminal, Link, Sparkles } from 'lucide-react';
 import { AppSettings, AppSettingsUpdate } from '../../../types';
@@ -17,6 +17,7 @@ const DevTab = import.meta.env.DEV
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  hasExternalBackdrop?: boolean;
   settings: AppSettings;
   onSave: (settings: AppSettingsUpdate) => void;
   canCheckForUpdates: boolean;
@@ -74,6 +75,7 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon, isActive, onClic
 export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   isOpen,
   onClose,
+  hasExternalBackdrop = false,
   settings,
   onSave,
   canCheckForUpdates,
@@ -92,6 +94,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   const showDevTools = isDevelopmentBuild();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // Reset to initial tab when modal opens
   useEffect(() => {
@@ -112,6 +115,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
     }
   }, [isOpen, initialTab, showDevTools]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [isOpen]);
+
   // Auto-save wrapper: calls onSave directly on any change
   const handleSettingsChange: React.Dispatch<React.SetStateAction<AppSettings>> = useCallback(
     (updater) => {
@@ -131,7 +147,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm"
+          className={`fixed inset-0 z-[200] flex items-center justify-center ${hasExternalBackdrop
+            ? 'bg-transparent'
+            : 'bg-black/60 dark:bg-black/80 backdrop-blur-sm'
+            }`}
           onClick={onClose}
         >
           <motion.div
@@ -195,7 +214,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage your application preferences and connections.</p>
                 </div>
-                <button type="button" onClick={onClose} className="p-2 bg-gray-200 dark:bg-white/5 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  aria-label="Close Settings"
+                  onClick={onClose}
+                  className="p-2 bg-gray-200 dark:bg-white/5 rounded-full text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
