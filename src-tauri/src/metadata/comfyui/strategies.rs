@@ -1,20 +1,10 @@
 use super::conditioning::evaluate_string_node;
-use super::graph::{get_node_param, get_node_title, get_node_type, ComfyGraph};
+use super::graph::{compare_node_ids, get_node_param, get_node_title, get_node_type, ComfyGraph};
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::guidance::GuidanceClassifier;
 use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
-use std::cmp::Ordering;
 use std::collections::HashSet;
-
-fn compare_node_ids(left_id: &str, right_id: &str) -> Ordering {
-    match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
-        (Ok(left), Ok(right)) => left.cmp(&right).then_with(|| left_id.cmp(right_id)),
-        (Ok(_), Err(_)) => Ordering::Less,
-        (Err(_), Ok(_)) => Ordering::Greater,
-        (Err(_), Err(_)) => left_id.cmp(right_id),
-    }
-}
 
 /// Layer 2: Explicit Metadata Nodes
 /// Scans for nodes specifically designed to embed metadata.
@@ -75,9 +65,13 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
 
         // ShowText / ShowAnything (Specific labels)
         // If user labeled a node "Positive", trust it?
-        if let Some(title) = get_node_title(node) {
+        // Standard conditioning encoders describe graph data, not intentional
+        // metadata overrides, even when their UI title says Positive/Negative.
+        if !t_lower.contains("textencode") {
+            let Some(title) = get_node_title(node) else {
+                continue;
+            };
             let title_lower = title.to_lowercase();
-            // let t_lower = t.to_lowercase(); // Already defined above
 
             if title_lower.contains("positive") {
                 let mut visited = HashSet::new();

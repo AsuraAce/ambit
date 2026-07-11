@@ -18,7 +18,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata, scan_webp_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 13;
+pub const CURRENT_PARSER_VERSION: u32 = 17;
 
 pub(crate) fn is_missing_prompt_value(value: &str) -> bool {
     value.trim().is_empty() || is_placeholder_prompt_value(value)
@@ -26,11 +26,19 @@ pub(crate) fn is_missing_prompt_value(value: &str) -> bool {
 
 pub(crate) fn is_placeholder_prompt_value(value: &str) -> bool {
     let trimmed = value.trim();
-    trimmed.eq_ignore_ascii_case("undefined")
-        || trimmed.eq_ignore_ascii_case("null")
-        || trimmed.eq_ignore_ascii_case("none")
-        || trimmed.eq_ignore_ascii_case("unknown")
-        || trimmed.eq_ignore_ascii_case("negative prompt:")
+    const POSITIVE_PROMPT_PREFIX: &str = "positive prompt:";
+    let candidate = trimmed
+        .get(..POSITIVE_PROMPT_PREFIX.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(POSITIVE_PROMPT_PREFIX))
+        .map(|_| &trimmed[POSITIVE_PROMPT_PREFIX.len()..])
+        .unwrap_or(trimmed)
+        .trim_matches(|c: char| c.is_whitespace() || c == ',' || c == ';');
+
+    candidate.eq_ignore_ascii_case("undefined")
+        || candidate.eq_ignore_ascii_case("null")
+        || candidate.eq_ignore_ascii_case("none")
+        || candidate.eq_ignore_ascii_case("unknown")
+        || candidate.eq_ignore_ascii_case("negative prompt:")
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]

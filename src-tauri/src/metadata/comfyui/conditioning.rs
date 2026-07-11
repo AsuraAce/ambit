@@ -144,6 +144,12 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         {
                             continue;
                         }
+                        if !is_broadcaster
+                            && input_name == "negative"
+                            && input_lower.contains("positive")
+                        {
+                            continue;
+                        }
 
                         // Handle both single string and array of strings (multiple inputs with same name)
                         if let Some(source_id) = val.as_str() {
@@ -165,9 +171,13 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                     let is_relevant_prefix =
                         relevant_prefixes.iter().any(|&r| input_lower.contains(r));
                     let is_negative_input = input_lower.contains("negative");
+                    let is_positive_input = input_lower.contains("positive");
 
                     if is_relevant_prefix {
                         if input_name == "positive" && is_negative_input {
+                            continue;
+                        }
+                        if input_name == "negative" && is_positive_input {
                             continue;
                         }
                         if let Some(s) = get_source_id(graph, &current_id, input_key) {
@@ -183,6 +193,9 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         let input_lower = name.to_lowercase();
                         if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
                             if input_name == "positive" && input_lower.contains("negative") {
+                                continue;
+                            }
+                            if input_name == "negative" && input_lower.contains("positive") {
                                 continue;
                             }
                             if input.get("link").and_then(|v| v.as_i64()).is_some() {
@@ -417,19 +430,16 @@ pub fn evaluate_string_node(
     }
 
     if t.contains("Qwen") || t.contains("LLM") {
-        if let Some(text) = get_node_param(node, "0").and_then(|v| v.as_str()) {
-            if !is_placeholder_prompt_value(text) {
-                return Some(text.to_string());
+        for input_name in ["0", "text", "prompt"] {
+            if let Some(text) = get_node_param(node, input_name).and_then(|v| v.as_str()) {
+                if !is_placeholder_prompt_value(text) {
+                    return Some(text.to_string());
+                }
             }
-        }
-        if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-            if !is_placeholder_prompt_value(text) {
-                return Some(text.to_string());
-            }
-        }
-        if let Some(text) = get_node_param(node, "prompt").and_then(|v| v.as_str()) {
-            if !is_placeholder_prompt_value(text) {
-                return Some(text.to_string());
+            if let Some(source_id) = get_source_id(graph, node_id, input_name) {
+                if let Some(text) = evaluate_string_node(graph, &source_id, visited, depth + 1) {
+                    return Some(text);
+                }
             }
         }
     }

@@ -312,9 +312,13 @@ fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
 }
 
 #[test]
-fn test_diagnostics_report_handles_non_graph_chunks_without_panicking() {
+fn test_diagnostics_report_includes_flat_parameters_without_graph_chunks() {
     let mut chunks = HashMap::new();
-    chunks.insert("parameters".to_string(), "not a comfy graph".to_string());
+    chunks.insert(
+        "parameters".to_string(),
+        "flat prompt\nSteps: 12, CFG scale: 5.0, Seed: 0, Model: flat_model, Version: ComfyUI"
+            .to_string(),
+    );
 
     let report = build_comfyui_diagnostics_report(&chunks);
 
@@ -322,9 +326,23 @@ fn test_diagnostics_report_handles_non_graph_chunks_without_panicking() {
     assert!(!report.has_prompt_chunk);
     assert!(!report.has_workflow_chunk);
     assert_eq!(report.graph_node_count, 0);
-    assert!(report.attempted_layers.is_empty());
-    assert!(report.field_sources.is_empty());
+    assert_eq!(report.attempted_layers, vec!["flat_parameters"]);
+    assert_eq!(
+        report.field_sources.get("model").map(String::as_str),
+        Some("flat_parameters")
+    );
+    assert_eq!(
+        report
+            .field_sources
+            .get("positive_prompt")
+            .map(String::as_str),
+        Some("flat_parameters")
+    );
     assert_eq!(report.metadata.tool, "ComfyUI");
-    assert_eq!(report.metadata.model, "Unknown");
+    assert_eq!(report.metadata.model, "flat_model");
+    assert_eq!(report.metadata.seed, Some(0));
+    assert_eq!(report.metadata.steps, 12);
+    assert_eq!(report.metadata.cfg, 5.0);
+    assert_eq!(report.metadata.positive_prompt, "flat prompt");
     assert!(!report.metadata.has_workflow_json);
 }
