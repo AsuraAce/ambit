@@ -65,9 +65,13 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
 
         // ShowText / ShowAnything (Specific labels)
         // If user labeled a node "Positive", trust it?
-        if let Some(title) = get_node_title(node) {
+        // Standard conditioning encoders describe graph data, not intentional
+        // metadata overrides, even when their UI title says Positive/Negative.
+        if !t_lower.contains("textencode") {
+            let Some(title) = get_node_title(node) else {
+                continue;
+            };
             let title_lower = title.to_lowercase();
-            // let t_lower = t.to_lowercase(); // Already defined above
 
             if title_lower.contains("positive") {
                 let mut visited = HashSet::new();
