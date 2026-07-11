@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/AsuraAce/ambit/compare/v0.7.0...v0.8.0) (2026-07-11)
+
+
+### Features
+
+* add official ComfyUI template coverage manifest ([#196](https://github.com/AsuraAce/ambit/issues/196)) ([8149582](https://github.com/AsuraAce/ambit/commit/81495826a701cd0dde50d742ee5bc73eccf47f8a))
+* **onboarding:** improve setup flow and accessibility ([#197](https://github.com/AsuraAce/ambit/issues/197)) ([c0614e0](https://github.com/AsuraAce/ambit/commit/c0614e0188f638b91988d0e28e04b621abc7f1d0))
+* **updater:** show release notes in update dialog ([#193](https://github.com/AsuraAce/ambit/issues/193)) ([e68e0cc](https://github.com/AsuraAce/ambit/commit/e68e0cc3d5040cd9a643259ee54c8165db2f1b65))
+
+
+### Bug Fixes
+
+* harden ComfyUI metadata graph extraction ([#194](https://github.com/AsuraAce/ambit/issues/194)) ([e76e05a](https://github.com/AsuraAce/ambit/commit/e76e05a353bdd0b97c441e0183eeebd75cc2b7a1))
+* **metadata:** decode EXIF user comments robustly ([#195](https://github.com/AsuraAce/ambit/issues/195)) ([8172644](https://github.com/AsuraAce/ambit/commit/81726449358c9d702780bb04319d69f530168753))
+
+  Thanks to [@SifeYassine](https://github.com/SifeYassine) for reporting the issue and sharing the diagnostic insight that led to this fix.
+* stabilize targeted import ordering ([#191](https://github.com/AsuraAce/ambit/issues/191)) ([4975b85](https://github.com/AsuraAce/ambit/commit/4975b85f7d72a7206696697cae453c98e843a6fb))
+
 ## [0.7.0](https://github.com/AsuraAce/ambit/compare/v0.6.4...v0.7.0) (2026-07-10)
 
 
