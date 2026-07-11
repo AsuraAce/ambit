@@ -59,7 +59,6 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
 
     const handleSync = () => {
-        if (!settings.invokeAiPath) return;
         addToast('Synchronization started...', 'success');
         startInvokeSync({
             syncFavorites,

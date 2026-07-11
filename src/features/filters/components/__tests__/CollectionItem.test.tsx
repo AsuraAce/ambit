@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { render, screen } from '../../../../test/testUtils';
+import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { describe, expect, it, vi } from 'vitest';
 import type { Collection, FilterState } from '../../../../types';
 import { CollectionItem } from '../CollectionItem';
@@ -141,5 +141,122 @@ describe('CollectionItem thumbnail hydration states', () => {
         expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
         expect(screen.queryByTestId('collection-thumbnail-skeleton')).toBeNull();
         expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
+    });
+
+    it('routes inline rename changes, submission, and blur cancellation', () => {
+        const setEditName = vi.fn();
+        const setEditingColId = vi.fn();
+        const handleRenameSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+        render(
+            <CollectionItem
+                col={baseCollection} filters={filters} setFilters={vi.fn()} editingColId={baseCollection.id} editName="Draft"
+                setEditName={setEditName} setEditingColId={setEditingColId} handleRenameSubmit={handleRenameSubmit}
+                handleDragEnter={noopDrag} handleDragOver={noopDrag} handleDragLeave={vi.fn()} handleDrop={noopDrop}
+                handleContextMenu={noopContextMenu} dropTargetId={null}
+            />
+        );
+        const input = screen.getByDisplayValue('Draft');
+        fireEvent.change(input, { target: { value: 'Renamed' } });
+        fireEvent.submit(input.closest('form') as HTMLFormElement);
+        fireEvent.blur(input);
+        expect(setEditName).toHaveBeenCalledWith('Renamed');
+        expect(handleRenameSubmit).toHaveBeenCalledTimes(1);
+        expect(setEditingColId).toHaveBeenCalledWith(null);
+    });
+
+    it('routes drag, drop, and context-menu events with the collection id', () => {
+        const handleDragEnter = vi.fn();
+        const handleDragOver = vi.fn();
+        const handleDragLeave = vi.fn();
+        const handleDrop = vi.fn();
+        const handleContextMenu = vi.fn();
+        const { container } = render(
+            <CollectionItem
+                col={baseCollection} filters={filters} setFilters={vi.fn()} editingColId={null} editName=""
+                setEditName={vi.fn()} setEditingColId={vi.fn()} handleRenameSubmit={vi.fn()}
+                handleDragEnter={handleDragEnter} handleDragOver={handleDragOver} handleDragLeave={handleDragLeave}
+                handleDrop={handleDrop} handleContextMenu={handleContextMenu} dropTargetId={baseCollection.id}
+            />
+        );
+        const root = container.firstElementChild as HTMLElement;
+        fireEvent.dragEnter(root); fireEvent.dragOver(root); fireEvent.dragLeave(root); fireEvent.drop(root); fireEvent.contextMenu(root);
+        expect(handleDragEnter).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
+        expect(handleDragOver).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
+        expect(handleDragLeave).toHaveBeenCalledTimes(1);
+        expect(handleDrop).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
+        expect(handleContextMenu).toHaveBeenCalledWith(expect.anything(), baseCollection.id);
+        expect(root.className).toContain('ring-2');
+    });
+
+    it('selects and clears collections from list and grid modes', () => {
+        let current = filters;
+        const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => { current = update(current); });
+        const shared = {
+            col: baseCollection, setFilters, editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
+            handleDrop: noopDrop, handleContextMenu: noopContextMenu, dropTargetId: null
+        };
+        const { rerender } = render(<CollectionItem {...shared} filters={current} />);
+        fireEvent.click(screen.getByTitle(baseCollection.name));
+        expect(current.collectionId).toBe(baseCollection.id);
+        rerender(<CollectionItem {...shared} filters={current} />);
+        fireEvent.click(screen.getByTitle(baseCollection.name));
+        expect(current.collectionId).toBeNull();
+
+        rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
+        fireEvent.click(screen.getByTitle(baseCollection.name));
+        expect(current.collectionId).toBe(baseCollection.id);
+        rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
+        fireEvent.contextMenu(screen.getByTitle(baseCollection.name));
+        fireEvent.click(screen.getByTitle(baseCollection.name));
+        expect(current.collectionId).toBeNull();
+    });
+
+    it('renders archived, pinned, smart, thumbnail, count, and color variants', () => {
+        const colors = ['red', 'orange', 'green', 'blue', 'purple', 'unknown', undefined];
+        const shared = {
+            filters, setFilters: vi.fn(), editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
+            handleDrop: noopDrop, handleContextMenu: noopContextMenu, dropTargetId: null
+        };
+        const { container, rerender } = render(<CollectionItem {...shared} col={{ ...smartCollection, thumbnail: 'thumb', isArchived: true, isPinned: true, color: 'red', count: undefined, imageIds: ['a', 'b'] }} />);
+        expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
+        expect(screen.getByText('2')).toBeTruthy();
+        expect(container.querySelector('.bg-red-500')).toBeTruthy();
+
+        for (const color of colors) {
+            rerender(<CollectionItem {...shared} col={{ ...baseCollection, color }} viewMode="grid" />);
+            expect(screen.getByTitle(baseCollection.name)).toBeTruthy();
+        }
+        rerender(<CollectionItem {...shared} col={{ ...baseCollection, isArchived: true }} />);
+        expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
+        rerender(<CollectionItem {...shared} col={{ ...smartCollection, isPinned: true }} viewMode="grid" />);
+        expect(screen.getByTitle(smartCollection.name).className).toContain('border-sage-400');
+    });
+
+    it('covers grid thumbnails and colored list hydration variants', () => {
+        const shared = {
+            filters: { ...filters, collectionId: baseCollection.id }, setFilters: vi.fn(), editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
+            handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
+            handleDrop: noopDrop, handleContextMenu: noopContextMenu
+        };
+        const { container, rerender } = render(
+            <CollectionItem {...shared} col={{ ...baseCollection, thumbnail: 'thumb', isArchived: true, filters: smartCollection.filters, count: undefined, imageIds: ['a', 'b'] }} dropTargetId={baseCollection.id} viewMode="grid" />
+        );
+        expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
+        expect(screen.getByTitle(baseCollection.name).className).toContain('scale-105');
+        expect(container.querySelector('.opacity-70.italic')).toBeTruthy();
+
+        rerender(<CollectionItem {...shared} filters={filters} col={{ ...baseCollection, thumbnail: 'thumb', count: undefined, imageIds: ['a', 'b'] }} dropTargetId={null} viewMode="grid" />);
+        expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
+        expect(screen.getByText('2')).toBeTruthy();
+
+        rerender(<CollectionItem {...shared} filters={filters} col={{ ...baseCollection, color: 'blue' }} dropTargetId={null} isThumbnailPending />);
+        expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
+        expect(container.querySelector('.bg-blue-500')).toBeTruthy();
+
+        rerender(<CollectionItem {...shared} filters={filters} col={{ ...smartCollection, color: 'green' }} dropTargetId={null} />);
+        expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
+        expect(container.querySelector('.bg-green-500')).toBeTruthy();
     });
 });

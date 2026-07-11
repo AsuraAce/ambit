@@ -44,12 +44,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
 
     const runDiagnostics = async () => {
-        if (!settings.invokeAiPath) return;
         setIsDiagLoading(true);
         try {
             const { diagnoseInvokeAI } = await import('../../../services/invoke/connection');
-            const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath) as Omit<InvokeDiagnostics, 'folder'>;
-            const folderAudit = await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath });
+            const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath!) as Omit<InvokeDiagnostics, 'folder'>;
+            const folderAudit = await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath! });
 
             setDiagData({
                 ...dbDiag,
@@ -63,13 +62,12 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     };
 
     const handleTestConnection = async () => {
-        if (!settings.invokeAiPath) return;
         setIsTesting(true);
         setTestResult(null);
 
         try {
             const { testConnection } = await import('../../../services/invoke/connection');
-            const result = await testConnection(settings.invokeAiPath);
+            const result = await testConnection(settings.invokeAiPath!);
             setTestResult({ success: result.success, message: result.message });
         } catch (e) {
             console.error(e);

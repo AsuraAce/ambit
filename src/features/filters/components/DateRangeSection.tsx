@@ -138,8 +138,8 @@ export const DateRangeSection: React.FC<DateRangeSectionProps> = ({
         }
 
         const normalized = normalizeDateInputPair(draftFrom, value);
-        setDraftFrom(normalized.dateFrom ?? '');
-        setDraftTo(normalized.dateTo ?? '');
+        setDraftFrom(normalized.dateFrom!);
+        setDraftTo(normalized.dateTo!);
     };
 
     const applyCustomRange = () => {
