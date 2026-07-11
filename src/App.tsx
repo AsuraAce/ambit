@@ -447,6 +447,7 @@ export default function App() {
             {!settings.hasCompletedOnboarding ? (
                 <OnboardingWizard
                     isOpen={!modals.modals.settings}
+                    preserveBackdropWhenClosed
                     onComplete={(s) => {
                         setSettings(p => ({ ...p, ...s }));
                         setIsImportModalOpen(true);

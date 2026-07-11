@@ -30,7 +30,13 @@ vi.mock('framer-motion', () => {
         animate?: unknown;
     };
 
-    const MotionDiv = ({ initial: _initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete: _onAnimationComplete, ...props }: MotionDivProps) => <div {...props} />;
+    const MotionDiv = ({ initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete: _onAnimationComplete, ...props }: MotionDivProps) => {
+        const initialY = typeof initial === 'object' && initial !== null && 'y' in initial
+            ? (initial as { y?: unknown }).y
+            : undefined;
+
+        return <div data-motion-initial-y={typeof initialY === 'number' ? initialY : undefined} {...props} />;
+    };
     const MotionButton = ({ whileHover: _whileHover, ...props }: MotionButtonProps) => <button {...props} />;
     const MotionSpan = ({ animate: _animate, ...props }: MotionSpanProps) => <span {...props} />;
 
@@ -105,6 +111,14 @@ describe('OnboardingWizard', () => {
         expect(screen.getByText('Welcome').closest('li')?.getAttribute('aria-current')).toBe('step');
     });
 
+    it('clips animated step overflow while retaining vertical scrolling', () => {
+        renderWizard();
+
+        const scrollRegion = screen.getByTestId('onboarding-step-scroll-region');
+        expect(scrollRegion.className).toContain('overflow-x-hidden');
+        expect(scrollRegion.className).toContain('overflow-y-auto');
+    });
+
     it('keeps forward and reverse tab navigation inside the dialog', () => {
         renderWizard();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -146,6 +160,7 @@ describe('OnboardingWizard', () => {
         const props = {
             onComplete: vi.fn(),
             onOpenSettings: vi.fn(),
+            preserveBackdropWhenClosed: true,
         };
         const { rerender } = render(
             <OnboardingWizard isOpen={true} {...props} />
@@ -155,9 +170,22 @@ describe('OnboardingWizard', () => {
 
         rerender(<OnboardingWizard isOpen={false} {...props} />);
         expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+        expect(screen.getByTestId('onboarding-backdrop').getAttribute('aria-hidden')).toBe('true');
 
         rerender(<OnboardingWizard isOpen={true} {...props} />);
-        expect(screen.getByRole('heading', { name: 'Connect your generators' })).not.toBeNull();
+        const heading = screen.getByRole('heading', { name: 'Connect your generators' });
+        expect(screen.queryByTestId('onboarding-backdrop')).toBeNull();
+        expect(document.activeElement).toBe(heading);
+    });
+
+    it('does not translate the Gemini panel vertically inside the scroll region', () => {
+        renderWizard();
+        continueToIntelligence();
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+
+        expect(document.querySelector('[data-motion-initial-y="10"]')).toBeNull();
     });
 
     it('completes with AI disabled and the shared default masking keywords', () => {

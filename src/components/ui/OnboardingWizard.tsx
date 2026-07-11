@@ -29,12 +29,14 @@ type OnboardingSettingsTab = 'folders' | 'invokeai' | 'comfyui' | 'a1111';
 
 interface OnboardingWizardProps {
     isOpen: boolean;
+    preserveBackdropWhenClosed?: boolean;
     onComplete: (settings: Partial<AppSettings>) => void;
     onOpenSettings?: (tab: OnboardingSettingsTab) => void;
 }
 
 const TOTAL_STEPS = 4;
 const STEP_LABELS = ['Welcome', 'Integrations', 'Intelligence', 'Privacy'] as const;
+const ONBOARDING_BACKDROP_CLASS = 'fixed inset-0 z-[100] bg-gray-950/90 backdrop-blur-md';
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',
     'input:not([disabled])',
@@ -46,6 +48,7 @@ const FOCUSABLE_SELECTOR = [
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     isOpen,
+    preserveBackdropWhenClosed = false,
     onComplete,
     onOpenSettings,
 }) => {
@@ -198,10 +201,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         setStep(4);
     };
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return preserveBackdropWhenClosed ? (
+            <div
+                data-testid="onboarding-backdrop"
+                aria-hidden="true"
+                className={ONBOARDING_BACKDROP_CLASS}
+            />
+        ) : null;
+    }
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-gray-950/90 p-2 backdrop-blur-md sm:p-4">
+        <div className={`${ONBOARDING_BACKDROP_CLASS} flex items-center justify-center overflow-y-auto p-2 sm:p-4`}>
             <motion.div
                 ref={dialogRef}
                 role="dialog"
@@ -248,7 +259,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         Step {step} of {TOTAL_STEPS} · {STEP_LABELS[step - 1]}
                     </p>
 
-                    <div className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto pr-1">
+                    <div
+                        data-testid="onboarding-step-scroll-region"
+                        className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
+                    >
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={step}
@@ -381,8 +395,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                                         {enableAI ? (
                                             <motion.div
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
                                                 className="space-y-3"
                                             >
                                                 <ApiKeyInput
