@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
-import { AppSettings } from '../../types';
 
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',
@@ -17,17 +16,13 @@ interface ImportModalProps {
     onClose: () => void;
     onOpenSettings: (tab: 'invokeai' | 'a1111' | 'comfyui' | 'folders') => void;
     onImportFiles: () => void;
-    settings: AppSettings;
-    setSettings: (update: Partial<AppSettings> | ((prev: AppSettings) => Partial<AppSettings>)) => void;
 }
 
 export const ImportModal: React.FC<ImportModalProps> = ({
     isOpen,
     onClose,
     onOpenSettings,
-    onImportFiles,
-    settings,
-    setSettings
+    onImportFiles
 }) => {
     const dialogRef = React.useRef<HTMLDivElement>(null);
     const headingRef = React.useRef<HTMLHeadingElement>(null);
@@ -68,13 +63,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             event.preventDefault();
             firstElement.focus();
         }
-    };
-
-    const handleToggleHide = () => {
-        setSettings(prev => ({
-            ...prev,
-            hideImportModal: !prev.hideImportModal
-        }));
     };
 
     const handleOpenSettings = (tab: 'invokeai' | 'a1111' | 'comfyui' | 'folders') => {
@@ -166,7 +154,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                             <div className="flex flex-wrap gap-2">
                                                 <IntegrationButton label="InvokeAI" onClick={() => handleOpenSettings('invokeai')} color="indigo" />
                                                 <IntegrationButton label="ComfyUI" onClick={() => handleOpenSettings('comfyui')} color="emerald" />
-                                                <IntegrationButton label="A1111 / Forge" onClick={() => handleOpenSettings('a1111')} color="amber" />
+                                                <IntegrationButton label="SD WebUI" onClick={() => handleOpenSettings('a1111')} color="amber" />
                                             </div>
                                         </div>
                                     </div>
@@ -210,25 +198,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                             </section>
                         </div>
 
-                        {/* Footer */}
-                        <div className="px-8 py-5 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex items-center justify-between">
-                            <label className="flex items-center gap-3 cursor-pointer group select-none">
-                                <div
-                                    className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${settings.hideImportModal ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/20' : 'border-gray-400 group-hover:border-sage-400'}`}
-                                    onClick={handleToggleHide}
-                                >
-                                    {settings.hideImportModal && <Check className="w-3 h-3 text-white stroke-[3]" />}
-                                </div>
-                                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-gray-500 group-hover:text-gray-300 transition-colors">Don't show this again</span>
-                            </label>
-
-                            <button
-                                onClick={onClose}
-                                className="text-xs font-black text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-                            >
-                                Skip
-                            </button>
-                        </div>
                     </motion.div>
                 </div>
             )}

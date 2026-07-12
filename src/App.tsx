@@ -55,6 +55,7 @@ export default function App() {
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const openImportModal = useCallback(() => setIsImportModalOpen(true), []);
 
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
@@ -408,13 +409,7 @@ export default function App() {
                 scopeName={scopeName}
                 isFiltering={isFiltering}
                 fileOps={fileOps}
-                onOpenImportModal={() => {
-                    if (settings.hideImportModal) {
-                        void handleSelectFilesImport();
-                    } else {
-                        setIsImportModalOpen(true);
-                    }
-                }}
+                onOpenImportModal={openImportModal}
                 clearAllFilters={clearAllFilters}
                 scrollContainerRef={scrollContainerRef}
                 images={images}
@@ -450,7 +445,7 @@ export default function App() {
                     preserveBackdropWhenClosed
                     onComplete={(s) => {
                         setSettings(p => ({ ...p, ...s }));
-                        setIsImportModalOpen(true);
+                        openImportModal();
                         addToast("Setup complete!", "success");
                     }}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
@@ -461,8 +456,6 @@ export default function App() {
                 onClose={() => setIsImportModalOpen(false)}
                 onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 onImportFiles={() => { void handleSelectFilesImport(); }}
-                settings={settings}
-                setSettings={setSettings}
             />
             <input
                 type="file"
@@ -515,7 +508,7 @@ export default function App() {
                     onNavigate: changeViewMode,
                     onToggleTheme: toggleTheme,
                     onOpenSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
-                    onImport: () => { void handleSelectFilesImport(); },
+                    onImport: openImportModal,
                     onCreateCollection: () => { setIsFilterPanelOpen(true); setTimeout(() => document.getElementById('create-col-btn')?.click(), 100); },
                     onToggleAI: toggleAiSearch,
                     settings: settings
