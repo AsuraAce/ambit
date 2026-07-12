@@ -12,7 +12,6 @@ describe('ConfirmDialog', () => {
         isOpen={true}
         title="Confirm action"
         message="This is a test confirmation."
-        confirmLabel="Confirm"
         onConfirm={onConfirm}
         onCancel={vi.fn()}
       />

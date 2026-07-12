@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FacetType } from '../../../types';
 
 const getDbMock = vi.hoisted(() => vi.fn());
+const getValidFacetNamesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
+}));
+
+vi.mock('../../../bindings', () => ({
+    commands: {
+        getValidFacetNames: getValidFacetNamesMock,
+    },
 }));
 
 const deriveScopedRows = (
@@ -43,9 +51,338 @@ const findSelectCall = (
     predicate: (sql: string) => boolean
 ) => db.select.mock.calls.find(([sql]) => predicate(sql as string)) as [string, unknown[]] | undefined;
 
+describe('searchRepo basic queries', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('counts globally visible images with the fast query and falls back to zero', async () => {
+        const db = { select: vi.fn().mockResolvedValueOnce([{ count: 7 }]).mockResolvedValueOnce([]) };
+        getDbMock.mockResolvedValue(db);
+        const { countGlobalImages } = await import('../searchRepo');
+
+        await expect(countGlobalImages()).resolves.toBe(7);
+        await expect(countGlobalImages()).resolves.toBe(0);
+        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE is_deleted = 0');
+    });
+
+    it('searches image IDs with explicit and default visibility predicates', async () => {
+        const db = { select: vi.fn().mockResolvedValueOnce([{ id: 'a' }, { id: 'b' }]).mockResolvedValueOnce([]) };
+        getDbMock.mockResolvedValue(db);
+        const { searchImageIds } = await import('../searchRepo');
+
+        await expect(searchImageIds('WHERE is_deleted = ?', [0])).resolves.toEqual(['a', 'b']);
+        await expect(searchImageIds('', [])).resolves.toEqual([]);
+        expect(db.select).toHaveBeenNthCalledWith(1, 'SELECT id FROM images WHERE is_deleted = ?', [0]);
+        expect(db.select.mock.calls[1]?.[0]).toContain('IFNULL(is_intermediate_gen, 0) = 0');
+    });
+
+    it('returns zero when scoped and unscoped count queries have no row', async () => {
+        const db = { select: vi.fn().mockResolvedValue([]) };
+        getDbMock.mockResolvedValue(db);
+        const { countImages } = await import('../searchRepo');
+
+        await expect(countImages('WHERE is_deleted = ?', [0], 'collection-1')).resolves.toBe(0);
+        await expect(countImages('WHERE is_deleted = ?', [0], undefined, 'Detailer')).resolves.toBe(0);
+        await expect(countImages('WHERE is_deleted = ?', [0])).resolves.toBe(0);
+    });
+
+    it('uses default search ordering and supports an ascending pinned cursor without a pin value', async () => {
+        const db = { select: vi.fn().mockResolvedValue([]) };
+        getDbMock.mockResolvedValue(db);
+        const { searchImages } = await import('../searchRepo');
+
+        await searchImages('', [], 10);
+        await searchImages('WHERE is_deleted = ?', [0], 10, 'path', 'ASC', true, undefined, undefined, {
+            val: 'image.png', id: 'image-1'
+        });
+        await searchImages('WHERE is_deleted = ?', [0], 10, 'timestamp', 'DESC', true, undefined, undefined, {
+            val: 100, id: 'image-2', isPinned: 1
+        });
+
+        expect(db.select.mock.calls[0]?.[0]).toContain('ORDER BY images.timestamp DESC, images.id DESC');
+        expect(db.select.mock.calls[1]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.path ASC, images.id ASC');
+        expect(db.select.mock.calls[1]?.[1]).toEqual([0, 0, 0, 'image.png', 0, 'image.png', 'image-1']);
+        expect(db.select.mock.calls[2]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.timestamp DESC, images.id DESC');
+        expect(db.select.mock.calls[2]?.[1]).toEqual([0, 1, 1, 100, 1, 100, 'image-2']);
+    });
+
+    it.each([
+        ['timestamp', '', 'idx_images_fast_sort_v3'],
+        ['timestamp', ' AND privacy_hidden = 0', 'idx_images_privacy_fast_sort_v1'],
+        ['path', '', 'idx_images_name_sort_v1'],
+        ['file_size', '', 'idx_images_size_sort_v1'],
+        ['width', '', null],
+    ])('selects the expected fast index for %s sorting', async (sortField, suffix, expectedIndex) => {
+        const db = { select: vi.fn().mockResolvedValue([]) };
+        getDbMock.mockResolvedValue(db);
+        const { searchImages } = await import('../searchRepo');
+        const whereClause = `WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0${suffix}`;
+
+        await searchImages(whereClause, [], 25, sortField, 'DESC');
+
+        const sql = db.select.mock.calls[0]?.[0] as string;
+        if (expectedIndex) expect(sql).toContain(`FROM images INDEXED BY ${expectedIndex}`);
+        else expect(sql).toContain('FROM images\n');
+    });
+});
+
+describe('searchRepo valid facet names', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('returns valid facets and serializes command arguments', async () => {
+        const data = {
+            checkpoints: ['Flux'], loras: ['Detailer'], embeddings: [], hypernetworks: [],
+            tools: ['ComfyUI'], controlNets: [], ipAdapters: []
+        };
+        getValidFacetNamesMock.mockResolvedValue({ status: 'ok', data });
+        const { getValidFacetNames } = await import('../searchRepo');
+
+        await expect(getValidFacetNames('WHERE is_deleted = ?', [0], 'collection-1', 'Detailer')).resolves.toEqual(data);
+        expect(getValidFacetNamesMock).toHaveBeenCalledWith(
+            'WHERE is_deleted = ?',
+            '[0]',
+            'collection-1',
+            'Detailer'
+        );
+    });
+
+    it('passes null scopes and returns null for command and transport failures', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getValidFacetNamesMock
+            .mockResolvedValueOnce({ status: 'error', error: 'query failed' })
+            .mockRejectedValueOnce(new Error('transport failed'));
+        const { getValidFacetNames } = await import('../searchRepo');
+
+        await expect(getValidFacetNames('WHERE 1 = 1', [])).resolves.toBeNull();
+        expect(getValidFacetNamesMock).toHaveBeenNthCalledWith(1, 'WHERE 1 = 1', '[]', null, null);
+        await expect(getValidFacetNames('WHERE 1 = 1', [])).resolves.toBeNull();
+        expect(errorSpy).toHaveBeenCalledTimes(2);
+        errorSpy.mockRestore();
+    });
+});
+
+describe('searchRepo fallbacks and caching', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { clearLibraryStatsCache } = await import('../searchRepo');
+        clearLibraryStatsCache();
+    });
+
+    it('reuses the unscoped library summary until the cache is cleared', async () => {
+        const db = {
+            select: vi.fn(async (sql: string) => sql.includes('count(*) as count') ? [{ count: 4 }] : [])
+        };
+        getDbMock.mockResolvedValue(db);
+        const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
+
+        const first = await getLibraryStatsSummary();
+        const callsAfterFirst = db.select.mock.calls.length;
+        await expect(getLibraryStatsSummary()).resolves.toBe(first);
+        expect(db.select).toHaveBeenCalledTimes(callsAfterFirst);
+
+        clearLibraryStatsCache();
+        await getLibraryStatsSummary();
+        expect(db.select.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+    });
+
+    it('returns an empty summary when a stats query fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getDbMock.mockResolvedValue({ select: vi.fn().mockRejectedValue(new Error('query failed')) });
+        const { getLibraryStatsSummary } = await import('../searchRepo');
+
+        await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0])).resolves.toEqual({
+            totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: []
+        });
+        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats summary', expect.any(Error));
+        errorSpy.mockRestore();
+    });
+
+    it('returns empty keyword and facet collections when their queries fail', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getDbMock.mockResolvedValue({ select: vi.fn().mockRejectedValue(new Error('query failed')) });
+        const { getFacets, getKeywordStats } = await import('../searchRepo');
+
+        await expect(getKeywordStats()).resolves.toEqual([]);
+        await expect(getFacets()).resolves.toEqual({
+            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+        });
+        expect(errorSpy).toHaveBeenCalledTimes(2);
+        errorSpy.mockRestore();
+    });
+
+    it('returns empty library stats when database acquisition fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getDbMock.mockRejectedValue(new Error('database unavailable'));
+        const { getLibraryStats } = await import('../searchRepo');
+
+        await expect(getLibraryStats()).resolves.toEqual({
+            totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: []
+        });
+        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats', expect.any(Error));
+        errorSpy.mockRestore();
+    });
+});
+
 describe('searchRepo getFacets', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('maps tool cache rows and labels unnamed tools as unknown', async () => {
+        const db = createFacetDb([
+            { facet_type: 'tools', resource_name: 'ComfyUI', count: 4 },
+            { facet_type: 'tools', resource_name: null, count: 1 },
+        ]);
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets('', [], ['tools']);
+
+        expect(facets.tools).toEqual(['ComfyUI', 'Unknown']);
+        expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores unsupported runtime facet types during scoped counting', async () => {
+        const db = createFacetDb([]);
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets(
+            'WHERE privacy_hidden = ?',
+            [0],
+            ['unsupported' as FacetType]
+        );
+
+        expect(facets).toEqual({
+            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+        });
+    });
+
+    it('handles mixed cache and partial disk metadata without inventing local assets', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'checkpoints', resource_name: 'Pony Diffusion V6 XL', count: 3,
+                    created_at: 200, last_used_at: 300
+                },
+                {
+                    facet_type: 'checkpoints', resource_name: 'ponyDiffusionV6XL', count: 2,
+                    created_at: null, last_used_at: null
+                },
+                {
+                    facet_type: 'loras', resource_name: 'Remote', count: 1,
+                    thumbnail_path: 'https://example.test/remote.webp', preview_url: 'https://example.test/remote.webp'
+                },
+                { facet_type: 'unknown_type', resource_name: 'Ignored', count: 1 },
+            ],
+            [
+                { resource_type: null, name: 'No Type', hash: 'none' },
+                { resource_type: 'embeddings', name: 'Embed', hash: 'embed-hash' },
+                { resource_type: 'hypernetworks', name: 'Hyper', hash: 'hyper-hash' },
+                { resource_type: 'loras', name: null, hash: null },
+            ]
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets('', [], ['checkpoints', 'loras', 'embeddings', 'hypernetworks'], { assetScope: 'all' });
+
+        expect(facets.checkpoints[0]).toMatchObject({ count: 5, createdAt: 200, lastUsedAt: 300 });
+        expect(facets.loras[0]).toMatchObject({ thumbnailSource: 'remote', isLocalDisk: false });
+        expect(facets.embeddings).toEqual([]);
+        expect(facets.hypernetworks).toEqual([]);
+    });
+
+    it('maps preview-only and unnamed facet rows with partial local metadata', async () => {
+        const db = createFacetDb(
+            [
+                {
+                    facet_type: 'loras', resource_name: null, resource_hash: 'local-hash', count: 2,
+                    preview_url: 'https://example.test/preview.webp'
+                },
+                { facet_type: 'loras', resource_name: null, resource_hash: null, count: 1 },
+                { facet_type: 'loras', resource_name: 'NameOnly', resource_hash: null, count: 1 },
+                { facet_type: 'loras', resource_name: 'EmptyCount', resource_hash: null, count: null },
+            ],
+            [
+                { resource_type: 'loras', name: null, hash: 'local-hash', scanned_at: 1_700_000_000 },
+                { resource_type: 'loras', name: 'NameOnly', hash: null, scanned_at: 1_700_000_100 },
+            ]
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets('', [], ['loras'], { assetScope: 'all' });
+
+        expect(facets.loras).toHaveLength(2);
+        expect(facets.loras.find(item => item.name === 'Unknown')).toMatchObject({
+            name: 'Unknown', count: 3, previewUrl: 'https://example.test/preview.webp',
+            thumbnailSource: 'remote', isLocalDisk: true, localModifiedAt: 1_700_000_000_000
+        });
+        expect(facets.loras.find(item => item.name === 'NameOnly')).toMatchObject({
+            count: 1, isLocalDisk: true, localModifiedAt: 1_700_000_100_000
+        });
+    });
+
+    it('normalizes missing scoped facet names to the unknown group', async () => {
+        const db = createFacetDb(
+            [{ facet_type: 'checkpoints', resource_name: null, count: 8 }],
+            [],
+            { checkpoints: [{ name: null, count: 2 }] }
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets('WHERE privacy_hidden = ?', [0], ['checkpoints']);
+
+        expect(facets.checkpoints[0]).toMatchObject({ name: 'Unknown', count: 2 });
+    });
+
+    it('returns immediately when no facet types are requested', async () => {
+        const db = createFacetDb([]);
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        await expect(getFacets('', [], [])).resolves.toEqual({
+            checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: []
+        });
+        expect(db.select).not.toHaveBeenCalled();
+    });
+
+    it('overlays scoped counts for every resource-backed facet type', async () => {
+        const cacheRows = [
+            { facet_type: 'embeddings', resource_name: 'Embed', count: 9 },
+            { facet_type: 'hypernetworks', resource_name: 'Hyper', count: 8 },
+            { facet_type: 'control_nets', resource_name: 'Canny', count: 7 },
+            { facet_type: 'ip_adapters', resource_name: 'FaceID', count: 6 },
+        ];
+        const db = createFacetDb(cacheRows, [], {
+            embeddings: [{ name: 'Embed', count: 4 }],
+            hypernetworks: [{ name: 'Hyper', count: 3 }],
+            control_nets: [{ name: 'Canny', count: 2 }],
+            ip_adapters: [{ name: 'FaceID', count: 1 }],
+        });
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const facets = await getFacets(
+            'WHERE is_deleted = ? AND privacy_hidden = ?',
+            [0, 0],
+            ['embeddings', 'hypernetworks', 'controlNets', 'ipAdapters']
+        );
+
+        expect(facets.embeddings[0]?.count).toBe(4);
+        expect(facets.hypernetworks[0]?.count).toBe(3);
+        expect(facets.controlNets[0]?.count).toBe(2);
+        expect(facets.ipAdapters[0]?.count).toBe(1);
+        const scopedSql = db.select.mock.calls.map(([sql]) => sql as string).join('\n');
+        expect(scopedSql).toContain('JOIN image_embeddings');
+        expect(scopedSql).toContain('JOIN image_hypernetworks');
+        expect(scopedSql).toContain('JOIN image_controlnets');
+        expect(scopedSql).toContain('JOIN image_ipadapters');
     });
 
     it('marks disk-scanned resources as local disk assets', async () => {
@@ -114,6 +451,16 @@ describe('searchRepo getFacets', () => {
                     resource_type: 'control_nets',
                     name: 'Canny',
                     hash: 'cnet_Canny'
+                },
+                {
+                    resource_type: 'ip_adapters',
+                    name: 'IP Plus',
+                    hash: 'ipad_IP Plus'
+                },
+                {
+                    resource_type: 'unsupported',
+                    name: 'Ignored',
+                    hash: 'ignored'
                 }
             ]
         );
@@ -131,7 +478,7 @@ describe('searchRepo getFacets', () => {
         expect(diskSql).toContain("lookup_source = 'disk_scan'");
         expect(diskParams).toEqual(['control_nets', 'ip_adapters']);
         expect(facets.controlNets[0].isLocalDisk).toBe(true);
-        expect(facets.ipAdapters[0].isLocalDisk).toBe(false);
+        expect(facets.ipAdapters[0].isLocalDisk).toBe(true);
     });
 
     it('merges disk and image-found assets by asset match key', async () => {
@@ -143,6 +490,7 @@ describe('searchRepo getFacets', () => {
                     resource_hash: 'metadata-hash',
                     count: 8,
                     thumbnail_path: 'used.webp',
+                    created_at: 200,
                     is_local_disk: 0
                 },
                 {
@@ -151,6 +499,7 @@ describe('searchRepo getFacets', () => {
                     resource_hash: 'file:C:/models/ponyDiffusionV6XL.safetensors',
                     count: 0,
                     thumbnail_path: 'local.webp',
+                    created_at: 100,
                     is_local_disk: 1
                 },
                 {
@@ -179,6 +528,7 @@ describe('searchRepo getFacets', () => {
             name: 'Pony Diffusion V6 XL',
             count: 8,
             isLocalDisk: true,
+            createdAt: 100,
             assetMatchKey: 'ponydiffusionv6xl',
             filterAliases: ['Pony Diffusion V6 XL', 'ponyDiffusionV6XL']
         });
@@ -1308,5 +1658,18 @@ describe('searchRepo scoped stats queries', () => {
             expect(sql).not.toContain('WHERE si.rowid > ?');
             expect(sql).not.toContain('OFFSET');
         });
+    });
+
+    it('excludes short, numeric, and configured stop-word tokens from keyword stats', async () => {
+        const db = {
+            select: vi.fn().mockResolvedValue([
+                { rowid: 1, positive_prompt: 'the cat 123 validword validword' },
+                { rowid: 2, positive_prompt: null },
+            ])
+        };
+        getDbMock.mockResolvedValue(db);
+        const { getKeywordStats } = await import('../searchRepo');
+
+        await expect(getKeywordStats()).resolves.toEqual([{ text: 'validword', value: 2 }]);
     });
 });

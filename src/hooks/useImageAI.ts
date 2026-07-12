@@ -16,14 +16,14 @@ function parseGeminiError(error: unknown): string {
   if (lowerMsg.includes('rate') || lowerMsg.includes('too many requests')) {
     return 'Too many requests. Please wait a moment.';
   }
+  if (lowerMsg.includes('no api key') || lowerMsg.includes('missing')) {
+    return 'API key is missing. Add it in Settings > Experiments.';
+  }
   if (lowerMsg.includes('api key') || lowerMsg.includes('invalid') || lowerMsg.includes('401') || lowerMsg.includes('403')) {
     return 'Invalid API key. Check your settings.';
   }
-  if (lowerMsg.includes('network') || lowerMsg.includes('fetch') || lowerMsg.includes('failed to fetch')) {
+  if (lowerMsg.includes('network') || lowerMsg.includes('fetch')) {
     return 'Network error. Check your connection.';
-  }
-  if (lowerMsg.includes('no api key') || lowerMsg.includes('missing')) {
-    return 'API key is missing. Add it in Settings > Experiments.';
   }
 
   return 'AI request failed. Please try again.';

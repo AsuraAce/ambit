@@ -82,9 +82,8 @@ export function CollectionList<T extends Collection>({
         }));
     };
     const handleSortSelect = (id: string) => {
-        if (isCollectionSort(id)) setSort(id);
+        setSort(id as CollectionSortOption);
     };
-    const [showSortMenu, setShowSortMenu] = useState(false);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
     const viewMode = settings.resourceViewModes?.['collections'] || 'list';

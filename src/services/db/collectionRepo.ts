@@ -114,7 +114,7 @@ const toDisplayUrl = (rawPath?: string | null): string | undefined => {
     return convertFileSrc(normalizePath(rawPath));
 };
 
-const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const nowMs = () => performance.now();
 
 const logStartupDuration = (label: string, startedAt: number) => {
     const elapsed = Math.round(nowMs() - startedAt);
@@ -241,9 +241,7 @@ export const clearCollectionThumbnailCacheForImages = async (imageIds: string[])
              WHERE image_id IN (${placeholders})`,
             idBatch
         );
-        if (Array.isArray(rows)) {
-            collectionIds.push(...rows.map(row => row.collection_id));
-        }
+        collectionIds.push(...(rows ?? []).map(row => row.collection_id));
     }
 
     await clearDynamicThumbnailCacheForCollections(db, collectionIds);
@@ -603,8 +601,7 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
                 if (collection.customThumbnail) return true;
                 if (collection.filters || collection.thumbnail) return false;
 
-                const imageCount = collection.count ?? collection.imageIds.length;
-                return imageCount > 0;
+                return collection.count! > 0;
             })
             .map(collection => ({
                 id: collection.id,
@@ -772,7 +769,7 @@ export const getSmartCollectionSummaries = async (
             const safe = safeRows[0];
             const thumbnailPath = normal?.thumbnail_path || null;
             summaries[query.id] = {
-                ...(summaries[query.id] || { count: 0, thumbnailSourceKind: 'dynamic' as const }),
+                ...summaries[query.id],
                 thumbnail: toDisplayUrl(thumbnailPath),
                 safeThumbnail: toDisplayUrl(safe?.thumbnail_path),
                 thumbnailIsSensitive: normal?.privacy_hidden === 1,

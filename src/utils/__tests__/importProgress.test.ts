@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { formatStableImportProgress } from '../importProgress';
 
 describe('formatStableImportProgress', () => {
+    it('uses singular folder copy when finalizing one source', () => {
+        expect(formatStableImportProgress({
+            current: 1,
+            total: 1,
+            sourceCount: 1,
+            phase: 'finalizing'
+        }).message).toBe('Finalizing import...');
+    });
+
     it('formats stable single-folder scanning progress with path detail', () => {
         expect(formatStableImportProgress({
             current: 0,

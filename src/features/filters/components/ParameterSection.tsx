@@ -62,13 +62,10 @@ const groupSamplers = (samplers: string[]) => {
     return Object.entries(groups)
         .map(([label, items]) => ({ label, items: items.sort() }))
         .filter(g => g.items.length > 0)
-        .sort((a, b) => {
-            // Keep "Other" at the bottom
-            if (a.label === 'Other') return 1;
-            if (b.label === 'Other') return -1;
-            // Otherwise sort alphabetically
-            return a.label.localeCompare(b.label);
-        });
+        .sort((a, b) => (
+            ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(a.label)
+            - ['DDIM', 'Deis', 'DPM', 'Euler', 'Heun', 'LMS', 'UniPC', 'Other'].indexOf(b.label)
+        ));
 };
 
 export const ParameterSection: React.FC<ParameterSectionProps> = ({

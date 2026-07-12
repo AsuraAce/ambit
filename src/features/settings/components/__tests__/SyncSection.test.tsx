@@ -30,7 +30,7 @@ vi.mock('../../../../hooks/useToast', () => ({
     })
 }));
 
-const createSettings = (): AppSettings => ({
+const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     hasCompletedOnboarding: true,
     theme: 'dark',
     thumbnailSize: 220,
@@ -46,6 +46,7 @@ const createSettings = (): AppSettings => ({
     importOrphans: true,
     starredAs: 'favorite',
     syncBoardsToCollections: true
+    , ...overrides
 });
 
 const SyncSectionHarness: React.FC<{ initialSettings: AppSettings }> = ({ initialSettings }) => {
@@ -152,5 +153,86 @@ describe('SyncSection', () => {
         await waitFor(() => {
             expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull();
         });
+    });
+
+    it('renders nothing without an InvokeAI path', () => {
+        const { container } = render(<SyncSection settings={createSettings({ invokeAiPath: undefined })} setSettings={vi.fn()} />);
+        expect(container.firstChild).toBeNull();
+    });
+
+    it('updates starred mapping and ignores invalid select values', () => {
+        const { unmount } = render(<SyncSectionHarness initialSettings={createSettings({ starredAs: undefined })} />);
+        const select = screen.getByRole('combobox');
+        expect((select as HTMLSelectElement).value).toBe('favorite');
+        for (const value of ['pin', 'both', 'none', 'favorite']) {
+            fireEvent.change(select, { target: { value } });
+            expect(mocks.addToast).toHaveBeenCalledWith(`Starred images mapped to ${value}`, 'success');
+        }
+        unmount();
+
+        const setSettings = vi.fn();
+        render(<SyncSection settings={createSettings()} setSettings={setSettings} />);
+        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'invalid' } });
+        expect(setSettings).not.toHaveBeenCalled();
+    });
+
+    it('updates every board and import toggle in both directions', () => {
+        const initial = createSettings({
+            invokeSyncFavorites: false,
+            invokeSyncBoards: false,
+            syncBoardsToCollections: false,
+            importIntermediates: false,
+            importOrphans: false
+        });
+        const { rerender } = render(<SyncSectionHarness initialSettings={initial} />);
+        fireEvent.click(screen.getByLabelText('Sync Favorites'));
+        fireEvent.click(screen.getByLabelText('Sync Boards'));
+        fireEvent.click(screen.getByLabelText('Persistent Collections'));
+        fireEvent.click(screen.getByLabelText(/import intermediates/i));
+        fireEvent.click(screen.getByLabelText(/orphan recovery/i));
+        expect(mocks.addToast).toHaveBeenCalledWith('Invoke favorites will sync', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Invoke boards will sync', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Boards will sync to collections', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Intermediates import enabled', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Orphan recovery enabled', 'success');
+
+        rerender(<SyncSectionHarness initialSettings={createSettings()} />);
+        fireEvent.click(screen.getByLabelText('Sync Favorites'));
+        fireEvent.click(screen.getByLabelText('Persistent Collections'));
+        fireEvent.click(screen.getByLabelText('Sync Boards'));
+        fireEvent.click(screen.getByLabelText(/import intermediates/i));
+        fireEvent.click(screen.getByLabelText(/orphan recovery/i));
+        expect(mocks.addToast).toHaveBeenCalledWith('Invoke favorites sync disabled', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Invoke boards sync disabled', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Board sync disabled', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Intermediates import disabled', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Orphan recovery disabled', 'success');
+    });
+
+    it.each(['idle', 'complete', 'error'] as const)('starts sync from %s status with full configured payload', (syncStatus) => {
+        mocks.syncStatus = syncStatus;
+        render(<SyncSection settings={createSettings({ starredAs: 'both', invokeSyncFavorites: undefined, invokeSyncBoards: undefined })} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: syncStatus === 'error' ? /retry sync/i : /initiate sync/i }));
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith({
+            syncFavorites: true,
+            syncBoards: true,
+            importIntermediates: false,
+            afterTimestamp: 123456,
+            starredAs: 'both',
+            importOrphans: true
+        });
+        expect(mocks.addToast).toHaveBeenCalledWith('Synchronization started...', 'success');
+    });
+
+    it('terminates active synchronization and cancels full-resync confirmation', async () => {
+        const { rerender } = render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /force full resync/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+        await waitFor(() => expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull());
+
+        mocks.syncStatus = 'syncing';
+        rerender(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /terminate sync/i }));
+        expect(mocks.cancelSync).toHaveBeenCalledTimes(1);
     });
 });

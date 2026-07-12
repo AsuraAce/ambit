@@ -67,7 +67,7 @@ const mergePendingInvokePerfContext = (
         lastEventAt: Math.max(current.lastEventAt, incoming.lastEventAt),
         eventCount: current.eventCount + incoming.eventCount,
         pathCount: current.pathCount + incoming.pathCount,
-        mergedCycleCount: (current.mergedCycleCount ?? 1) + (incoming.mergedCycleCount ?? 1)
+        mergedCycleCount: current.mergedCycleCount! + (incoming.mergedCycleCount ?? 1)
     };
 };
 
@@ -94,7 +94,7 @@ const mergePendingTargetedPerfContext = (
         lastEventAt: Math.max(current.lastEventAt, incoming.lastEventAt),
         eventCount: current.eventCount + incoming.eventCount,
         pathCount: current.pathCount + incoming.pathCount,
-        mergedCycleCount: (current.mergedCycleCount ?? 1) + (incoming.mergedCycleCount ?? 1)
+        mergedCycleCount: current.mergedCycleCount! + (incoming.mergedCycleCount ?? 1)
     };
 };
 
@@ -120,7 +120,7 @@ export interface TargetedLiveSyncResult {
     importedCount: number;
 }
 
-export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
+export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
     const { settings, settingsRef, setSettings } = useSettings();
     const { addToast } = useToast();
     const queryClient = useQueryClient();
@@ -148,6 +148,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
     const pendingTargetedPathsRef = useRef<Set<string>>(new Set());
     const pendingTargetedPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
+    const incrementFacetCacheVersion = useCallback(() => {
+        useLibraryStore.getState().incrementFacetCacheVersion();
+    }, []);
     const liveFacetRefreshQueueRef = useRef(createLiveFacetRefreshQueue({
         runIncremental: async (facetTypes: FacetType[]) => {
             return await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
@@ -158,9 +161,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         runFullFallback: async () => {
             return await rebuildFacetCacheStrict();
         },
-        onRefreshApplied: () => {
-            useLibraryStore.getState().incrementFacetCacheVersion();
-        }
+        onRefreshApplied: incrementFacetCacheVersion
     }));
 
     const queueLiveFacetRefresh = useCallback((
@@ -220,8 +221,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             && !!settingsRef.current.invokeAiPath
             && shouldImportOrphans === false;
 
-        if (syncStatus === 'syncing' && (options.mode === 'manual' || options.mode === 'startup')) return;
-        if ((syncStatus === 'syncing' || isLiveSyncingRef.current) && options.mode === 'live') {
+        if ((options.mode === 'manual' || options.mode === 'startup') && syncStatus === 'syncing') return;
+        if (options.mode === 'live' && (syncStatus === 'syncing' || isLiveSyncingRef.current)) {
             pendingInvokeLiveSyncRef.current = true;
             pendingInvokeLivePerfRef.current = mergePendingInvokePerfContext(pendingInvokeLivePerfRef.current, livePerfContext);
             debugLiveWatchPerf('Invoke live rerun queued', {
@@ -494,7 +495,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                                 touchedFacetTypes,
                                 touchedFacetResources,
                                 orphanScanEnabled: shouldImportOrphans,
-                                onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
+                                onRefreshApplied: incrementFacetCacheVersion
                             });
                         } else {
                             await rebuildFacetCache();
@@ -507,16 +508,10 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     }
 
                     const clearedMessageProgress = { ...useLibraryStore.getState().syncProgress, message: undefined };
-                    if (isStartupMode && startupSyncVisible) {
-                        setSyncProgress(clearedMessageProgress);
-                    } else if (!isStartupMode) {
-                        setSyncProgress(clearedMessageProgress);
-                    }
+                    setSyncProgress(clearedMessageProgress);
 
                     // Trigger complete routines
-                    if (totalProcessed > 0 && (options.mode === 'manual' || options.mode === 'startup')) {
-                        addToast(`Synchronization complete: ${totalProcessed} items processed.`, 'success');
-                    }
+                    addToast(`Synchronization complete: ${totalProcessed} items processed.`, 'success');
                     
                     if (options.mode !== 'startup') {
                         await onSyncComplete?.('full');
@@ -524,9 +519,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         if (shouldRefreshBoardCollectionThumbnails) {
                             await refreshCollections();
                         }
-                        if (startupSyncVisible) {
-                            setSyncStatus('complete');
-                        }
+                        setSyncStatus('complete');
                     }
 
                     if (shouldRefreshBoardCollectionThumbnails) {
@@ -554,7 +547,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             touchedFacetTypes,
                             touchedFacetResources,
                             orphanScanEnabled: shouldImportOrphans,
-                            onRefreshApplied: () => useLibraryStore.getState().incrementFacetCacheVersion()
+                            onRefreshApplied: incrementFacetCacheVersion
                         });
                     }
                     debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
@@ -570,10 +563,6 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
             await persistInvokeSnapshot(snapshotCursor);
-
-            if (hasChanges && onSyncComplete && options.mode !== 'live') {
-                await onSyncComplete('full');
-            }
 
             if (totalProcessed === 0 && options.mode === 'manual') {
                 addToast('Synchronization complete: No new changes.', 'info');
@@ -623,7 +612,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 }
             }
         }
-    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {

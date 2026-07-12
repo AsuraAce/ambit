@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { InvokeDbSnapshotState } from '../../../types';
 import {
     buildInvokeDbSnapshotState,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
-    isInvokeDbSnapshotCurrent
+    isInvokeDbSnapshotCurrent,
+    readInvokeDbSnapshotState,
 } from '../dbSnapshot';
+
+const getInvokeDbSnapshot = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../bindings', () => ({
+    commands: { getInvokeDbSnapshot },
+}));
 
 const baseSnapshot = {
     dbPath: 'D:/Invoke/databases/invokeai.db',
@@ -135,5 +142,52 @@ describe('Invoke DB startup snapshot matching', () => {
         };
 
         expect(isInvokeDbSnapshotCurrent(oldRepairSnapshot, current)).toBe(false);
+    });
+
+    it('reads and normalizes snapshot state through the backend command', async () => {
+        getInvokeDbSnapshot.mockResolvedValue({ status: 'ok', data: baseSnapshot });
+
+        await expect(readInvokeDbSnapshotState('D:/Invoke', {})).resolves.toMatchObject({
+            dbPath: baseSnapshot.dbPath,
+            lastSyncedAt: null,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false,
+            files: expect.arrayContaining([
+                expect.objectContaining({ path: 'D:/Invoke/databases/invokeai.db', modifiedMs: 100 }),
+            ]),
+        });
+        expect(getInvokeDbSnapshot).toHaveBeenCalledWith('D:/Invoke');
+    });
+
+    it('invalidates absent, differently configured, and structurally changed snapshots', () => {
+        const current = buildInvokeDbSnapshotState(baseSnapshot, { syncBoardsToCollections: true });
+
+        expect(isInvokeDbSnapshotCurrent(undefined, current)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent({ ...current, dbPath: 'other.db' }, current)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent({ ...current, syncBoardsToCollections: false }, current)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent({ ...current, files: current.files.slice(1) }, current)).toBe(false);
+
+        for (const changedFile of [
+            { ...current.files[0], path: 'different' },
+            { ...current.files[0], exists: !current.files[0].exists },
+            { ...current.files[0], size: current.files[0].size + 1 },
+            { ...current.files[0], modifiedMs: 999 },
+        ]) {
+            expect(isInvokeDbSnapshotCurrent({
+                ...current,
+                files: [changedFile, ...current.files.slice(1)],
+            }, current)).toBe(false);
+        }
+    });
+
+    it('matches legacy omitted options against current false defaults', () => {
+        const current = buildInvokeDbSnapshotState({ dbPath: 'invoke.db', files: [] }, {});
+        const legacy = {
+            dbPath: current.dbPath,
+            pathRepairVersion: current.pathRepairVersion,
+        } as InvokeDbSnapshotState;
+
+        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(true);
     });
 });

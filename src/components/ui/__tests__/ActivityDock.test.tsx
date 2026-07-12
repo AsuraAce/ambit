@@ -808,4 +808,180 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('InvokeAI')).toBeNull();
         expect(screen.queryByText('Updating your library...')).toBeNull();
     });
+
+    it('renders thumbnail regeneration and cancels it', () => {
+        const abortController = new AbortController();
+        const abort = vi.spyOn(abortController, 'abort');
+        useLibraryStore.setState({
+            isRegeneratingThumbnails: true,
+            thumbnailProgress: { current: 3, total: 10, message: 'Regenerating thumbnails...' },
+            thumbnailAbortController: abortController
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('Optimizing')).toBeTruthy();
+        fireEvent.click(screen.getByText('Cancel'));
+        expect(abort).toHaveBeenCalledOnce();
+        expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
+    });
+
+    it('renders model resolution and cancels the backend job', async () => {
+        vi.mocked(invoke).mockResolvedValue(undefined);
+        useLibraryStore.setState({
+            isResolvingModels: true,
+            modelResolutionProgress: { current: 4, total: 8, message: 'Resolving model hashes...' }
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('Resolving Models')).toBeTruthy();
+        fireEvent.click(screen.getByText('Cancel'));
+        expect(useLibraryStore.getState().isResolvingModels).toBe(false);
+        expect(invoke).toHaveBeenCalled();
+    });
+
+    it('renders indeterminate smart fill without cancel controls', () => {
+        useLibraryStore.setState({ isPopulatingThumbnails: true });
+        render(<ActivityDock />);
+        expect(screen.getByText('Smart Fill')).toBeTruthy();
+        expect(screen.getByText('Matching images to models...')).toBeTruthy();
+        expect(screen.queryByText('Cancel')).toBeNull();
+    });
+
+    it('minimizes and expands high- and low-priority activities', () => {
+        useLibraryStore.setState({
+            syncStatus: 'syncing',
+            syncProgress: { current: 1, total: 4, message: 'Syncing' }
+        });
+        const view = render(<ActivityDock />);
+        fireEvent.click(screen.getByTitle('Minimize'));
+        expect(screen.getByTitle('Click to expand details')).toBeTruthy();
+        fireEvent.click(screen.getByTitle('Click to expand details'));
+        expect(screen.getAllByText('Syncing')).toHaveLength(2);
+
+        view.unmount();
+        resetLibraryStore();
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 4, message: 'Healing' },
+            isActivityDockMinimized: true
+        });
+        const { container } = render(<ActivityDock />);
+        expect(container.querySelector('.bg-violet-500')).toBeTruthy();
+    });
+
+    it('dismisses ordinary activity until the store reopens it', () => {
+        useLibraryStore.setState({
+            syncStatus: 'syncing',
+            syncProgress: { current: 1, total: 2, message: 'Syncing' }
+        });
+        render(<ActivityDock />);
+        fireEvent.click(screen.getByTitle('Dismiss'));
+        expect(screen.queryByText('Background Activity')).toBeNull();
+        expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
+    });
+
+    it.each([
+        ['discovery', { isScanningDiscovery: true, discoveryScanProgress: { current: 1, total: 2, message: 'Discovery' } }],
+        ['duplicates', { isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2, message: 'Duplicates' } }],
+        ['missing', { isScanningMissingFiles: true, missingScanProgress: { current: 1, total: 2, message: 'Missing' } }],
+    ] as const)('dispatches %s scan cancellation', (_name, state) => {
+        useLibraryStore.setState(state);
+        render(<ActivityDock />);
+        fireEvent.click(screen.getByText('Cancel'));
+        expect(useLibraryStore.getState().isScanningDiscovery || useLibraryStore.getState().isScanningDuplicates || useLibraryStore.getState().isScanningMissingFiles).toBe(false);
+    });
+
+    it('cancels background thumbnail optimization', () => {
+        vi.mocked(invoke).mockResolvedValue(undefined);
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 0, message: 'Healing' }
+        });
+        render(<ActivityDock />);
+        fireEvent.click(screen.getByText('Cancel'));
+        expect(invoke).toHaveBeenCalled();
+    });
+
+    it('formats long elapsed times and updates them on the interval', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:02:05Z'));
+        useLibraryStore.setState({
+            isScanningDiscovery: true,
+            discoveryScanProgress: {
+                current: 1,
+                total: 0,
+                message: 'Scanning',
+                mode: 'indeterminate',
+                startedAt: Date.now() - 65000
+            }
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('1m 5s elapsed')).toBeTruthy();
+        act(() => vi.advanceTimersByTime(55000));
+        expect(screen.getByText('2m elapsed')).toBeTruthy();
+    });
+
+    it.each([
+        [null, 'Preparing metadata refresh...'],
+        [{ current: 0, total: 0, phase: 'counting' }, 'counting'],
+        [{ current: 0, total: 0, message: 'Preparing' }, 'Preparing'],
+        [{ current: 5, total: 10, updated: 2, errors: 1 }, '5 / 10 images | 50% | 2 updated | 1 errors'],
+    ] as const)('formats metadata refresh fallback progress', (refreshProgress, expected) => {
+        useLibraryStore.setState({ isRefreshingMetadata: true, refreshProgress });
+        render(<ActivityDock />);
+        expect(screen.getByText(expected)).toBeTruthy();
+    });
+
+    it('shows the generic Live Watch source when no source is known', () => {
+        vi.useFakeTimers();
+        useLibraryStore.setState({
+            liveWatchSession: {
+                ...createInitialLiveWatchSessionState(),
+                active: true,
+                source: null,
+                phase: 'syncing'
+            }
+        });
+        render(<ActivityDock />);
+        act(() => vi.advanceTimersByTime(2500));
+        expect(screen.getByText('Watch')).toBeTruthy();
+    });
+
+    it('minimizes visible Live Watch without the low-priority pulse class', () => {
+        vi.useFakeTimers();
+        useLibraryStore.getState().startLiveWatchSession('invoke', { phase: 'syncing' });
+        const { container } = render(<ActivityDock />);
+        act(() => vi.advanceTimersByTime(2500));
+        fireEvent.click(screen.getByTitle('Minimize'));
+        expect(screen.getByTitle('Click to expand details')).toBeTruthy();
+        expect(container.querySelector('.animate-pulse')).toBeNull();
+    });
+
+    it('omits updated metadata counts when the backend has not supplied them', () => {
+        useLibraryStore.setState({
+            isRefreshingMetadata: true,
+            refreshProgress: { current: 2, total: 4, errors: 0 }
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('2 / 4 images | 50%')).toBeTruthy();
+    });
+
+    it('uses the starting fallback for activity without a message or phase', () => {
+        useLibraryStore.setState({
+            syncStatus: 'syncing',
+            syncProgress: { current: 0, total: 0 }
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('Starting work...')).toBeTruthy();
+    });
+
+    it('cancels manual synchronization from the dock', () => {
+        const abortController = new AbortController();
+        useLibraryStore.setState({
+            syncStatus: 'syncing',
+            syncProgress: { current: 1, total: 2, message: 'Syncing' },
+            syncAbortController: abortController
+        });
+        render(<ActivityDock />);
+        fireEvent.click(screen.getByText('Cancel'));
+        expect(useLibraryStore.getState().syncStatus).toBe('idle');
+    });
 });

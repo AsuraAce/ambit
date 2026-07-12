@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { GeminiFilterResponseSchema } from '../validation';
+import { GeneratorTool } from '../../types';
+import {
+    GeminiFilterResponseSchema,
+    isValidGeneratorTool,
+    parseOrThrow,
+} from '../validation';
 
 describe('GeminiFilterResponseSchema', () => {
     it('accepts real optional date inputs', () => {
@@ -39,5 +44,17 @@ describe('GeminiFilterResponseSchema', () => {
             expect(result.data.dateFrom).toBeUndefined();
             expect(result.data.dateTo).toBeUndefined();
         }
+    });
+
+    it('parses valid data or throws the original Zod validation error', () => {
+        expect(parseOrThrow(GeminiFilterResponseSchema, { searchQuery: 'sunset' }))
+            .toMatchObject({ searchQuery: 'sunset', models: [], tools: [] });
+        expect(() => parseOrThrow(GeminiFilterResponseSchema, { models: 'not-an-array' }))
+            .toThrow();
+    });
+
+    it('recognizes only declared generator tool values', () => {
+        expect(isValidGeneratorTool(GeneratorTool.COMFYUI)).toBe(true);
+        expect(isValidGeneratorTool('NotAGenerator')).toBe(false);
     });
 });

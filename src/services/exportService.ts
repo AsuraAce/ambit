@@ -10,7 +10,7 @@ export const exportImagesToZip = async (
   onProgress?: (current: number, total: number) => void
 ): Promise<void> => {
   const zip = new JSZip();
-  const metadataFolder = zip.folder("metadata");
+  const metadataFolder = zip.folder("metadata")!;
 
   // Create a global manifest
   const manifest = images.map(img => ({
@@ -33,9 +33,7 @@ export const exportImagesToZip = async (
       zip.file(img.filename, data);
 
       // Add individual metadata file
-      if (metadataFolder) {
-        metadataFolder.file(`${img.filename}.json`, JSON.stringify(img.metadata, null, 2));
-      }
+      metadataFolder.file(`${img.filename}.json`, JSON.stringify(img.metadata, null, 2));
     } catch (err) {
       console.error(`Failed to read file ${img.filename}`, err);
       // Fallback: try fetching if URL is http/blob (unlikely for local files but safe)

@@ -262,27 +262,7 @@ const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, 
     metadata.tool = GeneratorTool.INVOKEAI;
 };
 
-const parseInvokeDreamCommand = (cmd: string, metadata: Partial<ImageMetadata>) => {
-    const promptMatch = cmd.match(/^"(.+?)"/);
-    if (promptMatch) {
-        metadata.positivePrompt = promptMatch[1];
-        // Very basic dream parser
-        const rest = cmd.substring(promptMatch[0].length);
-        const negMatch = rest.match(/\[([^\]]+)\]/);
-        if (negMatch) metadata.negativePrompt = negMatch[1];
-
-        const steps = rest.match(/-s\s*(\d+)/);
-        if (steps) metadata.steps = parseInt(steps[1]);
-
-        const cfg = rest.match(/-C\s*([\d.]+)/);
-        if (cfg) metadata.cfg = parseFloat(cfg[1]);
-
-        const seed = rest.match(/-S\s*(\d+)/);
-        if (seed) metadata.seed = parseInt(seed[1]);
-    }
-};
-
-const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
+export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
         base.tool = secondary.tool;
     }
@@ -354,81 +334,7 @@ const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMet
     if (base.modelHash === undefined) base.modelHash = secondary.modelHash;
 };
 
-const parsePngChunks = (buffer: Uint8Array): Record<string, string> => {
-    const chunks: Record<string, string> = {};
-    if (buffer.length < 8) return chunks;
-
-    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-    // Verify PNG header
-    if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) {
-        return chunks;
-    }
-
-    const budget = createPngMetadataBudget();
-    let pos = 8;
-    while (pos + 8 < buffer.length) {
-        const length = view.getUint32(pos);
-        const type = textDecoder.decode(buffer.slice(pos + 4, pos + 8));
-        pos += 8;
-        const dataEnd = pos + length;
-
-        if (dataEnd + 4 > buffer.length) break;
-
-        if (isPngMetadataChunk(type)) {
-            if (!allowPngMetadataChunk(budget, length)) {
-                pos += length + 4;
-                continue;
-            }
-        }
-
-        if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
-            const data = buffer.slice(pos, dataEnd);
-            const nullPos = data.indexOf(0);
-            if (nullPos !== -1) {
-                const key = textDecoder.decode(data.slice(0, nullPos));
-                if (type === 'tEXt') {
-                    acceptPngDecodedText(
-                        chunks,
-                        budget,
-                        key,
-                        textDecoder.decode(data.slice(nullPos + 1)),
-                    );
-                } else if (type === 'iTXt') {
-                    // iTXt: Keyword (null) CompressionFlag (1) CompressionMethod (1) Language (null) TranslatedKeyword (null) Text
-                    const isCompressed = data[nullPos + 1] === 1;
-                    let textStart = nullPos + 3;
-                    // Find end of lang
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++;
-                    // Find end of trans
-                    while (textStart < data.length && data[textStart] !== 0) textStart++;
-                    textStart++;
-
-                    if (isCompressed) {
-                        // Decompression would require a lib like fflate in the worker.
-                        // For now we skip compressed iTXt if not available.
-                    } else if (textStart <= data.byteLength) {
-                        acceptPngDecodedText(
-                            chunks,
-                            budget,
-                            key,
-                            textDecoder.decode(data.slice(textStart)),
-                        );
-                    }
-                }
-                // zTXt would also need decompression.
-            }
-        } else if (type === 'IEND') {
-            break;
-        }
-
-        pos += length + 4; // Data + CRC
-    }
-    return chunks;
-};
-
-const parseExifData = (data: Uint8Array): string | null => {
+export const parseExifData = (data: Uint8Array): string | null => {
     // Basic EXIF parser focused on UserComment (0x9286)
     // EXIF blob usually starts with TIFF header if it's raw
     // or 'Exif\0\0' if it's JPEG APP1 style, but PNG 'eXIf' chunk is just the raw block (TIFF header).
@@ -596,6 +502,7 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
         const dataEnd = pos + length;
 
         if (dataEnd + 4 > buffer.length) break;
+        if (type === 'IEND') break;
 
         if (isPngMetadataChunk(type)) {
             if (!allowPngMetadataChunk(budget, length)) {
@@ -691,8 +598,6 @@ export const parsePngChunksEnhanced = async (buffer: Uint8Array): Promise<Record
             if (exifComment && !chunks['parameters']) {
                 acceptPngDecodedText(chunks, budget, 'parameters', exifComment);
             }
-        } else if (type === 'IEND') {
-            break;
         }
 
         pos += length + 4; // Data + CRC
@@ -786,9 +691,7 @@ self.onmessage = async (e: MessageEvent) => {
         // This prevents false positives for non-AI images (photos, archived art).
 
         // Path-based generation type detection (A1111 standard)
-        if (!metadata.generationType || metadata.generationType === 'unknown') {
-            metadata.generationType = detectGenerationType(path || '', metadata.generationType);
-        }
+        metadata.generationType = detectGenerationType(path || '');
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });
 

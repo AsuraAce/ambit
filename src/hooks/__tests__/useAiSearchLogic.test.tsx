@@ -15,7 +15,7 @@ vi.mock('../useToast', () => ({
 
 const mockGenerateFilters = vi.fn();
 vi.mock('../../services/geminiService', () => ({
-    generateFiltersFromQuery: (...args: any[]) => mockGenerateFilters(...args),
+    generateFiltersFromQuery: (...args: unknown[]) => mockGenerateFilters(...args),
 }));
 
 // Mock useSettingsStore
@@ -72,6 +72,7 @@ describe('useAiSearchLogic', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         vi.unstubAllEnvs();
     });
 
@@ -99,6 +100,8 @@ describe('useAiSearchLogic', () => {
 
     it('should submit search and update recent searches', async () => {
         const { result } = renderHook(() => useAiSearchLogic(props));
+        const blur = vi.fn();
+        result.current.inputRef.current = { blur } as unknown as HTMLInputElement;
 
         await act(async () => {
             await result.current.submitSearch('sunset');
@@ -106,6 +109,11 @@ describe('useAiSearchLogic', () => {
 
         expect(mockSetFilters).toHaveBeenCalledWith(expect.any(Function));
         expect(mockSetRecentSearches).toHaveBeenCalledWith(expect.any(Function));
+        const updateFilters = mockSetFilters.mock.calls[0][0] as (filters: FilterState) => FilterState;
+        expect(updateFilters(mockFilters).searchQuery).toBe('sunset');
+        const updateRecent = mockSetRecentSearches.mock.calls[0][0] as (searches: string[]) => string[];
+        expect(updateRecent(['older', 'sunset', 'third'])).toEqual(['sunset', 'older', 'third']);
+        expect(blur).toHaveBeenCalledTimes(1);
     });
 
     it('should call Gemini if AI search is enabled', async () => {
@@ -194,5 +202,63 @@ describe('useAiSearchLogic', () => {
         });
 
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('failed'), 'error');
+    });
+
+    it('activates pending AI search after Settings enables the feature and focuses the input', async () => {
+        vi.useFakeTimers();
+        const disabledSettings = { ...mockSettings, enableAI: false };
+        const { result, rerender } = renderHook(
+            ({ settings }) => useAiSearchLogic({ ...props, settings }),
+            { initialProps: { settings: disabledSettings } }
+        );
+        const focus = vi.fn();
+        result.current.inputRef.current = { focus } as unknown as HTMLInputElement;
+        act(() => result.current.toggleAiSearch());
+
+        rerender({ settings: mockSettings });
+        await act(async () => vi.advanceTimersByTimeAsync(100));
+
+        expect(result.current.isAiSearchEnabled).toBe(true);
+        expect(focus).toHaveBeenCalledTimes(1);
+        expect(mockAddToast).toHaveBeenCalledWith('AI Features Enabled & Ready', 'success');
+    });
+
+    it('focuses when toggled on and can toggle back off', async () => {
+        vi.useFakeTimers();
+        const { result } = renderHook(() => useAiSearchLogic(props));
+        const focus = vi.fn();
+        result.current.inputRef.current = { focus } as unknown as HTMLInputElement;
+
+        act(() => result.current.toggleAiSearch());
+        await act(async () => vi.advanceTimersByTimeAsync(100));
+        expect(focus).toHaveBeenCalledTimes(1);
+        act(() => result.current.toggleAiSearch());
+        expect(result.current.isAiSearchEnabled).toBe(false);
+    });
+
+    it('ignores blank search submissions', async () => {
+        const { result } = renderHook(() => useAiSearchLogic(props));
+
+        await act(async () => result.current.submitSearch('   '));
+
+        expect(mockSetFilters).not.toHaveBeenCalled();
+        expect(mockSetRecentSearches).not.toHaveBeenCalled();
+    });
+
+    it('applies neutral defaults when AI returns an empty filter object', async () => {
+        const { result } = renderHook(() => useAiSearchLogic(props));
+        act(() => result.current.toggleAiSearch());
+        mockGenerateFilters.mockResolvedValue({});
+
+        await act(async () => result.current.submitSearch('anything'));
+
+        const update = mockSetFilters.mock.calls[1][0] as (filters: FilterState) => FilterState;
+        expect(update({ ...mockFilters, favoritesOnly: true })).toMatchObject({
+            searchQuery: '',
+            models: [],
+            tools: [],
+            dateRange: 'all',
+            favoritesOnly: false,
+        });
     });
 });

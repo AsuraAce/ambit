@@ -81,16 +81,16 @@ export const syncImages = async (
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
-    const logSyncDebug = (label: string, data?: Record<string, unknown>) => {
+    const logSyncDebug = (label: string, data: Record<string, unknown>) => {
         debugLiveWatchPerf(label, {
             cycleId,
-            ...(data ?? {})
+            ...data
         });
     };
-    const logSyncInfo = (label: string, data?: Record<string, unknown>) => {
+    const logSyncInfo = (label: string, data: Record<string, unknown>) => {
         infoLiveWatchPerf(label, {
             cycleId,
-            ...(data ?? {})
+            ...data
         });
     };
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
@@ -337,7 +337,6 @@ export const syncImages = async (
             if (signal?.aborted) throw new Error('Aborted');
 
             const repairRows = repairCandidates.slice(offset, offset + REPAIR_MOVE_BATCH_SIZE);
-            if (repairRows.length === 0) continue;
 
             const resolvedPaths = await Promise.all(
                 repairRows.map(row => pathResolver.resolveImagePath(row.image_name, row.image_subfolder))
@@ -346,7 +345,7 @@ export const syncImages = async (
                 .map(resolved => resolved.absolutePath)
                 .filter((path): path is string => !!path);
             const legacyFlatPaths = repairRows.map(row =>
-                stalePathByName.get(getFilename(row.image_name).toLowerCase()) || pathResolver.getLegacyFlatImagePath(row.image_name)
+                stalePathByName.get(getFilename(row.image_name).toLowerCase()) as string
             );
             const lookupPaths = Array.from(new Set([
                 ...targetPaths,
@@ -396,7 +395,7 @@ export const syncImages = async (
                     continue;
                 }
 
-                const thumbnailPath = thumbnailPaths[i] || targetPath;
+                const thumbnailPath = thumbnailPaths[i];
                 const candidates = candidatesBySource.get(legacyFlatPath) || [];
                 candidates.push({ legacyFlatPath, targetPath, thumbnailPath });
                 candidatesBySource.set(legacyFlatPath, candidates);
@@ -425,9 +424,9 @@ export const syncImages = async (
                 skippedSourceMissing += moveResult.skippedSourceMissing;
 
                 for (const move of moves.slice(0, moveResult.moved)) {
-                    const legacyExisting = existingMap.get(move.oldId);
+                    const legacyExisting = existingMap.get(move.oldId) as AIImage;
                     existingMap.delete(move.oldId);
-                    if (legacyExisting) existingMap.set(move.newId, { ...legacyExisting, id: move.newId });
+                    existingMap.set(move.newId, { ...legacyExisting, id: move.newId });
                 }
             }
 
@@ -519,7 +518,7 @@ export const syncImages = async (
 
         const batchStartedAt = liveWatchNow();
         const batchIndex = batchCount + 1;
-        const metaSelect = metaCol ? `i.${metaCol} as metadata_blob` : "NULL as metadata_blob";
+        const metaSelect = `i.${metaCol} as metadata_blob`;
         const query = `
             SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol}
             FROM images i
@@ -600,7 +599,7 @@ export const syncImages = async (
                 if (!existing && legacyFlatPath && legacyFlatPath !== fullPath) {
                     const legacyExisting = existingMap.get(legacyFlatPath);
                     if (legacyExisting) {
-                        const repairedThumbnailPath = thumbnailPaths[i] || fullPath;
+                        const repairedThumbnailPath = thumbnailPaths[i];
                         pathRepaired = await moveImagePathIdentity(
                             legacyFlatPath,
                             fullPath,
@@ -615,7 +614,7 @@ export const syncImages = async (
                                 url: convertFileSrc(fullPath),
                                 thumbnailUrl: repairedThumbnailPath,
                                 thumbnailSource: repairedThumbnailPath === fullPath ? undefined : 'invokeai',
-                                filename: row.image_name.split(/[\\/]/).pop() ?? row.image_name,
+                                filename: row.image_name.split(/[\\/]/).pop() as string,
                                 isMissing: false
                             };
                             existingMap.set(fullPath, existing);
@@ -736,11 +735,11 @@ export const syncImages = async (
                     if (pathRepaired) totalUpdated++;
                     processed++;
                     syncedIds.add(row.image_name);
-                    if (resolvedPath.relativePath) syncedIds.add(resolvedPath.relativePath);
+                    syncedIds.add(resolvedPath.relativePath as string);
                     continue;
                 }
 
-                const thumbnailPath = thumbnailPaths[i] || fullPath;
+                const thumbnailPath = thumbnailPaths[i];
 
                 // Capture originalState for new images (InvokeAI import-time values)
                 const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
@@ -771,7 +770,7 @@ export const syncImages = async (
                     url: convertFileSrc(fullPath),
                     thumbnailUrl: thumbnailPath,
                     thumbnailSource: thumbnailPath === fullPath ? undefined : 'invokeai',
-                    filename: row.image_name.split(/[\\/]/).pop() ?? row.image_name,
+                    filename: row.image_name.split(/[\\/]/).pop() as string,
                     fileSize: fileSize,
                     timestamp: timestamp || Date.now(),
                     width: row.width || 0,
@@ -806,7 +805,7 @@ export const syncImages = async (
 
                 currentBatch.push(newImg);
                 syncedIds.add(row.image_name);
-                if (resolvedPath.relativePath) syncedIds.add(resolvedPath.relativePath);
+                syncedIds.add(resolvedPath.relativePath as string);
                 processed++;
             } catch (e) { }
         }

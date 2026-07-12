@@ -30,10 +30,14 @@ vi.mock('framer-motion', () => {
         animate?: unknown;
     };
 
-    const MotionDiv = ({ initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete: _onAnimationComplete, ...props }: MotionDivProps) => {
+    const MotionDiv = ({ initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete, ...props }: MotionDivProps) => {
         const initialY = typeof initial === 'object' && initial !== null && 'y' in initial
             ? (initial as { y?: unknown }).y
             : undefined;
+
+        React.useEffect(() => {
+            onAnimationComplete?.();
+        }, [onAnimationComplete]);
 
         return <div data-motion-initial-y={typeof initialY === 'number' ? initialY : undefined} {...props} />;
     };
@@ -154,6 +158,71 @@ describe('OnboardingWizard', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Add another image folder' }));
 
         expect(onOpenSettings).toHaveBeenCalledWith('folders');
+    });
+
+    it('routes each generator action and remains safe without a Settings callback', () => {
+        const { onOpenSettings, unmount } = renderWizard();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        fireEvent.click(screen.getByText('InvokeAI').closest('button')!);
+        fireEvent.click(screen.getByText('ComfyUI').closest('button')!);
+        fireEvent.click(screen.getByText('SD WebUI').closest('button')!);
+        expect(onOpenSettings.mock.calls).toEqual([['invokeai'], ['comfyui'], ['a1111']]);
+
+        unmount();
+        render(<OnboardingWizard isOpen={true} onComplete={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        fireEvent.click(screen.getByText('InvokeAI').closest('button')!);
+        fireEvent.click(screen.getByText('ComfyUI').closest('button')!);
+        fireEvent.click(screen.getByText('SD WebUI').closest('button')!);
+        fireEvent.click(screen.getByRole('button', { name: 'Add another image folder' }));
+    });
+
+    it('renders no backdrop when closed unless backdrop preservation is requested', () => {
+        render(<OnboardingWizard isOpen={false} onComplete={vi.fn()} />);
+        expect(screen.queryByTestId('onboarding-backdrop')).toBeNull();
+    });
+
+    it('keeps focus on the dialog when no focusable descendants are available', () => {
+        renderWizard();
+        const dialog = screen.getByRole('dialog');
+        const emptyNodes = document.createDocumentFragment().querySelectorAll<HTMLElement>('button');
+        vi.spyOn(dialog, 'querySelectorAll').mockReturnValue(emptyNodes);
+
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+        fireEvent.keyDown(dialog, { key: 'Tab' });
+
+        expect(document.activeElement).toBe(dialog);
+    });
+
+    it('handles non-HTML prior focus and middle-control tab navigation', () => {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const priorFocusSpy = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(svg);
+        const { unmount } = renderWizard();
+        priorFocusSpy.mockRestore();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        const middleControl = screen.getByText('ComfyUI').closest('button');
+        if (!middleControl) throw new Error('ComfyUI setup button not found');
+        middleControl.focus();
+
+        fireEvent.keyDown(middleControl, { key: 'Tab' });
+        expect(document.activeElement).toBe(middleControl);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.getByRole('heading', { name: 'Organize your AI image library' })).not.toBeNull();
+
+        const activeElementSpy = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(svg);
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+        activeElementSpy.mockRestore();
+        unmount();
+    });
+
+    it('enables AI from an environment key without requiring a stored key', () => {
+        vi.stubEnv('API_KEY', 'environment-key');
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, enableAI: true };
+        renderWizard();
+        continueToIntelligence();
+
+        expect(screen.getByRole('switch', { name: 'Enable AI features' }).getAttribute('aria-checked')).toBe('true');
     });
 
     it('preserves the current step while Settings temporarily hides the wizard', () => {
@@ -277,6 +346,26 @@ describe('OnboardingWizard', () => {
         expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
     });
 
+    it('uses fallback messages for rejection and non-Error storage failures', async () => {
+        mocks.verifyApiKey.mockResolvedValueOnce({ valid: false });
+        const first = renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'invalid-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+        expect((await screen.findByRole('alert')).textContent).toContain('Verification failed');
+
+        first.unmount();
+        mocks.verifyApiKey.mockResolvedValueOnce({ valid: true });
+        mocks.setGeminiApiKey.mockRejectedValueOnce('keyring unavailable');
+        renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'new-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+        expect((await screen.findByRole('alert')).textContent).toContain('Unknown error');
+    });
+
     it('keeps the user on Intelligence when secure key storage fails', async () => {
         mocks.setGeminiApiKey.mockRejectedValueOnce(new Error('Keyring unavailable'));
         renderWizard();
@@ -370,7 +459,7 @@ describe('OnboardingWizard', () => {
     });
 
     it('exposes prompt keyword masking as a named switch', () => {
-        renderWizard();
+        const { onComplete } = renderWizard();
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
@@ -383,5 +472,7 @@ describe('OnboardingWizard', () => {
         fireEvent.click(maskingSwitch);
         expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
         expect(thumb?.className).toContain('translate-x-0');
+        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ maskedKeywords: [] }));
     });
 });

@@ -50,7 +50,7 @@ const isNodeLikeRecord = (value: unknown): value is WorkflowRawNode =>
         value.data
     );
 
-const asStringValue = (value: unknown, fallback = ''): string =>
+const asStringValue = (value: unknown, fallback: string): string =>
     typeof value === 'string' && value.length > 0 ? value : fallback;
 
 const extractJsonTarget = (jsonStr: string): string => {
@@ -65,8 +65,8 @@ const extractJsonTarget = (jsonStr: string): string => {
 };
 
 const getNodePriority = (node: WorkflowDisplayNode) => {
-    const type = String(node.type || '').toLowerCase();
-    const title = String(node.title || '').toLowerCase();
+    const type = node.type.toLowerCase();
+    const title = node.title.toLowerCase();
 
     if (type.includes('sampler') || type.includes('denoise') || type.includes('t2l') || type.includes('l2l')) return 1;
     if (type.includes('prompt') || type.includes('conditioning') || title.includes('prompt')) return 2;
@@ -95,14 +95,12 @@ const toWorkflowDisplayNodes = (nodeList: WorkflowRawNode[]): WorkflowDisplayNod
             else if (type.toLowerCase() !== 'invocation') title = type;
         }
 
-        if (type || node.id) {
-            nodes.push({
-                id: node.id ?? `${type}-${nodes.length}`,
-                title,
-                type,
-                inputs: incomingInputs
-            });
-        }
+        nodes.push({
+            id: node.id ?? `${type}-${nodes.length}`,
+            title,
+            type,
+            inputs: incomingInputs
+        });
     });
 
     return nodes.sort((a, b) => {

@@ -92,7 +92,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
         let filename = pathParts.pop()?.replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '') || '';
 
         while (genericNames.has(filename.toLowerCase()) && pathParts.length > 0) {
-            filename = pathParts.pop() || filename;
+            filename = pathParts.pop()!;
         }
         return filename;
     };
@@ -185,7 +185,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     }, [ranges?.controlNets, ranges?.guidanceSubtypes]);
 
     const activeControlNetTypes = React.useMemo(() => {
-        const selected = filters.controlNets || [];
+        const selected = filters.controlNets;
         const activeTypes = new Set<string>();
         selected.forEach(model => {
             const type = getModelType(model);
@@ -212,8 +212,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     const handleControlNetTypeToggle = (selectedTypes: string[]) => {
         const newModels: string[] = [];
         selectedTypes.forEach(typeId => {
-            const models = controlNetModelsByType[typeId];
-            if (models) newModels.push(...models);
+            newModels.push(...controlNetModelsByType[typeId]);
         });
         setFilters(prev => ({ ...prev, controlNets: newModels }));
     };
@@ -234,7 +233,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     }, [ranges?.ipAdapters, ranges?.guidanceSubtypes]);
 
     const activeIpAdapterTypes = React.useMemo(() => {
-        const selected = filters.ipAdapters || [];
+        const selected = filters.ipAdapters;
         const activeTypes = new Set<string>();
         selected.forEach(model => {
             const type = getModelType(model);
@@ -260,8 +259,7 @@ export const GuidanceSection: React.FC<GuidanceSectionProps> = ({
     const handleIpAdapterTypeToggle = (selectedTypes: string[]) => {
         const newModels: string[] = [];
         selectedTypes.forEach(typeId => {
-            const models = ipAdapterModelsByType[typeId];
-            if (models) newModels.push(...models);
+            newModels.push(...ipAdapterModelsByType[typeId]);
         });
         setFilters(prev => ({ ...prev, ipAdapters: newModels }));
     };

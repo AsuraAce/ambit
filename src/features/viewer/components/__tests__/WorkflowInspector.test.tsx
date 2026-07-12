@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { WorkflowInspector } from '../WorkflowInspector';
 
@@ -122,6 +122,10 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         });
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('renders parser diagnostics for ComfyUI images in developer mode', async () => {
         render(<WorkflowInspector image={makeImage()} />);
 
@@ -168,6 +172,103 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(parsed).not.toHaveProperty('prompt');
         expect(parsed).not.toHaveProperty('workflow');
         expect(await screen.findByText('Copied')).toBeTruthy();
+    });
+
+    it('resets copied diagnostics feedback after its display interval', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+        const copyButton = await screen.findByTitle('Copy parser diagnostics summary');
+        vi.useFakeTimers();
+        await act(async () => {
+            fireEvent.click(copyButton);
+            await Promise.resolve();
+        });
+        expect(screen.getByText('Copied')).toBeTruthy();
+
+        act(() => vi.advanceTimersByTime(2000));
+
+        expect(screen.getByText('Copy Diagnostics')).toBeTruthy();
+    });
+
+    it('renders global, explicit, empty, and missing diagnostic evidence', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                chunkKeys: [],
+                attemptedLayers: [],
+                fieldSources: {
+                    model: 'global_scan',
+                    seed: 'explicit_node',
+                    cfg: null,
+                },
+                metadata: {
+                    ...diagnosticsReport.metadata,
+                    model: null,
+                    sampler: '',
+                },
+            },
+        });
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByTitle('Global Scan')).toBeTruthy();
+        expect(screen.getByTitle('Explicit Node')).toBeTruthy();
+        expect(screen.getAllByText('None').length).toBeGreaterThan(1);
+    });
+
+    it('shows that raw chunks are unavailable without invoking diagnostics', () => {
+        render(<WorkflowInspector image={{ ...makeImage(), originalChunks: undefined }} />);
+
+        expect(screen.getByText('Raw chunks unavailable.')).toBeTruthy();
+        expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();
+    });
+
+    it('ignores diagnostics completion after unmount', async () => {
+        let resolveInspection!: (value: { status: 'ok'; data: typeof diagnosticsReport }) => void;
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise(resolve => {
+            resolveInspection = resolve;
+        }));
+        const view = render(<WorkflowInspector image={makeImage()} />);
+        view.unmount();
+
+        resolveInspection({ status: 'ok', data: diagnosticsReport });
+        await act(async () => Promise.resolve());
+    });
+
+    it('ignores diagnostics rejection after unmount', async () => {
+        let rejectInspection!: (reason: unknown) => void;
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise((_resolve, reject) => {
+            rejectInspection = reject;
+        }));
+        const view = render(<WorkflowInspector image={makeImage()} />);
+        view.unmount();
+
+        rejectInspection('late failure');
+        await act(async () => Promise.resolve());
+    });
+
+    it('formats non-Error diagnostics failures', async () => {
+        mockInspectComfyuiMetadataChunks.mockRejectedValueOnce('bridge unavailable');
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText(/Diagnostics unavailable: bridge unavailable/i)).toBeTruthy();
+    });
+
+    it('formats Error diagnostics failures', async () => {
+        mockInspectComfyuiMetadataChunks.mockRejectedValueOnce(new Error('bridge crashed'));
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText(/Diagnostics unavailable: bridge crashed/i)).toBeTruthy();
+    });
+
+    it('renders an explicit empty state when diagnostics have no field sources', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: { ...diagnosticsReport, fieldSources: {} },
+        });
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await screen.findByText('Parser Diagnostics');
+        expect(screen.getAllByText('None').length).toBeGreaterThan(0);
     });
 
     it('marks sampler fallback diagnostics as weaker evidence', async () => {

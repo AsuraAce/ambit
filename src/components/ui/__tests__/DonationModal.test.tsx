@@ -26,4 +26,18 @@ describe('DonationModal', () => {
             expect(open).toHaveBeenCalledWith('https://ko-fi.com/astraoriondev');
         });
     });
+
+    it('closes from the dismiss button and backdrop but not the dialog body', () => {
+        const onClose = vi.fn();
+        const { container } = render(<DonationModal isOpen={true} onClose={onClose} />);
+
+        fireEvent.click(container.querySelector('.fixed.inset-0') as HTMLElement);
+        expect(onClose).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByText('Support Ambit'));
+        expect(onClose).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(container.querySelector('button.absolute') as HTMLButtonElement);
+        expect(onClose).toHaveBeenCalledTimes(2);
+    });
 });

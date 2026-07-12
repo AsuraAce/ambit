@@ -15,7 +15,6 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
-import { MetadataRefreshScope } from '../types';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -52,7 +51,7 @@ const mergeTargetedPerfContext = (
         lastEventAt: receivedAt,
         eventCount: current.eventCount + 1,
         pathCount: current.pathCount + pathCount,
-        mergedCycleCount: current.mergedCycleCount ?? 1
+        mergedCycleCount: current.mergedCycleCount
     };
 };
 
@@ -80,11 +79,11 @@ const mergeInvokePerfContext = (
         lastEventAt: receivedAt,
         eventCount: current.eventCount + 1,
         pathCount: current.pathCount + pathCount,
-        mergedCycleCount: current.mergedCycleCount ?? 1
+        mergedCycleCount: current.mergedCycleCount
     };
 };
 
-export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onNewImageDetected }) => {
+export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, isLoaded } = useSettings();
     const { startInvokeSync, startTargetedLiveSync, syncStatus } = useSync();
 
@@ -123,7 +122,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
+    const callbacksRef = useRef({ refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
@@ -132,7 +131,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokeActivationCatchupRootRef = useRef<string | null>(null);
 
     useEffect(() => {
-        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
+        callbacksRef.current = { refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
@@ -144,34 +143,34 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
 
         if (genericLiveDrainPromiseRef.current) {
             debugLiveWatchPerf('Generic live paths merged into active queue', {
-                cycleId: pendingGenericPerfRef.current?.cycleId,
+                cycleId: pendingGenericPerfRef.current!.cycleId,
                 pendingPathCount,
-                eventCount: pendingGenericPerfRef.current?.eventCount,
-                mergedCycleCount: pendingGenericPerfRef.current?.mergedCycleCount ?? 1
+                eventCount: pendingGenericPerfRef.current!.eventCount,
+                mergedCycleCount: pendingGenericPerfRef.current!.mergedCycleCount
             });
             return genericLiveDrainPromiseRef.current;
         }
 
         const drainPromise = (async () => {
             while (pendingGenericPathsRef.current.size > 0) {
-                const perfContext = pendingGenericPerfRef.current;
+                const perfContext = pendingGenericPerfRef.current!;
                 const nextBatch = Array.from(pendingGenericPathsRef.current);
                 pendingGenericPathsRef.current.clear();
                 pendingGenericPerfRef.current = null;
                 const cycleStartAt = liveWatchNow();
 
                 debugLiveWatchPerf('Generic live sync started', {
-                    cycleId: perfContext?.cycleId,
+                    cycleId: perfContext.cycleId,
                     batchPathCount: nextBatch.length,
-                    eventCount: perfContext?.eventCount,
-                    mergedCycleCount: perfContext?.mergedCycleCount ?? 1,
-                    watcherToImportStartMs: perfContext ? elapsedMs(perfContext.firstEventAt) : undefined
+                    eventCount: perfContext.eventCount,
+                    mergedCycleCount: perfContext.mergedCycleCount,
+                    watcherToImportStartMs: elapsedMs(perfContext.firstEventAt)
                 });
 
                 const cb = callbacksRef.current;
                 const liveResult = await cb.startTargetedLiveSync(
                     nextBatch,
-                    perfContext ? { ...perfContext, queueDepthAtStart: nextBatch.length } : undefined
+                    { ...perfContext, queueDepthAtStart: nextBatch.length }
                 );
 
                 if (liveResult.handledPaths.length > 0) {
@@ -179,13 +178,13 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                 }
 
                 infoLiveWatchPerf('Generic live cycle complete', {
-                    cycleId: perfContext?.cycleId,
+                    cycleId: perfContext.cycleId,
                     batchPathCount: nextBatch.length,
                     handledPathCount: liveResult.handledPaths.length,
                     failedPathCount: liveResult.failedPaths.length,
                     importedCount: liveResult.importedCount,
                     cycleMs: elapsedMs(cycleStartAt),
-                    watcherToFinishMs: perfContext ? elapsedMs(perfContext.firstEventAt) : undefined
+                    watcherToFinishMs: elapsedMs(perfContext.firstEventAt)
                 });
             }
         })();
@@ -330,14 +329,10 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
                         invokeSyncTimeoutRef.current = null;
                         const perfContext = pendingInvokePerfRef.current;
                         pendingInvokePerfRef.current = null;
-                        if (!perfContext) {
-                            return;
-                        }
-
                         const firedAt = liveWatchNow();
                         const resolvedPerfContext: InvokeLiveWatchPerfContext = {
-                            ...perfContext,
-                            debounceFireDelayMs: Math.round(firedAt - perfContext.debounceScheduledAt),
+                            ...perfContext!,
+                            debounceFireDelayMs: Math.round(firedAt - perfContext!.debounceScheduledAt),
                             debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
                         };
 

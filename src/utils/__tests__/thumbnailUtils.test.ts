@@ -34,6 +34,11 @@ const collection = (overrides: Partial<Collection>): Collection => ({
 });
 
 describe('isCollectionThumbnailImage', () => {
+    it('rejects absent collections and absent thumbnail identities', () => {
+        expect(isCollectionThumbnailImage(image(), null)).toBe(false);
+        expect(isCollectionThumbnailImage(image(), collection({}))).toBe(false);
+    });
+
     it('matches only the custom selected image when a custom thumbnail exists', () => {
         const active = collection({
             customThumbnail: 'img2',
@@ -53,5 +58,12 @@ describe('isCollectionThumbnailImage', () => {
 
         expect(isCollectionThumbnailImage(image(), active)).toBe(true);
         expect(isCollectionThumbnailImage(image({ id: 'img2', thumbnailUrl: 'asset://C:/thumbs/img2.webp' }), active)).toBe(false);
+    });
+
+    it('does not fall back to a stale thumbnail for custom-image collections', () => {
+        expect(isCollectionThumbnailImage(image(), collection({
+            thumbnail: image().thumbnailUrl,
+            thumbnailSourceKind: 'customImage'
+        }))).toBe(false);
     });
 });

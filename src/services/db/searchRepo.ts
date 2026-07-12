@@ -182,7 +182,7 @@ const getThumbnailSource = (row: FacetCacheRow): ResourceThumbnailSource | undef
 };
 
 const copyFallbackFacetFields = (target: FacetItem, source: FacetItem): FacetItem => {
-    const thumbnailOwner = target.thumbnailPath ? target : source;
+    const thumbnailOwner = target.thumbnailPath || target.previewUrl ? target : source;
     return {
         ...target,
         thumbnailPath: target.thumbnailPath || source.thumbnailPath,
@@ -247,12 +247,10 @@ const normalizeFacetCountKey = (value: string | null | undefined): string => (
 
 const getScopedCountForGroup = (
     group: FacetMergeGroup,
-    scopedCountMap: Map<string, number> | undefined
+    scopedCountMap: Map<string, number>
 ): number => {
-    if (!scopedCountMap) return 0;
-
     const keys = new Set<string>();
-    if (group.item.assetMatchKey) keys.add(group.item.assetMatchKey);
+    keys.add(group.item.assetMatchKey as string);
     keys.add(normalizeFacetCountKey(group.item.name));
     for (const alias of group.usedAliases) {
         keys.add(normalizeFacetCountKey(alias));
@@ -369,7 +367,7 @@ const getDiskModifiedAtForFacetRow = (
             row.resource_hash ? diskLookups.modifiedByHashByCacheType.get(cacheType)?.get(row.resource_hash) : undefined,
             name ? diskLookups.modifiedByNameByCacheType.get(cacheType)?.get(name.toLowerCase()) : undefined
         ),
-        assetMatchKey ? diskLookups.modifiedByMatchKeyByCacheType.get(cacheType)?.get(assetMatchKey) : undefined
+        diskLookups.modifiedByMatchKeyByCacheType.get(cacheType)?.get(assetMatchKey)
     );
 };
 
@@ -377,8 +375,8 @@ const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_g
 const KEYWORD_BATCH_SIZE = 500;
 
 const isDefaultGlobalScope = (
-    whereClause: string = '',
-    params: unknown[] = [],
+    whereClause: string,
+    params: unknown[],
     collectionId?: string,
     loraName?: string
 ): boolean => {
@@ -634,11 +632,11 @@ export const clearLibraryStatsCache = () => {
 };
 
 const buildScopedImageSourceParts = (
-    whereClause: string = '',
-    params: unknown[] = [],
-    collectionId?: string,
-    loraName?: string,
-    options: ScopedImageQueryOptions = {}
+    whereClause: string,
+    params: unknown[],
+    collectionId: string | undefined,
+    loraName: string | undefined,
+    options: ScopedImageQueryOptions
 ): ScopedImageSourceParts => {
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
@@ -703,12 +701,12 @@ const buildScopedImageSourceParts = (
 };
 
 const buildScopedImageQueryParts = (
-    whereClause: string = '',
-    params: unknown[] = [],
-    collectionId?: string,
-    loraName?: string,
-    selectedColumns: string[] = ['images.id AS id', 'images.rowid AS rowid'],
-    options: ScopedImageQueryOptions = {}
+    whereClause: string,
+    params: unknown[],
+    collectionId: string | undefined,
+    loraName: string | undefined,
+    selectedColumns: string[],
+    options: ScopedImageQueryOptions
 ): ScopedImageQueryParts => {
     const sourceParts = buildScopedImageSourceParts(whereClause, params, collectionId, loraName, options);
 
@@ -790,8 +788,8 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
 };
 
 const getScopedFacetCountMaps = async (
-    whereClause: string = '',
-    params: unknown[] = [],
+    whereClause: string,
+    params: unknown[],
     cacheTypes: string[],
     collectionId?: string,
     loraName?: string
@@ -801,7 +799,7 @@ const getScopedFacetCountMaps = async (
         'images.id AS id',
         'images.resolved_model_name AS resolved_model_name',
         'images.model_name AS model_name'
-    ]);
+    ], {});
 
     const queries = cacheTypes
         .filter(cacheType => cacheType !== 'tools')
@@ -861,7 +859,7 @@ export const getLibraryStatsSummary = async (
         'images.rowid AS rowid',
         'images.resolved_model_name AS resolved_model_name',
         'images.model_name AS model_name'
-    ]);
+    ], {});
     const modelScopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
@@ -1076,7 +1074,7 @@ export const getFacets = async (
                 scopedInput.collectionId,
                 scopedInput.loraName
             );
-            scopedCountMaps.set(cacheType, countMaps.get(cacheType) ?? new Map<string, number>());
+            scopedCountMaps.set(cacheType, countMaps.get(cacheType) as Map<string, number>);
         }));
 
         const [cacheRows, diskRows] = await Promise.all([
@@ -1180,7 +1178,7 @@ export const getFacets = async (
                     ...group.item,
                     count: assetScope === 'local' || !shouldUseScopedFacetOverlay
                         ? group.item.count
-                        : getScopedCountForGroup(group, scopedCountMap),
+                        : getScopedCountForGroup(group, scopedCountMap as Map<string, number>),
                     filterAliases: uniqueAssetAliases([group.item.name, ...group.usedAliases]),
                 })).filter(shouldIncludeFacetItem)
             );

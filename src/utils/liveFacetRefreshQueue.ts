@@ -49,6 +49,7 @@ const mergeMeta = (
     if (!current) {
         return {
             ...next,
+            changedImageCount: next.changedImageCount ?? 0,
             mergedRunCount: next.mergedRunCount ?? 1
         };
     }
@@ -56,8 +57,8 @@ const mergeMeta = (
     return {
         source: mergeSource(current.source, next.source),
         cycleId: current.cycleId === next.cycleId ? current.cycleId : undefined,
-        changedImageCount: (current.changedImageCount ?? 0) + (next.changedImageCount ?? 0),
-        mergedRunCount: (current.mergedRunCount ?? 1) + (next.mergedRunCount ?? 1)
+        changedImageCount: current.changedImageCount! + (next.changedImageCount ?? 0),
+        mergedRunCount: current.mergedRunCount! + (next.mergedRunCount ?? 1)
     };
 };
 
@@ -99,8 +100,8 @@ export const createLiveFacetRefreshQueue = ({
                 cycleId: pendingMeta.cycleId,
                 source: pendingMeta.source,
                 facetTypes: orderFacetTypes(pendingFacetTypes),
-                changedImageCount: pendingMeta.changedImageCount ?? 0,
-                mergedRunCount: pendingMeta.mergedRunCount ?? 1
+                changedImageCount: pendingMeta.changedImageCount,
+                mergedRunCount: pendingMeta.mergedRunCount
             });
             return activePromise;
         }
@@ -109,7 +110,7 @@ export const createLiveFacetRefreshQueue = ({
             while (pendingFacetTypes.size > 0) {
                 const currentTypes = orderFacetTypes(pendingFacetTypes);
                 const currentResources = pendingResources;
-                const currentMeta = pendingMeta ?? meta;
+                const currentMeta = pendingMeta!;
                 pendingFacetTypes = new Set<FacetType>();
                 pendingResources = createEmptyTouchedFacetResources();
                 pendingMeta = null;
@@ -129,8 +130,8 @@ export const createLiveFacetRefreshQueue = ({
                         cycleId: currentMeta.cycleId,
                         source: currentMeta.source,
                         facetTypes: currentTypes,
-                        changedImageCount: currentMeta.changedImageCount ?? 0,
-                        mergedRunCount: currentMeta.mergedRunCount ?? 1,
+                        changedImageCount: currentMeta.changedImageCount,
+                        mergedRunCount: currentMeta.mergedRunCount,
                         mode: useResourceRefresh ? 'resource-incremental' : 'incremental',
                         entryCount,
                         incrementalMs,
@@ -143,8 +144,8 @@ export const createLiveFacetRefreshQueue = ({
                         cycleId: currentMeta.cycleId,
                         source: currentMeta.source,
                         facetTypes: currentTypes,
-                        changedImageCount: currentMeta.changedImageCount ?? 0,
-                        mergedRunCount: currentMeta.mergedRunCount ?? 1,
+                        changedImageCount: currentMeta.changedImageCount,
+                        mergedRunCount: currentMeta.mergedRunCount,
                         incrementalMs,
                         error: formatErrorMessage(incrementalError)
                     });
@@ -160,8 +161,8 @@ export const createLiveFacetRefreshQueue = ({
                             cycleId: currentMeta.cycleId,
                             source: currentMeta.source,
                             facetTypes: currentTypes,
-                            changedImageCount: currentMeta.changedImageCount ?? 0,
-                            mergedRunCount: currentMeta.mergedRunCount ?? 1,
+                            changedImageCount: currentMeta.changedImageCount,
+                            mergedRunCount: currentMeta.mergedRunCount,
                             mode: 'fallback-full',
                             entryCount,
                             incrementalMs,

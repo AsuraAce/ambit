@@ -46,8 +46,6 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
 
         let isMounted = true;
         const revealTimerId = window.setTimeout(() => {
-            if (!isMounted) return;
-
             dismissStaticLoader();
             setIsMaintenanceVisible(true);
         }, MAINTENANCE_REVEAL_DELAY_MS);

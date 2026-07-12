@@ -100,7 +100,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 }
 
                 return;
-            } else if (tab === 'intermediates') {
+            } else {
                 const where = options.scope === 'filtered' ? activeSqlWhere : '';
                 const params = options.scope === 'filtered' ? activeSqlParams : [];
                 const data = await db.getIntermediateImages(where, params);

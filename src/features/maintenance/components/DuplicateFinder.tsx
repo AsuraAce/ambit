@@ -118,8 +118,7 @@ const DuplicateGroupCard: React.FC<{
     const isExact = group.kind === 'exact';
     const getComparePeer = (img: AIImage) => {
         return group.images.find(candidate => candidate.id === newestId && candidate.id !== img.id)
-            || group.images.find(candidate => candidate.id !== img.id)
-            || null;
+            || group.images.find(candidate => candidate.id !== img.id);
     };
 
     return (
@@ -152,7 +151,7 @@ const DuplicateGroupCard: React.FC<{
                                 onView={(viewImage) => onViewImage?.(viewImage.id)}
                                 onCompare={(compareImage) => {
                                     const peer = getComparePeer(compareImage);
-                                    if (peer) onCompareImages?.(peer, compareImage);
+                                    onCompareImages?.(peer!, compareImage);
                                 }}
                                 maskedKeywords={maskedKeywords}
                                 isNewest={img.id === newestId}

@@ -27,9 +27,7 @@ const readNumber = (record: MetadataRecord, ...keys: string[]): number | undefin
     return undefined;
 };
 
-const readResourceName = (value: unknown): string => {
-    if (typeof value === 'string') return value;
-    const record = asRecord(value);
+const readResourceName = (record: MetadataRecord): string => {
     const model = asRecord(record.model);
     if (Object.keys(model).length > 0) return readString(model, 'model_name', 'name', 'default');
     return readString(record, 'model_name', 'name', 'lora_name');
@@ -404,7 +402,7 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     if (actualRoot.model) {
         let modelFull = '';
         if (typeof actualRoot.model === 'string') modelFull = actualRoot.model;
-        else modelFull = readResourceName(actualRoot.model);
+        else modelFull = readResourceName(asRecord(actualRoot.model));
 
         if (modelFull) mapped.model = cleanModelName(modelFull);
     }

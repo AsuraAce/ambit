@@ -69,7 +69,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { fetchData, refreshMetadata } = useSearch();
 
-  const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope = 'full') => {
+  const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope) => {
     // SearchContext owns the scope-aware metadata refresh strategy.
     await refreshMetadata(scope);
   }, [refreshMetadata]);
@@ -82,16 +82,8 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
 };
 
 const WatcherProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { fetchData, refreshMetadata } = useSearch();
-
-    const handleNewImage = useCallback(async (scope: MetadataRefreshScope = 'images-only') => {
-    // Generic Live Watch refreshes the grid immediately; facet/sidebar follow-up
-    // work is handled separately by SyncContext's incremental live refresh queue.
-    await refreshMetadata(scope);
-  }, [refreshMetadata]);
-
   return (
-    <WatcherProvider onNewImageDetected={handleNewImage}>
+    <WatcherProvider>
       {children}
     </WatcherProvider>
   );

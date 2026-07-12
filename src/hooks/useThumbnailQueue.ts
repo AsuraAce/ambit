@@ -224,9 +224,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     }, [cancelScheduledIdleCallback]);
 
     const setBackendThrottled = useCallback((throttled: boolean) => {
-        if (browserMockMode) return;
-        if (lastThrottleRef.current === throttled) return;
-
         lastThrottleRef.current = throttled;
         void commands.setThumbnailOptimizationThrottled(throttled).catch(error => {
             console.error('[ThumbnailQueue] Failed to update backend throttle state', error);
@@ -240,7 +237,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 isThrottled: throttled
             });
         }
-    }, [browserMockMode, setBackgroundHealingDetails]);
+    }, [setBackgroundHealingDetails]);
 
     const refreshThumbnailConsumers = useCallback(async (optimized: number) => {
         if (optimized <= 0) return;
@@ -428,8 +425,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     ]);
 
     const cancelBackendJob = useCallback(async (clearDock: boolean) => {
-        if (browserMockMode) return;
-
         cancelScheduledIdleCallback();
         cancelRequestedRef.current = true;
 
@@ -453,7 +448,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             setBackgroundHealingDetails(null);
         }
     }, [
-        browserMockMode,
         cancelScheduledIdleCallback,
         setBackgroundHealingActive,
         setBackgroundHealingDetails,
@@ -462,9 +456,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     ]);
 
     const runQueue = useCallback(async () => {
-        if (browserMockMode) return;
-        if (!mountedRef.current) return;
-
         const settings = useSettingsStore.getState().settings;
         if (!settings.enableAutoThumbnailHealing) return;
         if (isRunningRef.current) return;
@@ -554,7 +545,6 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         }
     }, [
         addToast,
-        browserMockMode,
         handleCompletion,
         setBackendThrottled,
         setBackgroundHealingActive,
@@ -610,8 +600,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         if (!enableAutoThumbnailHealing) return;
         if (!isRunningRef.current) return;
 
-        const runningConfig = runningConfigRef.current;
-        if (!runningConfig) return;
+        const runningConfig = runningConfigRef.current!;
 
         const nextConfig: RunningThumbnailConfig = {
             includeUpgradeable: Boolean(enforceHighQualityThumbnails),
