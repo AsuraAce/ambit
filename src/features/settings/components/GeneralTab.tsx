@@ -5,6 +5,7 @@ import {
     type ThumbnailOptimizationFailure
 } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
+import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 import {
     useLibraryStore,
     type ThumbnailOptimizationDetails,
@@ -246,7 +247,13 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                             <div className="flex items-center justify-between gap-4">
                                 <div>
-                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-300">Background Speed</div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="text-sm font-medium text-gray-800 dark:text-gray-300">Background Speed</div>
+                                        <InfoTooltip
+                                            label="About background thumbnail speed"
+                                            content="Quiet minimizes CPU use. Balanced uses moderate parallelism. Fast prioritizes completion speed and may reduce responsiveness while it runs."
+                                        />
+                                    </div>
                                     <div className="text-xs text-gray-400 mt-0.5">Controls CPU use while Ambit is idle</div>
                                 </div>
                                 <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-0.5">

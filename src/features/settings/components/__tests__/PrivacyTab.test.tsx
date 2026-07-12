@@ -37,6 +37,15 @@ describe('PrivacyTab', () => {
         expect(screen.getByText('Privacy masking is enabled by default every time Ambit starts. Turning it off here only affects the current session.')).not.toBeNull();
     });
 
+    it('explains how blur and hide affect matching images', () => {
+        render(<PrivacyTab settings={createSettings()} setSettings={vi.fn()} />);
+
+        fireEvent.focus(screen.getByRole('button', { name: 'About privacy masking behavior' }));
+
+        expect(screen.getByRole('tooltip').textContent).toContain('Blur keeps matching images visible');
+        expect(screen.getByRole('tooltip').textContent).toContain('Hide removes matching images from results');
+    });
+
     it('exposes and updates the current session state as an accessible switch', () => {
         render(<PrivacyTab settings={createSettings()} setSettings={vi.fn()} />);
 

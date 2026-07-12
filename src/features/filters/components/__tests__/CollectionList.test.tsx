@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { render, screen } from '../../../../test/testUtils';
+import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Collection, FilterState, SidebarSortOption } from '../../../../types';
 import { useCollectionStore } from '../../../../stores/collectionStore';
@@ -124,5 +124,60 @@ describe('CollectionList persisted sort narrowing', () => {
         ]);
 
         expectCollectionOrder(['Old Recent', 'New Stale']);
+    });
+});
+
+describe('CollectionList toolbar tooltips', () => {
+    beforeEach(() => {
+        settingsContextMocks.resourceSortOptions = {};
+        settingsContextMocks.setSettings.mockClear();
+        useCollectionStore.setState(useCollectionStore.getInitialState(), true);
+    });
+
+    it('explains dynamic icon actions without native titles and preserves their behavior', () => {
+        renderCollectionList([
+            makeCollection({
+                id: 'collection-1',
+                name: 'Collection One',
+                createdAt: 100,
+                updatedAt: 100
+            })
+        ]);
+
+        const sortButton = screen.getByRole('button', { name: 'Sort Collections' });
+        expect(sortButton.getAttribute('title')).toBeNull();
+        fireEvent.mouseEnter(sortButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Sort Collections');
+        fireEvent.mouseLeave(sortButton);
+
+        fireEvent.click(sortButton);
+        const nameSortOption = screen.getByRole('button', { name: 'Name (A-Z)' });
+        fireEvent.pointerDown(nameSortOption);
+        fireEvent.click(nameSortOption);
+        expect(settingsContextMocks.setSettings).toHaveBeenCalled();
+
+        const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
+        expect(viewButton.getAttribute('title')).toBeNull();
+        fireEvent.focus(viewButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
+        fireEvent.blur(viewButton);
+        fireEvent.click(viewButton);
+        expect(settingsContextMocks.setSettings).toHaveBeenCalledTimes(2);
+        fireEvent.pointerDown(document.body);
+
+        const archivedButton = screen.getByRole('button', { name: 'Include Archived' });
+        expect(archivedButton.getAttribute('title')).toBeNull();
+        fireEvent.click(archivedButton);
+        expect(screen.getByRole('button', { name: 'Hide Archived' })).toBeTruthy();
+        expect(screen.getByRole('tooltip').textContent).toBe('Hide Archived');
+        fireEvent.pointerDown(document.body);
+
+        const searchButton = screen.getByRole('button', { name: 'Search Collections' });
+        expect(searchButton.getAttribute('title')).toBeNull();
+        fireEvent.mouseEnter(searchButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Search Collections');
+        fireEvent.mouseLeave(searchButton);
+        fireEvent.click(searchButton);
+        expect(screen.getByPlaceholderText('Find collection...')).toBeTruthy();
     });
 });

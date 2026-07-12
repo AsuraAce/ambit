@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Check, Search, X, LucideIcon, ArrowDownWideNarrow } from 'lucide-react';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 // --- Section Header ---
 interface SectionHeaderProps {
@@ -269,13 +270,14 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
 
     return (
         <div className={`relative ${className}`} ref={dropdownRef}>
-            <button
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+            <TooltipButton
+                label={title ?? 'Sort Options'}
+                content={title ?? 'Sort Options'}
+                onClick={() => setIsOpen(!isOpen)}
                 className={resolvedTriggerClass}
-                title="Sort Options"
             >
                 <ArrowDownWideNarrow className="w-3.5 h-3.5" />
-            </button>
+            </TooltipButton>
 
             {isOpen && (
                 <div className={`absolute mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-[100] p-1 animate-in zoom-in-95 duration-200 ${align === 'right' ? 'right-0' : 'left-0'}`}>

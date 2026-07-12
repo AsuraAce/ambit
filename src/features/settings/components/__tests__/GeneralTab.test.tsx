@@ -70,6 +70,15 @@ describe('GeneralTab Smart Thumbnail details', () => {
         expect(screen.queryByText(/eta/i)).toBeNull();
     });
 
+    it('explains the CPU and responsiveness tradeoff between background speed profiles', () => {
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+
+        fireEvent.focus(screen.getByRole('button', { name: 'About background thumbnail speed' }));
+
+        expect(screen.getByRole('tooltip').textContent).toContain('Quiet minimizes CPU use');
+        expect(screen.getByRole('tooltip').textContent).toContain('Fast prioritizes completion speed');
+    });
+
     it('does not expose File Link Audit even when developer mode is enabled', () => {
         render(<GeneralTab settings={createSettings({ devMode: true })} setSettings={vi.fn()} />);
 

@@ -96,6 +96,15 @@ describe('ThumbnailsTab', () => {
         vi.unstubAllEnvs();
     });
 
+    it('explains which existing thumbnails are included as upgradeable', () => {
+        renderThumbnailsTab();
+
+        fireEvent.focus(screen.getByRole('button', { name: 'About upgradeable thumbnails' }));
+
+        expect(screen.getByRole('tooltip').textContent).toContain('imported or legacy thumbnails');
+        expect(screen.getByRole('tooltip').textContent).toContain('missing micro-thumbnails');
+    });
+
     it('repairs broken thumbnail references while holding the global maintenance blocker', async () => {
         const operationSpy = vi.spyOn(useLibraryStore.getState(), 'setThumbnailMaintenanceOperation');
         const { onRepairComplete } = renderThumbnailsTab();
