@@ -161,4 +161,60 @@ describe('TauriFsRepository', () => {
         expect(options).toEqual({ baseDir: 11 });
         expect(JSON.parse(serialized).images).toEqual([]);
     });
+
+    it('logs directory creation failure once per repository and continues with defaults', async () => {
+        fsMocks.mkdir.mockRejectedValue(new Error('permission denied'));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+        const repository = new TauriFsRepository();
+
+        await repository.load();
+        await repository.save(stateFixture());
+
+        expect(error).toHaveBeenCalledWith('Error ensuring directory:', expect.any(Error));
+        expect(error.mock.calls.filter(([message]) => message === 'Error ensuring directory:')).toHaveLength(1);
+        error.mockRestore();
+    });
+
+    it('returns defaults and logs malformed filesystem state', async () => {
+        fsMocks.exists.mockResolvedValue(true);
+        fsMocks.readTextFile.mockResolvedValue('{invalid');
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const state = await new TauriFsRepository().load();
+
+        expect(state.images).toEqual([]);
+        expect(state.recentSearches).toEqual([]);
+        expect(error).toHaveBeenCalledWith('Failed to load state from filesystem:', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('contains save failures and logs them', async () => {
+        fsMocks.writeTextFile.mockRejectedValue(new Error('disk full'));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        await expect(new TauriFsRepository().save(stateFixture())).resolves.toBeUndefined();
+
+        expect(error).toHaveBeenCalledWith('Failed to save state to filesystem:', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('logs asynchronous legacy cleanup failures without failing the loaded state', async () => {
+        fsMocks.exists.mockResolvedValue(true);
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify(stateFixture()));
+        fsMocks.writeTextFile.mockRejectedValue(new Error('cleanup failed'));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const state = await new TauriFsRepository().load();
+        await vi.waitFor(() => expect(error).toHaveBeenCalledWith(
+            'Failed to save state to filesystem:',
+            expect.any(Error)
+        ));
+
+        expect(state.images).toEqual([]);
+        error.mockRestore();
+    });
 });

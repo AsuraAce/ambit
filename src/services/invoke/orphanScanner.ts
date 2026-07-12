@@ -133,8 +133,6 @@ export const scanForOrphans = async (
                 // In new pipeline, errors return a zeroed ScanResult with no metadata
                 if (!meta || (meta.width === 0 && !meta.metadata)) continue;
                 if (!options.importIntermediates && meta.metadata?.isIntermediate) continue;
-                if (ambitExistingIds.has(absPath)) continue;
-
                 const finalMeta: ImageMetadata = {
                     tool: GeneratorTool.INVOKEAI,
                     model: meta.metadata?.model || 'Unknown',

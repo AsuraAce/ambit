@@ -36,7 +36,7 @@ export class TauriFsRepository implements IRepository {
                 if (saved.images && Array.isArray(saved.images) && saved.images.length > 0) {
                     console.log('[TauriFsRepository] Detected legacy images in library.json. Cleaning up to improve startup...');
                     // We don't await this so we don't block the return, but it will fix the file for next time.
-                    this.save({ ...saved, images: [] }).catch(e => console.error('Failed to cleanup library.json', e));
+                    void this.save({ ...saved, images: [] });
                 }
 
                 return {

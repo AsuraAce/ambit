@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '../../test/testUtils';
+import { act, render, screen, waitFor } from '../../test/testUtils';
 import { StartupMaintenanceGate } from '../StartupMaintenanceGate';
 import { getDb } from '../../services/db/connection';
 import { isBrowserMockMode } from '../../services/runtime';
@@ -26,6 +26,7 @@ describe('StartupMaintenanceGate', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         document.getElementById('static-loading')?.remove();
     });
 
@@ -59,6 +60,7 @@ describe('StartupMaintenanceGate', () => {
     });
 
     it('dismisses the static preloader so startup maintenance is visible', async () => {
+        vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
         document.body.appendChild(staticLoader);
@@ -70,11 +72,12 @@ describe('StartupMaintenanceGate', () => {
             </StartupMaintenanceGate>
         );
 
-        await waitFor(() => {
-            expect(staticLoader.style.opacity).toBe('0');
-            expect(staticLoader.style.pointerEvents).toBe('none');
-        });
+        await act(async () => Promise.resolve());
+        expect(staticLoader.style.opacity).toBe('0');
+        expect(staticLoader.style.pointerEvents).toBe('none');
         expect(screen.getByText('Startup Maintenance')).toBeTruthy();
+        await act(async () => vi.advanceTimersByTimeAsync(500));
+        expect(document.getElementById('static-loading')).toBeNull();
     });
 
     it('skips database preparation in browser mock mode', () => {

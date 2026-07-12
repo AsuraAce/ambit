@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    compareDateInputs,
     getAdvancedDateSearchReadiness,
     getDateFilterBounds,
     getDateFilterLabel,
@@ -108,5 +109,60 @@ describe('dateFilters', () => {
         ].forEach(query => {
             expect(getAdvancedDateSearchReadiness(query)).toEqual({ isReady: true, issue: null });
         });
+    });
+
+    it('handles empty, preset, and reversed custom filter bounds', () => {
+        const now = new Date(2026, 6, 12, 15);
+
+        expect(getDateFilterBounds({ dateRange: 'custom' }, now)).toEqual({});
+        expect(getDateFilterBounds({ dateRange: 'month' }, now)).toEqual({
+            start: new Date(2026, 5, 12).getTime()
+        });
+        expect(getDateFilterBounds({
+            dateRange: 'custom',
+            dateFrom: '2026-04-30',
+            dateTo: '2026-04-01'
+        }, now)).toEqual({
+            start: new Date(2026, 3, 1).getTime(),
+            end: new Date(2026, 4, 1).getTime()
+        });
+        expect(compareDateInputs('invalid', '2026-04-01')).toBe(0);
+    });
+
+    it('rejects malformed date ranges and classifies mixed atom issues', () => {
+        expect(getSearchDateBounds('date', '2025..2026..2027')).toBeNull();
+        expect(getAdvancedDateSearchReadiness('date:2026-..2027')).toMatchObject({
+            isReady: false,
+            issue: 'pending'
+        });
+        expect(getAdvancedDateSearchReadiness('date:2026-13..2027')).toMatchObject({
+            isReady: false,
+            issue: 'invalid'
+        });
+        expect(getAdvancedDateSearchReadiness('date:2026..2027-')).toMatchObject({
+            isReady: false,
+            issue: 'pending'
+        });
+        expect(getAdvancedDateSearchReadiness('date:2026..2027..2028')).toMatchObject({
+            isReady: false,
+            issue: 'invalid'
+        });
+    });
+
+    it('formats preset, same-day, and one-sided labels', () => {
+        expect(getDateFilterLabel({ dateRange: 'today' })).toBe('Date: Today');
+        expect(getDateFilterLabel({ dateRange: 'week' })).toBe('Date: Week');
+        expect(getDateFilterLabel({ dateRange: 'month' })).toBe('Date: Month');
+        expect(getDateFilterLabel({ dateRange: 'all' })).toBeNull();
+        expect(getDateFilterLabel({
+            dateRange: 'custom',
+            dateFrom: '2026-04-01',
+            dateTo: '2026-04-01'
+        })).toBe('Date: Apr 1, 2026');
+        expect(getDateFilterLabel({ dateRange: 'custom', dateFrom: '2026-04-01' }))
+            .toBe('Date: From Apr 1, 2026');
+        expect(getDateFilterLabel({ dateRange: 'custom', dateTo: '2026-04-30' }))
+            .toBe('Date: Until Apr 30, 2026');
+        expect(getDateFilterLabel({ dateRange: 'custom' })).toBeNull();
     });
 });

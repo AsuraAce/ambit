@@ -74,8 +74,8 @@ const Consumer = () => {
     );
 };
 
-const renderProvider = (onNewImageDetected?: () => void) => render(
-    <WatcherProvider onNewImageDetected={onNewImageDetected}>
+const renderProvider = () => render(
+    <WatcherProvider>
         <Consumer />
     </WatcherProvider>
 );

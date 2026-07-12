@@ -60,7 +60,7 @@ export const useDuplicateFinder = (images: AIImage[], onResolve: (keepId: string
     const groups = useMemo(() => {
         const results: DuplicateGroup[] = [];
         const exactImageIds = new Set<string>();
-        const newestIdFor = (matches: AIImage[]) => [...matches].sort((a, b) => b.timestamp - a.timestamp)[0]?.id || '';
+        const newestIdFor = (matches: AIImage[]) => [...matches].sort((a, b) => b.timestamp - a.timestamp)[0].id;
 
         // 1. First Pass: Group by SHA-256 content hash for exact duplicates.
         const hashBuckets: Record<string, AIImage[]> = {};

@@ -2121,4 +2121,15 @@ describe('Library Integration (Provider Stack)', () => {
         invalidateSpy.mockRestore();
         consoleError.mockRestore();
     });
+
+    it('rejects useLibraryContext outside LibraryProvider', () => {
+        const OutsideConsumer = () => {
+            useLibraryContext();
+            return null;
+        };
+
+        expect(() => render(<OutsideConsumer />)).toThrow(
+            'useLibraryContext must be used within LibraryProvider'
+        );
+    });
 });

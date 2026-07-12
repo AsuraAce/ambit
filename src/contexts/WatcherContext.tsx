@@ -15,7 +15,6 @@ import {
     liveWatchNow,
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
-import { MetadataRefreshScope } from '../types';
 
 interface WatcherContextType {
     isLiveWatching: boolean;
@@ -84,7 +83,7 @@ const mergeInvokePerfContext = (
     };
 };
 
-export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onNewImageDetected }) => {
+export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, isLoaded } = useSettings();
     const { startInvokeSync, startTargetedLiveSync, syncStatus } = useSync();
 
@@ -123,7 +122,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
+    const callbacksRef = useRef({ refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
@@ -132,7 +131,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode; onNewImageDetected
     const invokeActivationCatchupRootRef = useRef<string | null>(null);
 
     useEffect(() => {
-        callbacksRef.current = { onNewImageDetected, refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
+        callbacksRef.current = { refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {

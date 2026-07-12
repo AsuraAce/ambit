@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     },
     workerResponses: [] as Array<Record<string, unknown>>,
     workerMessages: [] as Array<Record<string, unknown>>,
+    postMessageError: null as unknown,
 }));
 
 vi.mock('../../bindings', () => ({
@@ -43,6 +44,7 @@ class RespondingWorker {
     }
 
     postMessage(message: Record<string, unknown>) {
+        if (mocks.postMessageError) throw mocks.postMessageError;
         mocks.workerMessages.push(message);
         const response = mocks.workerResponses.shift() ?? {};
         queueMicrotask(() => {
@@ -78,6 +80,7 @@ describe('metadataParser', () => {
         vi.clearAllMocks();
         mocks.workerResponses.length = 0;
         mocks.workerMessages.length = 0;
+        mocks.postMessageError = null;
         vi.stubGlobal('Worker', RespondingWorker);
     });
 
@@ -246,5 +249,80 @@ describe('metadataParser', () => {
         });
         await expect(scanImagesBulk(['C:/images/a.png'])).resolves.toEqual([]);
         await expect(scanImageWorkflow('C:/images/a.png')).resolves.toBeNull();
+    });
+
+    it('ignores stale worker replies and times out when no matching reply arrives', async () => {
+        vi.useFakeTimers();
+        mocks.workerResponses.push({ requestId: 'stale-request', metadata: { model: 'Wrong' } });
+
+        const { parseImageBuffer } = await import('../metadataParser');
+        const resultPromise = parseImageBuffer(new Uint8Array(), 'timeout.png');
+        await vi.advanceTimersByTimeAsync(5000);
+
+        await expect(resultPromise).resolves.toEqual({
+            metadata: { tool: GeneratorTool.UNKNOWN },
+            extra: {},
+        });
+        vi.useRealTimers();
+    });
+
+    it('reports synchronous worker transport failures for non-Error values', async () => {
+        mocks.postMessageError = 'worker unavailable';
+
+        const { parseImageBuffer } = await import('../metadataParser');
+
+        await expect(parseImageBuffer(new Uint8Array(), 'broken.png')).resolves.toEqual({
+            metadata: { tool: GeneratorTool.UNKNOWN },
+            extra: {},
+        });
+    });
+
+    it('parses browser files through their array buffer', async () => {
+        mocks.workerResponses.push({ metadata: {}, extra: {} });
+        const file = new File([new Uint8Array([4, 5])], 'browser.png');
+
+        const { parseImageFile } = await import('../metadataParser');
+        await expect(parseImageFile(file)).resolves.toMatchObject({ metadata: {}, extra: {} });
+        expect(mocks.workerMessages[0].buffer).toEqual(new Uint8Array([4, 5]));
+    });
+
+    it('normalizes sparse scan results and worker defaults', async () => {
+        mocks.commands.scanImage
+            .mockResolvedValueOnce({ status: 'ok', data: scanResult({ error: null }) })
+            .mockResolvedValueOnce({
+                status: 'ok',
+                data: scanResult({
+                    metadata: { tool: GeneratorTool.COMFYUI },
+                    thumbnail: null,
+                    microThumbnail: null,
+                    thumbnailSource: null,
+                    chunks: null,
+                }),
+            });
+        mocks.workerResponses.push({});
+
+        const { scanImageNative } = await import('../metadataParser');
+        const parsed = await scanImageNative('filename-without-directory.png');
+        const native = await scanImageNative('C:/images/native.png');
+
+        expect(parsed).toMatchObject({
+            metadata: { isIntermediate: undefined, isGrid: false },
+            extra: {},
+            errorReason: undefined,
+        });
+        expect(native).toMatchObject({
+            thumbnail: undefined,
+            microThumbnail: undefined,
+            thumbnailSource: undefined,
+        });
+    });
+
+    it('falls back to the original metadata blob when no workflow is extracted', async () => {
+        mocks.commands.scanImageWorkflow.mockResolvedValue({ status: 'ok', data: '{}' });
+        mocks.workerResponses.push({ metadata: {}, extra: {} });
+
+        const { scanImageWorkflow } = await import('../metadataParser');
+
+        await expect(scanImageWorkflow('image.png')).resolves.toBe('{}');
     });
 });

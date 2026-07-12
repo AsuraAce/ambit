@@ -131,4 +131,40 @@ describe('StatsDashboard', () => {
         expect(screen.getByText('No model stats found')).toBeTruthy();
         expect(screen.getByText('No keywords found')).toBeTruthy();
     });
+
+    it('dismisses the tip of the day', () => {
+        const { container } = render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
+        const tip = screen.getByText('Tip of the Day').closest('.relative');
+
+        fireEvent.click(tip?.querySelector('button') as HTMLButtonElement);
+
+        expect(container.textContent).not.toContain('Tip of the Day');
+    });
+
+    it('does not filter model rows that lack an exact full name', () => {
+        libraryContextMocks.stats.modelStats = [{
+            name: 'Display Only',
+            fullName: undefined as unknown as string,
+            count: 1,
+        }];
+        const onFilter = vi.fn();
+        render(<StatsDashboard images={[]} onFilter={onFilter} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Display Only/i }));
+
+        expect(onFilter).not.toHaveBeenCalled();
+    });
+
+    it('appends clicked keyword terms through the filter updater', () => {
+        render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
+
+        fireEvent.click(screen.getByText('aurora'));
+
+        expect(libraryContextMocks.setFilters).toHaveBeenCalledWith(expect.any(Function));
+        const update = libraryContextMocks.setFilters.mock.calls[0][0] as (
+            filters: { searchQuery: string }
+        ) => { searchQuery: string };
+        expect(update({ searchQuery: '  existing  ' }).searchQuery).toBe('existing aurora');
+        expect(update({ searchQuery: '' }).searchQuery).toBe('aurora');
+    });
 });

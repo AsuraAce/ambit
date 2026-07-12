@@ -122,4 +122,58 @@ describe('InvokeAI image path resolver', () => {
         expect(resolver.getThumbnailPathCandidates('C:/outside.webp', nested)).toEqual(boundedFallbacks);
         expect(resolver.getThumbnailPathCandidates('\\\\server\\share\\outside.webp', nested)).toEqual(boundedFallbacks);
     });
+
+    it('falls back to the bounded flat path when disk indexing fails', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const listImages = vi.fn().mockRejectedValue(new Error('scope denied'));
+        const resolver = createInvokeImagePathResolver('D:/Invoke/', listImages);
+
+        await expect(resolver.resolveImagePath('missing.png')).resolves.toEqual({
+            absolutePath: 'D:/Invoke/outputs/images/missing.png',
+            relativePath: 'outputs/images/missing.png',
+            ambiguous: false
+        });
+        expect(warn).toHaveBeenCalledWith(
+            '[InvokeAI Sync] Failed to build InvokeAI image path index; falling back to flat path resolution.',
+            expect.any(Error)
+        );
+        warn.mockRestore();
+    });
+
+    it('uses the first bounded thumbnail candidate when no path index is supplied', async () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+        const nested = await resolver.resolveImagePath('date.png');
+
+        expect(resolver.resolveThumbnailPath(null, nested)).toBe(
+            'D:/Invoke/outputs/images/2026/05/25/date.webp'
+        );
+        expect(resolver.resolveThumbnailPath('custom/folder/thumb.webp', nested)).toBe(
+            'D:/Invoke/outputs/images/custom/folder/thumb.webp'
+        );
+        expect(resolver.resolveThumbnailPath(null, {
+            absolutePath: null,
+            relativePath: null,
+            ambiguous: false
+        })).toBeNull();
+    });
+
+    it('resolves safe legacy names to the flat output folder and rejects unsafe names', () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+
+        expect(resolver.getLegacyFlatImagePath('nested/image.png')).toBe(
+            'D:/Invoke/outputs/images/image.png'
+        );
+        expect(resolver.getLegacyFlatImagePath('../outside.png')).toBeNull();
+        expect(resolver.getLegacyFlatImagePath('')).toBeNull();
+    });
+
+    it('builds the disk index once and reuses it for later flat-name resolutions', async () => {
+        const listImages = vi.fn().mockResolvedValue(files);
+        const resolver = createInvokeImagePathResolver('D:/Invoke', listImages);
+
+        await resolver.resolveImagePath('flat.png');
+        await resolver.resolveImagePath('hash.png');
+
+        expect(listImages).toHaveBeenCalledTimes(1);
+    });
 });

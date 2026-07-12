@@ -482,6 +482,40 @@ describe('maintenanceRepo', () => {
         expect(params).toEqual([]);
     });
 
+    it('accepts alternate scoped predicate forms across maintenance queries', async () => {
+        const db = {
+            select: vi.fn().mockResolvedValue([]),
+            execute: vi.fn(),
+        };
+        mocks.getDb.mockResolvedValue(db);
+        const {
+            getIntermediateImages,
+            getUntaggedImages,
+            getUnoptimizedImages,
+            getUnoptimizedImagesCount,
+            getUnoptimizedImageEntries,
+        } = await import('../maintenanceRepo');
+
+        await getIntermediateImages('rating >= ?', [1]);
+        await getIntermediateImages('   ', ['ignored']);
+        await getUntaggedImages('WHERE rating >= ?', [2]);
+        await getUntaggedImages('   ', ['ignored']);
+        await getUnoptimizedImages('rating >= ?', [3]);
+        await getUnoptimizedImages('', ['stale']);
+        await getUnoptimizedImagesCount('rating >= ?', [4]);
+        await getUnoptimizedImageEntries(0, 10, 'WHERE rating >= ?', [5]);
+
+        const queries = db.select.mock.calls.map(([query]) => query as string);
+        expect(queries[0]).toMatch(/AND rating >= \?/);
+        expect(queries[1]).not.toContain('AND    ');
+        expect(queries[2]).toMatch(/AND\s+rating >= \?/);
+        expect(queries[3]).not.toContain('AND    ');
+        expect(queries[4]).toMatch(/AND rating >= \?/);
+        expect(db.select.mock.calls[5][1]).toEqual([]);
+        expect(queries[6]).toMatch(/AND rating >= \?/);
+        expect(queries[7]).toMatch(/AND\s+rating >= \?/);
+    });
+
     it('logs completed file hash backfills only when native work was scanned', async () => {
         const result = { scanned: 3, updated: 2, missing: 1, errors: 0, remaining: 4, wasCancelled: false };
         mocks.commands.backfillImageFileHashes.mockResolvedValue(result);

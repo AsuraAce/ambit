@@ -1,7 +1,11 @@
 import { QueryClient } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../types';
-import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../imageQueryCache';
+import {
+    patchImageFlagsInQueryCaches,
+    restoreImagesInQueryCaches,
+    updateImagesQueryCaches,
+} from '../imageQueryCache';
 
 const image = (id: string, flags: Partial<AIImage> = {}): AIImage => ({
     id,
@@ -203,5 +207,56 @@ describe('imageQueryCache', () => {
         expect(data?.pages[0].images[0].isPinned).toBe(false);
         expect(inactiveData?.pages[0].images.map(item => item.id)).toEqual(['1', '2']);
         expect(inactiveData?.pages[0].images[0].isPinned).toBe(false);
+    });
+
+    it('repartitions a cache when only the requested order changes', () => {
+        const queryClient = new QueryClient();
+        const key = ['images', { scope: 'order-only' }] as const;
+        const first = image('1');
+        const second = image('2');
+        queryClient.setQueryData(key, {
+            pages: [
+                { images: [first], totalCount: 2, globalCount: 2 },
+                { images: [second], totalCount: -1, globalCount: -1 },
+            ],
+            pageParams: [undefined, 1],
+        });
+
+        updateImagesQueryCaches(queryClient, current => current, {
+            previousOrder: [first, second],
+            nextOrder: [second, first],
+            reorderQueryKey: ['images', { scope: 'order-only' }],
+        });
+
+        const data = queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key);
+        expect(data?.pages.map(page => page.images[0].id)).toEqual(['2', '1']);
+    });
+
+    it('preserves cache identity for an unchanged reorder and skips missing query data', () => {
+        const queryClient = new QueryClient();
+        const key = ['images', { scope: 'same-order' }] as const;
+        const first = image('1');
+        const data = {
+            pages: [{ images: [first], totalCount: 1, globalCount: 1 }],
+            pageParams: [undefined],
+        };
+        queryClient.setQueryData(key, data);
+        const setQueryData = vi.spyOn(queryClient, 'setQueryData');
+
+        updateImagesQueryCaches(queryClient, current => current, {
+            previousOrder: [first],
+            nextOrder: [first],
+            reorderQueryKey: key,
+        });
+
+        expect(queryClient.getQueryData(key)).toBe(data);
+        expect(setQueryData).not.toHaveBeenCalled();
+
+        const missingClient = {
+            getQueriesData: () => [[['images'], undefined]],
+            setQueryData: vi.fn(),
+        } as unknown as QueryClient;
+        updateImagesQueryCaches(missingClient, current => current);
+        expect(missingClient.setQueryData).not.toHaveBeenCalled();
     });
 });

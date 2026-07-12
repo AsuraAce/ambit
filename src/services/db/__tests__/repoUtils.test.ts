@@ -148,4 +148,39 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.originalChunks?.invokeai_metadata).toBe(JSON.stringify({ positive_prompt: 'raw invoke prompt' }));
         expect(image.originalState).toEqual({ isFavorite: true, isPinned: false, boardId: 'board-a' });
     });
+
+    it('restores generation fields from original metadata when the current row is sparse', () => {
+        const image = mapRowToImage({
+            ...baseLightRow,
+            resolved_model_name: 'Current Model',
+            steps: 0,
+            cfg: 0,
+            sampler: '',
+            positive_prompt: '',
+            negative_prompt: '',
+            seed: null,
+            metadata_json: JSON.stringify({ tool: GeneratorTool.COMFYUI, model: 'Current Model' }),
+            original_parsed_json: JSON.stringify({
+                tool: GeneratorTool.INVOKEAI,
+                model: 'Original Model',
+                seed: '42',
+                steps: 30,
+                cfg: 6.5,
+                sampler: 'dpmpp',
+                positivePrompt: 'restored prompt',
+                negativePrompt: 'restored negative',
+            }),
+        });
+
+        expect(image.metadata).toMatchObject({
+            tool: GeneratorTool.COMFYUI,
+            model: 'Current Model',
+            seed: 42,
+            steps: 30,
+            cfg: 6.5,
+            sampler: 'dpmpp',
+            positivePrompt: 'restored prompt',
+            negativePrompt: 'restored negative',
+        });
+    });
 });

@@ -41,7 +41,7 @@ export const useStacking = (images: AIImage[]) => {
         if (images.length === 0) {
             activeWorkerCleanupRef.current?.();
             activeWorkerCleanupRef.current = null;
-            setSuggestedStacks([]);
+            setSuggestedStacks(current => current.length === 0 ? current : []);
             setIsCalculating(false);
             return;
         }

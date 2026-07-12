@@ -113,15 +113,15 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
     // Define the current list for selection logic
     const currentList = useMemo(() => {
-        switch (activeTab) {
-            case 'trash': return localDeletedImages;
-            case 'untagged': return localUntaggedImages;
-            case 'thumbnails': return localUnoptimizedImages;
-            case 'missing': return missingImages;
-            case 'intermediates': return localIntermediateImages;
-            case 'duplicates': return localDuplicateCandidates; // Note: duplicates view is complex, often handles groups
-            default: return [];
-        }
+        const lists: Record<MaintenanceTab, AIImage[]> = {
+            trash: localDeletedImages,
+            untagged: localUntaggedImages,
+            thumbnails: localUnoptimizedImages,
+            missing: missingImages,
+            intermediates: localIntermediateImages,
+            duplicates: localDuplicateCandidates
+        };
+        return lists[activeTab];
     }, [activeTab, localDeletedImages, localUntaggedImages, localUnoptimizedImages, missingImages, localIntermediateImages, localDuplicateCandidates]);
 
     const targetImage = useMemo(() => {
@@ -201,16 +201,13 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     }, [selectionRangeHandler]);
 
     const handleCompareTogglePin = useCallback((id: string, isPinned: boolean) => {
-        if (!onTogglePin) return;
-
         setCompareImages(prev => {
-            if (!prev) return prev;
             return [
-                prev[0].id === id ? { ...prev[0], isPinned } : prev[0],
-                prev[1].id === id ? { ...prev[1], isPinned } : prev[1]
+                prev![0].id === id ? { ...prev![0], isPinned } : prev![0],
+                prev![1].id === id ? { ...prev![1], isPinned } : prev![1]
             ];
         });
-        onTogglePin(id, isPinned);
+        onTogglePin!(id, isPinned);
     }, [onTogglePin]);
 
 
@@ -277,9 +274,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     };
 
     const handleViewerCleanup = useCallback(async () => {
-        if (!viewingImageId || activeTab === 'trash') return;
-
-        const id = viewingImageId;
+        const id = viewingImageId!;
         await onRemoveFromLibrary([id]);
         setViewingImageId(null);
 

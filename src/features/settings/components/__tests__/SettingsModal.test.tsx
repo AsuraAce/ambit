@@ -50,12 +50,17 @@ vi.mock('..', () => ({
             >
                 Complete folder update
             </button>
+            <button type="button" onClick={() => setSettings({ ...createSettings(), theme: 'light' })}>
+                Direct settings update
+            </button>
         </div>
     ),
     PrivacyTab: () => null,
-    IntelligenceTab: () => null,
+    IntelligenceTab: () => <div>Intelligence panel</div>,
     AdvancedTab: () => <div>Advanced panel</div>,
-    ConnectionsTab: () => null
+    ConnectionsTab: ({ initialSubTab }: { initialSubTab?: string }) => (
+        <div>Connections panel {initialSubTab ?? 'none'}</div>
+    )
 }));
 
 const createSettings = (): AppSettings => ({
@@ -188,5 +193,54 @@ describe('SettingsModal', () => {
 
         expect(screen.getByText('Advanced panel')).not.toBeNull();
         expect(screen.queryByText('Dev panel')).toBeNull();
+    });
+
+    it('routes connection subtabs and legacy experiments to their owning panels', () => {
+        const commonProps = {
+            isOpen: true,
+            onClose: vi.fn(),
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const { rerender } = render(<SettingsModal {...commonProps} initialTab="folders" />);
+        expect(screen.getByText('Connections panel folders')).toBeTruthy();
+
+        rerender(<SettingsModal {...commonProps} initialTab="experiments" />);
+        expect(screen.getByText('Intelligence panel')).toBeTruthy();
+
+        rerender(<SettingsModal {...commonProps} initialTab="privacy" />);
+        expect(screen.queryByText('Intelligence panel')).toBeNull();
+    });
+
+    it('forwards direct settings values without wrapping them', () => {
+        const onSave = vi.fn<(update: AppSettingsUpdate) => void>();
+        render(
+            <SettingsModal
+                isOpen
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={onSave}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Direct settings update'));
+
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' }));
     });
 });

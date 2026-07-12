@@ -206,4 +206,147 @@ describe('scanForOrphans', () => {
         expect(commands.scanImagesBulk).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
+
+    it('uses a database-file root and continues when intermediate lookup fails', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(Database.load).mockRejectedValue(new Error('database locked'));
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+            status: 'ok',
+            data: ['outputs/images/new.png']
+        } as never);
+
+        const imported = await scanForOrphans(
+            'D:\\Invoke\\databases\\invokeai.db',
+            new Set(),
+            vi.fn(),
+            { importIntermediates: false }
+        );
+
+        expect(imported).toBe(1);
+        expect(Database.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+        expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:\\Invoke');
+        expect(error).toHaveBeenCalledWith(
+            '[Hybrid Sync] ERROR loading intermediates:',
+            expect.any(Error)
+        );
+        error.mockRestore();
+    });
+
+    it('normalizes a databases directory and allows importing intermediates on request', async () => {
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+            status: 'ok',
+            data: ['outputs/images/intermediate.png']
+        } as never);
+        vi.mocked(commands.scanImagesBulk).mockResolvedValue({
+            status: 'ok',
+            data: [{
+                width: 64,
+                height: 64,
+                size: 10,
+                modified: 0,
+                thumbnail: null,
+                metadata: { isIntermediate: true }
+            }]
+        } as never);
+
+        const imported = await scanForOrphans(
+            'D:/Invoke/databases',
+            new Set(),
+            vi.fn(),
+            { importIntermediates: true }
+        );
+
+        expect(Database.load).not.toHaveBeenCalled();
+        expect(commands.listInvokeaiImages).toHaveBeenCalledWith('D:/Invoke');
+        expect(imported).toBe(1);
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toMatchObject({
+            thumbnailUrl: 'D:/Invoke/outputs/images/intermediate.png',
+            timestamp: expect.any(Number),
+            metadata: {
+                tool: 'InvokeAI',
+                model: 'Unknown',
+                seed: undefined,
+                steps: 0,
+                cfg: 0,
+                positivePrompt: '',
+                negativePrompt: '',
+                sampler: '',
+                loras: [],
+                controlNets: [],
+                workflowJson: undefined,
+                rawParameters: undefined,
+                isIntermediate: true
+            }
+        });
+    });
+
+    it('returns zero when disk listing fails or produces no files', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(commands.listInvokeaiImages)
+            .mockRejectedValueOnce(new Error('scope denied'))
+            .mockResolvedValueOnce({ status: 'ok', data: [] } as never);
+        const progress = vi.fn();
+
+        await expect(scanForOrphans('D:/Invoke/', new Set(), progress, { importIntermediates: true }))
+            .resolves.toBe(0);
+        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true }))
+            .resolves.toBe(0);
+
+        expect(error).toHaveBeenCalledWith('[OrphanScan] Failed to list images on disk:', expect.any(Error));
+        expect(commands.scanImagesBulk).not.toHaveBeenCalled();
+        error.mockRestore();
+    });
+
+    it('skips malformed, intermediate, and concurrently inserted scan rows', async () => {
+        vi.mocked(getDb).mockResolvedValue({
+            select: vi.fn().mockResolvedValue([{ id: 'D:/Invoke/outputs/images/existing.png' }])
+        } as never);
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+            status: 'ok',
+            data: [
+                'outputs/images/missing.png',
+                'outputs/images/zero.png',
+                'outputs/images/intermediate.png',
+                'outputs/images/existing.png'
+            ]
+        } as never);
+        vi.mocked(commands.scanImagesBulk).mockResolvedValue({
+            status: 'ok',
+            data: [
+                null,
+                { width: 0, metadata: null },
+                { width: 10, metadata: { isIntermediate: true } },
+                { width: 10, metadata: {} }
+            ]
+        } as never);
+
+        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: false }))
+            .resolves.toBe(0);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('continues after a failed chunk and reports progress for every chunk', async () => {
+        const files = Array.from({ length: 101 }, (_, index) => `outputs/images/${index}.png`);
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: files } as never);
+        vi.mocked(commands.scanImagesBulk)
+            .mockRejectedValueOnce(new Error('batch failed'))
+            .mockImplementationOnce(async (paths: string[]) => ({
+                status: 'ok',
+                data: paths.map(() => ({
+                    width: 1,
+                    height: 1,
+                    size: 1,
+                    modified: 1,
+                    thumbnail: null,
+                    metadata: null
+                }))
+            }) as never);
+        const progress = vi.fn();
+
+        await expect(scanForOrphans('D:/Invoke', new Set(), progress, { importIntermediates: true }))
+            .resolves.toBe(1);
+        expect(commands.scanImagesBulk).toHaveBeenCalledTimes(2);
+        expect(progress).toHaveBeenCalledWith('Importing untracked files...', 0, 101);
+        expect(progress).toHaveBeenLastCalledWith('Importing untracked files...', 1, 101);
+    });
 });

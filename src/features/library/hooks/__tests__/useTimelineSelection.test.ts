@@ -175,4 +175,21 @@ describe('useTimelineSelection', () => {
         expect(onRangeSelection).toHaveBeenCalledWith([1, 2], true);
         expect(result.current.dragBox).toBeNull();
     });
+
+    it('ignores a stale move callback after the gesture has ended', () => {
+        let moveListener: EventListener | undefined;
+        const addEventListener = vi.spyOn(window, 'addEventListener').mockImplementation((type, listener) => {
+            if (type === 'mousemove') moveListener = listener as EventListener;
+        });
+        const { result } = renderHook(() => useTimelineSelection({
+            containerRef: { current: makeContainer() },
+            layoutItems,
+        }));
+
+        act(() => result.current.handleMouseDown(makeMouseDown()));
+        const upListener = addEventListener.mock.calls.find(([type]) => type === 'mouseup')?.[1] as EventListener;
+        act(() => upListener(new MouseEvent('mouseup', { clientX: 40, clientY: 60 })));
+
+        expect(() => moveListener?.(new MouseEvent('mousemove'))).not.toThrow();
+    });
 });

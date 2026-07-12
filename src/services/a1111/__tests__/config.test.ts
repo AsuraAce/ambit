@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    detectWebUIVariation,
     discoverA1111Candidates,
     getUnlinkedPriorityCandidatePaths
 } from '../config';
@@ -84,6 +85,35 @@ describe('discoverA1111Candidates', () => {
             WebUIVariant.FORGE
         ]);
         expect(result.logs).toContain('[Info] Manual Override applied: Forced all candidates to Forge');
+    });
+
+    it('detects variants directly and normalizes unknown backend enum strings', async () => {
+        await expect(detectWebUIVariation('D:/SD')).resolves.toBe(WebUIVariant.A1111);
+
+        mocks.discoverA1111Folders.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                detectedVariant: 'FutureUI',
+                candidates: [{
+                    path: 'D:/SD/output',
+                    name: 'output',
+                    imageCount: 1,
+                    inferredType: 'future-type',
+                    isPriority: false,
+                    variant: 'FutureUI',
+                }],
+                logs: [],
+                warnings: [],
+            },
+        });
+
+        const result = await discoverA1111Candidates('D:/SD', new Set());
+
+        expect(result.detectedVariant).toBe(WebUIVariant.UNKNOWN);
+        expect(result.candidates[0]).toMatchObject({
+            inferredType: A1111FolderType.UNKNOWN,
+            variant: WebUIVariant.UNKNOWN,
+        });
     });
 });
 

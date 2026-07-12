@@ -194,6 +194,19 @@ describe('collectionRepo filter normalization', () => {
         errorSpy.mockRestore();
     });
 
+    it('logs non-duplicate migration failures from a missing column', async () => {
+        const migrationError = new Error('database read-only');
+        dbMocks.select.mockResolvedValue([{ name: 'id' }, { name: 'created_at' }]);
+        dbMocks.execute.mockRejectedValueOnce(migrationError);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const { ensureCollectionSchema } = await import('../collectionRepo');
+        await ensureCollectionSchema();
+
+        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to ensure collection schema', migrationError);
+        errorSpy.mockRestore();
+    });
+
     it('rethrows collection upsert failures after logging the affected id', async () => {
         const upsertError = new Error('sqlite read-only');
         dbMocks.execute.mockRejectedValue(upsertError);
@@ -727,6 +740,44 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.getDb).not.toHaveBeenCalled();
     });
 
+    it('clears selected and all native collection thumbnail caches', async () => {
+        const {
+            clearAllCollectionThumbnailCaches,
+            clearCollectionThumbnailCacheForCollections,
+            deleteCollectionFromDb,
+        } = await import('../collectionRepo');
+
+        await clearCollectionThumbnailCacheForCollections(['']);
+        expect(dbMocks.execute).not.toHaveBeenCalled();
+        await clearCollectionThumbnailCacheForCollections(['c1', '', 'c1']);
+        await clearAllCollectionThumbnailCaches();
+        await deleteCollectionFromDb('c1');
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            expect.stringContaining('WHERE id IN (?)'),
+            ['c1']
+        );
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            expect.stringContaining("WHERE custom_thumbnail IS NULL OR custom_thumbnail = ''")
+        );
+        expect(dbMocks.execute).toHaveBeenCalledWith('DELETE FROM collections WHERE id = ?', ['c1']);
+    });
+
+    it('skips cache SQL in browser mock mode', async () => {
+        browserMocks.isBrowserMockMode.mockReturnValue(true);
+        const {
+            clearAllCollectionThumbnailCaches,
+            clearCollectionThumbnailCacheForCollections,
+            clearCollectionThumbnailCacheForImages,
+        } = await import('../collectionRepo');
+
+        await clearCollectionThumbnailCacheForCollections(['c1']);
+        await clearCollectionThumbnailCacheForImages(['image-1']);
+        await clearAllCollectionThumbnailCaches();
+
+        expect(dbMocks.getDb).not.toHaveBeenCalled();
+    });
+
     it('returns empty thumbnail and smart summaries without querying for empty inputs', async () => {
         const { getCollectionThumbnailSummaries, getSmartCollectionSummaries } = await import('../collectionRepo');
 
@@ -813,6 +864,17 @@ describe('collectionRepo membership helpers', () => {
 
         await expect(getCollectionThumbnail(ids)).resolves.toBe('data:image/webp;base64,pinned');
         expect(dbMocks.select).toHaveBeenCalledTimes(2);
+    });
+
+    it('selects the newest thumbnail when candidates have equal pin status', async () => {
+        const ids = Array.from({ length: 901 }, (_, index) => `img-${index}`);
+        dbMocks.select
+            .mockResolvedValueOnce([{ path: 'C:/thumbs/older.webp', timestamp: 10, is_pinned: 0 }])
+            .mockResolvedValueOnce([{ path: 'C:/thumbs/newer.webp', timestamp: 20, is_pinned: 0 }]);
+
+        const { getCollectionThumbnail } = await import('../collectionRepo');
+
+        await expect(getCollectionThumbnail(ids)).resolves.toBe('asset://C:/thumbs/newer.webp');
     });
 
     it('returns no collection thumbnail for empty, missing, null, or failed thumbnail lookups', async () => {

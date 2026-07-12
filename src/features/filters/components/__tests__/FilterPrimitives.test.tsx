@@ -234,4 +234,160 @@ describe('FilterPrimitives', () => {
         fireEvent.mouseUp(window);
         expect(onChange).toHaveBeenCalledWith(4, undefined);
     });
+
+    it('drags and clamps the max slider handle, then syncs new idle props', () => {
+        const onChange = vi.fn();
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+            x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0,
+            toJSON: () => ({})
+        });
+        const { container, rerender } = render(
+            <FilterSlider label="CFG" min={0} max={10} minValue={3} maxValue={8} onChange={onChange} />
+        );
+        const thumbs = container.querySelectorAll('.cursor-ew-resize');
+
+        fireEvent.mouseDown(thumbs[1]);
+        fireEvent.mouseMove(window, { clientX: -50 });
+        fireEvent.mouseUp(window);
+
+        expect(onChange).toHaveBeenCalledWith(3, 4);
+
+        rerender(<FilterSlider label="CFG" min={0} max={10} minValue={2} maxValue={9} onChange={onChange} />);
+        expect(container.textContent).toContain('2 - 9');
+    });
+
+    it('renders closed header and sort-dropdown class variants', () => {
+        const triggerClass = vi.fn((open: boolean) => open ? 'open-trigger' : 'closed-trigger');
+        const { rerender } = render(
+            <SectionHeader title="Closed" isOpen={false} onToggle={vi.fn()} />
+        );
+        expect(screen.getByText('Closed')).toBeTruthy();
+
+        rerender(
+            <SortDropdown
+                currentValue="name"
+                onSelect={vi.fn()}
+                options={[{ id: 'name', label: 'Name' }]}
+                triggerClassName={triggerClass}
+            />
+        );
+        expect(screen.getByTitle('Sort Options').className).toBe('closed-trigger');
+        fireEvent.click(screen.getByTitle('Sort Options'));
+        expect(screen.getByTitle('Sort Options').className).toBe('open-trigger');
+        expect(document.querySelector('.right-0')).toBeTruthy();
+
+        rerender(
+            <SortDropdown
+                currentValue="name"
+                onSelect={vi.fn()}
+                options={[]}
+                triggerClassName="static-trigger"
+            />
+        );
+        expect(screen.getByTitle('Sort Options').className).toBe('static-trigger');
+    });
+
+    it('removes multi-select values, shows grouped no-match, and closes outside', () => {
+        const onChange = vi.fn();
+        const { rerender } = render(
+            <MultiSelectDropdown
+                label="Models"
+                selected={['Alpha', 'Beta']}
+                onChange={onChange}
+                options={['Alpha', 'Beta']}
+            />
+        );
+        fireEvent.click(screen.getByText('2 selected'));
+        fireEvent.click(screen.getByText('Alpha'));
+        expect(onChange).toHaveBeenCalledWith(['Beta']);
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByText('Alpha')).toBeNull();
+
+        rerender(
+            <MultiSelectDropdown
+                label="Grouped"
+                selected={[]}
+                onChange={onChange}
+                groups={[{ label: 'Group', items: ['Alpha'] }]}
+            />
+        );
+        fireEvent.click(screen.getByText('Select...'));
+        fireEvent.change(screen.getByPlaceholderText('Search...'), { target: { value: 'missing' } });
+        expect(screen.getByText('No matches found')).toBeTruthy();
+    });
+
+    it('uses default chip labels and treats all chips as available without an availability list', () => {
+        const onChange = vi.fn();
+        render(
+            <ChipSelect
+                label="Tools"
+                options={['ComfyUI']}
+                selected={[]}
+                onChange={onChange}
+            />
+        );
+
+        fireEvent.click(screen.getByText('ComfyUI'));
+
+        expect(onChange).toHaveBeenCalledWith(['ComfyUI']);
+        expect((screen.getByTitle('ComfyUI') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('handles slider defaults and safely ignores a captured move after unmount', () => {
+        const listeners = new Map<string, EventListener>();
+        vi.spyOn(window, 'addEventListener').mockImplementation((type, listener) => {
+            listeners.set(type, listener as EventListener);
+        });
+        const onChange = vi.fn();
+        const { container, unmount } = render(
+            <FilterSlider label="Default" min={0} max={10} onChange={onChange} />
+        );
+        const thumbs = container.querySelectorAll('.cursor-ew-resize');
+
+        fireEvent.mouseDown(thumbs[0]);
+        const move = listeners.get('mousemove');
+        unmount();
+
+        expect(() => move?.(new MouseEvent('mousemove', { clientX: 5 }))).not.toThrow();
+    });
+
+    it('commits untouched slider limits as undefined filters', () => {
+        const onChange = vi.fn();
+        const { container } = render(
+            <FilterSlider label="Limits" min={0} max={10} onChange={onChange} />
+        );
+
+        fireEvent.mouseDown(container.querySelectorAll('.cursor-ew-resize')[0]);
+        fireEvent.mouseUp(window);
+
+        expect(onChange).toHaveBeenCalledWith(undefined, undefined);
+    });
+
+    it('uses the default search placeholder and keeps dropdowns open for inside mouse downs', () => {
+        const { rerender } = render(<SearchInput value="" onChange={vi.fn()} />);
+        expect(screen.getByPlaceholderText('Search...')).toBeTruthy();
+
+        rerender(
+            <SortDropdown
+                currentValue="name"
+                onSelect={vi.fn()}
+                options={[{ id: 'name', label: 'Name' }]}
+            />
+        );
+        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.mouseDown(screen.getByText('Name'));
+        expect(screen.getByText('Name')).toBeTruthy();
+
+        rerender(
+            <MultiSelectDropdown
+                label="Inside"
+                selected={[]}
+                onChange={vi.fn()}
+                options={['One']}
+            />
+        );
+        fireEvent.click(screen.getByText('Select...'));
+        fireEvent.mouseDown(screen.getByText('One'));
+        expect(screen.getByText('One')).toBeTruthy();
+    });
 });
