@@ -117,4 +117,24 @@ describe('ApiKeyInput', () => {
 
         expect(screen.getByRole('alert').textContent).toContain('Environment key rejected');
     });
+
+    it('uses direct accessible names when the visible label is hidden', () => {
+        const envProps = renderInput('idle', undefined, {
+            isEnvKey: true,
+            label: 'Environment key',
+            onTestEnvKey: vi.fn(),
+            showLabel: false,
+        });
+        expect(screen.getByRole('group', { name: 'Environment key' })).not.toBeNull();
+
+        render(
+            <ApiKeyInput
+                {...envProps}
+                isEnvKey={false}
+                label="Manual key"
+                onTestEnvKey={undefined}
+            />
+        );
+        expect(screen.getByLabelText('Manual key')).not.toBeNull();
+    });
 });

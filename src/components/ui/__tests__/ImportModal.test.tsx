@@ -30,16 +30,17 @@ vi.mock('framer-motion', () => {
 const renderModal = () => {
     const onClose = vi.fn();
     const onOpenSettings = vi.fn();
+    const onImportFiles = vi.fn();
     const result = render(
         <ImportModal
             isOpen={true}
             onClose={onClose}
             onOpenSettings={onOpenSettings}
-            onImportFiles={vi.fn()}
+            onImportFiles={onImportFiles}
         />
     );
 
-    return { ...result, onClose, onOpenSettings };
+    return { ...result, onClose, onOpenSettings, onImportFiles };
 };
 
 describe('ImportModal', () => {
@@ -96,5 +97,66 @@ describe('ImportModal', () => {
 
         expect(onOpenSettings).toHaveBeenCalledWith('invokeai');
         expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it('routes every remaining import action and closes after handoff', () => {
+        const { onClose, onOpenSettings, onImportFiles } = renderModal();
+
+        fireEvent.click(screen.getByRole('button', { name: 'ComfyUI' }));
+        fireEvent.click(screen.getByRole('button', { name: 'SD WebUI' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Select Files' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
+
+        expect(onOpenSettings).toHaveBeenNthCalledWith(1, 'comfyui');
+        expect(onOpenSettings).toHaveBeenNthCalledWith(2, 'a1111');
+        expect(onOpenSettings).toHaveBeenNthCalledWith(3, 'folders');
+        expect(onImportFiles).toHaveBeenCalledOnce();
+        expect(onClose).toHaveBeenCalledTimes(4);
+    });
+
+    it('keeps focus on the dialog when no focusable descendants are available', () => {
+        renderModal();
+        const dialog = screen.getByRole('dialog');
+        const emptyNodes = document.createDocumentFragment().querySelectorAll<HTMLElement>('button');
+        vi.spyOn(dialog, 'querySelectorAll').mockReturnValue(emptyNodes);
+
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+        fireEvent.keyDown(dialog, { key: 'Tab' });
+
+        expect(document.activeElement).toBe(dialog);
+    });
+
+    it('leaves focus movement to the browser from a middle control', () => {
+        renderModal();
+        const middleControl = screen.getByRole('button', { name: 'ComfyUI' });
+        middleControl.focus();
+
+        fireEvent.keyDown(middleControl, { key: 'Tab' });
+
+        expect(document.activeElement).toBe(middleControl);
+    });
+
+    it('starts focus trapping when the active element is not HTML', () => {
+        renderModal();
+        const dialog = screen.getByRole('dialog');
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const activeElementSpy = vi.spyOn(document, 'activeElement', 'get').mockReturnValue(svg);
+
+        fireEvent.keyDown(dialog, { key: 'Tab' });
+
+        activeElementSpy.mockRestore();
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Add Images' }));
+    });
+
+    it('renders nothing while closed', () => {
+        render(
+            <ImportModal
+                isOpen={false}
+                onClose={vi.fn()}
+                onOpenSettings={vi.fn()}
+                onImportFiles={vi.fn()}
+            />
+        );
+        expect(screen.queryByRole('dialog')).toBeNull();
     });
 });
