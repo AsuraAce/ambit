@@ -171,6 +171,52 @@ fn test_extract_comfyui_switch_model_collects_enabled_lora() {
 }
 
 #[test]
+fn test_extract_comfyui_switch_model_follows_rerouted_boolean() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": { "model": ["10", 0] }
+        },
+        "10": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["14", 0],
+                "on_false": ["12", 0],
+                "on_true": ["13", 0]
+            }
+        },
+        "11": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": false }
+        },
+        "12": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "selected_base.safetensors" }
+        },
+        "13": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "lora_name": "disabled_lora.safetensors",
+                "model": ["12", 0]
+            }
+        },
+        "14": {
+            "class_type": "Reroute",
+            "inputs": { "": ["11", 0] }
+        }
+    }"#;
+
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.model, "selected_base");
+    assert!(
+        meta.loras.is_empty(),
+        "a false switch routed through a core Reroute must keep the LoRA disabled"
+    );
+}
+
+#[test]
 fn test_extract_comfyui_workflow_hypernetwork_loader_strength() {
     let workflow = r#"{
         "last_node_id": 10,
