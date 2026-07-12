@@ -37,7 +37,7 @@ const readNumber = (record: MetadataRecord, key: string): number | undefined => 
 export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Partial<ImageMetadata> {
     if (!chunks) return {};
 
-    const toolLower = tool?.toLowerCase() || "";
+    const toolLower = tool.toLowerCase();
 
     // If chunks is a raw string, we might need to parse it (could be JSON object or JSON-escaped string)
     if (typeof chunks === 'string') {
@@ -48,20 +48,13 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
                 // If it parsed as a string (was a JSON-escaped string), 
                 // we recurse to handle the unescaped content.
                 // If it parsed as an object, we recurse to use object mapping.
-                if (parsed !== chunks) {
-                    return mapRawChunksToMetadata(parsed, tool);
-                }
+                return mapRawChunksToMetadata(parsed, tool);
             } catch { /* ignore and treat as raw text */ }
         }
 
         // It's a raw string, not JSON-encoded object/string
         if (toolLower.includes('comfy')) {
-            const metadata: Partial<ImageMetadata> = { tool: GeneratorTool.COMFYUI, workflowJson: chunks };
-            try {
-                const json = JSON.parse(chunks);
-                parseComfyUIMetadata(json, metadata);
-            } catch { /* ignore */ }
-            return metadata;
+            return { tool: GeneratorTool.COMFYUI, workflowJson: chunks };
         } else if (toolLower.includes('invoke')) {
             return mapRawInvokeMetadata(chunks);
         } else {
@@ -88,7 +81,7 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
         detectedTool = GeneratorTool.INVOKEAI;
     }
 
-    const effectiveToolLower = detectedTool?.toLowerCase() || "";
+    const effectiveToolLower = detectedTool.toLowerCase();
 
     // 2. ComfyUI flat structure check (no 'prompt'/'workflow' keys, just nodes/IDs)
     if (effectiveToolLower.includes('comfy') && (chunkRecord.nodes || Object.keys(chunkRecord).some(k => !isNaN(Number(k))))) {
@@ -155,8 +148,6 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     };
 
     const lines = text.split('\n').map(l => l.trim());
-    if (lines.length === 0) return metadata;
-
     let positiveParts: string[] = [];
     let negativePrompt = "";
     let paramsLine = "";
@@ -173,8 +164,6 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
             positiveParts.push(line);
         } else if (state === 1) {
             negativePrompt += " " + line;
-        } else if (state === 2) {
-            if (!paramsLine.includes("Steps: ")) paramsLine = line;
         }
     }
 
@@ -355,7 +344,7 @@ export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetad
     const candidateSamplers: ComfyNode[] = [];
 
     for (const node of nodes) {
-        const type = String(node.class_type || node.type || "");
+        const type = String(node.class_type || node.type);
         const inputs = asRecord(node.inputs);
 
         if (type === 'KSampler' || type === 'KSamplerAdvanced' || type === 'SDParameterGenerator' || type === 'SDPromptSaver' || (type.includes('KSampler') && !type.includes('Context'))) {
@@ -372,16 +361,14 @@ export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetad
             checkpointNode = node;
         }
 
-        if (inputs) {
-            Object.keys(inputs).forEach(key => {
-                if (key.startsWith('lora_name')) {
-                    const val = inputs[key];
-                    if (typeof val === 'string' && val !== 'None' && val.length > 0) {
-                        loras.add(val);
-                    }
+        Object.keys(inputs).forEach(key => {
+            if (key.startsWith('lora_name')) {
+                const val = inputs[key];
+                if (typeof val === 'string' && val !== 'None' && val.length > 0) {
+                    loras.add(val);
                 }
-            });
-        }
+            }
+        });
     }
 
     if (loras.size > 0) metadata.loras = Array.from(loras);
@@ -394,13 +381,13 @@ export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetad
         });
 
         const mainSampler = candidateSamplers[0];
-        const type = String(mainSampler.class_type || mainSampler.type || "");
+        const type = String(mainSampler.class_type || mainSampler.type);
         const w = mainSampler.widgets_values;
 
         if (Array.isArray(w)) {
             const isAdvanced = type.includes('Advanced');
 
-            if (!isAdvanced && (type.includes('KSampler') || type === 'SDParameterGenerator' || type === 'SDPromptSaver')) {
+            if (!isAdvanced) {
                 // Standard KSampler or Efficiency Nodes
                 const isEfficiency = type === 'SDParameterGenerator' || type === 'SDPromptSaver';
                 const isPipe = type.includes('Pipe');
@@ -434,7 +421,7 @@ export function parseComfyUIMetadata(json: unknown, metadata: Partial<ImageMetad
                         if (typeof w[schIdx] === 'string' && w[schIdx] !== 'normal') metadata.sampler += ` (${w[schIdx]})`;
                     }
                 }
-            } else if (isAdvanced) {
+            } else {
                 // KSamplerAdvanced and variants
                 // Standard KSamplerAdvanced: add_noise(0), seed(1), control(2), steps(3), start(4), end(5), cfg(6), sampler(7), scheduler(8)
                 if (w.length >= 9) {

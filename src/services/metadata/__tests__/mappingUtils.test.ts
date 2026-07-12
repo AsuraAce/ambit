@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { mapRawChunksToMetadata, parseA1111Parameters } from '../mappingUtils';
+import { mapRawChunksToMetadata, parseA1111Parameters, parseComfyUIMetadata } from '../mappingUtils';
 import { GeneratorTool } from '../../../types';
 
 describe('mappingUtils - mapRawChunksToMetadata', () => {
@@ -283,6 +283,150 @@ describe('mappingUtils - mapRawChunksToMetadata', () => {
             const result = mapRawChunksToMetadata(raw, GeneratorTool.UNKNOWN);
             expect(result.tool).toBe(GeneratorTool.AUTOMATIC1111);
             expect(result.steps).toBe(20);
+        });
+
+        it('returns empty metadata for null, arrays, and unknown object shapes', () => {
+            expect(mapRawChunksToMetadata(null, GeneratorTool.UNKNOWN)).toEqual({});
+            expect(mapRawChunksToMetadata([], GeneratorTool.UNKNOWN)).toEqual({});
+            expect(mapRawChunksToMetadata({ unrelated: true }, GeneratorTool.UNKNOWN)).toEqual({});
+        });
+
+        it('handles raw Invoke text and explicit non-string A1111 parameter fields', () => {
+            expect(mapRawChunksToMetadata('legacy invoke prompt', GeneratorTool.INVOKEAI).tool).toBe(GeneratorTool.INVOKEAI);
+            expect(mapRawChunksToMetadata({ parameters: 42 }, GeneratorTool.UNKNOWN)).toEqual({});
+        });
+
+        it('covers direct SDNext defaults and Comfy objects without workflows', () => {
+            expect(mapRawChunksToMetadata({ prompt: 'cat', negative_prompt: 4, cfg: 7 }, GeneratorTool.SDNEXT)).toMatchObject({
+                negativePrompt: '',
+                cfg: 7,
+            });
+            expect(mapRawChunksToMetadata({ unrelated: true }, GeneratorTool.COMFYUI)).toEqual({ tool: GeneratorTool.COMFYUI });
+        });
+    });
+
+    describe('A1111 parser robustness', () => {
+        it('covers neutral weights, resource exclusions, duplicate hashes, and alternate tool markers', () => {
+            const result = parseA1111Parameters([
+                '<lora:Neutral:1> <hypernet:Plain:1> <lora> <hypernet> <x> embedding:a embedding:a',
+                'Steps: 1, Version: vlad diffusion, TI hashes: a: one, a: two, Lora hashes: Neutral: one, Neutral: two, ControlNet 0: disabled, App: unknown'
+            ].join('\n'));
+
+            expect(result.tool).toBe(GeneratorTool.SDNEXT);
+            expect(result.loras).toEqual(['Neutral']);
+            expect(result.hypernetworks).toEqual(['Plain']);
+            expect(result.embeddings).toEqual(['a']);
+            expect(result.controlNets).toBeUndefined();
+        });
+
+        it('accepts all model aliases and ignores parameter fragments without values', () => {
+            const result = parseA1111Parameters('cat\nSteps: 2, Model name: named, SD model: final, malformed');
+            expect(result.model).toBe('final');
+            expect(result.steps).toBe(2);
+        });
+
+        it('initializes hash-only resource arrays and ignores empty hash entries', () => {
+            const result = parseA1111Parameters('cat\nSteps: 1, TI hashes: : none, Lora hashes: Solo: hash, ControlNet 0: Model: control, ControlNet 1: Model: control');
+            expect(result.embeddings).toEqual([]);
+            expect(result.loras).toEqual(['Solo']);
+            expect(result.controlNets).toEqual(['control']);
+        });
+
+        it('recognizes SD.Next and Comfy version aliases', () => {
+            expect(parseA1111Parameters('cat\nSteps: 1, Version: sd.next').tool).toBe(GeneratorTool.SDNEXT);
+            expect(parseA1111Parameters('cat\nSteps: 1, Version: comfy').tool).toBe(GeneratorTool.COMFYUI);
+            expect(parseA1111Parameters('cat\nSteps: 1, Version: webui').tool).toBe(GeneratorTool.AUTOMATIC1111);
+        });
+
+        it('ignores text after parameters and malformed resource names and weights', () => {
+            const result = parseA1111Parameters([
+                '<lora:NoWeight> <lora: :1> <lora:Dot:.> <hypernet:NoWeight> <hypernet: :1>',
+                'Steps: 1',
+                'ignored after parameters',
+            ].join('\n'));
+            expect(result.loras).toEqual(['NoWeight', 'Dot']);
+            expect(result.hypernetworks).toEqual(['NoWeight']);
+        });
+    });
+
+    describe('ComfyUI parser robustness', () => {
+        it('sorts sampler candidates and recognizes alternate checkpoint node types', () => {
+            const metadata: ReturnType<typeof parseA1111Parameters> = {};
+            parseComfyUIMetadata({
+                nodes: [
+                    { id: 20, class_type: 'KSampler', widgets_values: [20, 'fixed', 20, 7, 'late', 'normal'] },
+                    { id: 2, class_type: 'KSampler', widgets_values: [2, 'fixed', 10, 5, 'early', 'normal'] },
+                    { class_type: 'CheckpointLoader', widgets_values: ['notes', 'C:/models/sorted.ckpt'] },
+                ],
+            }, metadata);
+            expect(metadata.seed).toBe(2);
+            expect(metadata.sampler).toBe('early');
+            expect(metadata.model).toBe('sorted');
+        });
+
+        it('sorts sampler candidates with missing ids and supports the type alias', () => {
+            const metadata: ReturnType<typeof parseA1111Parameters> = {};
+            parseComfyUIMetadata({ nodes: [
+                { type: 'KSampler', widgets_values: [1, 0, 2, 3, 'first', 'normal'] },
+                { type: 'KSampler', widgets_values: [2, 0, 2, 3, 'second', 'normal'] },
+            ] }, metadata);
+            expect(metadata.sampler).toBe('first');
+        });
+
+        it('ignores malformed sampler widget types without inventing metadata', () => {
+            const metadata: ReturnType<typeof parseA1111Parameters> = {};
+            parseComfyUIMetadata({
+                nodes: [
+                    { class_type: 'KSampler', widgets_values: ['seed', 'fixed', 'steps', 'cfg', 5, 6] },
+                    { class_type: 'Load Checkpoint', widgets_values: [5, 'readme.txt'] },
+                    { class_type: 'Other', inputs: { lora_name_1: 'None', lora_name_2: '', lora_name_3: 4 } },
+                ],
+            }, metadata);
+            expect(metadata.seed).toBeUndefined();
+            expect(metadata.sampler).toBeUndefined();
+            expect(metadata.model).toBeUndefined();
+            expect(metadata.loras).toBeUndefined();
+        });
+
+        it('ignores malformed efficiency and advanced sampler fields', () => {
+            for (const node of [
+                { class_type: 'SDPromptSaver', widgets_values: [0, 0, 0, 'seed', 0, 'steps', 'cfg', 8, 9] },
+                { class_type: 'KSamplerAdvanced', widgets_values: [true, 'seed', 0, 'steps', 0, 0, 'cfg', 7, 8] },
+                { class_type: 'KSamplerAdvanced', widgets_values: [true, 'seed', 0, 'steps', 'cfg', 5, 6] },
+                { class_type: 'KSamplerAdvanced', widgets_values: [true] },
+            ]) {
+                const metadata: ReturnType<typeof parseA1111Parameters> = {};
+                parseComfyUIMetadata({ nodes: [node] }, metadata);
+                expect(metadata.seed).toBeUndefined();
+                expect(metadata.sampler).toBeUndefined();
+            }
+        });
+
+        it('omits normal schedulers for both advanced layouts', () => {
+            for (const widgets_values of [
+                [true, 1, 0, 2, 0, 0, 3, 'euler', 'normal'],
+                [true, 1, 0, 2, 3, 'euler', 'normal'],
+            ]) {
+                const metadata: ReturnType<typeof parseA1111Parameters> = {};
+                parseComfyUIMetadata({ nodes: [{ class_type: 'KSamplerAdvanced', widgets_values }] }, metadata);
+                expect(metadata.sampler).toBe('euler');
+            }
+        });
+
+        it('uses checkpoint input aliases and tolerates non-record node containers', () => {
+            for (const inputs of [
+                { unet_name: 'unet.sft' },
+                { ckpt_name: 'checkpoint.safetensors' },
+                { model_name: 'model.bin' },
+                { model_name: 4 },
+            ]) {
+                const metadata: ReturnType<typeof parseA1111Parameters> = {};
+                parseComfyUIMetadata({ nodes: { loader: { class_type: 'UNETLoader', inputs }, sampler: { class_type: 'KSampler', widgets_values: [1, 0, 2, 3, 'euler', 'normal'] } } }, metadata);
+            }
+            const metadata: ReturnType<typeof parseA1111Parameters> = {};
+            parseComfyUIMetadata({ nodes: 'invalid' }, metadata);
+            parseComfyUIMetadata(null, metadata);
+            parseComfyUIMetadata({ nodes: [{ class_type: 'KSampler' }, { class_type: 'CheckpointLoader' }, {}] }, metadata);
         });
     });
 });

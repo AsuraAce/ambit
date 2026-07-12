@@ -40,7 +40,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isWorkflowRawNode = (value: unknown): value is WorkflowRawNode => isRecord(value);
 
-const asStringValue = (value: unknown, fallback = ''): string =>
+const asStringValue = (value: unknown, fallback: string): string =>
     typeof value === 'string' && value.length > 0 ? value : fallback;
 
 const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
@@ -186,17 +186,14 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        const wf = localWorkflow || image.metadata.workflowJson;
-        if (wf) {
-            navigator.clipboard.writeText(wf);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
+        const wf = localWorkflow!;
+        navigator.clipboard.writeText(wf);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     const handleDownload = async () => {
-        const wf = localWorkflow || image.metadata.workflowJson;
-        if (!wf) return;
+        const wf = localWorkflow!;
 
         try {
             // Generate a sensible filename: name_workflow.json
@@ -220,7 +217,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     };
 
     const workflowNodes = useMemo(() => {
-        const wf = localWorkflow || image.metadata.workflowJson;
+        const wf = localWorkflow;
         if (!wf) return [];
         try {
             // Robust JSON Extraction: 
@@ -274,20 +271,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     else if (String(type).toLowerCase() !== 'invocation') title = type;
                 }
 
-                if (type || node.id) {
-                    nodes.push({
-                        id: node.id ?? `${type}-${nodes.length}`,
-                        title,
-                        type,
-                        inputs: incomingInputs
-                    });
-                }
+                nodes.push({
+                    id: node.id ?? `${type}-${nodes.length}`,
+                    title,
+                    type,
+                    inputs: incomingInputs
+                });
             });
 
             // Hybrid Sorting Strategy: Hoist "Hero Nodes" (Sampler, Prompt, etc.)
             const getNodePriority = (node: WorkflowDisplayNode) => {
-                const t = String(node.type || "").toLowerCase();
-                const l = String(node.title || "").toLowerCase();
+                const t = node.type.toLowerCase();
+                const l = node.title.toLowerCase();
 
                 // Tier 1: Samplers / Generation
                 if (t.includes('sampler') || t.includes('denoise') || t.includes('t2l') || t.includes('l2l')) return 1;
@@ -341,7 +336,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                         </div>
                     </div>
 
-                    {(localWorkflow || image.metadata.workflowJson) && (
+                    {localWorkflow && (
                         <div className="flex gap-2">
                             <button
                                 onClick={handleCopy}
@@ -381,8 +376,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6">
                 {filteredNodes.length > 0 ? (
                     <div className="space-y-2">
-                        {filteredNodes.map((node, i) => (
-                            <WorkflowNode key={node.id || i} title={node.title} type={node.type} inputs={node.inputs} />
+                        {filteredNodes.map((node) => (
+                            <WorkflowNode key={node.id} title={node.title} type={node.type} inputs={node.inputs} />
                         ))}
                     </div>
                 ) : (
@@ -402,11 +397,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                                     : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }
                                     </p>
-                                    {(localWorkflow || image.metadata.workflowJson) && (
+                                    {localWorkflow && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">
                                             <div className="text-[10px] text-gray-400 font-mono uppercase mb-2">JSON Preview</div>
                                             <pre className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 font-mono break-all whitespace-pre-wrap">
-                                                {(localWorkflow || image.metadata.workflowJson || "").substring(0, 1000)}...
+                                                {localWorkflow.substring(0, 1000)}...
                                             </pre>
                                         </div>
                                     )}

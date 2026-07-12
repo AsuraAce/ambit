@@ -81,7 +81,6 @@ export const SearchBar = React.memo(({
     };
 
     const selectSuggestion = (index: number) => {
-        if (index < 0 || index >= suggestions.length) return;
         const s = suggestions[index];
         const lastSpace = localValue.lastIndexOf(' ');
         const prefix = lastSpace >= 0 ? localValue.substring(0, lastSpace + 1) : '';

@@ -261,4 +261,104 @@ describe('WorkflowInspector', () => {
         fireEvent.click(download);
         await waitFor(() => expect(console.error).toHaveBeenCalledWith('Failed to download workflow', expect.any(Error)));
     });
+
+    it('normalizes alternate node fields, generated ids, widget arrays, and every priority tier', () => {
+        const workflow = JSON.stringify({ nodes: [
+            { id: 'b', _type: 'l2l_generator', _meta: { title: 'Image Generator' }, widgets_values: [1, 'two'] },
+            { id: 'a', node_type: 'conditioning_combine', label: 'Conditioning', data: { strength: 0.5 } },
+            { id: 2, inputs: { type: 'checkpoint_loader', label: 'Input Loader', model: 'x' } },
+            { id: 1, inputs: { node_type: 'plain', title: 'Input Title', value: true } },
+            { type: 'invocation', title: 'invocation', inputs: { node_type: 'resolved_type', value: 3 } },
+            { type: 'invocation', title: 'invocation', node_type: 'resolved_node', inputs: { value: 4 } },
+            { type: 'invocation', title: 'invocation', inputs: { title: 'Input Invocation Title', value: 5 } },
+            { type: 'invocation', title: 'invocation', inputs: { value: 6 } },
+            { type: '', title: '', inputs: { value: 5 } },
+            { id: 8, type: 'Plain', title: 'Array Cases', inputs: {
+                longThree: ['x'.repeat(60), 1, 2],
+                longNonLink: ['y'.repeat(60), 'not-number'],
+                empty: [],
+                nullValue: null,
+            } },
+        ] });
+        render(<WorkflowInspector image={withWorkflow(workflow)} />);
+
+        expect(screen.getByTitle('Image Generator')).not.toBeNull();
+        expect(screen.getByTitle('Conditioning')).not.toBeNull();
+        expect(screen.getByTitle('Input Loader')).not.toBeNull();
+        expect(screen.getByTitle('Input Title')).not.toBeNull();
+        expect(screen.getByTitle('resolved_type')).not.toBeNull();
+        expect(screen.getByTitle('resolved_node')).not.toBeNull();
+        expect(screen.getByTitle('Input Invocation Title')).not.toBeNull();
+        expect(screen.getByTitle('invocation')).not.toBeNull();
+        expect(screen.getByTitle('Unknown')).not.toBeNull();
+        fireEvent.click(screen.getByTitle('Array Cases'));
+        expect(screen.getByText('longThree:')).not.toBeNull();
+        expect(screen.getByText('longNonLink:')).not.toBeNull();
+        expect(screen.getByText('empty:')).not.toBeNull();
+    });
+
+    it('sorts equal-priority numeric and string ids deterministically', () => {
+        const workflow = JSON.stringify({ nodes: [
+            { id: 10, type: 'Plain', title: 'Ten', inputs: {} },
+            { id: 2, type: 'Plain', title: 'Two', inputs: {} },
+            { id: 'z', type: 'Plain', title: 'Zulu', inputs: {} },
+            { id: 'a', type: 'Plain', title: 'Alpha', inputs: {} },
+        ] });
+        render(<WorkflowInspector image={withWorkflow(workflow)} />);
+        expect(screen.getAllByTitle(/Two|Ten|Alpha|Zulu/).map(element => element.textContent)).toEqual([
+            'Two', 'Ten', 'Alpha', 'Zulu'
+        ]);
+    });
+
+    it('renders an array-root workflow as raw JSON', () => {
+        render(<WorkflowInspector image={withWorkflow('[]')} />);
+        expect(screen.getByText(/raw workflow data/i)).not.toBeNull();
+        expect(screen.getByText('JSON Preview')).not.toBeNull();
+    });
+
+    it('validates mixed-content lazy workflows and rejects unsupported graph shapes', async () => {
+        const mixed = `prefix ${JSON.stringify({ nodes: [{ id: 1, type: 'Prompt', inputs: {} }] })} suffix`;
+        workflowMocks.scanImageWorkflow.mockResolvedValueOnce(mixed);
+        const valid = render(<WorkflowInspector image={createImage({ id: 'mixed.png' })} />);
+        await waitFor(() => expect(workflowMocks.updateImageWorkflow).toHaveBeenCalledWith('mixed.png', mixed));
+        valid.unmount();
+
+        const invalidWorkflows = [
+            '{}',
+            '[]',
+            '{"nodes":[]}',
+            JSON.stringify({ one: { type: 'Prompt' }, metadata: true }),
+            'prefix without a graph',
+        ];
+        for (const [index, invalid] of invalidWorkflows.entries()) {
+            workflowMocks.scanImageWorkflow.mockResolvedValueOnce(invalid);
+            const view = render(<WorkflowInspector image={createImage({ id: `invalid-${index}.png` })} />);
+            await waitFor(() => expect(workflowMocks.updateImageWorkflowHint).toHaveBeenCalledWith(`invalid-${index}.png`, false));
+            view.unmount();
+        }
+    });
+
+    it('recognizes flat graph node markers beyond type and inputs', async () => {
+        for (const [index, node] of [
+            { class_type: 'KSampler' },
+            { node_type: 'Prompt' },
+            { widgets_values: [1] },
+        ].entries()) {
+            const workflow = JSON.stringify({ one: node });
+            workflowMocks.scanImageWorkflow.mockResolvedValueOnce(workflow);
+            const view = render(<WorkflowInspector image={createImage({ id: `marker-${index}.png` })} />);
+            await waitFor(() => expect(workflowMocks.updateImageWorkflow).toHaveBeenCalledWith(`marker-${index}.png`, workflow));
+            view.unmount();
+        }
+    });
+
+    it('downloads extensionless filenames with a sensible suffix', async () => {
+        const workflow = JSON.stringify({ nodes: [{ type: 'Prompt' }] });
+        vi.mocked(save).mockResolvedValueOnce(null);
+        render(<WorkflowInspector image={withWorkflow(workflow, { filename: 'image' })} />);
+        fireEvent.click(screen.getByTitle('Download JSON file'));
+        await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+            defaultPath: 'image_workflow.json'
+        })));
+    });
 });
