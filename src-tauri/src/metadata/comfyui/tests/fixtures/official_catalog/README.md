@@ -21,6 +21,16 @@ Golden workflows:
 - `02_qwen_Image_edit_subgraphed.chunks.json`
 - `image_flux2_text_to_image.chunks.json`
 - `image_qwen_Image_2512_controlnet.chunks.json`
+- `gsc_creator_2_2.chunks.json`
+- `image_flux2_klein_image_edit_4b_distilled.chunks.json`
+- `image_qwen_image_union_control_lora.chunks.json`
+
+Partial workflows:
+
+- `gsc_creator_2_3.chunks.json`: the workflow contains a Florence-generated
+  caption preview but preserves no link or literal result for the upscale
+  subgraph prompt, so the definition's stale prompt widget cannot be rejected
+  safely yet.
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser

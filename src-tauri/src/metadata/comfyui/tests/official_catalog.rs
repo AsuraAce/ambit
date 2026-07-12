@@ -54,6 +54,26 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_qwen_Image_2512_controlnet.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "gsc_creator_2_2",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_2.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsc_creator_2_3",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_3.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_4b_distilled",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_4b_distilled.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_union_control_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_union_control_lora.chunks.json"
+        ),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -118,7 +138,6 @@ fn assert_fixture(name: &str, expected: ExpectedMetadata<'_>) {
         ComfyMetadataField::Steps,
         ComfyMetadataField::Cfg,
         ComfyMetadataField::Sampler,
-        ComfyMetadataField::PositivePrompt,
     ] {
         assert_eq!(
             diagnostics.field_sources.get(&field),
@@ -126,6 +145,13 @@ fn assert_fixture(name: &str, expected: ExpectedMetadata<'_>) {
             "{name} {field:?} provenance"
         );
     }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        (!expected.positive_prompt.is_empty()).then_some(&expected.source),
+        "{name} positive prompt provenance"
+    );
     assert_eq!(
         diagnostics
             .field_sources
@@ -351,6 +377,98 @@ fn qwen_image_2512_controlnet() {
             control_nets: &["qwen_image_2512_fun_controlnet_union_2602"],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 30,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsc_creator_2_2() {
+    assert_fixture(
+        "gsc_creator_2_2",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(467_616_719_697_168),
+            steps: 9,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "sunglasses.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &["z_image_turbo_fun_controlnet_union_2.1"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 32,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsc_creator_2_3_generated_prompt_is_partial() {
+    assert_fixture(
+        "gsc_creator_2_3",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(344_777_149_081_245),
+            steps: 5,
+            cfg: 1.0,
+            sampler: "dpmpp_2m_sde (beta)",
+            positive_prompt: "masterpiece, 8k",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_image_edit_4b_distilled() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_4b_distilled",
+        ExpectedMetadata {
+            model: "flux_2_klein_4b_fp8",
+            seed: Some(43_301_611_940_728),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "Change the bag color to blue.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_union_control_lora() {
+    assert_fixture(
+        "image_qwen_image_union_control_lora",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(761_977_315_566_722),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "Extreme close-up shot, realistic digital illustration, close eyes, peaceful,oil painting with thick application, girl with curly hair, large black flower, black nail polish, ring details, soft light and shadow, dark green backdrop, delicate hair texture, smooth skin rendering, fine artistic details, dreamy and elegant atmosphere, dark style, grotesque. White hair, huge black flower behind her (with yellow stamens, green stems and leaves), black turtleneck clothing, green leaves and black flowers around, artistic illustration style, sharp color contrast, mysterious atmosphere, delicate brushstrokes, thick oil painting, thickly applied oil painting, the whole picture is filled with layered flowers, huge, petals spreading, beautiful composition, unexpected angle, layered background. Macro, eyes looking down, thick application, brushstrokes, splatters, mottled, old, extremely romantic, light and shadow, strong contrast, maximalist style, full-frame composition.",
+            negative_prompt: "",
+            loras: &["qwen_image_union_diffsynth_lora"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
