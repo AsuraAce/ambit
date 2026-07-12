@@ -599,10 +599,16 @@ export async function processFoldersUnified(
     console.log(`[ImportUnified] Discovery Complete. Total files to process: ${grandTotalFiles}`);
 
     if (result.wasCancelled) {
+        const cancelledSourcePaths = sourcePaths.filter(sourcePath => !result.completedSourcePaths.includes(sourcePath));
         pushUniquePaths(
             result.cancelledSourcePaths,
-            sourcePaths.filter(sourcePath => !result.completedSourcePaths.includes(sourcePath))
+            cancelledSourcePaths
         );
+        console.info('[ImportUnified] Import cancelled before processing.', {
+            sourceCount: sourcePaths.length,
+            completedSourceCount: result.completedSourcePaths.length,
+            cancelledSourceCount: cancelledSourcePaths.length
+        });
         return result;
     }
 
@@ -695,6 +701,17 @@ export async function processFoldersUnified(
             pushUniquePaths(result.completedSourcePaths, task.sourcePaths);
         }
         if (result.wasCancelled) break;
+    }
+
+    if (result.wasCancelled) {
+        console.info('[ImportUnified] Import cancelled during processing.', {
+            sourceCount: sourcePaths.length,
+            completedSourceCount: result.completedSourcePaths.length,
+            cancelledSourceCount: result.cancelledSourcePaths.length,
+            processed: result.stats.processed,
+            imported: result.stats.imported,
+            failed: result.failedPaths.length
+        });
     }
 
     // 3. Post-Import Cleanup
@@ -825,9 +842,10 @@ export const processTargetedFiles = async (
     if (paths.length === 0) return result;
     const targetedImportStartedAt = liveWatchNow();
 
+    const targetedImportTimestamp = Date.now();
     const entries: FileEntry[] = paths.map(p => ({ 
         path: p, 
-        modified: Date.now(), 
+        modified: targetedImportTimestamp,
         size: 0 // Will be read by rust metadata extractor anyway
     }));
 

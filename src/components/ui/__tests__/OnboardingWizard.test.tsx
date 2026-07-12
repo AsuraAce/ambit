@@ -1,307 +1,387 @@
 import * as React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '../../../test/testUtils';
+import { DEFAULT_APP_SETTINGS } from '../../../constants/defaultSettings';
+import type { AppSettings } from '../../../types';
 import { OnboardingWizard } from '../OnboardingWizard';
 
-interface ApiKeyProbeProps {
-    value: string;
-    onChange: (value: string) => void;
-    onVerify: () => void;
-    isVerifying: boolean;
-    status: 'idle' | 'success' | 'error';
-    error: string | null;
-    isEnvKey: boolean;
-    onTestEnvKey: () => void;
-}
-
-const apiKeyProbe = vi.hoisted(() => ({ props: null as ApiKeyProbeProps | null }));
-const settingsMocks = vi.hoisted(() => ({
-    state: { geminiApiKey: null as string | null, setGeminiApiKey: vi.fn() },
+const mocks = vi.hoisted(() => ({
+    addToast: vi.fn(),
+    setGeminiApiKey: vi.fn(),
+    verifyApiKey: vi.fn(),
+    state: {
+        settings: null as unknown as AppSettings,
+        geminiApiKey: null as string | null,
+    },
 }));
-const toastMocks = vi.hoisted(() => ({ addToast: vi.fn() }));
-const geminiMocks = vi.hoisted(() => ({ verifyApiKey: vi.fn() }));
 
-vi.mock('framer-motion', async () => {
-    const ReactModule = await import('react');
-    type MotionProps = React.HTMLAttributes<HTMLElement> & {
+vi.mock('framer-motion', () => {
+    type MotionDivProps = React.HTMLAttributes<HTMLDivElement> & {
         initial?: unknown;
         animate?: unknown;
         exit?: unknown;
         transition?: unknown;
+        onAnimationComplete?: () => void;
+    };
+    type MotionButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
         whileHover?: unknown;
     };
-    const createMotion = (tag: 'div' | 'label') => ({
-        initial: _initial,
-        animate: _animate,
-        exit: _exit,
-        transition: _transition,
-        whileHover: _whileHover,
-        ...props
-    }: MotionProps) => ReactModule.createElement(tag, props);
+    type MotionSpanProps = React.HTMLAttributes<HTMLSpanElement> & {
+        animate?: unknown;
+    };
+
+    const MotionDiv = ({ initial, animate: _animate, exit: _exit, transition: _transition, onAnimationComplete: _onAnimationComplete, ...props }: MotionDivProps) => {
+        const initialY = typeof initial === 'object' && initial !== null && 'y' in initial
+            ? (initial as { y?: unknown }).y
+            : undefined;
+
+        return <div data-motion-initial-y={typeof initialY === 'number' ? initialY : undefined} {...props} />;
+    };
+    const MotionButton = ({ whileHover: _whileHover, ...props }: MotionButtonProps) => <button {...props} />;
+    const MotionSpan = ({ animate: _animate, ...props }: MotionSpanProps) => <span {...props} />;
+
     return {
         AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
         motion: {
-            div: createMotion('div'),
-            label: createMotion('label'),
+            button: MotionButton,
+            div: MotionDiv,
+            span: MotionSpan,
         },
     };
 });
 
-vi.mock('../ApiKeyInput', () => ({
-    ApiKeyInput: (props: ApiKeyProbeProps) => {
-        apiKeyProbe.props = props;
-        return <div data-testid="api-key-input">{props.status}:{props.error || ''}</div>;
-    },
+vi.mock('../../../hooks/useToast', () => ({
+    useToast: () => ({ addToast: mocks.addToast }),
 }));
 
 vi.mock('../../../stores/settingsStore', () => ({
-    useSettingsStore: () => settingsMocks.state,
+    useSettingsStore: (selector: (state: {
+        settings: AppSettings;
+        geminiApiKey: string | null;
+        setGeminiApiKey: typeof mocks.setGeminiApiKey;
+    }) => unknown) => selector({
+        ...mocks.state,
+        setGeminiApiKey: mocks.setGeminiApiKey,
+    }),
 }));
 
-vi.mock('../../../hooks/useToast', () => ({
-    useToast: () => toastMocks,
+vi.mock('../../../services/geminiService', () => ({
+    verifyApiKey: mocks.verifyApiKey,
 }));
 
-vi.mock('../../../services/geminiService', () => geminiMocks);
-
-const originalEnvKey = process.env.API_KEY;
-
-const requireApiKeyProbe = (): ApiKeyProbeProps => {
-    if (!apiKeyProbe.props) throw new Error('ApiKeyInput was not rendered');
-    return apiKeyProbe.props;
-};
-
-const goNext = () => fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
-
-const goToIntelligenceStep = () => {
-    goNext();
-    goNext();
-    expect(screen.getByText('Intelligent Assistance')).toBeTruthy();
-};
-
-const goToPrivacyStep = () => {
-    goToIntelligenceStep();
-    goNext();
-    expect(screen.getByText('Privacy & Control')).toBeTruthy();
-};
-
-const getIntelligenceToggle = (): HTMLElement => {
-    const toggle = screen.getByText('Enable Intelligence Features').closest('[role="checkbox"]');
-    if (!(toggle instanceof HTMLElement)) throw new Error('Missing intelligence toggle');
-    return toggle;
-};
-
-describe('OnboardingWizard', () => {
+const renderWizard = () => {
     const onComplete = vi.fn();
     const onOpenSettings = vi.fn();
 
+    const result = render(
+        <OnboardingWizard
+            isOpen={true}
+            onComplete={onComplete}
+            onOpenSettings={onOpenSettings}
+        />
+    );
+
+    return { onComplete, onOpenSettings, unmount: result.unmount };
+};
+
+const continueToIntelligence = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+};
+
+describe('OnboardingWizard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        apiKeyProbe.props = null;
-        settingsMocks.state.geminiApiKey = null;
-        settingsMocks.state.setGeminiApiKey.mockResolvedValue(undefined);
-        geminiMocks.verifyApiKey.mockResolvedValue({ valid: true });
-        delete process.env.API_KEY;
+        vi.unstubAllEnvs();
+        vi.stubEnv('API_KEY', '');
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS };
+        mocks.state.geminiApiKey = null;
+        mocks.setGeminiApiKey.mockResolvedValue(undefined);
+        mocks.verifyApiKey.mockResolvedValue({ valid: true });
     });
 
-    afterAll(() => {
-        if (originalEnvKey === undefined) delete process.env.API_KEY;
-        else process.env.API_KEY = originalEnvKey;
+    it('renders a labelled modal with announced progress and focuses the current heading', () => {
+        renderWizard();
+
+        expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
+        expect(screen.getByRole('list', { name: 'Onboarding progress' })).not.toBeNull();
+
+        const heading = screen.getByRole('heading', { name: 'Organize your AI image library' });
+        expect(document.activeElement).toBe(heading);
+        expect(screen.getByText('Welcome').closest('li')?.getAttribute('aria-current')).toBe('step');
     });
 
-    it('renders nothing while closed', () => {
-        const { container } = render(
-            <OnboardingWizard isOpen={false} onComplete={onComplete} />,
+    it('clips animated step overflow while retaining vertical scrolling', () => {
+        renderWizard();
+
+        const scrollRegion = screen.getByTestId('onboarding-step-scroll-region');
+        expect(scrollRegion.className).toContain('overflow-x-hidden');
+        expect(scrollRegion.className).toContain('overflow-y-auto');
+    });
+
+    it('keeps forward and reverse tab navigation inside the dialog', () => {
+        renderWizard();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        const heading = screen.getByRole('heading', { name: 'Connect your generators' });
+        const firstControl = screen.getByText('InvokeAI').closest('button');
+        const lastControl = screen.getByRole('button', { name: 'Continue' });
+        expect(firstControl).not.toBeNull();
+        if (!firstControl) throw new Error('InvokeAI setup button not found');
+
+        heading.focus();
+        fireEvent.keyDown(heading, { key: 'Tab' });
+        expect(document.activeElement).toBe(firstControl);
+
+        heading.focus();
+        fireEvent.keyDown(heading, { key: 'Tab', shiftKey: true });
+        expect(document.activeElement).toBe(lastControl);
+
+        lastControl.focus();
+        fireEvent.keyDown(lastControl, { key: 'Tab' });
+        expect(document.activeElement).toBe(firstControl);
+
+        firstControl.focus();
+        fireEvent.keyDown(firstControl, { key: 'Tab', shiftKey: true });
+        expect(document.activeElement).toBe(lastControl);
+    });
+
+    it('exposes visible generator actions and routes generic folders to Connections', () => {
+        const { onOpenSettings } = renderWizard();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        expect(screen.getAllByText('Set up →')).toHaveLength(3);
+        fireEvent.click(screen.getByRole('button', { name: 'Add another image folder' }));
+
+        expect(onOpenSettings).toHaveBeenCalledWith('folders');
+    });
+
+    it('preserves the current step while Settings temporarily hides the wizard', () => {
+        const props = {
+            onComplete: vi.fn(),
+            onOpenSettings: vi.fn(),
+            preserveBackdropWhenClosed: true,
+        };
+        const { rerender } = render(
+            <OnboardingWizard isOpen={true} {...props} />
         );
-        expect(container.innerHTML).toBe('');
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        expect(screen.getByRole('heading', { name: 'Connect your generators' })).not.toBeNull();
+
+        rerender(<OnboardingWizard isOpen={false} {...props} />);
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+        expect(screen.getByTestId('onboarding-backdrop').getAttribute('aria-hidden')).toBe('true');
+
+        rerender(<OnboardingWizard isOpen={true} {...props} />);
+        const heading = screen.getByRole('heading', { name: 'Connect your generators' });
+        expect(screen.queryByTestId('onboarding-backdrop')).toBeNull();
+        expect(document.activeElement).toBe(heading);
     });
 
-    it('navigates between welcome and integrations and opens every integration setup', () => {
-        render(
-            <OnboardingWizard
-                isOpen
-                onComplete={onComplete}
-                onOpenSettings={onOpenSettings}
-            />,
-        );
-        expect(screen.getByText('Unified Asset Management.')).toBeTruthy();
-        expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    it('does not translate the Gemini panel vertically inside the scroll region', () => {
+        renderWizard();
+        continueToIntelligence();
 
-        goNext();
-        expect(screen.getByText('Workspace Integrations')).toBeTruthy();
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
 
-        fireEvent.click(screen.getByRole('button', { name: /InvokeAI/ }));
-        fireEvent.keyDown(screen.getByRole('button', { name: /ComfyUI/ }), { key: 'Enter' });
-        fireEvent.keyDown(screen.getByRole('button', { name: /SD WebUI/ }), { key: ' ' });
-        fireEvent.keyDown(screen.getByRole('button', { name: /SD WebUI/ }), { key: 'Tab' });
-        expect(onOpenSettings.mock.calls).toEqual([['invokeai'], ['comfyui'], ['a1111']]);
-
-        fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-        expect(screen.getByText('Unified Asset Management.')).toBeTruthy();
+        expect(document.querySelector('[data-motion-initial-y="10"]')).toBeNull();
     });
 
-    it('keeps integration cards safe when no setup callback is supplied', () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goNext();
+    it('completes with AI disabled and the shared default masking keywords', () => {
+        const { onComplete } = renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
 
-        fireEvent.click(screen.getByRole('button', { name: /InvokeAI/ }));
-        fireEvent.keyDown(screen.getByRole('button', { name: /ComfyUI/ }), { key: 'Enter' });
-        expect(onOpenSettings).not.toHaveBeenCalled();
-    });
-
-    it('toggles intelligence with pointer and keyboard controls', () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToIntelligenceStep();
-        const intelligenceToggle = getIntelligenceToggle();
-
-        expect(intelligenceToggle.getAttribute('aria-checked')).toBe('false');
-        fireEvent.keyDown(intelligenceToggle, { key: 'Tab' });
-        expect(intelligenceToggle.getAttribute('aria-checked')).toBe('false');
-        fireEvent.keyDown(intelligenceToggle, { key: 'Enter' });
-        expect(screen.getByTestId('api-key-input')).toBeTruthy();
-        fireEvent.keyDown(intelligenceToggle, { key: ' ' });
-        expect(screen.queryByTestId('api-key-input')).toBeNull();
-
-        const hiddenCheckbox = intelligenceToggle.querySelector('input[type="checkbox"]');
-        if (!(hiddenCheckbox instanceof HTMLInputElement)) throw new Error('Missing intelligence checkbox');
-        fireEvent.click(hiddenCheckbox);
-        expect(screen.getByTestId('api-key-input')).toBeTruthy();
-    });
-
-    it('verifies edited and environment API keys and exposes loading and success state', async () => {
-        let resolveVerification!: (result: { valid: boolean }) => void;
-        geminiMocks.verifyApiKey.mockReturnValueOnce(new Promise(resolve => {
-            resolveVerification = resolve;
-        }));
-        process.env.API_KEY = 'env-key';
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToIntelligenceStep();
-        fireEvent.click(getIntelligenceToggle());
-
-        expect(requireApiKeyProbe().isEnvKey).toBe(true);
-        act(() => requireApiKeyProbe().onTestEnvKey());
-        await waitFor(() => expect(geminiMocks.verifyApiKey).toHaveBeenCalledWith('env-key'));
-        expect(requireApiKeyProbe().isVerifying).toBe(true);
-
-        await act(async () => resolveVerification({ valid: true }));
-        expect(requireApiKeyProbe().status).toBe('success');
-        expect(requireApiKeyProbe().isVerifying).toBe(false);
-        expect(toastMocks.addToast).toHaveBeenCalledWith('API Key verified successfully', 'success');
-
-        delete process.env.API_KEY;
-        act(() => requireApiKeyProbe().onChange('edited-key'));
-        geminiMocks.verifyApiKey.mockResolvedValueOnce({ valid: true });
-        await act(async () => requireApiKeyProbe().onTestEnvKey());
-        expect(geminiMocks.verifyApiKey).toHaveBeenLastCalledWith('edited-key');
-
-        act(() => requireApiKeyProbe().onChange(''));
-        geminiMocks.verifyApiKey.mockClear();
-        await act(async () => requireApiKeyProbe().onVerify());
-        act(() => requireApiKeyProbe().onTestEnvKey());
-        expect(geminiMocks.verifyApiKey).not.toHaveBeenCalled();
-    });
-
-    it('reports invalid verification results with explicit and fallback errors', async () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToIntelligenceStep();
-        fireEvent.click(getIntelligenceToggle());
-        act(() => requireApiKeyProbe().onChange('bad-key'));
-
-        geminiMocks.verifyApiKey.mockResolvedValueOnce({ valid: false, error: 'Rejected key' });
-        await act(async () => requireApiKeyProbe().onVerify());
-        expect(requireApiKeyProbe()).toMatchObject({ status: 'error', error: 'Rejected key' });
-        expect(toastMocks.addToast).toHaveBeenCalledWith('Rejected key', 'error');
-
-        geminiMocks.verifyApiKey.mockResolvedValueOnce({ valid: false });
-        await act(async () => requireApiKeyProbe().onVerify());
-        expect(requireApiKeyProbe()).toMatchObject({ status: 'error', error: 'Verification failed' });
-        expect(toastMocks.addToast).toHaveBeenCalledWith('Verification failed', 'error');
-    });
-
-    it('reports thrown verification failures for Error and unknown values', async () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToIntelligenceStep();
-        fireEvent.click(getIntelligenceToggle());
-        act(() => requireApiKeyProbe().onChange('key'));
-
-        geminiMocks.verifyApiKey.mockRejectedValueOnce(new Error('Network failed'));
-        await act(async () => requireApiKeyProbe().onVerify());
-        expect(requireApiKeyProbe().error).toBe('Network failed');
-
-        geminiMocks.verifyApiKey.mockRejectedValueOnce('bad response');
-        await act(async () => requireApiKeyProbe().onVerify());
-        expect(requireApiKeyProbe().error).toBe('Unknown error');
-        expect(toastMocks.addToast).toHaveBeenCalledWith('Unknown error', 'error');
-    });
-
-    it('completes with default privacy settings when intelligence stays disabled', async () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToPrivacyStep();
-
-        const maskingSwitch = screen.getByRole('switch');
-        fireEvent.keyDown(maskingSwitch, { key: 'Tab' });
-        expect(maskingSwitch.getAttribute('aria-checked')).toBe('true');
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: /Launch Ambit/i })));
-
-        expect(settingsMocks.state.setGeminiApiKey).not.toHaveBeenCalled();
         expect(onComplete).toHaveBeenCalledWith({
             enableAI: false,
-            maskedKeywords: ['nsfw', 'nude', 'naked', 'blood', 'gore', 'violence'],
+            maskedKeywords: DEFAULT_APP_SETTINGS.maskedKeywords,
             maskingMode: 'blur',
             hasCompletedOnboarding: true,
         });
     });
 
-    it('saves a trimmed key and respects privacy and startup choices', async () => {
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToIntelligenceStep();
-        fireEvent.click(getIntelligenceToggle());
-        act(() => requireApiKeyProbe().onChange('  saved-key  '));
-        goNext();
+    it('requires a new enabled key to verify and save before continuing', async () => {
+        renderWizard();
+        continueToIntelligence();
 
-        const maskingSwitch = screen.getByRole('switch');
-        fireEvent.click(maskingSwitch);
-        expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
-        fireEvent.keyDown(maskingSwitch, { key: 'Enter' });
-        expect(maskingSwitch.getAttribute('aria-checked')).toBe('true');
-        fireEvent.keyDown(maskingSwitch, { key: ' ' });
-        expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+        const continueButton = screen.getByRole('button', { name: 'Continue' });
+        expect((continueButton as HTMLButtonElement).disabled).toBe(true);
 
-        const startupToggle = screen.getByRole('checkbox', { name: /Start on Every Boot/i });
-        fireEvent.keyDown(startupToggle, { key: 'Tab' });
-        fireEvent.click(startupToggle);
-        expect(startupToggle.getAttribute('aria-checked')).toBe('true');
-        fireEvent.keyDown(startupToggle, { key: 'Enter' });
-        expect(startupToggle.getAttribute('aria-checked')).toBe('false');
-        fireEvent.keyDown(startupToggle, { key: ' ' });
-        expect(startupToggle.getAttribute('aria-checked')).toBe('true');
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'new-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: /Launch Ambit/i })));
-
-        expect(settingsMocks.state.setGeminiApiKey).toHaveBeenCalledWith('saved-key');
-        expect(onComplete).toHaveBeenCalledWith({
-            enableAI: true,
-            maskedKeywords: [],
-            maskingMode: 'blur',
-            hasCompletedOnboarding: false,
+        await waitFor(() => {
+            expect(mocks.verifyApiKey).toHaveBeenCalledWith('new-key');
+            expect(mocks.setGeminiApiKey).toHaveBeenCalledWith('new-key');
+            expect((continueButton as HTMLButtonElement).disabled).toBe(false);
+            expect(screen.getByRole('status').textContent).toContain('API key verified and saved');
+            expect((screen.getByRole('button', { name: 'Verified' }) as HTMLButtonElement).disabled).toBe(true);
         });
     });
 
-    it('still completes when secure key persistence fails', async () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        settingsMocks.state.geminiApiKey = 'existing-key';
-        settingsMocks.state.setGeminiApiKey.mockRejectedValueOnce(new Error('keyring unavailable'));
-        render(<OnboardingWizard isOpen onComplete={onComplete} />);
-        goToPrivacyStep();
+    it('prevents leaving AI setup while verification or secure storage is pending', async () => {
+        let finishStorage: (() => void) | undefined;
+        mocks.setGeminiApiKey.mockReturnValueOnce(new Promise<void>(resolve => {
+            finishStorage = resolve;
+        }));
+        renderWizard();
+        continueToIntelligence();
 
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: /Launch Ambit/i })));
+        const aiSwitch = screen.getByRole('switch', { name: 'Enable AI features' });
+        fireEvent.click(aiSwitch);
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'new-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
-        expect(settingsMocks.state.setGeminiApiKey).toHaveBeenCalledWith('existing-key');
-        expect(consoleError).toHaveBeenCalledWith(
-            'Failed to save API key during onboarding:',
-            expect.any(Error),
-        );
-        expect(onComplete).toHaveBeenCalledOnce();
-        consoleError.mockRestore();
+        await waitFor(() => {
+            expect(mocks.setGeminiApiKey).toHaveBeenCalledWith('new-key');
+        });
+
+        const backButton = screen.getByRole('button', { name: 'Back' }) as HTMLButtonElement;
+        const deferButton = screen.getByRole('button', { name: 'Set up later' }) as HTMLButtonElement;
+        expect((aiSwitch as HTMLButtonElement).disabled).toBe(true);
+        expect(backButton.disabled).toBe(true);
+        expect(deferButton.disabled).toBe(true);
+
+        fireEvent.click(aiSwitch);
+        fireEvent.click(backButton);
+        fireEvent.click(deferButton);
+
+        expect(aiSwitch.getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('heading', { name: 'Optional Gemini features' })).not.toBeNull();
+        expect(screen.queryByRole('heading', { name: 'Privacy & control' })).toBeNull();
+
+        finishStorage?.();
+        await waitFor(() => {
+            expect(screen.getByRole('status').textContent).toContain('API key verified and saved');
+            expect(screen.queryByRole('button', { name: 'Set up later' })).toBeNull();
+            expect((aiSwitch as HTMLButtonElement).disabled).toBe(false);
+            expect(backButton.disabled).toBe(false);
+        });
+    });
+
+    it('keeps the user on Intelligence when Gemini rejects the key', async () => {
+        mocks.verifyApiKey.mockResolvedValueOnce({ valid: false, error: 'Invalid API key' });
+        renderWizard();
+        continueToIntelligence();
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'invalid-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+        expect((await screen.findByRole('alert')).textContent).toContain('Invalid API key');
+        expect(mocks.setGeminiApiKey).not.toHaveBeenCalled();
+        expect(screen.getByRole('heading', { name: 'Optional Gemini features' })).not.toBeNull();
+        expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('keeps the user on Intelligence when secure key storage fails', async () => {
+        mocks.setGeminiApiKey.mockRejectedValueOnce(new Error('Keyring unavailable'));
+        renderWizard();
+        continueToIntelligence();
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'new-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+        expect((await screen.findByRole('alert')).textContent).toContain('Keyring unavailable');
+        expect(screen.getByRole('heading', { name: 'Optional Gemini features' })).not.toBeNull();
+        expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('accepts an existing stored key without forcing reverification', () => {
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, enableAI: true };
+        mocks.state.geminiApiKey = 'stored-key';
+        renderWizard();
+        continueToIntelligence();
+
+        expect(screen.getByRole('switch', { name: 'Enable AI features' }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('status').textContent).toContain('API key configured');
+        expect(screen.getByRole('button', { name: 'Re-verify' })).not.toBeNull();
+        expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(false);
+
+        fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'replacement-key' } });
+
+        expect(screen.queryByText('API key configured')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Verify' })).not.toBeNull();
+        expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('lets the user defer Gemini setup without deleting an existing key', () => {
+        renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Set up later' }));
+
+        expect(screen.getByRole('heading', { name: 'Privacy & control' })).not.toBeNull();
+        expect(mocks.setGeminiApiKey).not.toHaveBeenCalled();
+    });
+
+    it('requires environment keys to verify without claiming Ambit saves them', async () => {
+        vi.stubEnv('API_KEY', 'environment-key');
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, enableAI: true };
+        mocks.state.geminiApiKey = 'environment-key';
+        renderWizard();
+        continueToIntelligence();
+
+        expect(screen.getByText(/Ambit reads this API key from your environment and does not save it/)).not.toBeNull();
+        expect(screen.getByText(/Gemini requests are handled by Google/)).not.toBeNull();
+        expect(screen.getByText(/A free tier is available for eligible accounts and regions/)).not.toBeNull();
+        expect(screen.queryByText(/Stored in your OS keyring/)).toBeNull();
+        expect(screen.queryByText('API key configured')).toBeNull();
+
+        const continueButton = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
+        expect(continueButton.disabled).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Test environment key' }));
+
+        await waitFor(() => {
+            expect(mocks.verifyApiKey).toHaveBeenCalledWith('environment-key');
+            expect(screen.getByRole('status').textContent).toContain('Environment API key verified');
+            expect(continueButton.disabled).toBe(false);
+        });
+        expect(mocks.setGeminiApiKey).not.toHaveBeenCalled();
+    });
+
+    it('retains keyring wording for keys entered through Ambit', () => {
+        renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('switch', { name: 'Enable AI features' }));
+
+        expect(screen.getByText(/Stored in your OS keyring/)).not.toBeNull();
+        expect(screen.queryByText(/reads this API key from your environment/)).toBeNull();
+    });
+
+    it('does not restore focus behind the next modal after completion', () => {
+        const previousControl = document.createElement('button');
+        document.body.append(previousControl);
+        previousControl.focus();
+        const { unmount } = renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+
+        unmount();
+
+        expect(document.activeElement).not.toBe(previousControl);
+    });
+
+    it('exposes prompt keyword masking as a named switch', () => {
+        renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        const maskingSwitch = screen.getByRole('switch', { name: 'Enable prompt keyword masking' });
+        const thumb = maskingSwitch.querySelector('[aria-hidden="true"]');
+        expect(maskingSwitch.getAttribute('aria-checked')).toBe('true');
+        expect(thumb?.className).toContain('left-1');
+        expect(thumb?.className).toContain('translate-x-7');
+
+        fireEvent.click(maskingSwitch);
+        expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
+        expect(thumb?.className).toContain('translate-x-0');
     });
 });

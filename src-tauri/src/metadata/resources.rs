@@ -50,9 +50,7 @@ impl ResourceScanBudget {
             self.note_limit("skipping oversized nested JSON string");
             return false;
         }
-        if self
-            .nested_json_string_bytes
-            .saturating_add(byte_len)
+        if self.nested_json_string_bytes.saturating_add(byte_len)
             > MAX_AGGREGATE_NESTED_JSON_STRING_BYTES
         {
             self.exhaust("maximum aggregate nested JSON string bytes reached");
@@ -292,10 +290,7 @@ fn scan_for_resources_inner(
                     // Try to parse string as JSON if it looks like one
                     let trimmed = s.trim_start();
                     if trimmed.starts_with('{')
-                        && budget.allow_nested_json_string(
-                            nested_json_string_depth,
-                            trimmed.len(),
-                        )
+                        && budget.allow_nested_json_string(nested_json_string_depth, trimmed.len())
                     {
                         if let Ok(nested) = serde_json::from_str(s) {
                             scan_for_resources_inner(
@@ -308,13 +303,7 @@ fn scan_for_resources_inner(
                         }
                     }
                 } else if v.is_object() || v.is_array() {
-                    scan_for_resources_inner(
-                        v,
-                        res,
-                        budget,
-                        depth + 1,
-                        nested_json_string_depth,
-                    );
+                    scan_for_resources_inner(v, res, budget, depth + 1, nested_json_string_depth);
                 }
             }
         }
@@ -323,13 +312,7 @@ fn scan_for_resources_inner(
                 if budget.exhausted {
                     break;
                 }
-                scan_for_resources_inner(
-                    v,
-                    res,
-                    budget,
-                    depth + 1,
-                    nested_json_string_depth,
-                );
+                scan_for_resources_inner(v, res, budget, depth + 1, nested_json_string_depth);
             }
         }
         _ => {}
@@ -487,10 +470,7 @@ mod tests {
     fn test_scan_for_resources_skips_oversized_nested_json_string() {
         let mut res = Resources::default();
         let huge_name = "x".repeat(MAX_NESTED_JSON_STRING_BYTES);
-        let oversized = format!(
-            "{{\"loras\":[{{\"lora_name\":\"{}\"}}]}}",
-            huge_name
-        );
+        let oversized = format!("{{\"loras\":[{{\"lora_name\":\"{}\"}}]}}", huge_name);
         let valid = json!({
             "loras": [{ "lora_name": "small_valid" }]
         });

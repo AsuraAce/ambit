@@ -43,3 +43,16 @@ fn test_bbox_model_false_positive() {
         "Should extract real model"
     );
 }
+
+#[test]
+fn test_controlnet_model_false_positive() {
+    let workflow = r#"{"nodes":[{"id":12,"type":"ControlNetLoader","widgets_values":["qwen_controlnet.safetensors"]},{"id":86,"type":"UNETLoader","widgets_values":["qwen_image_model.safetensors"]}],"links":[]}"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(
+        meta.model, "qwen_image_model",
+        "generic fallback must not promote a ControlNet resource to the primary model"
+    );
+}

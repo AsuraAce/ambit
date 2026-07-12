@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-shell';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isAllowedExternalUrl, openExternalUrl } from '../externalLinks';
+import { GEMINI_API_KEY_URL, isAllowedExternalUrl, openExternalUrl } from '../externalLinks';
 
 describe('externalLinks', () => {
     beforeEach(() => {
@@ -30,6 +30,13 @@ describe('externalLinks', () => {
         );
     });
 
+    it('opens the exact Google AI Studio API key page', async () => {
+        await openExternalUrl(GEMINI_API_KEY_URL);
+
+        expect(open).toHaveBeenCalledWith('https://aistudio.google.com/apikey');
+        expect(isAllowedExternalUrl(GEMINI_API_KEY_URL)).toBe(true);
+    });
+
     it.each([
         'not a url',
         'javascript:alert(1)',
@@ -37,6 +44,9 @@ describe('externalLinks', () => {
         'file:///C:/Windows/System32/calc.exe',
         'http://github.com/AsuraAce/ambit',
         'https://evil.example/ambit',
+        'https://aistudio.google.com/',
+        'https://aistudio.google.com/apikey/extra',
+        'https://aistudio.google.com/apikey?project=123',
         'https://user:pass@github.com/AsuraAce/ambit',
         'https://github.com/AsuraAce/ambit?tab=readme',
     ])('rejects disallowed external URL %s', async (url) => {

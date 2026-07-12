@@ -30,6 +30,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::image_commands::move_image_path_identities,
         db::commands::maintenance::get_main_database_url,
         db::commands::maintenance::get_db_diagnostics,
+        db::commands::maintenance::show_app_log_folder,
         db::commands::maintenance::backfill_image_file_hashes,
         db::commands::maintenance::cancel_image_file_hash_backfill,
         db::commands::image_commands::refresh_boards_native,
@@ -83,6 +84,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // metadata commands
         metadata::civitai::import_a1111_cache,
         metadata::civitai::resolve_hashes_online,
+        metadata::comfyui::inspect_comfyui_metadata_chunks,
         metadata::models::clear_model_cache,
         metadata::models::cancel_model_resolution,
         metadata::models::cancel_model_discovery,
@@ -138,9 +140,7 @@ pub fn run() {
                 .level(log_level)
                 .build(),
         )
-        .plugin(
-            sql_builder.build(),
-        )
+        .plugin(sql_builder.build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

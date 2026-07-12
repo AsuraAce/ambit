@@ -378,6 +378,42 @@ describe('imageRepo batch removal', () => {
         expect(db.execute).not.toHaveBeenCalled();
     });
 
+    it('does not persist an empty raw chunk map as reparsable metadata', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+
+        const { insertImagesBatch } = await import('../imageRepo');
+        await insertImagesBatch([{
+            id: 'C:/images/no-metadata.jpeg',
+            url: 'C:/images/no-metadata.jpeg',
+            thumbnailUrl: 'C:/thumbs/no-metadata.webp',
+            filename: 'no-metadata.jpeg',
+            width: 512,
+            height: 512,
+            timestamp: 1700000000000,
+            metadata: {
+                tool: GeneratorTool.UNKNOWN,
+                model: 'Unknown',
+                steps: 0,
+                cfg: 0,
+                sampler: '',
+                positivePrompt: '',
+                negativePrompt: '',
+            },
+            originalChunks: {},
+            isFavorite: false,
+        }]);
+
+        const [records] = vi.mocked(commands.saveImagesBatch).mock.calls[0];
+        expect(records[0].originalMetadataJson).toBeNull();
+    });
+
     it('keeps the scalar seed synchronized when metadata fields are patched', async () => {
         const db = {
             select: vi.fn(),

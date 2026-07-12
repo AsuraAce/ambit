@@ -13,12 +13,33 @@ pub mod utils;
 pub use a1111::extract_a1111_metadata;
 pub use comfyui::extract_comfyui_metadata;
 pub use invokeai::extract_invokeai_metadata;
-pub use parsers::{extract_png_chunks, scan_jpeg_metadata};
+pub use parsers::{extract_png_chunks, scan_jpeg_metadata, scan_webp_metadata};
 
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 4;
+pub const CURRENT_PARSER_VERSION: u32 = 18;
+
+pub(crate) fn is_missing_prompt_value(value: &str) -> bool {
+    value.trim().is_empty() || is_placeholder_prompt_value(value)
+}
+
+pub(crate) fn is_placeholder_prompt_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    const POSITIVE_PROMPT_PREFIX: &str = "positive prompt:";
+    let candidate = trimmed
+        .get(..POSITIVE_PROMPT_PREFIX.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(POSITIVE_PROMPT_PREFIX))
+        .map(|_| &trimmed[POSITIVE_PROMPT_PREFIX.len()..])
+        .unwrap_or(trimmed)
+        .trim_matches(|c: char| c.is_whitespace() || c == ',' || c == ';');
+
+    candidate.eq_ignore_ascii_case("undefined")
+        || candidate.eq_ignore_ascii_case("null")
+        || candidate.eq_ignore_ascii_case("none")
+        || candidate.eq_ignore_ascii_case("unknown")
+        || candidate.eq_ignore_ascii_case("negative prompt:")
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, specta::Type, PartialEq)]
 pub struct ImageMetadata {
@@ -79,21 +100,8 @@ impl ImageMetadata {
     pub fn is_incomplete(&self) -> bool {
         // Considered incomplete if we are missing key generation data
         (self.model.is_empty() || self.model == "Unknown" || self.model == "None")
-            || self.positive_prompt.trim().is_empty()
-            || self
-                .positive_prompt
-                .trim()
-                .eq_ignore_ascii_case("undefined")
-            || self.positive_prompt.trim().eq_ignore_ascii_case("null")
-            || self
-                .positive_prompt
-                .trim()
-                .eq_ignore_ascii_case("negative prompt:")
-            || self
-                .negative_prompt
-                .trim()
-                .eq_ignore_ascii_case("undefined")
-            || self.negative_prompt.trim().eq_ignore_ascii_case("null")
+            || is_missing_prompt_value(&self.positive_prompt)
+            || is_placeholder_prompt_value(&self.negative_prompt)
             || self.steps == 0
     }
 
@@ -118,20 +126,10 @@ impl ImageMetadata {
         {
             self.sampler = other.sampler;
         }
-        if self.positive_prompt.trim().is_empty()
-            || self.positive_prompt.trim() == "undefined"
-            || self.positive_prompt.trim() == "null"
-            || self
-                .positive_prompt
-                .trim()
-                .eq_ignore_ascii_case("negative prompt:")
-        {
+        if is_missing_prompt_value(&self.positive_prompt) {
             self.positive_prompt = other.positive_prompt;
         }
-        if self.negative_prompt.trim().is_empty()
-            || self.negative_prompt.trim() == "undefined"
-            || self.negative_prompt.trim() == "null"
-        {
+        if is_missing_prompt_value(&self.negative_prompt) {
             self.negative_prompt = other.negative_prompt;
         }
         if self.generation_type == "unknown" && other.generation_type != "unknown" {
@@ -243,21 +241,11 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
         base.sampler = secondary.sampler;
     }
 
-    if base.positive_prompt.trim().is_empty()
-        || base.positive_prompt.trim() == "undefined"
-        || base.positive_prompt.trim() == "null"
-        || base
-            .positive_prompt
-            .trim()
-            .eq_ignore_ascii_case("negative prompt:")
-    {
+    if is_missing_prompt_value(&base.positive_prompt) {
         base.positive_prompt = secondary.positive_prompt;
     }
 
-    if base.negative_prompt.trim().is_empty()
-        || base.negative_prompt.trim() == "undefined"
-        || base.negative_prompt.trim() == "null"
-    {
+    if is_missing_prompt_value(&base.negative_prompt) {
         base.negative_prompt = secondary.negative_prompt;
     }
 

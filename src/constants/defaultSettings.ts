@@ -19,7 +19,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   starredAs: 'favorite',
   libraryLayoutMode: 'masonry',
   resourceViewModes: {},
-  hideImportModal: false,
   enableAutoThumbnailHealing: true,
   enforceHighQualityThumbnails: false,
   thumbnailOptimizationProfile: 'balanced',

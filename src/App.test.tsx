@@ -424,7 +424,6 @@ describe('App orchestration', () => {
             hasCompletedOnboarding: true,
             autoCheckForUpdates: true,
             enableAI: false,
-            hideImportModal: false,
             defaultTheaterMode: false
         });
         mocks.settingsLoaded = true;
@@ -560,9 +559,10 @@ describe('App orchestration', () => {
     });
 
     it('completes onboarding and handles browser and native import paths', async () => {
+        mocks.settings.hasCompletedOnboarding = false;
         render(<App />);
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
-        expect(onboarding.isOpen).toBe(false);
+        expect(onboarding.isOpen).toBe(true);
         act(() => onboarding.onComplete({ theme: 'light' }));
         expect(mocks.settings.theme).toBe('light');
         expect(mocks.addToast).toHaveBeenCalledWith('Setup complete!', 'success');
@@ -623,11 +623,13 @@ describe('App orchestration', () => {
         mocks.updater.update = { version: '2.0.0', body: 'Notes', date: '2026-07-10' };
         mocks.updater.isDialogOpen = true;
         render(<App />);
-        expect(captured.updateDialog).toEqual(expect.objectContaining({
-            isOpen: true,
-            currentVersion: '1.0.0',
-            availableVersion: '2.0.0'
-        }));
+        await waitFor(() => {
+            expect(captured.updateDialog).toEqual(expect.objectContaining({
+                isOpen: true,
+                currentVersion: '1.0.0',
+                availableVersion: '2.0.0'
+            }));
+        });
 
         act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
         await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
@@ -782,7 +784,6 @@ describe('App orchestration', () => {
 
     it('falls back to the browser file input when the native picker fails', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mocks.settings.hideImportModal = true;
         (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
         vi.mocked(open).mockRejectedValueOnce(new Error('picker unavailable'));
         render(<App />);
@@ -790,7 +791,7 @@ describe('App orchestration', () => {
         if (!input) throw new Error('File input was not attached');
         const clickSpy = vi.spyOn(input, 'click').mockImplementation(() => undefined);
 
-        await act(async () => requireProbe(captured.appLayout, 'AppLayout').onOpenImportModal());
+        await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
 
         expect(errorSpy).toHaveBeenCalledWith(
             '[App] Native file picker import failed, falling back to file input.',

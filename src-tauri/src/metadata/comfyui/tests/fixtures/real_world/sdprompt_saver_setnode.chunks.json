@@ -1,0 +1,126 @@
+{
+  "workflow": {
+    "last_node_id": 18,
+    "last_link_id": 9,
+    "nodes": [
+      {
+        "id": 10,
+        "type": "SDParameterGenerator",
+        "outputs": [
+          { "name": "MODEL_NAME", "type": "COMBO", "links": [] },
+          { "name": "MODEL", "type": "MODEL", "links": [1] },
+          { "name": "CLIP", "type": "CLIP", "links": [] },
+          { "name": "VAE", "type": "VAE", "links": [] }
+        ],
+        "widgets_values": [
+          "dreamshaper_8.safetensors",
+          "vae-ft-mse-840000-ema-pruned.safetensors",
+          "SDv1 512px",
+          "none",
+          501574468386073,
+          20,
+          0.8,
+          5.0,
+          "dpmpp_2m",
+          "karras",
+          6,
+          6,
+          "2:3 - 416x608",
+          416,
+          608,
+          1,
+          "Total steps: 20",
+          "Optimal resolution for SDv1 512px",
+          null,
+          "Total steps: 20",
+          "Optimal resolution for SDv1 512px"
+        ]
+      },
+      {
+        "id": 11,
+        "type": "SetNode",
+        "inputs": [{ "name": "MODEL", "type": "MODEL", "link": 1 }],
+        "widgets_values": ["model"]
+      },
+      {
+        "id": 12,
+        "type": "GetNode",
+        "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [3] }],
+        "widgets_values": ["model"]
+      },
+      {
+        "id": 13,
+        "type": "smZ CLIPTextEncode",
+        "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [4] }],
+        "widgets_values": ["avatar themed portrait with blue skin and leaf clothing", "A1111"]
+      },
+      {
+        "id": 14,
+        "type": "smZ CLIPTextEncode",
+        "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [5] }],
+        "widgets_values": ["low quality, watermark", "A1111"]
+      },
+      {
+        "id": 15,
+        "type": "EmptyLatentImage",
+        "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [6] }],
+        "widgets_values": [416, 608, 1]
+      },
+      {
+        "id": 16,
+        "type": "KSampler",
+        "inputs": [
+          { "name": "model", "type": "MODEL", "link": 3 },
+          { "name": "positive", "type": "CONDITIONING", "link": 4 },
+          { "name": "negative", "type": "CONDITIONING", "link": 5 },
+          { "name": "latent_image", "type": "LATENT", "link": 6 }
+        ],
+        "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [7] }],
+        "widgets_values": [501574468386073, "randomize", 20, 5.0, "dpmpp_2m", "karras", 1.0]
+      },
+      {
+        "id": 17,
+        "type": "VAEDecode",
+        "inputs": [{ "name": "samples", "type": "LATENT", "link": 7 }],
+        "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [8] }]
+      },
+      {
+        "id": 18,
+        "type": "SDPromptSaver",
+        "inputs": [{ "name": "images", "type": "IMAGE", "link": 8 }],
+        "widgets_values": [
+          "ComfyUI_%time_%seed_%counter",
+          "%date/",
+          "dreamshaper_8.safetensors",
+          501574468386073,
+          "randomize",
+          20,
+          5.0,
+          "dpmpp_2m",
+          "karras",
+          1,
+          1,
+          "",
+          "",
+          "png",
+          false,
+          true,
+          100,
+          "%Y-%m-%d",
+          "%H%M%S",
+          false,
+          ""
+        ]
+      }
+    ],
+    "links": [
+      [1, 10, 1, 11, 0, "MODEL"],
+      [3, 12, 0, 16, 0, "MODEL"],
+      [4, 13, 0, 16, 1, "CONDITIONING"],
+      [5, 14, 0, 16, 2, "CONDITIONING"],
+      [6, 15, 0, 16, 3, "LATENT"],
+      [7, 16, 0, 17, 0, "LATENT"],
+      [8, 17, 0, 18, 0, "IMAGE"]
+    ]
+  }
+}

@@ -1131,4 +1131,19 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(content).toContain('Restarting backend job for Smart Thumbnail settings change');
         expect(content).toContain("queryKey: ['images']");
     });
+
+    it('should keep support logs for thumbnail job lifecycle and recovery branches', async () => {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
+        const content = await fs.readFile(hookPath, 'utf-8');
+
+        expect(content).toContain('[ThumbnailQueue] Starting backend thumbnail optimization');
+        expect(content).toContain('[ThumbnailQueue] Pausing backend job for blocking activity');
+        expect(content).toContain('[ThumbnailQueue] Resuming after blocking activity...');
+        expect(content).toContain('[ThumbnailQueue] Failed to cancel backend job');
+        expect(content).toContain('[ThumbnailQueue] Backend thumbnail optimization failed');
+        expect(content).toContain('[ThumbnailQueue] Thumbnail facet cache refresh failed');
+        expect(content).toContain('[ThumbnailQueue] Failed to update backend throttle state');
+    });
 });

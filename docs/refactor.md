@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-06-04
+Last reviewed: 2026-07-07
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -302,32 +302,31 @@ Status: In transition
 - Do not change the dev identifier.
 - Do not remove legacy `com.ambit.app` or Roaming fallback checks until the public-beta upgrade window is intentionally closed.
 
-## Smart Thumbnail Optimization and Removed Maintenance Tab
+## Smart Thumbnail Optimization and Thumbnail Maintenance Ownership
 Status: Deferred
 
 ### Why Cleanup Is Needed
-- Product rule: there is no current Maintenance thumbnail regeneration tab. Thumbnail regeneration is handled by import/native generation, lazy gallery healing, background Smart Thumbnail Optimization, and explicit settings/model/collection thumbnail tools.
-- The visible Maintenance thumbnails tab was removed; `src/features/maintenance/components/MaintenanceTabs.tsx` documents that background healing now owns thumbnail regeneration.
+- Product rule: thumbnail repair is currently split between visible Maintenance tools and background healing. `MaintenanceTabs.tsx` exposes a `Thumbnails` tab, while import/native generation, lazy gallery healing, and background Smart Thumbnail Optimization can also create or improve thumbnails.
 - `src/hooks/useThumbnailQueue.ts` still starts Smart Thumbnail Optimization automatically after a short startup delay when `enableAutoThumbnailHealing` is enabled.
 - The queue processes thumbnails in small batches and pauses during import or sync, but it begins by running full-library unoptimized-thumbnail count queries. On large production libraries, those count scans can still compete with normal browsing and search.
-- Legacy thumbnail-maintenance UI code such as `ThumbnailsTab` and thumbnail scan paths remains in the tree even though it is no longer reachable from the visible maintenance tabs.
-- This mismatch keeps confusing maintainers and agents because the code shape still suggests a removed feature exists.
+- The visible `ThumbnailsTab` owns manual regeneration, broken-reference repair, developer-only thumbnail DB sync, and orphan thumbnail cleanup. Background healing owns automatic optimization.
+- This split keeps confusing maintainers and agents because thumbnail repair paths span visible UI, background startup work, services, and maintenance state.
 
 ### Current Pain Points
 - Startup can feel responsive overall while background thumbnail work still creates intermittent SQLite load shortly after launch.
 - The initial `getUnoptimizedImagesCount` query answers "how many total?" before doing useful work, which is expensive for large libraries and not always necessary.
-- Dead or latent thumbnail maintenance UI code makes it harder to know which thumbnail repair path is canonical.
+- Multiple active thumbnail repair paths make it harder to know which path is canonical for a given user problem.
 
 ### Safe-Change Warning
 - Thumbnail work touches SQLite, filesystem scope, scanner commands, React Query image caches, and user-facing thumbnails. Avoid mixing this cleanup with unrelated maintenance UI work.
-- Do not remove manual Advanced settings actions for clearing or verifying thumbnails unless a replacement workflow is explicitly designed.
-- Do not reintroduce a Maintenance thumbnail regeneration tab unless the product decision is explicitly reopened.
+- Do not remove visible Maintenance thumbnail actions or Advanced maintenance navigation unless a replacement workflow is explicitly designed.
+- Do not move all thumbnail repair into background healing unless the product decision is explicitly reopened.
 
 ### Suggested Future Direction
 - Make Smart Thumbnail Optimization more incremental: fetch and process small candidate batches first, and avoid full-library count scans on startup.
 - Consider deferring background thumbnail healing until the app is idle for longer, until the user enables it explicitly, or until recent startup/import/sync work has settled.
 - Add an indexed or materialized thumbnail-repair candidate path if full scans remain necessary.
-- Remove or quarantine unreachable thumbnail maintenance UI code in a dedicated cleanup after confirming no hidden route still uses it.
+- Clarify ownership between visible thumbnail maintenance, Advanced maintenance navigation, and background healing in a dedicated cleanup.
 
 ### Not Part of the Current Task
 - Do not change thumbnail behavior while stabilizing prod startup and search migration fixes.
@@ -420,25 +419,25 @@ Status: Deferred
 
 ### Why Cleanup Is Needed
 - Resource folder discovery can recurse through a broad root such as a ComfyUI `models` directory, but current disk-scan classification is heuristic.
-- The scanner recognizes common supported assets from path text: LoRA, embedding, hypernetwork, ControlNet, and IP-Adapter; anything else with a model-like extension currently falls back to checkpoint.
-- This makes standard folders such as `models/loras`, `models/checkpoints`, `models/controlnet`, and `models/ipadapter` mostly usable, but broad roots can misclassify unsupported model folders such as VAE, CLIP/text encoders, upscale models, detectors, or custom extension folders as checkpoints.
+- The scanner recognizes common supported assets from path text: checkpoints, LoRAs, embeddings, hypernetworks, ControlNet, and IP-Adapter.
+- Known unsupported folders such as VAE, CLIP/text encoders, upscale models, detectors, caption models, face-restore models, and unrecognized custom folders are skipped instead of being treated as checkpoints, but the broad-root workflow is still hard for users to audit.
 
 ### Current Pain Points
 - Adding each supported resource folder separately gives cleaner inventory today, but it is tedious for users with normal ComfyUI or A1111-style directory trees.
-- Adding a full model root is convenient, but noisy misclassification can make the Assets tab look less trustworthy.
-- Unknown or unsupported local model files do not have a neutral inventory bucket, so the fallback checkpoint behavior carries too much meaning.
+- Adding a full model root is convenient, but skipped or unsupported files are not summarized clearly enough for users to understand why they did not appear in the Assets tab.
+- Unknown or unsupported local model files do not have a visible neutral inventory bucket, so Ambit cannot yet distinguish "intentionally ignored" from "not discovered" in the UI.
 - Local disk discovery and image-metadata harvesting meet through `models` and `facet_cache`, with a lightweight query-layer match key for obvious filename or display-name aliases.
 - The lightweight match key is not a durable asset identity. Disk-scanned rows still use a file-path-derived hash, while image-harvested rows can use metadata hashes, parser-cleaned names, or CivitAI-resolved display names.
 
 ### Safe-Change Warning
-- Do not treat every unknown `.safetensors`, `.ckpt`, `.pt`, `.bin`, or `.pth` file under a model root as a checkpoint in a future taxonomy pass.
+- Do not reintroduce behavior that treats every unrecognized `.safetensors`, `.ckpt`, `.pt`, `.bin`, or `.pth` file under a model root as a checkpoint.
 - Filtering semantics must remain tied to image metadata usage. Unused disk-scanned assets can be shown as inventory, but they should not become active image filters until Ambit has at least one matching image usage.
 - Keep resource discovery opt-in and path-scoped; do not add automatic filesystem-wide model scanning.
 
 ### Suggested Future Direction
 - Add taxonomy-aware folder classification for known layouts, especially ComfyUI `models/`, A1111/Forge `models/`, and other common local AI image app structures.
 - Map supported folders explicitly, for example checkpoints, LoRAs, embeddings or textual inversion, hypernetworks, ControlNet, and IP-Adapter.
-- Route unsupported folders such as VAE, CLIP, text encoders, upscale models, detectors, and unknown/custom categories to `ignored` or `other` instead of checkpoint.
+- Keep unsupported folders such as VAE, CLIP, text encoders, upscale models, detectors, and unrecognized custom categories out of checkpoint results; if they need user visibility, route them to `ignored` or `other` instead.
 - Add a resource-folder type override in Settings: `Auto`, explicit supported asset types, `Other`, and `Ignore`.
 - Show a scan preview or summary with counts by inferred type plus warnings for unknown or ignored folders before users trust a broad model-root scan.
 - Store enough scan-source metadata to support stable rescans, stale `disk_scan` cleanup when folders are removed, and future per-folder classification overrides.
@@ -453,7 +452,7 @@ Status: Deferred
 - Do not persist Assets tab scope state unless a separate UX decision asks for it.
 
 ### Acceptance Direction
-- A user can add a normal ComfyUI `models` root and Ambit classifies standard supported resources correctly without polluting checkpoints with unsupported model files.
+- A user can add a normal ComfyUI `models` root and Ambit classifies standard supported resources correctly while keeping unsupported model files out of checkpoint results.
 - A user can override a folder type when auto-detection is wrong.
 - Broad root scans report unknown or ignored files clearly enough that users know why something did or did not appear in the Assets tab.
 - If a checkpoint, LoRA, ControlNet, or IP-Adapter is both used in images and present on disk, it appears once in `Used in Library` with the correct combined image count and a local marker.

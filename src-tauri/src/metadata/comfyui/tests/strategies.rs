@@ -130,3 +130,44 @@ fn test_extract_comfyui_wireless_titled_nodes() {
     assert_eq!(meta.positive_prompt, "landscape, sunset");
     assert_eq!(meta.negative_prompt, "ugly hands");
 }
+
+#[test]
+fn test_mixed_numeric_and_subgraph_node_ids_do_not_panic() {
+    // Official templates and expanded subgraphs can mix plain numeric ids with
+    // subgraph/custom ids. Fallback scans must sort those ids with one total
+    // order so background metadata refresh cannot panic while parsing them.
+    let prompt = r#"{
+        "10a": {
+            "class_type": "String",
+            "inputs": { "STRING": "decorative subgraph text" }
+        },
+        "2": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "base.safetensors" }
+        },
+        "10": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 3.5,
+                "seed": 42,
+                "steps": 12,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "30:19": {
+            "class_type": "String",
+            "inputs": { "STRING": "subgraph prompt" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "base");
+    assert_eq!(meta.steps, 12);
+    assert_eq!(meta.seed, Some(42));
+}

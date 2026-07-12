@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.8.0](https://github.com/AsuraAce/ambit/compare/v0.7.0...v0.8.0) (2026-07-11)
+
+
+### Features
+
+* add official ComfyUI template coverage manifest ([#196](https://github.com/AsuraAce/ambit/issues/196)) ([8149582](https://github.com/AsuraAce/ambit/commit/81495826a701cd0dde50d742ee5bc73eccf47f8a))
+* **onboarding:** improve setup flow and accessibility ([#197](https://github.com/AsuraAce/ambit/issues/197)) ([c0614e0](https://github.com/AsuraAce/ambit/commit/c0614e0188f638b91988d0e28e04b621abc7f1d0))
+* **updater:** show release notes in update dialog ([#193](https://github.com/AsuraAce/ambit/issues/193)) ([e68e0cc](https://github.com/AsuraAce/ambit/commit/e68e0cc3d5040cd9a643259ee54c8165db2f1b65))
+
+
+### Bug Fixes
+
+* harden ComfyUI metadata graph extraction ([#194](https://github.com/AsuraAce/ambit/issues/194)) ([e76e05a](https://github.com/AsuraAce/ambit/commit/e76e05a353bdd0b97c441e0183eeebd75cc2b7a1))
+* **metadata:** decode EXIF user comments robustly ([#195](https://github.com/AsuraAce/ambit/issues/195)) ([8172644](https://github.com/AsuraAce/ambit/commit/81726449358c9d702780bb04319d69f530168753))
+
+  Thanks to [@SifeYassine](https://github.com/SifeYassine) for reporting the issue and sharing the diagnostic insight that led to this fix.
+* stabilize targeted import ordering ([#191](https://github.com/AsuraAce/ambit/issues/191)) ([4975b85](https://github.com/AsuraAce/ambit/commit/4975b85f7d72a7206696697cae453c98e843a6fb))
+
+## [0.7.0](https://github.com/AsuraAce/ambit/compare/v0.6.4...v0.7.0) (2026-07-10)
+
+
+### Features
+
+* add ComfyUI parser diagnostics ([#188](https://github.com/AsuraAce/ambit/issues/188)) ([d450999](https://github.com/AsuraAce/ambit/commit/d450999effcef0543270b9d1fb4e04a4eb36006d))
+* improve comfyui metadata reliability ([#187](https://github.com/AsuraAce/ambit/issues/187)) ([aa61601](https://github.com/AsuraAce/ambit/commit/aa616010ce2f1f6e9abf99ca6c1a1d9024624e38))
+
+
+### Bug Fixes
+
+* **deps:** update crossbeam-epoch ([#190](https://github.com/AsuraAce/ambit/issues/190)) ([2997fc6](https://github.com/AsuraAce/ambit/commit/2997fc6e66969075e6f6709363da8c099f31e840))
+* improve ComfyUI metadata format parity ([#189](https://github.com/AsuraAce/ambit/issues/189)) ([02aae34](https://github.com/AsuraAce/ambit/commit/02aae3454773e70aac38c5d7b39cdad1a9950861))
+* improve runtime logging diagnostics ([#181](https://github.com/AsuraAce/ambit/issues/181)) ([4ad2cdb](https://github.com/AsuraAce/ambit/commit/4ad2cdb2ad02a91bcae09e9d72877ab5e80b60ff))
+* improve support log diagnostics ([#185](https://github.com/AsuraAce/ambit/issues/185)) ([653c436](https://github.com/AsuraAce/ambit/commit/653c436ff3f13592531e4229412e926de5b9967d))
+* parse embedded metadata in jpeg and webp ([#179](https://github.com/AsuraAce/ambit/issues/179)) ([3f2a3b6](https://github.com/AsuraAce/ambit/commit/3f2a3b604ac095dae6464a79ebf148dfadb9f691))
+* prevent startup maintenance flicker ([#177](https://github.com/AsuraAce/ambit/issues/177)) ([a79c43b](https://github.com/AsuraAce/ambit/commit/a79c43be44dd63cc2cfe830d6af2aeb72ad60fef))
+
 ## [0.6.4](https://github.com/AsuraAce/ambit/compare/v0.6.3...v0.6.4) (2026-06-30)
 
 

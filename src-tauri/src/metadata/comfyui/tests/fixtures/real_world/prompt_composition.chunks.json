@@ -1,0 +1,87 @@
+{
+  "prompt": {
+    "44": {
+      "inputs": {
+        "seed": 515018389178561,
+        "steps": 6,
+        "cfg": 1.0,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "positive": ["48", 0],
+        "negative": ["42", 0],
+        "model": ["47", 0]
+      },
+      "class_type": "KSampler"
+    },
+    "42": {
+      "inputs": { "conditioning": ["45n", 0] },
+      "class_type": "ConditioningZeroOut"
+    },
+    "45n": {
+      "inputs": { "text": "low quality", "clip": ["79", 1] },
+      "class_type": "CLIPTextEncode"
+    },
+    "48": {
+      "inputs": { "conditioning": ["45", 0] },
+      "class_type": "SeedVarianceEnhancer"
+    },
+    "45": {
+      "inputs": { "text": ["81", 0], "clip": ["79", 1] },
+      "class_type": "CLIPTextEncode"
+    },
+    "81": {
+      "inputs": {
+        "string_1": ["84", 0],
+        "string_2": ["82", 0],
+        "delimiter": ", "
+      },
+      "class_type": "JoinStringMulti"
+    },
+    "82": {
+      "inputs": { "value": ["80", 0] },
+      "class_type": "PrimitiveString"
+    },
+    "84": {
+      "inputs": { "value": "Aiyana Lumiere Nyoka..." },
+      "class_type": "PrimitiveStringMultiline"
+    },
+    "80": {
+      "inputs": { "trigger_words": ["79", 2] },
+      "class_type": "TriggerWord Toggle (LoraManager)"
+    },
+    "79": {
+      "inputs": {
+        "text": "<lora:Mystic-XXX:1.0> <lora:Asians:0.65>",
+        "loras": {
+          "__value__": [
+            { "name": "Mystic-XXX", "strength": 1.0 },
+            { "name": "Asians", "strength": 0.65 }
+          ]
+        },
+        "model": ["46", 0],
+        "clip": ["39", 0]
+      },
+      "class_type": "Lora Loader (LoraManager)"
+    },
+    "39": {
+      "inputs": { "clip_name": "qwen_3_4b.safetensors" },
+      "class_type": "CLIPLoader"
+    },
+    "46": {
+      "inputs": { "unet_name": "z_image_turbo_bf16.safetensors" },
+      "class_type": "UNETLoader"
+    },
+    "47": {
+      "inputs": { "shift": 3.0, "model": ["79", 0] },
+      "class_type": "ModelSamplingAuraFlow"
+    },
+    "51": {
+      "inputs": { "samples": ["44", 0] },
+      "class_type": "VAEDecode"
+    },
+    "76": {
+      "inputs": { "images": ["51", 0] },
+      "class_type": "Image Saver Simple"
+    }
+  }
+}

@@ -70,11 +70,11 @@ pub async fn start_reparse_job(
     tauri::async_runtime::spawn_blocking(move || {
         let start_time = std::time::Instant::now();
         log::info!("[Refresh] Starting optimized refresh job. Force: {}, Filter: {:?}, Tool: {:?}", force_reparse, filter_root, filter_tool);
-        
+
         log::info!("[Reparse] Thread started, opening connection...");
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-        
+
         // Normalize filter_root to forward slashes for consistency with frontend/DB
         let normalized_filter_root = filter_root.as_ref().map(|r| r.replace('\\', "/"));
 
@@ -82,7 +82,7 @@ pub async fn start_reparse_job(
         crate::db::configure_connection(&conn).map_err(|e| e.to_string())?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;").map_err(|e| e.to_string())?;
         conn.busy_timeout(std::time::Duration::from_secs(60)).map_err(|e| e.to_string())?; // Longer timeout
-        
+
         log::info!("[Reparse] Connection ready, counting total images...");
         // Signal FE that we are actually in the backend
         let _ = app.emit("refresh-progress", ReparseProgress {
@@ -111,7 +111,7 @@ pub async fn start_reparse_job(
                 // Already normalized to forward slashes at the start of the thread
                 let r_fwd = r.replace('\\', "/").trim_end_matches('/').to_string();
                 let r_back = r.replace('/', "\\").trim_end_matches('\\').to_string();
-                
+
                 // Match exact path OR subfolders with either slash type
                 clauses.push("(path = ? OR path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%' OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
                 params.push(Box::new(r_fwd.clone()));
@@ -140,9 +140,9 @@ pub async fn start_reparse_job(
             rusqlite::params_from_iter(count_params.iter()),
             |r| r.get::<_, i64>(0)
         ).unwrap_or(0) as usize;
-        
+
         log::info!("[Reparse] Total query complete: {}", total);
-        
+
         if total == 0 {
             log::info!("[Reparse] No images need refreshing");
             let _ = app.emit("refresh-complete", ReparseJobResult {
@@ -158,7 +158,7 @@ pub async fn start_reparse_job(
                 was_cancelled: false,
             });
         }
-        
+
         log::info!("[Refresh] Found {} images to process", total);
         let _ = app.emit("refresh-progress", ReparseProgress {
             current: 0,
@@ -168,16 +168,16 @@ pub async fn start_reparse_job(
             phase: "starting".to_string(),
             message: format!("Found {} images to refresh", total),
         });
-        
+
         let mut processed = 0;
         let mut updated = 0;
         let mut errors = 0;
         let batch_size = 500;
-        let progress_interval = 50; 
+        let progress_interval = 50;
         let mut last_emit_time = std::time::Instant::now();
         let min_emit_interval = std::time::Duration::from_millis(50);
         let mut was_cancelled = false;
-        
+
         let should_use_prefetch = filter_root.is_some();
 
         // SHARED UPDATE LOGIC CLOSURE
@@ -185,7 +185,7 @@ pub async fn start_reparse_job(
         // It takes a batch of rows, processes them, and updates the DB.
         let mut process_and_update_batch = |conn: &mut rusqlite::Connection, batch: Vec<(String, String, String, String)>, fetch_ms: u128| -> Result<(), String> {
             let parse_start = std::time::Instant::now();
-            
+
             // PARALLEL PHASE: Parse structure on all cores
             let batch_results: Vec<(String, String, String, String, Option<crate::metadata::reparse::ReparseResult>)> = batch
                 .par_iter()
@@ -194,7 +194,7 @@ pub async fn start_reparse_job(
                     (id.clone(), tool.clone(), original_json.clone(), old_meta_json.clone(), result)
                 })
                 .collect();
-            
+
             let parse_duration = parse_start.elapsed();
             let update_start = std::time::Instant::now();
 
@@ -202,7 +202,7 @@ pub async fn start_reparse_job(
             let tx = conn.transaction().map_err(|e| e.to_string())?;
             {
                 let mut update_stmt = tx.prepare_cached(
-                    "UPDATE images SET 
+                    "UPDATE images SET
                         metadata_json = ?1,
                         original_parsed_json = ?1,
                         model_hash = ?2,
@@ -219,7 +219,7 @@ pub async fn start_reparse_job(
                         negative_prompt = ?12
                      WHERE id = ?13"
                 ).map_err(|e| e.to_string())?;
-                
+
                 let mut skip_stmt = tx.prepare_cached(
                     "UPDATE images SET parser_version = ?1 WHERE id = ?2"
                 ).map_err(|e| e.to_string())?;
@@ -245,16 +245,16 @@ pub async fn start_reparse_job(
 
                 let mut ip_del = tx.prepare_cached("DELETE FROM image_ipadapters WHERE image_id = ?1").map_err(|e| e.to_string())?;
                 let mut ip_ins = tx.prepare_cached("INSERT OR IGNORE INTO image_ipadapters (image_id, ipadapter_name) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
-                
+
                 for (id, _tool, _original_json, old_meta_json, parse_result) in batch_results {
                     processed += 1;
-                    
+
                     match parse_result {
                         Some(result) => {
                             // Smart Diffing: skip updates if metadata is identical
                             // BUT: if filter_root and force_reparse are both set, we bypass this to force update
                             let mut meta_changed = force_reparse || result.metadata_json != *old_meta_json;
-                            
+
                             // Deep Object Diffing (only if not forced)
                             if meta_changed && !force_reparse {
                                 if let Ok(old_meta) = serde_json::from_str::<ImageMetadata>(&old_meta_json) {
@@ -274,7 +274,7 @@ pub async fn start_reparse_job(
                                     .to_lowercase()
                                     .replace('_', " ")
                                     .replace('-', " ");
-                                
+
                                 update_stmt.execute(params![
                                     result.metadata_json,
                                     meta.model_hash,
@@ -345,7 +345,7 @@ pub async fn start_reparse_job(
                             updated,
                             errors,
                             phase: "processing".to_string(),
-                            message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms", 
+                            message: format!("Processed {}/{} (Updated: {}). Timings: Fetch {}ms, Parse {}ms, DB {}ms",
                                 processed, total, updated, fetch_ms, parse_duration.as_millis(), update_ms),
                         });
                         last_emit_time = std::time::Instant::now();
@@ -360,21 +360,21 @@ pub async fn start_reparse_job(
             // === STRATEGY 1: ID PRE-FETCHING (Filtered) ===
             log::info!("[Reparse] Strategy: ID Pre-fetching (Targeted)");
             let prefetch_start = std::time::Instant::now();
-            
+
             // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
             let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
 
              let query = format!("SELECT id FROM images WHERE {}", where_sql);
-             
+
              let ids: Vec<String> = {
                  let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
                  let rows = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| row.get(0))
                      .map_err(|e| e.to_string())?;
                  rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
              };
-             
+
              let prefetch_duration = prefetch_start.elapsed();
-             log::info!("[Reparse] Pre-fetched {} IDs in {:.2}ms. Starting batched processing...", 
+             log::info!("[Reparse] Pre-fetched {} IDs in {:.2}ms. Starting batched processing...",
                 ids.len(), prefetch_duration.as_millis());
 
              // 2. Loop through chunks
@@ -382,16 +382,16 @@ pub async fn start_reparse_job(
                  if is_cancelled.load(Ordering::SeqCst) {
                      break;
                  }
-                 
+
                  let fetch_start = std::time::Instant::now();
                  let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
                  let batch_query = format!(
-                    "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                     FROM images 
-                     WHERE id IN ({})", 
+                    "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
+                     FROM images
+                     WHERE id IN ({})",
                     placeholders
                  );
-                 
+
                  let batch: Vec<(String, String, String, String)> = {
                      let mut stmt = conn.prepare(&batch_query).map_err(|e| e.to_string())?;
                      let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
@@ -425,10 +425,10 @@ pub async fn start_reparse_job(
                 let batch: Vec<(String, String, String, String)> = {
                     let (base_filters, mut params) = build_filters(force_reparse, filter_root.as_ref(), filter_tool.as_ref());
                     params.push(Box::new(last_seen_id.clone()));
-                    
+
                     let query = format!(
-                        "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '') 
-                         FROM images 
+                        "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
+                         FROM images
                          WHERE {} AND id > ?
                          ORDER BY id ASC
                          LIMIT {}",
@@ -446,18 +446,18 @@ pub async fn start_reparse_job(
                     }).map_err(|e| e.to_string())?
                     .collect::<Result<Vec<_>, rusqlite::Error>>()
                     .map_err(|e| e.to_string())?;
-                    
+
                     rows
                 };
                 let fetch_duration = fetch_start.elapsed();
-                
+
                 if batch.is_empty() { break; }
                 if let Some(last) = batch.last() { last_seen_id = last.0.clone(); }
 
                 process_and_update_batch(&mut conn, batch, fetch_duration.as_millis())?;
             }
         }
-        
+
         if is_cancelled.load(Ordering::SeqCst) {
             log::info!("[Refresh] Job cancelled by user");
             was_cancelled = true;
@@ -472,22 +472,22 @@ pub async fn start_reparse_job(
             phase: "complete".to_string(),
             message: format!("Completed {} / {} images", processed, total),
         });
-        
+
         let duration = start_time.elapsed();
         log::info!(
             "[Refresh] Job complete in {:.2}s: {} processed, {} updated, {} errors, cancelled: {}",
             duration.as_secs_f64(), processed, updated, errors, was_cancelled
         );
-        
+
         let result = ReparseJobResult {
             processed,
             updated,
             errors,
             was_cancelled,
         };
-        
+
         let _ = app.emit("refresh-complete", result.clone());
-        
+
         Ok(result)
     })
     .await

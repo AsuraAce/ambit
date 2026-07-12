@@ -1,7 +1,5 @@
 import { GeneratorTool, ImageMetadata } from '../types';
-import { parseA1111Parameters, parseComfyUIMetadata } from '../services/metadata/mappingUtils';
-
-// ImageMetadata is now imported
+import { parseA1111Parameters } from '../services/metadata/mappingUtils';
 
 export interface ParseResult {
     metadata: Partial<ImageMetadata>;
@@ -224,10 +222,6 @@ export const detectGenerationType = (path: string, currentType?: string): 'txt2i
     return 'unknown';
 };
 
-// parseA1111Parameters is now imported
-
-// parseComfyUIMetadata is now imported
-
 const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, extra: ParseResult['extra']) => {
     // Basic InvokeAI parsing helper (Simplified for worker)
     const record = asRecord(json);
@@ -289,6 +283,9 @@ export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<I
     }
     if (!base.workflowJson && secondary.workflowJson) {
         base.workflowJson = secondary.workflowJson;
+    }
+    if (base.hasWorkflowHint === undefined && secondary.hasWorkflowHint !== undefined) {
+        base.hasWorkflowHint = secondary.hasWorkflowHint;
     }
 
     // Merge Loras
@@ -648,18 +645,15 @@ self.onmessage = async (e: MessageEvent) => {
             }
 
             // 3. ComfyUI (Cumulative)
-            const workflow = chunks.workflow || chunks.prompt;
+            const promptWorkflow = chunks.prompt?.trim().startsWith('{') ? chunks.prompt : undefined;
+            const workflow = chunks.workflow || promptWorkflow;
             if (workflow) {
-                try {
-                    const json = JSON.parse(workflow) as unknown;
-                    const secondary: Partial<ImageMetadata> = {};
-                    parseComfyUIMetadata(json, secondary);
-                    secondary.tool = GeneratorTool.COMFYUI;
-                    secondary.workflowJson = workflow;
-                    mergeMetadata(metadata, secondary);
-                    // Finalize tool label
-                    metadata.tool = GeneratorTool.COMFYUI;
-                } catch { }
+                mergeMetadata(metadata, {
+                    tool: GeneratorTool.COMFYUI,
+                    workflowJson: workflow,
+                    hasWorkflowHint: true,
+                });
+                metadata.tool = GeneratorTool.COMFYUI;
             }
 
             // 4. InvokeAI (Cumulative)

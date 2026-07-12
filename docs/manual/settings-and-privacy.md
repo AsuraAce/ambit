@@ -9,11 +9,13 @@ Settings controls Ambit's app preferences, integrations, privacy behavior, optio
 The Settings window contains:
 
 - General: app-level preferences.
-- Connections: folders, InvokeAI, SD WebUI, and ComfyUI setup.
+- Connections: folders, Resources, InvokeAI, SD WebUI, and ComfyUI setup.
 - Intelligence: optional AI features and model/prompt configuration.
 - Privacy: content masking behavior and masked keywords.
 - Advanced: database, interface, update, and troubleshooting tools.
 - Dev Tools: development-only tools when enabled.
+
+For image generator setup details, see [Generator Integrations](generator-integrations.md). For model and resource folder setup, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## Local-First Behavior
 
@@ -52,6 +54,10 @@ Masked keywords are matched against prompts. Add only terms you actually want Am
 
 Intelligence features are off unless configured. When enabled, Ambit can use Gemini for tasks such as prompt analysis or variation ideas. These actions are on-demand and depend on your own Gemini API key.
 
+Create or view a key in [Google AI Studio](https://aistudio.google.com/apikey). A free tier is available for eligible accounts and regions, with model and usage limits. Keys entered through Ambit are stored in the OS keyring; credentials supplied through the environment are read but not saved by Ambit. Images or prompts are sent to Google only when you verify the key or run a Gemini feature, and Google handles those requests under the terms of your AI Studio plan.
+
+A securely stored key is shown as **API key configured** when you return to onboarding or Settings. **API key verified and saved** confirms a successful verification in the current session; it does not guarantee that Google will continue accepting the key indefinitely.
+
 If an AI action fails, confirm that the key is saved, the key verifies successfully, and the network is available.
 
 ## Advanced Tools
@@ -60,11 +66,13 @@ Advanced includes:
 
 - backup settings
 - automatic update controls
-- reset onboarding
-- support diagnostics, including the active library database location
+- Restart onboarding, which closes Settings and immediately opens a fresh wizard at Step 1
+- support diagnostics, including the active library database and app log locations
 - database reset tools
 
 The database location shown in Support Diagnostics is the local catalog path, not the Ambit installer path. On Windows, Ambit stores the catalog under Local AppData and may show a legacy Roaming AppData fallback only for older installs that could not be moved automatically.
+
+Support Diagnostics also shows the app log file location. Use Show Logs Folder or Copy Diagnostics when collecting details for an issue; the copied diagnostics include paths and aggregate counts, not image prompts or metadata.
 
 Use Purge Database only when you intentionally want to remove all imported metadata and reset application state. The confirmation explains that source image files are not touched, but Ambit's catalog and linked folders are reset.
 

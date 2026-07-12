@@ -119,6 +119,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         isOpen={modals.settings}
                         onClose={() => closeModal('settings')}
                         onSave={onSettingsSave}
+                        // Onboarding retains the sole backdrop during this Settings handoff.
+                        hasExternalBackdrop={!settings.hasCompletedOnboarding}
                         settings={settings}
                         canCheckForUpdates={canCheckForUpdates}
                         initialTab={initialSettingsTab}

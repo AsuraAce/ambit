@@ -17,7 +17,9 @@ export class WatcherService {
 
     async startWatching(paths: string[], onChangeEvent: WatcherCallback) {
         if (isBrowserMockMode()) {
-            console.info('[WatcherService] Native watcher unavailable in browser mock mode.');
+            console.info('[WatcherService] Native watcher unavailable in browser mock mode; skipped start.', {
+                pathCount: paths.length
+            });
             return;
         }
 
@@ -25,11 +27,19 @@ export class WatcherService {
         const pathsChanged = paths.length !== this.lastPaths.length ||
             paths.some((p, i) => p !== this.lastPaths[i]);
 
-        if (this.isWatching && !pathsChanged) return;
+        if (this.isWatching && !pathsChanged) {
+            console.debug('[WatcherService] Native watcher already active for requested paths; skipped restart.', {
+                pathCount: paths.length
+            });
+            return;
+        }
 
         if (this.isWatching) await this.stopWatching();
 
-        if (paths.length === 0) return;
+        if (paths.length === 0) {
+            console.info('[WatcherService] Native watcher start skipped because no paths were configured.');
+            return;
+        }
 
         const startGeneration = ++this.generation;
 
@@ -37,6 +47,9 @@ export class WatcherService {
             // Start the native rust watcher which handles multiple paths
             await unwrap(commands.startNativeFolderWatcher(paths));
             if (startGeneration !== this.generation) {
+                console.info('[WatcherService] Native watcher start superseded before listener registration.', {
+                    pathCount: paths.length
+                });
                 await unwrap(commands.startNativeFolderWatcher([]));
                 return;
             }
@@ -65,6 +78,9 @@ export class WatcherService {
 
             const listenerReady = await listener.ready;
             if (startGeneration !== this.generation) {
+                console.info('[WatcherService] Native watcher start superseded after listener registration.', {
+                    pathCount: paths.length
+                });
                 listener.cleanup();
                 return;
             }
@@ -74,9 +90,10 @@ export class WatcherService {
             }
 
         } catch (err) {
-            console.error(`[WatcherService] Failed to start native watcher:`, err);
-            const error = err instanceof Error ? err.message : String(err);
-            this.diagnostic?.finish('failed', { error });
+            console.error('[WatcherService] Failed to start native watcher:', {
+                pathCount: paths.length
+            }, err);
+            this.diagnostic?.finish('failed', { error: err instanceof Error ? err.message : String(err) });
             this.diagnostic = null;
             this.isWatching = false;
             this.lastPaths = [];
@@ -112,7 +129,7 @@ export class WatcherService {
             await unwrap(commands.startNativeFolderWatcher([]));
             console.log('[WatcherService] Stopped native watcher');
         } catch (e) {
-            console.error('Error stopping native watcher:', e);
+            console.error('[WatcherService] Failed to stop native watcher:', e);
         }
     }
 

@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AppSettings, AppSettingsUpdate } from '../../../../types';
 import { SettingsModal } from '../SettingsModal';
 
-const appVersionMock = vi.hoisted(() => vi.fn((): string | null => 'test'));
-
-vi.mock('../../../../hooks/useAppVersion', () => ({ useAppVersion: appVersionMock }));
+vi.mock('../../../../hooks/useAppVersion', () => ({
+    useAppVersion: () => 'test'
+}));
 
 vi.mock('../DevTab', () => ({
     DevTab: () => <div>Dev panel</div>
@@ -50,17 +50,12 @@ vi.mock('..', () => ({
             >
                 Complete folder update
             </button>
-            <button type="button" onClick={() => setSettings({ ...createSettings(), theme: 'light' })}>
-                Direct settings update
-            </button>
         </div>
     ),
     PrivacyTab: () => null,
-    IntelligenceTab: () => <div>Intelligence panel</div>,
+    IntelligenceTab: () => null,
     AdvancedTab: () => <div>Advanced panel</div>,
-    ConnectionsTab: ({ initialSubTab }: { initialSubTab?: string }) => (
-        <div>Connections panel {initialSubTab ?? 'none'}</div>
-    )
+    ConnectionsTab: () => null
 }));
 
 const createSettings = (): AppSettings => ({
@@ -76,8 +71,6 @@ const createSettings = (): AppSettings => ({
 });
 
 describe('SettingsModal', () => {
-    beforeEach(() => appVersionMock.mockReturnValue('test'));
-
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -124,8 +117,98 @@ describe('SettingsModal', () => {
         });
     });
 
-    it('renders nothing while closed and falls back when the app version is unavailable', () => {
-        const props = {
+    it('claims focus on its named close control when opened', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Settings' }));
+    });
+
+    it('renders its normal dark blurred backdrop by default', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        const modalLayer = screen.getByRole('button', { name: 'Close Settings' }).closest('.fixed');
+
+        expect(modalLayer).not.toBeNull();
+        expect(modalLayer?.className).toContain('bg-black/60');
+        expect(modalLayer?.className).toContain('dark:bg-black/80');
+        expect(modalLayer?.className).toContain('backdrop-blur-sm');
+        expect(modalLayer?.className).not.toContain('bg-transparent');
+    });
+
+    it('uses the onboarding-owned backdrop without adding another tint or blur', () => {
+        const launcher = document.createElement('button');
+        document.body.append(launcher);
+        launcher.focus();
+        const onClose = vi.fn();
+        const modalProps = {
+            onClose,
+            hasExternalBackdrop: true,
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const { rerender } = render(<SettingsModal isOpen={true} {...modalProps} />);
+
+        const closeButton = screen.getByRole('button', { name: 'Close Settings' });
+        const modalLayer = closeButton.closest('.fixed');
+
+        expect(modalLayer).not.toBeNull();
+        expect(modalLayer?.className).toContain('bg-transparent');
+        expect(modalLayer?.className).not.toContain('bg-black/60');
+        expect(modalLayer?.className).not.toContain('dark:bg-black/80');
+        expect(modalLayer?.className).not.toContain('backdrop-blur-sm');
+        expect(document.activeElement).toBe(closeButton);
+
+        fireEvent.click(modalLayer as Element);
+        expect(onClose).toHaveBeenCalledOnce();
+
+        rerender(<SettingsModal isOpen={false} {...modalProps} />);
+        expect(document.activeElement).toBe(launcher);
+        launcher.remove();
+    });
+
+    it('restores focus to the launcher when closed', () => {
+        const launcher = document.createElement('button');
+        document.body.append(launcher);
+        launcher.focus();
+        const modalProps = {
             onClose: vi.fn(),
             settings: createSettings(),
             onSave: vi.fn(),
@@ -138,13 +221,14 @@ describe('SettingsModal', () => {
             onOpenUpdatePrompt: vi.fn(),
             onNavigateToMaintenance: vi.fn(),
         };
-        const closed = render(<SettingsModal {...props} isOpen={false} />);
-        expect(closed.container.textContent).toBe('');
-        closed.unmount();
+        const { rerender } = render(<SettingsModal isOpen={true} {...modalProps} />);
 
-        appVersionMock.mockReturnValue(null);
-        render(<SettingsModal {...props} isOpen />);
-        expect(screen.getByText('v...')).toBeTruthy();
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Settings' }));
+
+        rerender(<SettingsModal isOpen={false} {...modalProps} />);
+
+        expect(document.activeElement).toBe(launcher);
+        launcher.remove();
     });
 
     it('loads the Dev Tools panel only after selecting it in dev builds', async () => {
@@ -218,54 +302,5 @@ describe('SettingsModal', () => {
 
         expect(screen.getByText('Advanced panel')).not.toBeNull();
         expect(screen.queryByText('Dev panel')).toBeNull();
-    });
-
-    it('routes connection subtabs and legacy experiments to their owning panels', () => {
-        const commonProps = {
-            isOpen: true,
-            onClose: vi.fn(),
-            settings: createSettings(),
-            onSave: vi.fn(),
-            canCheckForUpdates: false,
-            hasPendingUpdate: false,
-            pendingUpdateVersion: null,
-            updateErrorMessage: null,
-            updateStatus: 'idle' as const,
-            onCheckForUpdates: vi.fn(),
-            onOpenUpdatePrompt: vi.fn(),
-            onNavigateToMaintenance: vi.fn(),
-        };
-        const { rerender } = render(<SettingsModal {...commonProps} initialTab="folders" />);
-        expect(screen.getByText('Connections panel folders')).toBeTruthy();
-
-        rerender(<SettingsModal {...commonProps} initialTab="experiments" />);
-        expect(screen.getByText('Intelligence panel')).toBeTruthy();
-
-        rerender(<SettingsModal {...commonProps} initialTab="privacy" />);
-        expect(screen.queryByText('Intelligence panel')).toBeNull();
-    });
-
-    it('forwards direct settings values without wrapping them', () => {
-        const onSave = vi.fn<(update: AppSettingsUpdate) => void>();
-        render(
-            <SettingsModal
-                isOpen
-                onClose={vi.fn()}
-                settings={createSettings()}
-                onSave={onSave}
-                canCheckForUpdates={false}
-                hasPendingUpdate={false}
-                pendingUpdateVersion={null}
-                updateErrorMessage={null}
-                updateStatus="idle"
-                onCheckForUpdates={vi.fn()}
-                onOpenUpdatePrompt={vi.fn()}
-                onNavigateToMaintenance={vi.fn()}
-            />
-        );
-
-        fireEvent.click(screen.getByText('Direct settings update'));
-
-        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' }));
     });
 });

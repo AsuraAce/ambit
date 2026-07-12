@@ -1,8 +1,8 @@
 use super::conditioning::evaluate_string_node;
-use super::graph::{get_node_param, get_node_title, get_node_type, ComfyGraph};
+use super::graph::{compare_node_ids, get_node_param, get_node_title, get_node_type, ComfyGraph};
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::guidance::GuidanceClassifier;
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -12,7 +12,10 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
     let mut meta = ImageMetadata::default();
     let mut found = false;
 
-    for (id, node) in graph.nodes() {
+    let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
+    nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
+
+    for (id, node) in nodes {
         let t = get_node_type(node);
         let t_lower = t.to_lowercase();
 
@@ -62,9 +65,13 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
 
         // ShowText / ShowAnything (Specific labels)
         // If user labeled a node "Positive", trust it?
-        if let Some(title) = get_node_title(node) {
+        // Standard conditioning encoders describe graph data, not intentional
+        // metadata overrides, even when their UI title says Positive/Negative.
+        if !t_lower.contains("textencode") {
+            let Some(title) = get_node_title(node) else {
+                continue;
+            };
             let title_lower = title.to_lowercase();
-            // let t_lower = t.to_lowercase(); // Already defined above
 
             if title_lower.contains("positive") {
                 let mut visited = HashSet::new();
@@ -80,14 +87,15 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
                         if let Some(neg_part) = text.split("Negative prompt:").nth(1) {
                             if let Some(end) = neg_part.find("Steps:") {
                                 let neg_clean = neg_part[..end].trim();
-                                if !neg_clean.is_empty() && meta.negative_prompt.is_empty() {
+                                if !is_missing_prompt_value(neg_clean)
+                                    && meta.negative_prompt.is_empty()
+                                {
                                     meta.negative_prompt = neg_clean.to_string();
                                 }
                             }
                         }
                     } else if !text.to_lowercase().starts_with("negative prompt:") {
-                        let lower = text.to_lowercase();
-                        if lower != "undefined" && lower != "null" && lower != "none" {
+                        if !is_missing_prompt_value(&text) {
                             meta.positive_prompt = text;
                             found = true;
                         }
@@ -96,29 +104,11 @@ pub fn scan_explicit_nodes(graph: &ComfyGraph) -> Option<ImageMetadata> {
             } else if title_lower.contains("negative") {
                 let mut visited = HashSet::new();
                 if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
-                    meta.negative_prompt = text;
-                    found = true;
+                    if !is_missing_prompt_value(&text) {
+                        meta.negative_prompt = text;
+                        found = true;
+                    }
                 }
-            }
-        }
-
-        // Try to extract model from any node that might have it
-        if meta.model.is_empty() || meta.model == "Unknown" {
-            // Skip LoRA nodes and other auxiliary models (upscalers, detectors, etc)
-            // as they often contain "model-like" filenames but are not the main checkpoint
-            if t_lower.contains("lora") 
-                || t_lower.contains("upscale") 
-                || t_lower.contains("detector")
-                || t_lower.contains("segment")
-                || t_lower.contains("samloader") // Specific to avoid ignoring "Sampler" which contains "sam"
-                || t_lower.contains("detailer")
-            {
-                continue;
-            }
-
-            if let Some(model_name) = extract_model_from_node(node) {
-                meta.model = model_name;
-                found = true;
             }
         }
     }
@@ -181,49 +171,54 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
             || t_lower.contains("cliptextencode")
             || t_lower.contains("showanything")
         {
-            if is_negative {
-                if meta.negative_prompt.trim().is_empty() {
-                    let mut visited = HashSet::new();
-                    if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
-                        if text.trim().len() > 2 {
-                            meta.negative_prompt = text;
-                        }
-                    }
-                }
-            } else if meta.positive_prompt.trim().is_empty() {
-                let mut visited = HashSet::new();
-                if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
-                    // Check for A1111 parameter blob
-                    if text.contains("Steps:") && text.contains("Sampler:") {
-                        // Parse A1111 style parameters
-                        let params = parse_a1111_parameters(&text);
-                        meta.merge_if_missing(params);
+            let mut visited = HashSet::new();
+            if let Some(text) = evaluate_string_node(graph, id, &mut visited, 0) {
+                // Check for A1111 parameter blob
+                if text.contains("Steps:") && text.contains("Sampler:") {
+                    // Parse A1111 style parameters
+                    let params = parse_a1111_parameters(&text);
+                    meta.merge_if_missing(params);
 
-                        // Also check if it has "Negative prompt:" prefix to set negative
-                        if let Some(neg_part) = text.split("Negative prompt:").nth(1) {
-                            if let Some(end) = neg_part.find("Steps:") {
-                                let neg_clean = neg_part[..end].trim();
-                                if !neg_clean.is_empty() && meta.negative_prompt.is_empty() {
-                                    meta.negative_prompt = neg_clean.to_string();
-                                }
+                    // Also check if it has "Negative prompt:" prefix to set negative
+                    if let Some(neg_part) = text.split("Negative prompt:").nth(1) {
+                        if let Some(end) = neg_part.find("Steps:") {
+                            let neg_clean = neg_part[..end].trim();
+                            if !is_missing_prompt_value(neg_clean)
+                                && meta.negative_prompt.is_empty()
+                            {
+                                meta.negative_prompt = neg_clean.to_string();
                             }
                         }
-                        // IMPORTANT: Do NOT set this huge blob as positive prompt
-                        continue;
                     }
+                    // IMPORTANT: Do NOT set this huge blob as positive prompt
+                    continue;
+                }
 
+                if is_negative {
+                    if meta.negative_prompt.trim().is_empty()
+                        && !is_missing_prompt_value(&text)
+                        && text.trim().len() > 2
+                    {
+                        meta.negative_prompt = text;
+                    }
+                } else if meta.positive_prompt.trim().is_empty() {
                     // Heuristic: If text starts with "negative", treat as negative
                     if text.to_lowercase().starts_with("negative prompt:") {
-                        if meta.negative_prompt.trim().is_empty() && text.trim().len() > 2 {
+                        if meta.negative_prompt.trim().is_empty()
+                            && !is_missing_prompt_value(&text)
+                            && text.trim().len() > 2
+                        {
                             meta.negative_prompt = text;
                         }
                     } else if text.to_lowercase().starts_with("negative") {
-                        if meta.negative_prompt.trim().is_empty() && text.trim().len() > 2 {
+                        if meta.negative_prompt.trim().is_empty()
+                            && !is_missing_prompt_value(&text)
+                            && text.trim().len() > 2
+                        {
                             meta.negative_prompt = text;
                         }
                     } else if text.trim().len() > 2 {
-                        let lower = text.to_lowercase();
-                        if lower != "undefined" && lower != "null" && lower != "none" {
+                        if !is_missing_prompt_value(&text) {
                             meta.positive_prompt = text;
                         }
                     }
@@ -232,7 +227,39 @@ pub fn global_scan(graph: &ComfyGraph) -> ImageMetadata {
         }
     }
 
+    // Generic model discovery is fallback evidence only. Text metadata can be
+    // more intentional than an arbitrary disconnected loader node.
+    let mut model_nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
+    model_nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
+
+    for (_id, node) in model_nodes {
+        if meta.model != "Unknown" && !meta.model.is_empty() && meta.model != "None" {
+            break;
+        }
+
+        let t_lower = get_node_type(node).to_lowercase();
+        if is_auxiliary_model_node(&t_lower) {
+            continue;
+        }
+
+        if let Some(model_name) = extract_model_from_node(node) {
+            meta.model = model_name;
+        }
+    }
+
     meta
+}
+
+fn is_auxiliary_model_node(t_lower: &str) -> bool {
+    // LoRAs, upscalers, detectors, and detailers often carry model-like filenames
+    // but are not the primary checkpoint/diffusion model for the image.
+    t_lower.contains("lora")
+        || t_lower.contains("controlnet")
+        || t_lower.contains("upscale")
+        || t_lower.contains("detector")
+        || t_lower.contains("segment")
+        || t_lower.contains("samloader")
+        || t_lower.contains("detailer")
 }
 
 fn extract_model_from_node(node: &Value) -> Option<String> {

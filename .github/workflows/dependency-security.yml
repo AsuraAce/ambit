@@ -46,7 +46,7 @@ jobs:
 
       - name: install pnpm
         if: steps.audit-scope.outputs.run_npm == 'true'
-        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
 
       - name: run production dependency audit
         if: steps.audit-scope.outputs.run_npm == 'true'
@@ -60,7 +60,7 @@ jobs:
 
       - name: cache rust dependencies
         if: steps.audit-scope.outputs.run_rust == 'true'
-        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri
 

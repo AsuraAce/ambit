@@ -1,47 +1,229 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download } from 'lucide-react';
+import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
+import { commands, type ComfyParserDiagnosticsReport } from '../../../bindings';
+import { useSettingsStore } from '../../../stores/settingsStore';
+import {
+    isWorkflowGraph,
+    selectWorkflowGraphSource,
+    selectWorkflowJsonForActions,
+    type WorkflowInputs
+} from './workflowGraphUtils';
 
 interface WorkflowInspectorProps {
     image: AIImage;
     onWorkflowLoaded?: (workflowJson: string) => void;
 }
 
-type WorkflowValue = string | number | boolean | null | undefined | Record<string, unknown> | unknown[];
-type WorkflowInputs = Record<string, WorkflowValue> | WorkflowValue[];
+const formatDiagnosticLabel = (value: string) =>
+    value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
-interface WorkflowRawNode extends Record<string, unknown> {
-    id?: string | number;
-    type?: string;
-    class_type?: string;
-    _type?: string;
-    node_type?: string;
-    title?: string;
-    label?: string;
-    widgets_values?: WorkflowValue[];
-    inputs?: Record<string, WorkflowValue>;
-    data?: Record<string, WorkflowValue>;
-    _meta?: { title?: string };
-}
+const formatDiagnosticValue = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === '' ? 'None' : String(value);
 
-interface WorkflowDisplayNode {
-    id: string | number;
-    title: string;
-    type: string;
-    inputs: WorkflowInputs;
-}
+const getDiagnosticLayerBadgeClass = (layer: string | null | undefined) => {
+    switch (layer) {
+        case 'sampler_traversal':
+            return 'border-emerald-300/70 dark:border-emerald-400/30 bg-emerald-50/80 dark:bg-emerald-500/10 text-emerald-900 dark:text-emerald-200';
+        case 'sampler_fallback':
+            return 'border-orange-300/80 dark:border-orange-400/40 bg-orange-50/90 dark:bg-orange-500/15 text-orange-900 dark:text-orange-100';
+        case 'global_scan':
+            return 'border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 text-rose-900 dark:text-rose-100';
+        case 'explicit_node':
+            return 'border-sky-300/70 dark:border-sky-400/30 bg-sky-50/80 dark:bg-sky-500/10 text-sky-900 dark:text-sky-100';
+        case 'flat_parameters':
+            return 'border-violet-300/70 dark:border-violet-400/30 bg-violet-50/80 dark:bg-violet-500/10 text-violet-900 dark:text-violet-100';
+        default:
+            return 'border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 text-amber-950 dark:text-amber-100';
+    }
+};
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    !!value && typeof value === 'object' && !Array.isArray(value);
+const getDiagnosticLayerTitle = (layer: string | null | undefined) => {
+    if (layer === 'sampler_fallback') {
+        return 'Sampler fallback: found by scanning samplers, weaker than saved-output traversal.';
+    }
+    if (layer === 'sampler_traversal') {
+        return 'Sampler traversal: found by following the saved image output path.';
+    }
+    if (layer === 'flat_parameters') {
+        return 'Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.';
+    }
+    return formatDiagnosticLabel(layer ?? '');
+};
 
-const isWorkflowRawNode = (value: unknown): value is WorkflowRawNode => isRecord(value);
+const buildDiagnosticsClipboardPayload = (
+    imageId: string,
+    chunks: Record<string, string> | undefined,
+    diagnostics: ComfyParserDiagnosticsReport
+) => {
+    const chunkLengths = Object.fromEntries(
+        Object.entries(chunks ?? {}).map(([key, value]) => [key, value.length])
+    ) as Record<string, number>;
 
-const asStringValue = (value: unknown, fallback: string): string =>
-    typeof value === 'string' && value.length > 0 ? value : fallback;
+    return {
+        imageId,
+        chunkKeys: diagnostics.chunkKeys,
+        chunkLengths,
+        graphNodeCount: diagnostics.graphNodeCount,
+        attemptedLayers: diagnostics.attemptedLayers,
+        fieldSources: diagnostics.fieldSources,
+        metadata: diagnostics.metadata
+    };
+};
+
+const ComfyDiagnosticsPanel: React.FC<{
+    imageId: string;
+    chunks?: Record<string, string>;
+}> = ({ imageId, chunks }) => {
+    const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+    const chunkCount = chunks ? Object.keys(chunks).length : 0;
+
+    React.useEffect(() => {
+        if (!chunks || chunkCount === 0) {
+            setDiagnostics(null);
+            setError(null);
+            setIsLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        setIsLoading(true);
+        setError(null);
+
+        commands.inspectComfyuiMetadataChunks(chunks)
+            .then((result) => {
+                if (cancelled) return;
+                if (result.status === 'ok') {
+                    setDiagnostics(result.data);
+                } else {
+                    setDiagnostics(null);
+                    setError(result.error);
+                }
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                setDiagnostics(null);
+                setError(err instanceof Error ? err.message : String(err));
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [chunks, chunkCount, imageId]);
+
+    const fieldSources = diagnostics
+        ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
+        : [];
+
+    const handleCopyDiagnostics = async () => {
+        if (!diagnostics) return;
+
+        const payload = buildDiagnosticsClipboardPayload(imageId, chunks, diagnostics);
+        await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+        setCopiedDiagnostics(true);
+        setTimeout(() => setCopiedDiagnostics(false), 2000);
+    };
+
+    return (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-3 text-xs">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                    <Activity className="w-3.5 h-3.5" />
+                    Parser Diagnostics
+                </div>
+                <div className="flex items-center gap-2">
+                    {diagnostics && (
+                        <>
+                            <button
+                                onClick={handleCopyDiagnostics}
+                                title="Copy parser diagnostics summary"
+                                className="flex items-center gap-1 rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-amber-900 dark:text-amber-200 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                            >
+                                {copiedDiagnostics ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                {copiedDiagnostics ? 'Copied' : 'Copy Diagnostics'}
+                            </button>
+                            <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
+                                {diagnostics.graphNodeCount} nodes
+                            </span>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {!chunks || chunkCount === 0 ? (
+                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Raw chunks unavailable.</div>
+            ) : isLoading ? (
+                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Loading diagnostics...</div>
+            ) : error ? (
+                <div className="mt-2 text-rose-700 dark:text-rose-300">Diagnostics unavailable: {error}</div>
+            ) : diagnostics ? (
+                <div className="mt-3 space-y-3 text-amber-950 dark:text-amber-100">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Chunks</div>
+                            <div className="font-mono break-all">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Layers</div>
+                            <div className="font-mono break-all">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Model</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Sampler</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.sampler)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Seed</div>
+                            <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.seed)}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Steps / CFG</div>
+                            <div className="font-mono break-all">{diagnostics.metadata.steps} / {diagnostics.metadata.cfg}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Positive Prompt</div>
+                        <div className="font-mono line-clamp-3 break-words">{formatDiagnosticValue(diagnostics.metadata.positivePrompt)}</div>
+                    </div>
+
+                    <div>
+                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Field Sources</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                            {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => (
+                                <span
+                                    key={field}
+                                    title={getDiagnosticLayerTitle(layer)}
+                                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
+                                >
+                                    {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
+                                </span>
+                            )) : (
+                                <span className="text-amber-800/70 dark:text-amber-200/70">None</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+        </div>
+    );
+};
 
 const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -95,47 +277,26 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
-
-    // Helper to validate if JSON is a node graph
-    const isWorkflowGraph = (jsonStr: string): boolean => {
-        try {
-            let parseTarget = jsonStr;
-            if (!jsonStr.trim().startsWith('{') && !jsonStr.trim().startsWith('[')) {
-                // Try to extract JSON blob from mixed content
-                const start = jsonStr.indexOf('{');
-                const end = jsonStr.lastIndexOf('}');
-                if (start !== -1 && end !== -1 && end > start) {
-                    parseTarget = jsonStr.substring(start, end + 1);
-                }
-            }
-
-            const json = JSON.parse(parseTarget) as unknown;
-
-            // Case 1: Standard Node Graph (ComfyUI / InvokeAI)
-            if (isRecord(json) && Array.isArray(json.nodes) && json.nodes.length > 0) return true;
-
-            // Case 2: Flat Object Graph (API formats)
-            // Must contain objects with 'class_type', 'type', 'inputs', or 'widgets_values'
-            if (isRecord(json)) {
-                const keys = Object.keys(json);
-                if (keys.length === 0) return false;
-
-                // Heuristic: At least 50% of top-level values must look like nodes
-                const nodeLikeCount = keys.filter(k => {
-                    const val = json[k];
-                    return isWorkflowRawNode(val) && (
-                        val.class_type || val.type || val.node_type || val.inputs || val.widgets_values
-                    );
-                }).length;
-
-                return nodeLikeCount > 0 && (nodeLikeCount / keys.length) > 0.5;
-            }
-
-            return false;
-        } catch (e) {
-            return false;
-        }
-    };
+    const showParserDiagnostics = useSettingsStore((state) => state.settings.devMode === true)
+        && image.metadata.tool === 'ComfyUI';
+    const originalWorkflow = image.originalChunks?.workflow;
+    const originalPrompt = image.originalChunks?.prompt;
+    const originalChunks = useMemo(() => ({
+        ...(originalWorkflow ? { workflow: originalWorkflow } : {}),
+        ...(originalPrompt ? { prompt: originalPrompt } : {})
+    }), [originalWorkflow, originalPrompt]);
+    const workflowJsonForActions = selectWorkflowJsonForActions({
+        localWorkflowJson: localWorkflow,
+        workflowJson: image.metadata.workflowJson,
+        originalChunks
+    });
+    const workflowGraphSource = useMemo(() => selectWorkflowGraphSource({
+        tool: image.metadata.tool,
+        localWorkflowJson: localWorkflow,
+        workflowJson: image.metadata.workflowJson,
+        originalChunks
+    }), [image.metadata.tool, image.metadata.workflowJson, localWorkflow, originalChunks]);
+    const workflowNodes = workflowGraphSource?.nodes ?? [];
 
     // Lazy Load Workflow if missing
     React.useEffect(() => {
@@ -143,7 +304,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         // 1. Data is missing
         // 2. We are not already loading
         // 3. We haven't already attempted this specific image in this session
-        if (!image.metadata.workflowJson && !localWorkflow && !isLoading && hasAttempted.current !== image.id) {
+        if (!workflowJsonForActions && !isLoading && hasAttempted.current !== image.id) {
             // If we have a hint that there is definitely NO workflow, skip and mark as attempted
             if (image.metadata.hasWorkflowHint === false) {
                 hasAttempted.current = image.id;
@@ -178,7 +339,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             };
             loadWorkflow();
         }
-    }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading]);
+    }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
 
     // Sync local state if prop changes OR if image changes
     React.useEffect(() => {
@@ -186,14 +347,17 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [image.id, image.metadata.workflowJson]);
 
     const handleCopy = () => {
-        const wf = localWorkflow!;
-        navigator.clipboard.writeText(wf);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        const wf = workflowJsonForActions;
+        if (wf) {
+            navigator.clipboard.writeText(wf);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
     };
 
     const handleDownload = async () => {
-        const wf = localWorkflow!;
+        const wf = workflowJsonForActions;
+        if (!wf) return;
 
         try {
             // Generate a sensible filename: name_workflow.json
@@ -215,102 +379,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             console.error('Failed to download workflow', e);
         }
     };
-
-    const workflowNodes = useMemo(() => {
-        const wf = localWorkflow;
-        if (!wf) return [];
-        try {
-            // Robust JSON Extraction: 
-            // Handle cases where the string might be "poisoned" with a keyword or null-bytes
-            let parseTarget = wf;
-            if (!wf.trim().startsWith('{') && !wf.trim().startsWith('[')) {
-                const start = wf.indexOf('{');
-                const end = wf.lastIndexOf('}');
-                if (start !== -1 && end !== -1 && end > start) {
-                    parseTarget = wf.substring(start, end + 1);
-                }
-            }
-
-            const json = JSON.parse(parseTarget) as unknown;
-            const nodes: WorkflowDisplayNode[] = [];
-
-            // Handle both API format, Saved format, and InvokeV2/V3/V4 formats
-            let nodeList: WorkflowRawNode[] = [];
-
-            if (isRecord(json) && Array.isArray(json.nodes)) {
-                nodeList = json.nodes.filter(isWorkflowRawNode);
-            } else if (isRecord(json)) {
-                // If it's a flat object of nodes (InvokeAI API or Comfy API)
-                nodeList = Object.entries(json)
-                    .filter((entry): entry is [string, WorkflowRawNode] => isWorkflowRawNode(entry[1]))
-                    .map(([id, node]) => ({
-                        ...node,
-                        id: node.id || id
-                    }));
-            }
-
-            nodeList.forEach((node) => {
-                const incomingInputs: WorkflowInputs = node.widgets_values || node.inputs || node.data || {};
-                const inputRecord = Array.isArray(incomingInputs) ? {} : incomingInputs;
-
-                // 1. Determine Type
-                let type = asStringValue(node.type || node.class_type || node._type || node.node_type || inputRecord.type || inputRecord.node_type, "Unknown");
-
-                // 2. Determine Title
-                let title = asStringValue(node.title || node.label || node._meta?.title || inputRecord.label || inputRecord.title, type);
-
-                // 3. Refine Generic "Invocation" labels
-                // InvokeAI 4.x often labels EVERYTHING as 'invocation' at the top level
-                if (String(type).toLowerCase() === 'invocation' && (node.node_type || inputRecord.type || inputRecord.node_type)) {
-                    type = asStringValue(node.node_type || inputRecord.type || inputRecord.node_type, type);
-                }
-
-                if (String(title).toLowerCase() === 'invocation') {
-                    if (inputRecord.label) title = asStringValue(inputRecord.label, title);
-                    else if (inputRecord.title) title = asStringValue(inputRecord.title, title);
-                    else if (String(type).toLowerCase() !== 'invocation') title = type;
-                }
-
-                nodes.push({
-                    id: node.id ?? `${type}-${nodes.length}`,
-                    title,
-                    type,
-                    inputs: incomingInputs
-                });
-            });
-
-            // Hybrid Sorting Strategy: Hoist "Hero Nodes" (Sampler, Prompt, etc.)
-            const getNodePriority = (node: WorkflowDisplayNode) => {
-                const t = node.type.toLowerCase();
-                const l = node.title.toLowerCase();
-
-                // Tier 1: Samplers / Generation
-                if (t.includes('sampler') || t.includes('denoise') || t.includes('t2l') || t.includes('l2l')) return 1;
-
-                // Tier 2: Prompts / Conditioning
-                if (t.includes('prompt') || t.includes('conditioning') || l.includes('prompt')) return 2;
-
-                // Tier 3: Loaders
-                if (t.includes('loader') || t.includes('checkpoint')) return 3;
-
-                return 10; // Default
-            };
-
-            return nodes.sort((a, b) => {
-                const pA = getNodePriority(a);
-                const pB = getNodePriority(b);
-
-                if (pA !== pB) return pA - pB;
-
-                const idA = String(a.id);
-                const idB = String(b.id);
-                if (!isNaN(Number(idA)) && !isNaN(Number(idB))) return Number(idA) - Number(idB);
-                return idA.localeCompare(idB);
-            });
-        } catch (e) {
-            return [];
-        }
-    }, [image.metadata.workflowJson, localWorkflow]);
 
     const filteredNodes = useMemo(() => {
         if (!searchQuery) return workflowNodes;
@@ -336,7 +404,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                         </div>
                     </div>
 
-                    {localWorkflow && (
+                    {workflowJsonForActions && (
                         <div className="flex gap-2">
                             <button
                                 onClick={handleCopy}
@@ -370,14 +438,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                         />
                     </div>
                 )}
+
+                {showParserDiagnostics && (
+                    <ComfyDiagnosticsPanel imageId={image.id} chunks={image.originalChunks} />
+                )}
             </div>
 
             {/* Node List */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6">
                 {filteredNodes.length > 0 ? (
                     <div className="space-y-2">
-                        {filteredNodes.map((node) => (
-                            <WorkflowNode key={node.id} title={node.title} type={node.type} inputs={node.inputs} />
+                        {filteredNodes.map((node, i) => (
+                            <WorkflowNode key={node.id || i} title={node.title} type={node.type} inputs={node.inputs} />
                         ))}
                     </div>
                 ) : (
@@ -388,7 +460,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                     <Workflow className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2 opacity-50" />
                                     <p className="text-xs text-gray-400 mb-4 text-balance">
                                         {isLoading ? "Reading workflow data from file headers..." :
-                                            (!localWorkflow && !image.metadata.workflowJson)
+                                            !workflowJsonForActions
                                                 ? (image.metadata.hasWorkflowHint === false
                                                     ? "This image was generated without a recorded workflow."
                                                     : "No workflow data was found for this image in the database or file headers.")
@@ -397,11 +469,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                                     : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }
                                     </p>
-                                    {localWorkflow && (
+                                    {workflowJsonForActions && (
                                         <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-100 dark:border-white/5 text-left overflow-hidden">
                                             <div className="text-[10px] text-gray-400 font-mono uppercase mb-2">JSON Preview</div>
                                             <pre className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-6 font-mono break-all whitespace-pre-wrap">
-                                                {localWorkflow.substring(0, 1000)}...
+                                                {workflowJsonForActions.substring(0, 1000)}...
                                             </pre>
                                         </div>
                                     )}

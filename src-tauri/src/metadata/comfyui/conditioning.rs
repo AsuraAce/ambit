@@ -1,5 +1,9 @@
-use super::graph::{get_node_input_link, get_node_param, get_node_type, get_source_id, ComfyGraph};
+use super::graph::{
+    get_node_input_link, get_node_param, get_node_type, get_source_id, get_switch_branch_input,
+    ComfyGraph,
+};
 use super::parse_helper::parse_a1111_parameters;
+use crate::metadata::{is_missing_prompt_value, is_placeholder_prompt_value};
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
 
@@ -45,14 +49,14 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                 || t.contains("LLM")
             {
                 if let Some(text) = extract_text_from_node(graph, &current_id, node) {
-                    if !text.trim().is_empty() {
+                    if !is_missing_prompt_value(&text) {
                         // Filter out A1111 parameter blobs (containing Steps/Model)
                         if text.contains("Steps:")
                             && (text.contains("Model:") || text.contains("Sampler:"))
                         {
                             // Try to rescue the positive prompt part if it exists before the blob
                             let parsed = parse_a1111_parameters(&text);
-                            if !parsed.positive_prompt.trim().is_empty() {
+                            if !is_missing_prompt_value(&parsed.positive_prompt) {
                                 prompts.push(parsed.positive_prompt);
                             }
                             continue;
@@ -117,6 +121,7 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let relevant_prefixes = [
                 "conditioning",
                 "positive",
+                "negative",
                 "cond",
                 "c",
                 "clip",
@@ -137,6 +142,12 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         if !is_broadcaster
                             && input_name == "positive"
                             && input_lower.contains("negative")
+                        {
+                            continue;
+                        }
+                        if !is_broadcaster
+                            && input_name == "negative"
+                            && input_lower.contains("positive")
                         {
                             continue;
                         }
@@ -161,9 +172,13 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                     let is_relevant_prefix =
                         relevant_prefixes.iter().any(|&r| input_lower.contains(r));
                     let is_negative_input = input_lower.contains("negative");
+                    let is_positive_input = input_lower.contains("positive");
 
                     if is_relevant_prefix {
                         if input_name == "positive" && is_negative_input {
+                            continue;
+                        }
+                        if input_name == "negative" && is_positive_input {
                             continue;
                         }
                         if let Some(s) = get_source_id(graph, &current_id, input_key) {
@@ -179,6 +194,9 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         let input_lower = name.to_lowercase();
                         if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
                             if input_name == "positive" && input_lower.contains("negative") {
+                                continue;
+                            }
+                            if input_name == "negative" && input_lower.contains("positive") {
                                 continue;
                             }
                             if input.get("link").and_then(|v| v.as_i64()).is_some() {
@@ -380,8 +398,7 @@ fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opti
     // 2. Direct Widget (Fallback)
     if let Some(val) = get_node_param(node, input_name) {
         if let Some(s) = val.as_str() {
-            let lower = s.to_lowercase();
-            if lower != "undefined" && lower != "null" && lower != "none" {
+            if !is_placeholder_prompt_value(s) {
                 return Some(s.to_string());
             }
         }
@@ -407,19 +424,24 @@ pub fn evaluate_string_node(
     // Also include ImpactWildcardProcessor (populated_text) and Qwen (0/text)
     if t == "ImpactWildcardProcessor" {
         if let Some(text) = get_node_param(node, "populated_text").and_then(|v| v.as_str()) {
-            return Some(text.to_string());
+            if !is_placeholder_prompt_value(text) {
+                return Some(text.to_string());
+            }
         }
     }
 
     if t.contains("Qwen") || t.contains("LLM") {
-        if let Some(text) = get_node_param(node, "0").and_then(|v| v.as_str()) {
-            return Some(text.to_string());
-        }
-        if let Some(text) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-            return Some(text.to_string());
-        }
-        if let Some(text) = get_node_param(node, "prompt").and_then(|v| v.as_str()) {
-            return Some(text.to_string());
+        for input_name in ["0", "text", "prompt"] {
+            if let Some(text) = get_node_param(node, input_name).and_then(|v| v.as_str()) {
+                if !is_placeholder_prompt_value(text) {
+                    return Some(text.to_string());
+                }
+            }
+            if let Some(source_id) = get_source_id(graph, node_id, input_name) {
+                if let Some(text) = evaluate_string_node(graph, &source_id, visited, depth + 1) {
+                    return Some(text);
+                }
+            }
         }
     }
 
@@ -433,19 +455,29 @@ pub fn evaluate_string_node(
         || t == "smZ CLIPTextEncode"
     {
         if let Some(v) = get_node_param(node, "value").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
+            if !is_placeholder_prompt_value(v) {
+                return Some(v.to_string());
+            }
         }
         if let Some(v) = get_node_param(node, "string").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
+            if !is_placeholder_prompt_value(v) {
+                return Some(v.to_string());
+            }
         }
         if let Some(v) = get_node_param(node, "String").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
+            if !is_placeholder_prompt_value(v) {
+                return Some(v.to_string());
+            }
         }
         if let Some(v) = get_node_param(node, "STRING").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
+            if !is_placeholder_prompt_value(v) {
+                return Some(v.to_string());
+            }
         }
         if let Some(v) = get_node_param(node, "text").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
+            if !is_placeholder_prompt_value(v) {
+                return Some(v.to_string());
+            }
         }
 
         // UI Format: widgets_values
@@ -465,7 +497,10 @@ pub fn evaluate_string_node(
                     "null",
                     "none",
                 ];
-                if !exclusions.contains(&lower.as_str()) && s.len() > 2 {
+                if !exclusions.contains(&lower.as_str())
+                    && !is_placeholder_prompt_value(s)
+                    && s.len() > 2
+                {
                     return Some(s.to_string());
                 }
             }
@@ -494,11 +529,24 @@ pub fn evaluate_string_node(
         for n in names {
             if let Some(val) = get_node_param(node, n) {
                 if let Some(s) = val.as_str() {
-                    return Some(s.to_string());
+                    if !is_placeholder_prompt_value(s) {
+                        return Some(s.to_string());
+                    }
                 }
             }
         }
         return None;
+    }
+
+    if t == "ComfySwitchNode" {
+        if let Some(branch) = get_switch_branch_input(graph, node_id, node) {
+            return trace_text_input(graph, node_id, branch);
+        }
+        return None;
+    }
+
+    if t == "PreviewAny" {
+        return trace_text_input(graph, node_id, "source");
     }
 
     // JoinStringMulti
@@ -515,6 +563,21 @@ pub fn evaluate_string_node(
             .and_then(|v| v.as_str())
             .unwrap_or(" ");
         return Some(parts.join(delimiter));
+    }
+
+    if t == "StringConcatenate" {
+        let string_a = trace_text_input(graph, node_id, "string_a").unwrap_or_default();
+        let string_b = trace_text_input(graph, node_id, "string_b").unwrap_or_default();
+        let delimiter = get_node_param(node, "delimiter")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if string_a.is_empty() {
+            return Some(string_b);
+        }
+        if string_b.is_empty() {
+            return Some(string_a);
+        }
+        return Some(format!("{}{}{}", string_a, delimiter, string_b));
     }
 
     // Text Concatenate (WAS Node suite)
@@ -601,16 +664,14 @@ pub fn evaluate_string_node(
 
         // Fallback or API format (if prompt chunk has text param)
         if let Some(text) = get_node_param(node, "text").and_then(|s| s.as_str()) {
-            let lower = text.to_lowercase();
-            if lower != "undefined" && lower != "null" && lower != "none" {
+            if !is_placeholder_prompt_value(text) {
                 return Some(text.to_string());
             }
         }
         // Check widgets if param didn't catch it
         if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
             if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                let lower = s.to_lowercase();
-                if lower != "undefined" && lower != "null" && lower != "none" {
+                if !is_placeholder_prompt_value(s) {
                     return Some(s.to_string());
                 }
             }
@@ -629,8 +690,7 @@ pub fn evaluate_string_node(
     for n in names {
         if let Some(val) = get_node_param(node, n) {
             if let Some(s) = val.as_str() {
-                let lower = s.to_lowercase();
-                if lower != "undefined" && lower != "null" && lower != "none" {
+                if !is_placeholder_prompt_value(s) {
                     return Some(s.to_string());
                 }
             }

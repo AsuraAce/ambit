@@ -1,10 +1,10 @@
 use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
 use super::eval_utils::{evaluate_float, evaluate_number, evaluate_string, get_source_id};
-use super::graph::{get_node_param, get_node_type, ComfyGraph};
+use super::graph::{get_node_param, get_node_type, get_switch_branch_source, ComfyGraph};
 use crate::metadata::utils::{
     extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
 };
-use crate::metadata::ImageMetadata;
+use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
 
 pub fn extract_from_sampler(
@@ -13,6 +13,7 @@ pub fn extract_from_sampler(
     node: &Value,
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
+    hypernetworks: &mut Vec<String>,
 ) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
 
@@ -21,11 +22,21 @@ pub fn extract_from_sampler(
     }
     if let Some(v) = evaluate_float(graph, node, "cfg", 200.0) {
         meta.cfg = v as f32;
+    } else if let Some(v) = extract_connected_flux_guidance(graph, node) {
+        meta.cfg = v as f32;
     }
     if let Some(v) = evaluate_number(graph, node, "seed", i64::MAX) {
         meta.seed = Some(v);
     } else if let Some(v) = evaluate_number(graph, node, "noise_seed", i64::MAX) {
         meta.seed = Some(v);
+    } else if let Some(noise_id) = get_source_id(graph, node, "noise") {
+        if let Some(noise_node) = graph.get_node(&noise_id) {
+            if let Some(v) = evaluate_number(graph, noise_node, "noise_seed", i64::MAX)
+                .or_else(|| evaluate_number(graph, noise_node, "seed", i64::MAX))
+            {
+                meta.seed = Some(v);
+            }
+        }
     }
 
     let mut sampler = String::new();
@@ -66,28 +77,32 @@ pub fn extract_from_sampler(
         };
     }
 
-    if let Some(model_name) = trace_model_chain(graph, node, "model", loras, ip_adapters) {
+    if let Some(model_name) =
+        trace_model_chain(graph, node, "model", loras, ip_adapters, hypernetworks)
+    {
         meta.model = model_name;
     } else if let Some(guider_id) = get_source_id(graph, node, "guider") {
         if let Some(guider_node) = graph.get_node(&guider_id) {
-            if let Some(model_name) =
-                trace_model_chain(graph, guider_node, "model", loras, ip_adapters)
-            {
+            if let Some(model_name) = trace_model_chain(
+                graph,
+                guider_node,
+                "model",
+                loras,
+                ip_adapters,
+                hypernetworks,
+            ) {
                 meta.model = model_name;
             }
         }
     }
 
     let pos = find_reachable_prompts(graph, node_id, "positive");
-    if !pos.is_empty() {
-        let lower = pos.to_lowercase();
-        if lower != "undefined" && lower != "null" && lower != "none" {
-            meta.positive_prompt = pos;
-        }
+    if !is_missing_prompt_value(&pos) {
+        meta.positive_prompt = pos;
     }
 
     let neg = find_reachable_prompts(graph, node_id, "negative");
-    if !neg.is_empty() {
+    if !is_missing_prompt_value(&neg) {
         meta.negative_prompt = neg;
     }
 
@@ -127,11 +142,8 @@ pub fn extract_from_sampler(
     if meta.positive_prompt.is_empty() {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             let pos_guider = find_reachable_prompts(graph, &guider_id, "conditioning");
-            if !pos_guider.is_empty() {
-                let lower = pos_guider.to_lowercase();
-                if lower != "undefined" && lower != "null" && lower != "none" {
-                    meta.positive_prompt = pos_guider;
-                }
+            if !is_missing_prompt_value(&pos_guider) {
+                meta.positive_prompt = pos_guider;
             }
         }
     }
@@ -147,8 +159,72 @@ pub fn extract_from_sampler(
     meta.loras.dedup();
     meta.ip_adapters.extend(ip_adapters.clone());
     meta.ip_adapters.dedup();
+    meta.hypernetworks.extend(hypernetworks.clone());
+    meta.hypernetworks.dedup();
 
     meta
+}
+
+fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
+    let guider_id = get_source_id(graph, sampler_node, "guider")?;
+    let guider_node = graph.get_node(&guider_id)?;
+    let conditioning_id = get_source_id(graph, guider_node, "conditioning")?;
+    trace_flux_guidance(graph, &conditioning_id, 0)
+}
+
+fn trace_flux_guidance(graph: &ComfyGraph, node_id: &str, depth: u32) -> Option<f64> {
+    if depth > 10 {
+        return None;
+    }
+
+    let node = graph.get_node(node_id)?;
+    if get_node_type(node) == "FluxGuidance" {
+        if let Some(source_id) = get_source_id(graph, node, "guidance") {
+            return graph
+                .get_node(&source_id)
+                .and_then(linked_flux_guidance_value);
+        }
+
+        return evaluate_float(graph, node, "guidance", 200.0)
+            .or_else(|| get_node_param(node, "guidance").and_then(value_as_f64));
+    }
+
+    for input_name in ["conditioning", "CONDITIONING"] {
+        if let Some(next_id) = get_source_id(graph, node, input_name) {
+            if let Some(guidance) = trace_flux_guidance(graph, &next_id, depth + 1) {
+                return Some(guidance);
+            }
+        }
+    }
+
+    None
+}
+
+fn linked_flux_guidance_value(source: &Value) -> Option<f64> {
+    ["value", "float", "guidance"]
+        .iter()
+        .find_map(|key| {
+            get_node_param(source, key).and_then(|value| value_as_bounded_f64(value, 200.0))
+        })
+        .or_else(|| {
+            source
+                .get("widgets_values")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|value| value_as_bounded_f64(value, 200.0))
+        })
+}
+
+fn value_as_bounded_f64(value: &Value, max_limit: f64) -> Option<f64> {
+    value_as_f64(value).filter(|value| *value < max_limit)
+}
+
+fn value_as_f64(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_i64().map(|v| v as f64))
+        .or_else(|| value.as_u64().map(|v| v as f64))
+        .or_else(|| value.as_str().and_then(|v| v.parse::<f64>().ok()))
 }
 
 pub fn trace_model_chain(
@@ -157,6 +233,7 @@ pub fn trace_model_chain(
     input_name: &str,
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
+    hypernetworks: &mut Vec<String>,
 ) -> Option<String> {
     let mut current_id = get_source_id(graph, start_node, input_name)?;
 
@@ -164,7 +241,13 @@ pub fn trace_model_chain(
         let node = graph.get_node(&current_id)?;
         let t = get_node_type(node);
 
-        if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
+        if t == "ComfySwitchNode" {
+            if let Some(next) = get_switch_branch_source(graph, &current_id, node) {
+                current_id = next;
+                continue;
+            }
+            break;
+        } else if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
             if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                 if !loras.contains(&name) {
@@ -178,6 +261,13 @@ pub fn trace_model_chain(
             break;
         } else if t == "Lora Loader (LoraManager)" {
             extract_lora_manager(node, loras);
+            if let Some(next) = get_source_id(graph, node, "model") {
+                current_id = next;
+                continue;
+            }
+            break;
+        } else if t == "HypernetworkLoader" {
+            extract_hypernetwork_loader(node, hypernetworks);
             if let Some(next) = get_source_id(graph, node, "model") {
                 current_id = next;
                 continue;
@@ -271,6 +361,37 @@ pub fn trace_model_chain(
         break;
     }
     None
+}
+
+fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {
+    if let Some(name) = get_node_param(node, "hypernetwork_name").and_then(|v| v.as_str()) {
+        let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+        let strength = get_node_param(node, "strength").and_then(|v| {
+            if let Some(f) = v.as_f64() {
+                Some(f)
+            } else if let Some(i) = v.as_i64() {
+                Some(i as f64)
+            } else if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else {
+                None
+            }
+        });
+
+        let entry = if let Some(s) = strength {
+            if (s - 1.0).abs() > 0.001 {
+                format!("{} ({:.2})", cleaned_name, s)
+            } else {
+                cleaned_name
+            }
+        } else {
+            cleaned_name
+        };
+
+        if !hypernetworks.contains(&entry) {
+            hypernetworks.push(entry);
+        }
+    }
 }
 
 fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) {

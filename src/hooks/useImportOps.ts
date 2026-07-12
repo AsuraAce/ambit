@@ -194,7 +194,10 @@ export const useImportOps = ({
         const isManual = mode === 'manual';
         const shouldWaitForStableFiles = waitForStableFiles ?? isStartup;
 
-        if (paths.length === 0 && isStartup) return;
+        if (paths.length === 0 && isStartup) {
+            console.info('[ImportOps] Startup path import skipped because no paths were provided.');
+            return;
+        }
 
         const localAbortCtrl = externalAbortSignal ? null : new AbortController();
         const abortSignal = externalAbortSignal ?? localAbortCtrl?.signal;
@@ -205,6 +208,10 @@ export const useImportOps = ({
                 abortController: localAbortCtrl
             });
         if (!skipStateManagement && !importRunId) {
+            console.info('[ImportOps] Path import skipped because another import is active.', {
+                mode,
+                pathCount: paths.length
+            });
             if (isManual) addToast('Import already in progress', 'info');
             return;
         }
@@ -267,6 +274,10 @@ export const useImportOps = ({
             progress: initialProgress
         });
         if (!importRunId) {
+            console.info('[ImportFolders] Folder import skipped because another import is active.', {
+                mode,
+                folderCount: folders.length
+            });
             if (isManual) addToast('Import already in progress', 'info');
             return;
         }

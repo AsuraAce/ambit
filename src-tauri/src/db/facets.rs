@@ -436,7 +436,11 @@ fn clean_live_resource_name(raw: &str) -> Option<String> {
         }
     }
 
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn normalize_live_names(names: &[String], fallback: Option<&str>) -> Vec<String> {

@@ -63,6 +63,174 @@ fn test_extract_comfyui_complex_prompt() {
 }
 
 #[test]
+fn test_extract_comfyui_switch_string_concatenate_and_preview() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["10", 0],
+                "model": ["20", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": ["11", 0] }
+        },
+        "11": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["12", 0],
+                "on_false": ["13", 0],
+                "on_true": ["14", 0]
+            }
+        },
+        "12": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": false }
+        },
+        "13": {
+            "class_type": "PreviewAny",
+            "inputs": { "source": ["15", 0] }
+        },
+        "15": {
+            "class_type": "StringConcatenate",
+            "inputs": {
+                "string_a": ["16", 0],
+                "string_b": "beta",
+                "delimiter": ", "
+            }
+        },
+        "16": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "alpha" }
+        },
+        "14": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "wrong branch" }
+        },
+        "20": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "alpha, beta");
+}
+
+#[test]
+fn test_extract_comfyui_switch_string_true_branch() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "positive": ["10", 0],
+                "model": ["20", 0]
+            }
+        },
+        "10": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": ["11", 0] }
+        },
+        "11": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["12", 0],
+                "on_false": ["13", 0],
+                "on_true": ["14", 0]
+            }
+        },
+        "12": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": true }
+        },
+        "13": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "wrong branch" }
+        },
+        "14": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "chosen prompt" }
+        },
+        "20": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "krea2_turbo_fp8_scaled.safetensors" }
+        }
+    }"#;
+
+    let mut chunks = HashMap::new();
+    chunks.insert("prompt".to_string(), prompt.to_string());
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "chosen prompt");
+}
+
+#[test]
+fn test_extract_comfyui_workflow_clip_text_widget_prompts() {
+    let workflow = r#"{
+        "nodes": [
+            {"id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors"]},
+            {"id": 2, "type": "CLIPTextEncode", "widgets_values": ["literal positive"]},
+            {"id": 3, "type": "CLIPTextEncode", "widgets_values": ["literal negative"]},
+            {
+                "id": 4,
+                "type": "KSampler",
+                "inputs": [
+                    {"name": "model", "type": "MODEL", "link": 1},
+                    {"name": "positive", "type": "CONDITIONING", "link": 6},
+                    {"name": "negative", "type": "CONDITIONING", "link": 7}
+                ],
+                "outputs": [{"name": "LATENT", "type": "LATENT", "links": [4]}],
+                "widgets_values": [1, "fixed", 4, 1, "euler", "simple", 1]
+            },
+            {
+                "id": 5,
+                "type": "VAEDecode",
+                "inputs": [{"name": "samples", "type": "LATENT", "link": 4}],
+                "outputs": [{"name": "IMAGE", "type": "IMAGE", "links": [5]}]
+            },
+            {
+                "id": 6,
+                "type": "SaveImage",
+                "inputs": [{"name": "images", "type": "IMAGE", "link": 5}]
+            },
+            {
+                "id": 7,
+                "type": "ControlNetApplyAdvanced",
+                "inputs": [
+                    {"name": "positive", "type": "CONDITIONING", "link": 2},
+                    {"name": "negative", "type": "CONDITIONING", "link": 3}
+                ],
+                "outputs": [
+                    {"name": "positive", "type": "CONDITIONING", "links": [6]},
+                    {"name": "negative", "type": "CONDITIONING", "links": [7]}
+                ]
+            }
+        ],
+        "links": [
+            [1, 1, 0, 4, 0, "MODEL"],
+            [2, 2, 0, 7, 0, "CONDITIONING"],
+            [3, 3, 0, 7, 1, "CONDITIONING"],
+            [4, 4, 0, 5, 0, "LATENT"],
+            [5, 5, 0, 6, 0, "IMAGE"],
+            [6, 7, 0, 4, 1, "CONDITIONING"],
+            [7, 7, 1, 4, 2, "CONDITIONING"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "literal positive");
+    assert_eq!(meta.negative_prompt, "literal negative");
+}
+
+#[test]
 fn test_extract_comfyui_embeddings() {
     let prompt = r#"{
         "3": {
