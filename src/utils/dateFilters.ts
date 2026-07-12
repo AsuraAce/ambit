@@ -228,7 +228,6 @@ const isPendingSearchDateAtom = (value: string): boolean => (
 
 const getSearchDateAtomIssue = (key: string, value: string): AdvancedDateSearchIssue | null => {
     const normalizedValue = value.trim();
-    if (!normalizedValue) return 'pending';
     if (getSearchDateBounds(key, normalizedValue)) return null;
     return isPendingSearchDateAtom(normalizedValue) ? 'pending' : 'invalid';
 };

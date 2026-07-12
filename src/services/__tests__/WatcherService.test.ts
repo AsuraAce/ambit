@@ -77,11 +77,17 @@ describe('WatcherService', () => {
             id: 1,
             payload: ['C:/watch/new.png']
         });
+        emitFolderChange({
+            event: 'folder-change-event',
+            id: 2,
+            payload: undefined,
+        } as unknown as Event<string[]>);
         await service.stopWatching();
 
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(1, ['C:/watch', 'D:/more']);
         expect(mockedListen).toHaveBeenCalledWith('folder-change-event', expect.any(Function));
         expect(onChange).toHaveBeenCalledWith(['C:/watch/new.png']);
+        expect(onChange).toHaveBeenCalledWith(undefined);
         expect(unlisten).toHaveBeenCalledTimes(1);
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, []);
     });
@@ -165,6 +171,17 @@ describe('WatcherService', () => {
             '[WatcherService] Failed to start native watcher:',
             'watcher refused'
         );
+    });
+
+    it('formats Error start failures and stops a defensive active state without a listener', async () => {
+        mockedStartNativeFolderWatcher.mockResolvedValueOnce({ status: 'error', error: new Error('native failed') } as never);
+        const service = new WatcherService();
+
+        await service.startWatching(['C:/watch'], vi.fn());
+
+        (service as unknown as { isWatching: boolean }).isWatching = true;
+        await service.stopWatching();
+        expect(mockedStartNativeFolderWatcher).toHaveBeenLastCalledWith([]);
     });
 
     it('cleans up a listener that becomes ready after a stop invalidates its start', async () => {

@@ -129,4 +129,12 @@ describe('useTimeline', () => {
 
         expect(result.current.groups[0].images.map(image => image.id)).toEqual(['pinned', 'regular']);
     });
+
+    it('treats missing file sizes as zero on both sort sides', () => {
+        const first = { ...createMockImage('first', MOCK_NOW), fileSize: undefined };
+        const second = { ...createMockImage('second', MOCK_NOW - 1), fileSize: undefined };
+
+        expect(renderHook(() => useTimeline([first, second], 'size_asc')).result.current.groups[0].images).toHaveLength(2);
+        expect(renderHook(() => useTimeline([first, second], 'size_desc')).result.current.groups[0].images).toHaveLength(2);
+    });
 });

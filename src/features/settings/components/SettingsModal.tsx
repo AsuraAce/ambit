@@ -10,6 +10,7 @@ import { useAppVersion } from '../../../hooks/useAppVersion';
 import type { ImportResult } from '../../../services/importService';
 import { isDevelopmentBuild } from '../../../utils/settingsUtils';
 
+/* istanbul ignore next -- import.meta.env.DEV is fixed for a given build. */
 const DevTab = import.meta.env.DEV
   ? React.lazy(() => import('./DevTab').then(module => ({ default: module.DevTab })))
   : null;

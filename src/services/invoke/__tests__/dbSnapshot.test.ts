@@ -180,4 +180,14 @@ describe('Invoke DB startup snapshot matching', () => {
             }, current)).toBe(false);
         }
     });
+
+    it('matches legacy omitted options against current false defaults', () => {
+        const current = buildInvokeDbSnapshotState({ dbPath: 'invoke.db', files: [] }, {});
+        const legacy = {
+            dbPath: current.dbPath,
+            pathRepairVersion: current.pathRepairVersion,
+        } as InvokeDbSnapshotState;
+
+        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(true);
+    });
 });

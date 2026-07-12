@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AppSettings, AppSettingsUpdate } from '../../../../types';
 import { SettingsModal } from '../SettingsModal';
 
-vi.mock('../../../../hooks/useAppVersion', () => ({
-    useAppVersion: () => 'test'
-}));
+const appVersionMock = vi.hoisted(() => vi.fn((): string | null => 'test'));
+
+vi.mock('../../../../hooks/useAppVersion', () => ({ useAppVersion: appVersionMock }));
 
 vi.mock('../DevTab', () => ({
     DevTab: () => <div>Dev panel</div>
@@ -76,6 +76,8 @@ const createSettings = (): AppSettings => ({
 });
 
 describe('SettingsModal', () => {
+    beforeEach(() => appVersionMock.mockReturnValue('test'));
+
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -120,6 +122,29 @@ describe('SettingsModal', () => {
             initialScanPending: false,
             lastScanned: 123
         });
+    });
+
+    it('renders nothing while closed and falls back when the app version is unavailable', () => {
+        const props = {
+            onClose: vi.fn(),
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const closed = render(<SettingsModal {...props} isOpen={false} />);
+        expect(closed.container.textContent).toBe('');
+        closed.unmount();
+
+        appVersionMock.mockReturnValue(null);
+        render(<SettingsModal {...props} isOpen />);
+        expect(screen.getByText('v...')).toBeTruthy();
     });
 
     it('loads the Dev Tools panel only after selecting it in dev builds', async () => {

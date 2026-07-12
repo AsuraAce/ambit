@@ -206,6 +206,25 @@ describe('maintenanceRepo', () => {
         expect(mocks.commands.verifyImagePaths).toHaveBeenCalledWith(['C:/library/a.png', 'C:/library/b.png']);
         expect(db.execute).not.toHaveBeenCalled();
         expect(progress).toEqual([[2, 2]]);
+
+        await expect(verifyLibraryIntegrity()).resolves.toMatchObject({ scanned: 2 });
+    });
+
+    it('caps missing-path samples across multiple audit chunks', async () => {
+        const rows = Array.from({ length: 1001 }, (_, index) => ({
+            id: `id-${index}`,
+            path: `C:/library/${index}.png`,
+        }));
+        mocks.getDb.mockResolvedValue({ select: vi.fn().mockResolvedValue(rows), execute: vi.fn() });
+        mocks.commands.verifyImagePaths
+            .mockResolvedValueOnce(rows.slice(0, 10).map(row => row.path))
+            .mockResolvedValueOnce([]);
+        const { verifyLibraryIntegrity } = await import('../maintenanceRepo');
+
+        const result = await verifyLibraryIntegrity();
+
+        expect(result.sampleMissingPaths).toHaveLength(10);
+        expect(mocks.commands.verifyImagePaths).toHaveBeenCalledTimes(2);
     });
 
     it('returns an empty integrity audit when there are no eligible images to scan', async () => {
@@ -496,8 +515,10 @@ describe('maintenanceRepo', () => {
             getUnoptimizedImageEntries,
         } = await import('../maintenanceRepo');
 
+        await getIntermediateImages();
         await getIntermediateImages('rating >= ?', [1]);
         await getIntermediateImages('   ', ['ignored']);
+        await getUntaggedImages();
         await getUntaggedImages('WHERE rating >= ?', [2]);
         await getUntaggedImages('   ', ['ignored']);
         await getUnoptimizedImages('rating >= ?', [3]);
@@ -506,14 +527,16 @@ describe('maintenanceRepo', () => {
         await getUnoptimizedImageEntries(0, 10, 'WHERE rating >= ?', [5]);
 
         const queries = db.select.mock.calls.map(([query]) => query as string);
-        expect(queries[0]).toMatch(/AND rating >= \?/);
-        expect(queries[1]).not.toContain('AND    ');
-        expect(queries[2]).toMatch(/AND\s+rating >= \?/);
+        expect(queries[0]).not.toContain('AND    ');
+        expect(queries[1]).toMatch(/AND rating >= \?/);
+        expect(queries[2]).not.toContain('AND    ');
         expect(queries[3]).not.toContain('AND    ');
-        expect(queries[4]).toMatch(/AND rating >= \?/);
-        expect(db.select.mock.calls[5][1]).toEqual([]);
+        expect(queries[4]).toMatch(/AND\s+rating >= \?/);
+        expect(queries[5]).not.toContain('AND    ');
         expect(queries[6]).toMatch(/AND rating >= \?/);
-        expect(queries[7]).toMatch(/AND\s+rating >= \?/);
+        expect(db.select.mock.calls[7][1]).toEqual([]);
+        expect(queries[8]).toMatch(/AND rating >= \?/);
+        expect(queries[9]).toMatch(/AND\s+rating >= \?/);
     });
 
     it('logs completed file hash backfills only when native work was scanned', async () => {

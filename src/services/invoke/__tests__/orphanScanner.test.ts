@@ -76,7 +76,10 @@ describe('scanForOrphans', () => {
     });
 
     it('imports nested orphan files while skipping DB-synced and intermediate entries', async () => {
-        vi.mocked(Database.load).mockResolvedValue(createDb([{ image_name: 'intermediate.png' }]) as never);
+        vi.mocked(Database.load).mockResolvedValue(createDb([
+            { image_name: 'intermediate.png' },
+            { image_name: '' },
+        ]) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
             status: 'ok',
             data: [
@@ -89,8 +92,7 @@ describe('scanForOrphans', () => {
         const imported = await scanForOrphans(
             'D:/Invoke',
             new Set(['outputs/images/2026/05/25/already.png']),
-            vi.fn(),
-            { importIntermediates: false }
+            vi.fn()
         );
 
         expect(imported).toBe(1);
@@ -106,6 +108,28 @@ describe('scanForOrphans', () => {
             id: 'D:/Invoke/outputs/images/2026/05/25/new.png',
             filename: 'new.png'
         }));
+    });
+
+    it('uses the current time when an orphan has no modified timestamp', async () => {
+        vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+            status: 'ok',
+            data: ['outputs/images/new.png'],
+        } as never);
+        vi.mocked(commands.scanImagesBulk).mockResolvedValue({
+            status: 'ok',
+            data: [{
+                width: 1,
+                height: 1,
+                size: 1,
+                modified: 0,
+                thumbnail: null,
+                metadata: { model: 'Model' },
+            }],
+        } as never);
+
+        await scanForOrphans('D:/Invoke', new Set(), vi.fn(), { importIntermediates: true });
+
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0].timestamp).toBeGreaterThan(0);
     });
 
     it('matches intermediate rows by relative nested path', async () => {

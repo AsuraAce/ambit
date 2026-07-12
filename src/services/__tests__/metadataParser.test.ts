@@ -159,6 +159,85 @@ describe('metadataParser', () => {
         });
     });
 
+    it('passes primitive metadata chunks through to the worker', async () => {
+        mocks.commands.scanImage.mockResolvedValue({
+            status: 'ok',
+            data: scanResult({
+                chunks: 'raw metadata',
+                thumbnail: null,
+                microThumbnail: null,
+                thumbnailSource: null,
+            }),
+        });
+        mocks.workerResponses.push({ metadata: {}, extra: {} });
+        const { scanImageNative } = await import('../metadataParser');
+
+        await scanImageNative('C:/images/raw.png');
+
+        expect(mocks.workerMessages[0].chunks).toBe('raw metadata');
+    });
+
+    it('ignores a duplicate worker response after the request settles', async () => {
+        class DuplicateResponseWorker {
+            private handler: WorkerHandler | null = null;
+            addEventListener(_event: string, handler: WorkerHandler) { this.handler = handler; }
+            removeEventListener() {}
+            postMessage(message: Record<string, unknown>) {
+                const event = { data: { requestId: message.requestId, metadata: {}, extra: {} } } as MessageEvent;
+                this.handler?.(event);
+                this.handler?.(event);
+            }
+        }
+        vi.stubGlobal('Worker', DuplicateResponseWorker);
+        mocks.commands.scanImage.mockResolvedValue({ status: 'ok', data: scanResult() });
+        const { scanImageNative } = await import('../metadataParser');
+
+        await expect(scanImageNative('C:/images/duplicate.png')).resolves.toMatchObject({ width: 640 });
+    });
+
+    it('warns about empty native scan results outside the test runtime', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        vi.stubEnv('TEST', '');
+        mocks.commands.scanImage.mockResolvedValue({
+            status: 'ok',
+            data: scanResult({ width: 0, height: 0, metadata: null }),
+        });
+        const { scanImageNative } = await import('../metadataParser');
+
+        await scanImageNative('C:/images/empty.png');
+
+        expect(warn).toHaveBeenCalledWith('Scan returned empty result for C:/images/empty.png');
+        vi.unstubAllEnvs();
+        warn.mockRestore();
+    });
+
+    it('uses an unknown filename and preserves absent scan assets on worker failure', async () => {
+        mocks.commands.scanImage.mockResolvedValue({
+            status: 'ok',
+            data: scanResult({ thumbnail: null, microThumbnail: null, thumbnailSource: null }),
+        });
+        mocks.postMessageError = 'transport unavailable';
+        const { scanImageNative } = await import('../metadataParser');
+
+        const result = await scanImageNative('');
+
+        expect(mocks.workerMessages).toEqual([]);
+        expect(result.thumbnail).toBeUndefined();
+        expect(result.microThumbnail).toBeUndefined();
+        expect(result.thumbnailSource).toBeUndefined();
+        expect(result.errorReason).toBe('transport unavailable');
+    });
+
+    it('reports synchronous Error worker transport failures', async () => {
+        mocks.commands.scanImage.mockResolvedValue({ status: 'ok', data: scanResult() });
+        mocks.postMessageError = new Error('worker bridge failed');
+        const { scanImageNative } = await import('../metadataParser');
+
+        const result = await scanImageNative('C:/images/error.png');
+
+        expect(result.errorReason).toBe('worker bridge failed');
+    });
+
     it('falls back to Unknown metadata when worker parsing fails', async () => {
         mocks.commands.scanImage.mockResolvedValue({ status: 'ok', data: scanResult({ error: 'partial metadata' }) });
         mocks.workerResponses.push({ error: 'worker exploded' });

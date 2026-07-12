@@ -167,4 +167,17 @@ describe('StatsDashboard', () => {
         expect(update({ searchQuery: '  existing  ' }).searchQuery).toBe('existing aurora');
         expect(update({ searchQuery: '' }).searchQuery).toBe('aurora');
     });
+
+    it('handles zero global totals, nullable stats arrays, and active filtering', () => {
+        libraryContextMocks.globalTotal = 0;
+        libraryContextMocks.isFiltering = true;
+        libraryContextMocks.stats.modelStats = null as unknown as typeof libraryContextMocks.stats.modelStats;
+        libraryContextMocks.stats.keywordStats = null as unknown as typeof libraryContextMocks.stats.keywordStats;
+
+        render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
+
+        expect(screen.getByText('No model stats found')).toBeTruthy();
+        expect(screen.getByText('No keywords found')).toBeTruthy();
+        expect(screen.getByText('Total Images')).toBeTruthy();
+    });
 });

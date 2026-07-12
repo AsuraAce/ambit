@@ -474,4 +474,31 @@ describe('libraryStore live watch session', () => {
         expect(session.message).toBe('Watching for new images...');
         expect(session.progress).toBeNull();
     });
+
+    it('repairs legacy live sessions missing phase and start time', () => {
+        const current = useLibraryStore.getState().liveWatchSession;
+        act(() => {
+            useLibraryStore.setState({
+                liveWatchSession: {
+                    ...current,
+                    phase: undefined,
+                    startedAt: undefined,
+                } as never,
+            });
+            useLibraryStore.getState().updateLiveWatchSession({});
+        });
+        expect(useLibraryStore.getState().liveWatchSession.phase).toBe('watching');
+        expect(useLibraryStore.getState().liveWatchSession.startedAt).toEqual(expect.any(Number));
+
+        act(() => {
+            useLibraryStore.setState({
+                liveWatchSession: {
+                    ...useLibraryStore.getState().liveWatchSession,
+                    startedAt: undefined,
+                } as never,
+            });
+            useLibraryStore.getState().reportLiveImagesReceived(1);
+        });
+        expect(useLibraryStore.getState().liveWatchSession.startedAt).toEqual(expect.any(Number));
+    });
 });

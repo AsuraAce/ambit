@@ -117,6 +117,8 @@ describe('CompareModal', () => {
         const canvas = container.querySelector('.select-none') as HTMLElement;
         expect(canvas).toBeTruthy();
 
+        fireEvent.mouseDown(canvas, { clientX: 100, clientY: 100 });
+
         fireEvent.wheel(canvas, { clientX: 250, clientY: 200, deltaY: -500 });
         await waitFor(() => expect(screen.getByText('150%')).toBeTruthy());
         fireEvent.mouseDown(canvas, { clientX: 300, clientY: 250 });
@@ -217,5 +219,41 @@ describe('CompareModal', () => {
         });
         view.unmount();
         expect(resizeMocks.disconnect).toHaveBeenCalled();
+    });
+
+    it('renders favorite, unknown-seed, shared-word, and zero-size slider variants', () => {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => rect({ width: 0, right: 0 }));
+        const imageA = createImage('a', {
+            isFavorite: true,
+            width: 0,
+            height: 0,
+            metadata: {
+                ...createImage('a').metadata,
+                seed: undefined,
+                positivePrompt: 'shared red',
+            },
+        });
+        const imageB = createImage('b', {
+            isFavorite: true,
+            width: 0,
+            height: 0,
+            metadata: {
+                ...createImage('b').metadata,
+                seed: undefined,
+                positivePrompt: 'shared blue',
+            },
+        });
+        const { container } = renderModal({ imageA, imageB });
+
+        expect(screen.getAllByTitle('Remove from favorites')).toHaveLength(2);
+        expect(screen.getAllByText('Unknown')).toHaveLength(2);
+        expect(screen.getAllByText('shared')).toHaveLength(2);
+
+        fireEvent.click(screen.getByText('Swipe'));
+        const root = container.firstElementChild as HTMLElement;
+        const sliderHandle = container.querySelector('.group.cursor-ew-resize') as HTMLElement;
+        fireEvent.mouseDown(sliderHandle, { clientX: 0, clientY: 0 });
+        fireEvent.mouseMove(root, { clientX: 0, clientY: 0 });
+        fireEvent.mouseUp(root);
     });
 });

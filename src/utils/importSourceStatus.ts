@@ -1,8 +1,8 @@
 import type { ImportResult } from '../services/importService';
 import { normalizePath } from './pathUtils';
 
-const toPathSet = (paths?: string[]): Set<string> =>
-    new Set((paths ?? []).map(path => normalizePath(path)));
+const toPathSet = (paths: string[]): Set<string> =>
+    new Set(paths.map(path => normalizePath(path)));
 
 export const isImportSourceCompleted = (result: ImportResult | void, sourcePath: string): boolean => {
     if (!result) return false;

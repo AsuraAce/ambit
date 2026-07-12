@@ -179,6 +179,10 @@ describe('useZoomPan', () => {
         });
         expect(result.current.position).toEqual({ x: 50, y: 50 });
 
+        act(() => result.current.setScale(1));
+        act(() => result.current.handlers.onMouseMove(mouseEvent({ clientX: 200, clientY: 200 })));
+        expect(result.current.position).toEqual({ x: 50, y: 50 });
+
         act(() => {
             result.current.handlers.onMouseUp();
         });

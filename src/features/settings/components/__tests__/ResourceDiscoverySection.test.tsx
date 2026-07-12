@@ -137,4 +137,25 @@ describe('ResourceDiscoverySection', () => {
         expect(onScanNow).toHaveBeenCalled();
         expect(onRemove).toHaveBeenCalledWith('D:/Models/Lora');
     });
+
+    it('shows scanning state without requiring a progress message', () => {
+        render(<ResourceDiscoverySection
+            {...defaultProps}
+            resourceFolders={['D:/Models/Lora']}
+            isScanning
+        />);
+
+        expect(screen.getAllByRole('button', { name: 'Scanning...' })).toHaveLength(2);
+    });
+
+    it('shows the current scan progress message', () => {
+        render(<ResourceDiscoverySection
+            {...defaultProps}
+            resourceFolders={['D:/Models/Lora']}
+            isScanning
+            scanProgress={{ message: 'Scanning Lora models' }}
+        />);
+
+        expect(screen.getByText('Scanning Lora models')).toBeTruthy();
+    });
 });

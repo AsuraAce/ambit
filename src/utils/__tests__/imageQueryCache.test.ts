@@ -259,4 +259,29 @@ describe('imageQueryCache', () => {
         updateImagesQueryCaches(missingClient, current => current);
         expect(missingClient.setQueryData).not.toHaveBeenCalled();
     });
+
+    it('uses default ordering options and preserves next-order images absent from the cache', () => {
+        const queryClient = new QueryClient();
+        const key = ['images', { scope: 'defaults' }] as const;
+        const first = image('1');
+        const absent = image('missing');
+        queryClient.setQueryData(key, {
+            pages: [{ images: [first], totalCount: 1, globalCount: 1 }],
+            pageParams: [undefined],
+        });
+
+        updateImagesQueryCaches(queryClient, current => current);
+        updateImagesQueryCaches(queryClient, current => current, {
+            previousOrder: [first],
+            nextOrder: [absent],
+            reorderQueryKey: key,
+        });
+
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images)
+            .toEqual([absent]);
+
+        restoreImagesInQueryCaches(queryClient, []);
+        expect(queryClient.getQueryData<{ pages: Array<{ images: AIImage[] }> }>(key)?.pages[0].images)
+            .toEqual([absent]);
+    });
 });

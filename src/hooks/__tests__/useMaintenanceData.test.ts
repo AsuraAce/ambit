@@ -128,6 +128,11 @@ describe('useMaintenanceData', () => {
         expect(result.current.unoptimizedTotalCount).toBe(7);
         expect(result.current.localUnoptimizedImages).toEqual([{ id: 'thumb-1' }]);
         expect(result.current.initializedTabs.has('thumbnails')).toBe(true);
+
+        await act(async () => {
+            await result.current.refreshData('thumbnails', false, { scope: 'global' });
+        });
+        expect(mockGetUnoptimizedImages).toHaveBeenLastCalledWith('', [], undefined);
     });
 
     it('loads intermediate images with global and filtered scopes', async () => {

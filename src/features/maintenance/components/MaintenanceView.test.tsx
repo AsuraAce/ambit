@@ -141,22 +141,27 @@ vi.mock('./TrashTab', () => ({
 }));
 
 vi.mock('./UntaggedTab', () => ({
-    UntaggedTab: ({ onSelectAll, onRemoveFromLibrary, onScopeChange }: {
+    UntaggedTab: ({ images, onSelectAll, onRemoveFromLibrary, onScopeChange, onViewImage }: {
+        images: AIImage[];
         onSelectAll: () => void;
         onRemoveFromLibrary: () => void;
         onScopeChange: (scope: 'global' | 'filtered') => void;
+        onViewImage: (id: string) => void;
     }) => (
         <div data-testid="untagged-tab">
             <button onClick={onSelectAll}>Select All Untagged</button>
             <button onClick={onRemoveFromLibrary}>Remove Untagged</button>
             <button onClick={() => onScopeChange('filtered')}>Filter Untagged</button>
+            {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Untagged Viewer</button>}
         </div>
     )
 }));
 
 vi.mock('./ThumbnailsTab', () => ({
-    ThumbnailsTab: ({ selectedIds, onSelectAll, onRegenerate, onScopeChange, onIncludeUpgradeableChange, onRepairComplete }: {
+    ThumbnailsTab: ({ images, selectedIds, onItemClick, onSelectAll, onRegenerate, onScopeChange, onIncludeUpgradeableChange, onRepairComplete }: {
+        images: AIImage[];
         selectedIds: Set<string>;
+        onItemClick: (id: string, index: number, event: React.MouseEvent) => void;
         onSelectAll: () => void;
         onRegenerate: (ids?: string[]) => void;
         onScopeChange: (scope: 'global' | 'filtered') => void;
@@ -164,6 +169,7 @@ vi.mock('./ThumbnailsTab', () => ({
         onRepairComplete: () => void;
     }) => (
         <div data-testid="thumbnails-tab">
+            {images[0] && <button onClick={event => onItemClick(images[0].id, 0, event)}>Open Thumbnail Viewer</button>}
             <button onClick={onSelectAll}>Select All Thumbnails</button>
             <button onClick={() => onRegenerate(Array.from(selectedIds))}>Regenerate Selected</button>
             <button onClick={() => onRegenerate()}>Regenerate All</button>
@@ -175,17 +181,20 @@ vi.mock('./ThumbnailsTab', () => ({
 }));
 
 vi.mock('./IntermediatesTab', () => ({
-    IntermediatesTab: ({ onSelectAll, onDeleteSelected, onUnmarkSelected, onScopeChange }: {
+    IntermediatesTab: ({ images, onSelectAll, onDeleteSelected, onUnmarkSelected, onScopeChange, onViewImage }: {
+        images: AIImage[];
         onSelectAll: () => void;
         onDeleteSelected: () => void;
         onUnmarkSelected: () => void;
         onScopeChange: (scope: 'global' | 'filtered') => void;
+        onViewImage: (id: string) => void;
     }) => (
         <div data-testid="intermediates-tab">
             <button onClick={onSelectAll}>Select All Intermediates</button>
             <button onClick={onDeleteSelected}>Delete Intermediates</button>
             <button onClick={onUnmarkSelected}>Unmark Intermediates</button>
             <button onClick={() => onScopeChange('filtered')}>Filter Intermediates</button>
+            {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Intermediate Viewer</button>}
         </div>
     )
 }));
@@ -243,8 +252,9 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/CompareModal', () => ({
-    CompareModal: ({ imageA, onClose, onToggleFavorite, onTogglePin }: {
+    CompareModal: ({ imageA, imageB, onClose, onToggleFavorite, onTogglePin }: {
         imageA: AIImage;
+        imageB: AIImage;
         onClose: () => void;
         onToggleFavorite: (id: string) => void;
         onTogglePin?: (id: string, pinned: boolean) => void;
@@ -253,6 +263,7 @@ vi.mock('../../../features/viewer/components/CompareModal', () => ({
             <button onClick={onClose}>Close Compare</button>
             <button onClick={() => onToggleFavorite(imageA.id)}>Favorite Compare</button>
             {onTogglePin && <button onClick={() => onTogglePin(imageA.id, true)}>Pin Compare</button>}
+            {onTogglePin && <button onClick={() => onTogglePin(imageB.id, true)}>Pin Compare B</button>}
         </div>
     )
 }));
@@ -557,8 +568,10 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Compare Duplicates'));
         fireEvent.click(screen.getByText('Favorite Compare'));
         fireEvent.click(screen.getByText('Pin Compare'));
+        fireEvent.click(screen.getByText('Pin Compare B'));
         expect(onToggleFavorite).toHaveBeenCalledWith('duplicate-a');
         expect(onTogglePin).toHaveBeenCalledWith('duplicate-a', true);
+        expect(onTogglePin).toHaveBeenCalledWith('duplicate-b', true);
         fireEvent.click(screen.getByText('Close Compare'));
         expect(screen.queryByTestId('compare-modal')).toBeNull();
     });
@@ -573,6 +586,8 @@ describe('MaintenanceView', () => {
         expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('missing-a');
         fireEvent.click(screen.getByText('Viewer Next'));
         expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('missing-b');
+        fireEvent.click(screen.getByText('Viewer Next'));
+        fireEvent.click(screen.getByText('Viewer Previous'));
         fireEvent.click(screen.getByText('Viewer Previous'));
         fireEvent.click(screen.getByText('Favorite Viewer'));
         fireEvent.click(screen.getByText('Pin Viewer'));
@@ -586,6 +601,78 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Range Missing'));
         fireEvent.click(screen.getByText('Clear Missing Selection'));
+    });
+
+    it('covers global thumbnail work, non-duplicate scans, and viewer cleanup variants', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails', 'duplicates', 'trash']);
+        maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
+        maintenanceDataMock.localDuplicateCandidates = [
+            createImage({ id: 'duplicate-a' }),
+            createImage({ id: 'duplicate-b' }),
+        ];
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
+        const onRemoveFromLibrary = vi.fn().mockResolvedValue(undefined);
+        const view = renderView({ onRemoveFromLibrary, onTogglePin: undefined });
+
+        fireEvent.click(screen.getByText('Tab thumbnails'));
+        fireEvent.click(await screen.findByText('Regenerate All'));
+        await waitFor(() => expect(thumbnailServiceMock.regenerateAllUnoptimized).toHaveBeenCalledWith(
+            expect.any(Function), expect.any(AbortSignal), '', [], false
+        ));
+        fireEvent.click(screen.getByText('Open Thumbnail Viewer'));
+        fireEvent.click(screen.getByText('Viewer Cleanup'));
+        await waitFor(() => expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(
+            'thumbnails', false, expect.objectContaining({ scope: 'global', includeUpgradeable: false })
+        ));
+
+        maintenanceDataMock.initializedTabs = new Set();
+        view.rerender(<MaintenanceView {...view.props} />);
+        fireEvent.click(screen.getByText('Tab thumbnails'));
+        fireEvent.click(await screen.findByText('Start thumbnails Scan'));
+        expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('thumbnails', true, {
+            scope: 'filtered',
+            includeUpgradeable: false,
+            runHashBackfill: false,
+        });
+
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'duplicates']);
+        view.rerender(<MaintenanceView {...view.props} />);
+        fireEvent.click(screen.getByText('Tab duplicates'));
+        fireEvent.click(await screen.findByText('Compare Duplicates'));
+        expect(screen.queryByText('Pin Compare')).toBeNull();
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        expect(screen.queryByText('Viewer Cleanup')).toBeNull();
+    });
+
+    it('refreshes every scoped viewer cleanup and drops stale viewer ids', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'untagged', 'duplicates', 'intermediates']);
+        maintenanceDataMock.localUntaggedImages = [createImage({ id: 'untagged-a' })];
+        maintenanceDataMock.localDuplicateCandidates = [createImage({ id: 'duplicate-a' })];
+        maintenanceDataMock.localIntermediateImages = [createImage({ id: 'intermediate-a' })];
+        const view = renderView();
+
+        for (const [tab, openLabel] of [
+            ['untagged', 'Open Untagged Viewer'],
+            ['duplicates', 'Open Duplicate Viewer'],
+            ['intermediates', 'Open Intermediate Viewer'],
+        ] as const) {
+            fireEvent.click(screen.getByText(`Tab ${tab}`));
+            fireEvent.click(await screen.findByText(openLabel));
+            fireEvent.click(screen.getByText('Viewer Cleanup'));
+            await waitFor(() => expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith(
+                tab,
+                false,
+                expect.objectContaining({ scope: 'global' })
+            ));
+        }
+
+        fireEvent.click(screen.getByText('Tab duplicates'));
+        fireEvent.click(await screen.findByText('Open Duplicate Viewer'));
+        maintenanceDataMock.localDuplicateCandidates = [];
+        view.rerender(<MaintenanceView {...view.props} />);
+        expect(screen.queryByTestId('maintenance-viewer')).toBeNull();
     });
 
     it('ignores thumbnail regeneration when no callback was supplied', async () => {

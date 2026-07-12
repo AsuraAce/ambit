@@ -69,7 +69,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { fetchData, refreshMetadata } = useSearch();
 
-  const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope = 'full') => {
+  const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope) => {
     // SearchContext owns the scope-aware metadata refresh strategy.
     await refreshMetadata(scope);
   }, [refreshMetadata]);

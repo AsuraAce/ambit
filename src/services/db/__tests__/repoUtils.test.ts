@@ -60,6 +60,9 @@ describe('repoUtils lightweight image rows', () => {
         expect(fields).toContain('images.original_metadata_json');
         expect(fields).toContain('images.original_parsed_json');
         expect(fields).toContain('images.original_state_json');
+
+        expect(getImageFieldsLight('')).toContain('id, path');
+        expect(getImageFieldsFull('')).toContain('metadata_json');
     });
 
     it('maps prompt metadata from scalar columns without original metadata JSON', () => {
@@ -182,5 +185,110 @@ describe('repoUtils lightweight image rows', () => {
             positivePrompt: 'restored prompt',
             negativePrompt: 'restored negative',
         });
+    });
+
+    it('normalizes legacy scalar encodings and absent paths at the row boundary', () => {
+        const image = mapRowToImage({
+            id: 'fallback.png',
+            path: '',
+            width: '640',
+            height: 'not-a-number',
+            file_size: '',
+            timestamp: '12',
+            thumbnail_path: null,
+            is_favorite: true,
+            is_pinned: '1',
+            is_deleted: 1,
+            is_missing: false,
+            is_corrupt: 0,
+            user_masked: 1,
+            tool: '',
+            model_name: '',
+            resolved_model_name: '',
+            steps: '20',
+            cfg: 'invalid',
+            sampler: '',
+            positive_prompt: '',
+            negative_prompt: '',
+            generation_type: '',
+            metadata_json: '',
+            original_metadata_json: '',
+            original_parsed_json: '',
+            original_state_json: '',
+        });
+
+        expect(image).toMatchObject({
+            id: 'fallback.png',
+            url: 'asset://fallback.png',
+            thumbnailUrl: 'asset://fallback.png',
+            width: 640,
+            height: 0,
+            timestamp: 12,
+            isFavorite: true,
+            isPinned: true,
+            isDeleted: true,
+            userMasked: true,
+        });
+        expect(image.fileSize).toBeUndefined();
+        expect(image.metadata).toMatchObject({ model: 'Unknown', steps: 20, cfg: 0, sampler: 'Unknown' });
+    });
+
+    it.each(['https://example.com/thumb.webp', 'data:image/webp;base64,abc', 'blob:thumb']) (
+        'preserves the %s thumbnail scheme',
+        (thumbnailPath) => {
+            expect(mapRowToImage({
+                ...baseLightRow,
+                thumbnail_path: thumbnailPath,
+                user_masked: 0,
+            })).toMatchObject({ thumbnailUrl: thumbnailPath, userMasked: false });
+        }
+    );
+
+    it('falls back to a normalized path id and keeps unknown mask state', () => {
+        const image = mapRowToImage({
+            ...baseLightRow,
+            id: '',
+            user_masked: 'legacy',
+            metadata_json: JSON.stringify({
+                model: '',
+                tool: '',
+                positivePrompt: '',
+                negativePrompt: '',
+                sampler: '',
+                steps: 0,
+                cfg: 0,
+            }),
+        });
+
+        expect(image.id).toBe('C:/images/sample.png');
+        expect(image.userMasked).toBeUndefined();
+    });
+
+    it('uses final scalar defaults when persisted metadata fields are empty', () => {
+        const image = mapRowToImage({
+            id: '',
+            path: '',
+            width: null,
+            height: null,
+            timestamp: null,
+            steps: null,
+            cfg: null,
+            model_name: 'Row Model',
+            resolved_model_name: '',
+            tool: '',
+            metadata_json: JSON.stringify({ model: '', tool: '' }),
+        });
+
+        expect(image).toMatchObject({ id: '', width: 0, height: 0, timestamp: 0 });
+        expect(image.metadata).toMatchObject({ model: 'Row Model', tool: GeneratorTool.UNKNOWN, steps: 0 });
+
+        const unknownModel = mapRowToImage({
+            id: 'unknown.png',
+            model_name: '',
+            resolved_model_name: '',
+            tool: '',
+            metadata_json: JSON.stringify({ model: '', tool: '' }),
+        });
+        expect(unknownModel.metadata.model).toBe('Unknown');
     });
 });

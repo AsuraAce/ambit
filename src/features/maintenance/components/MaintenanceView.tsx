@@ -242,9 +242,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             }
 
             const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
-                activeTab === 'thumbnails' ? thumbnailsScope :
-                    activeTab === 'duplicates' ? duplicatesScope :
-                        activeTab === 'intermediates' ? intermediatesScope : 'global';
+                activeTab === 'intermediates' ? intermediatesScope : 'global';
 
             await refreshData(activeTab, false, { scope });
 

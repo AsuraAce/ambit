@@ -4,6 +4,11 @@ import { HighlightedPromptText } from '../../components/metadata/HighlightedProm
 import { derivePromptHighlightSpec } from '../searchHighlights';
 
 describe('derivePromptHighlightSpec', () => {
+    it('returns no highlights for empty and one-character terms', () => {
+        expect(derivePromptHighlightSpec('   ')).toEqual({ positivePrompt: [], negativePrompt: [] });
+        expect(derivePromptHighlightSpec('a neg:b')).toEqual({ positivePrompt: [], negativePrompt: [] });
+    });
+
     it('highlights plain terms in the positive prompt', () => {
         expect(derivePromptHighlightSpec('sunset')).toEqual({
             positivePrompt: ['sunset'],

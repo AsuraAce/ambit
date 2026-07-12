@@ -120,7 +120,7 @@ export interface TargetedLiveSyncResult {
     importedCount: number;
 }
 
-export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope?: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
+export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
     const { settings, settingsRef, setSettings } = useSettings();
     const { addToast } = useToast();
     const queryClient = useQueryClient();

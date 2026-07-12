@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInvokeImagePathResolver } from '../pathResolver';
+import { buildInvokeImageDiskIndex, createInvokeImagePathResolver } from '../pathResolver';
 
 const files = [
     'outputs/images/flat.png',
@@ -12,6 +12,20 @@ const files = [
 ];
 
 describe('InvokeAI image path resolver', () => {
+    it('ignores unsafe disk-index entries', () => {
+        const index = buildInvokeImageDiskIndex([
+            '/absolute.png',
+            '../outside.png',
+            'misc/readme.png',
+            'outputs/images/safe.png',
+            'outputs/images/safe.png',
+        ]);
+
+        expect(index.byRootRelative.size).toBe(2);
+        expect(index.byImagesRelative.size).toBe(1);
+        expect(index.byBasename.get('safe.png')).toBe('outputs/images/safe.png');
+    });
+
     it.each([
         ['flat layout', 'flat.png', 'D:/Invoke/outputs/images/flat.png'],
         ['date layout', 'date.png', 'D:/Invoke/outputs/images/2026/05/25/date.png'],
@@ -41,6 +55,10 @@ describe('InvokeAI image path resolver', () => {
             ambiguous: false
         });
         expect(listImages).not.toHaveBeenCalled();
+
+        await expect(resolver.resolveImagePath('nested/authoritative.png', 'outputs/images/custom')).resolves.toMatchObject({
+            relativePath: 'outputs/images/custom/authoritative.png',
+        });
     });
 
     it('marks basename collisions ambiguous instead of choosing a nested file silently', async () => {
@@ -155,6 +173,40 @@ describe('InvokeAI image path resolver', () => {
             relativePath: null,
             ambiguous: false
         })).toBeNull();
+    });
+
+    it('returns no thumbnail candidates when even the derived name is empty', () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn());
+        const unresolvedName = { absolutePath: '/', relativePath: null, ambiguous: false };
+
+        expect(resolver.getThumbnailPathCandidates(null, unresolvedName)).toEqual([]);
+        expect(resolver.resolveThumbnailPath(null, unresolvedName)).toBe('/');
+        expect(resolver.getThumbnailPathCandidates(null, {
+            absolutePath: null,
+            relativePath: null,
+            ambiguous: false,
+        })).toEqual([]);
+    });
+
+    it('handles rooted thumbnails, missing basename matches, and duplicate candidates', async () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+
+        await expect(resolver.resolveImagePath('not-indexed.png')).resolves.toMatchObject({
+            relativePath: 'outputs/images/not-indexed.png',
+        });
+        expect(resolver.getThumbnailPathCandidates('outputs/images/custom.webp', {
+            absolutePath: 'D:/Invoke/outputs/images/image.png',
+            relativePath: 'outputs/images/image.png',
+            ambiguous: false,
+        })).toEqual(['D:/Invoke/outputs/images/custom.webp']);
+        expect(resolver.getThumbnailPathCandidates(null, {
+            absolutePath: 'D:/Invoke/outputs/images/thumbnails/image.png',
+            relativePath: 'outputs/images/thumbnails/image.png',
+            ambiguous: false,
+        })).toEqual([
+            'D:/Invoke/outputs/images/thumbnails/image.webp',
+            'D:/Invoke/outputs/images/thumbnails/thumbnails/image.webp',
+        ]);
     });
 
     it('resolves safe legacy names to the flat output folder and rejects unsafe names', () => {

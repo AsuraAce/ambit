@@ -101,7 +101,7 @@ export const useTimelineLayout = ({ groups, width, thumbnailSize, scrollTop }: U
     // Virtualization (Optimized with Binary Search)
     const visibleItems = useMemo(() => {
         const buffer = 1200;
-        const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 1000;
+        const windowHeight = window.innerHeight;
         const startY = Math.max(0, scrollTop - buffer);
         const endY = scrollTop + windowHeight + buffer;
 

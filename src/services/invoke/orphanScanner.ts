@@ -25,7 +25,7 @@ const buildInvokeRowPath = (imageName: string, imageSubfolder?: string | null): 
     const normalizedSubfolder = normalizeRelativePath(imageSubfolder || '');
     if (!normalizedSubfolder) return normalizedName;
 
-    const filename = getFilename(normalizedName) || normalizedName;
+    const filename = getFilename(normalizedName);
     const subfolder = normalizedSubfolder.replace(/^outputs\/images\//i, '');
     return `outputs/images/${subfolder}/${filename}`;
 };
@@ -153,7 +153,7 @@ export const scanForOrphans = async (
                     id: absPath,
                     url: convertFileSrc(absPath),
                     thumbnailUrl: meta.thumbnail || absPath,
-                    filename: relName.split('/').pop() ?? relName,
+                    filename: relName.split('/').pop()!,
                     fileSize: meta.size,
                     timestamp: meta.modified || Date.now(),
                     width: meta.width,

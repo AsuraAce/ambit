@@ -106,6 +106,33 @@ describe('LocalStorageRepository', () => {
 
         expect(JSON.parse(localStorage.getItem('aigallery_state_v1') ?? '{}')).toEqual(state);
     });
+
+    it('falls back to defaults when browser storage cannot be read', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => {
+            throw new Error('storage denied');
+        });
+        const { LocalStorageRepository } = await import('../repository');
+
+        const state = await new LocalStorageRepository().load();
+
+        expect(state.images).toHaveLength(155);
+        expect(error).toHaveBeenCalledWith('Failed to load state', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('contains browser storage write failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('quota exceeded');
+        });
+        const { LocalStorageRepository } = await import('../repository');
+
+        await expect(new LocalStorageRepository().save(stateFixture())).resolves.toBeUndefined();
+
+        expect(error).toHaveBeenCalledWith('Failed to save state', expect.any(Error));
+        error.mockRestore();
+    });
 });
 
 describe('TauriFsRepository', () => {
@@ -149,6 +176,17 @@ describe('TauriFsRepository', () => {
         expect(fsMocks.writeTextFile).toHaveBeenCalled();
         const [, serialized] = fsMocks.writeTextFile.mock.calls[0] as [string, string, unknown];
         expect(JSON.parse(serialized).images).toEqual([]);
+    });
+
+    it('does not rewrite library state when the persisted image collection is already empty', async () => {
+        fsMocks.exists.mockResolvedValue(true);
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({ ...stateFixture(), images: [] }));
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const state = await new TauriFsRepository().load();
+
+        expect(state.images).toEqual([]);
+        expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
     });
 
     it('never writes image rows to library.json saves because SQLite owns image data', async () => {

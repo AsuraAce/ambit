@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
       coverage: {
         include: ['src/**/*.{ts,tsx}'],
         exclude: [
+          'src/bindings.ts',
           'src/**/*.test.{ts,tsx}',
           'src/**/__tests__/**',
           'src/test/**',

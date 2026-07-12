@@ -71,6 +71,7 @@ describe('dateFilters', () => {
     });
 
     it('rejects ambiguous or invalid advanced search date bounds', () => {
+        expect(getSearchDateBounds('date', '')).toBeNull();
         expect(getSearchDateBounds('date', '2026-13')).toBeNull();
         expect(getSearchDateBounds('date', '2026-02-30')).toBeNull();
         expect(getSearchDateBounds('date', '2025..2026-13')).toBeNull();
@@ -88,6 +89,7 @@ describe('dateFilters', () => {
                 issue: 'pending'
             });
         });
+        expect(getAdvancedDateSearchReadiness('"unfinished date:2026')).toEqual({ isReady: true, issue: null });
     });
 
     it('flags invalid advanced date search syntax as not ready', () => {

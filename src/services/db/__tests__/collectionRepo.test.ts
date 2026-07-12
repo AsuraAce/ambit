@@ -145,6 +145,18 @@ describe('collectionRepo filter normalization', () => {
         expect(filters?.controlNets).toEqual([]);
         expect(filters?.ipAdapters).toEqual([]);
         expect(filters?.pinnedOnly).toBe(false);
+
+        await upsertCollection({
+            id: 'flags-a',
+            name: 'Flags',
+            isArchived: true,
+            isPinned: true,
+            manualExclusions: ['image-a'],
+        });
+        const flagParams = (dbMocks.execute.mock.calls as Array<[string, unknown[]]>)[1][1];
+        expect(flagParams[3]).toBe(1);
+        expect(flagParams[4]).toBe(1);
+        expect(flagParams[7]).toBe('["image-a"]');
     });
 
     it('backfills missing dynamic thumbnail cache columns from the TypeScript schema guard', async () => {
@@ -204,6 +216,18 @@ describe('collectionRepo filter normalization', () => {
         await ensureCollectionSchema();
 
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to ensure collection schema', migrationError);
+        errorSpy.mockRestore();
+    });
+
+    it('stringifies non-Error schema migration failures', async () => {
+        dbMocks.select.mockResolvedValue([{ name: 'id' }, { name: 'created_at' }]);
+        dbMocks.execute.mockRejectedValueOnce('database read-only');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { ensureCollectionSchema } = await import('../collectionRepo');
+
+        await ensureCollectionSchema();
+
+        expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to ensure collection schema', 'database read-only');
         errorSpy.mockRestore();
     });
 
@@ -300,7 +324,11 @@ describe('collectionRepo thumbnail hydration', () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
             if (query.includes('SELECT * FROM collections')) {
-                return [makeCollectionRow({ name: 'Base Only' })];
+                return [makeCollectionRow({
+                    name: 'Base Only',
+                    updated_at: null,
+                    manual_exclusions: '["image-a"]',
+                })];
             }
             if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
             return [];
@@ -315,6 +343,8 @@ describe('collectionRepo thumbnail hydration', () => {
             count: 3,
             imageIds: []
         }));
+        expect(collections[0].updatedAt).toBe(1);
+        expect(collections[0].manualExclusions).toEqual(['image-a']);
         expect(collections[0].thumbnail).toBeUndefined();
         expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(queries.join('\n')).not.toContain('WHERE id IN');
@@ -457,6 +487,23 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(collections[0].thumbnailSourceKind).toBe('customPath');
     });
 
+    it('falls back to the custom image id when its optimized thumbnail is empty', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) return [makeCollectionRow({ custom_thumbnail: 'img-empty' })];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('ranked_thumbnails')) return [];
+            if (query.includes('WHERE id IN')) {
+                return [{ id: 'img-empty', path: 'C:/images/empty.png', thumb: '', privacy_hidden: 0 }];
+            }
+            return [];
+        });
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+
+        const collections = await getAllCollectionsWithStats();
+
+        expect(collections[0].thumbnail).toBe('asset://img-empty');
+    });
+
     it('marks dynamic thumbnails sensitive, exposes a safe alternative, and orders pinned first', async () => {
         let dynamicQuery = '';
         dbMocks.select.mockImplementation(async (query: string) => {
@@ -494,7 +541,7 @@ describe('collectionRepo thumbnail hydration', () => {
                     collection_id: 'c1',
                     dynamic_thumb: 'C:/thumbs/unsafe.webp',
                     dynamic_privacy: 1,
-                    safe_thumb: 'C:/thumbs/safe.webp'
+                    safe_thumb: null
                 }];
             }
             return [];
@@ -512,7 +559,7 @@ describe('collectionRepo thumbnail hydration', () => {
 
         expect(dbMocks.execute).toHaveBeenCalledWith(
             expect.stringContaining('dynamic_thumbnail_path'),
-            ['C:/thumbs/unsafe.webp', 'C:/thumbs/safe.webp', 1, expect.any(Number), 'c1']
+            ['C:/thumbs/unsafe.webp', null, 1, expect.any(Number), 'c1']
         );
     });
 
@@ -552,7 +599,7 @@ describe('collectionRepo thumbnail hydration', () => {
                 return [{ thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 }];
             }
             if (query.includes('AND privacy_hidden = 0')) {
-                return [{ thumbnail_path: 'C:/thumbs/smart-safe.webp' }];
+                return [];
             }
             return [];
         });
@@ -584,8 +631,26 @@ describe('collectionRepo thumbnail hydration', () => {
 
         expect(dbMocks.execute).toHaveBeenCalledWith(
             expect.stringContaining('dynamic_thumbnail_path'),
-            ['C:/thumbs/smart.webp', 'C:/thumbs/smart-safe.webp', 0, expect.any(Number), 'smart-1']
+            ['C:/thumbs/smart.webp', null, 0, expect.any(Number), 'smart-1']
         );
+    });
+
+    it('returns empty smart thumbnail data and skips cache writes for custom thumbnails', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('COUNT(*) FROM images')) {
+                return [{ id: 'smart-empty', count: 0 }, { id: 'smart-custom', count: 0 }];
+            }
+            return [];
+        });
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+
+        const summaries = await getSmartCollectionSummaries([
+            makeCollection({ id: 'smart-empty', filters: makeFilters() }),
+            makeCollection({ id: 'smart-custom', filters: makeFilters(), customThumbnail: 'img-1' }),
+        ]);
+
+        expect(summaries['smart-empty']).toMatchObject({ count: 0, thumbnail: undefined });
+        expect(dbMocks.execute).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -624,6 +689,7 @@ describe('collectionRepo membership helpers', () => {
                 thumbnailIsSensitive: false,
                 thumbnailSourceKind: 'dynamic',
             }),
+            makeCollection({ id: 'empty', count: 0, imageIds: [] }),
         ];
         browserMocks.getBrowserMockCollections.mockReturnValue(collections);
         browserMocks.getBrowserMockImages.mockReturnValue([
@@ -658,6 +724,7 @@ describe('collectionRepo membership helpers', () => {
         await expect(ensureCollectionSchema()).resolves.toBeUndefined();
         await expect(upsertCollection({ id: 'new', name: 'New' })).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', 'img-1')).resolves.toBeUndefined();
+        await expect(setCollectionCustomThumbnail('c1', null)).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('missing', 'img-1')).rejects.toThrow('Collection not found: missing');
         await expect(deleteCollectionFromDb('c1')).resolves.toBeUndefined();
         await expect(addImagesToCollection('c1', ['img-2'])).resolves.toBeUndefined();
@@ -692,9 +759,11 @@ describe('collectionRepo membership helpers', () => {
         await expect(getSmartCollectionThumbnail('WHERE model_name = ?', ['model-a'])).resolves.toBe('thumb-smart');
         await expect(getCollectionsForImage('img-1')).resolves.toEqual(['c1']);
         await expect(getCollectionImageIds('c1')).resolves.toEqual(['img-1']);
+        await expect(getCollectionImageIds('missing')).resolves.toEqual([]);
         await expect(hydrateCollections()).resolves.toEqual({
             c1: { count: 0, thumbnail: 'thumb-c1' },
             smart: { count: 7, thumbnail: 'thumb-smart' },
+            empty: { count: 0, thumbnail: '' },
         });
         await expect(purgeInvokeCollections()).resolves.toBeUndefined();
 
@@ -877,6 +946,13 @@ describe('collectionRepo membership helpers', () => {
         await expect(getCollectionThumbnail(ids)).resolves.toBe('asset://C:/thumbs/newer.webp');
     });
 
+    it('treats a nullable thumbnail timestamp as zero', async () => {
+        dbMocks.select.mockResolvedValue([{ path: 'C:/thumbs/no-time.webp', timestamp: null, is_pinned: 0 }]);
+        const { getCollectionThumbnail } = await import('../collectionRepo');
+
+        await expect(getCollectionThumbnail(['img-1'])).resolves.toBe('asset://C:/thumbs/no-time.webp');
+    });
+
     it('returns no collection thumbnail for empty, missing, null, or failed thumbnail lookups', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { getCollectionThumbnail } = await import('../collectionRepo');
@@ -902,6 +978,9 @@ describe('collectionRepo membership helpers', () => {
 
         dbMocks.select.mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp', timestamp: 1, is_pinned: 0 }]);
         await expect(getSmartCollectionThumbnail('WHERE model_name = ?', ['model-a'])).resolves.toBe('asset://C:/thumbs/smart.webp');
+
+        dbMocks.select.mockResolvedValueOnce([{ thumbnail_path: 'https://example.com/smart.webp', timestamp: 1, is_pinned: 0 }]);
+        await expect(getSmartCollectionThumbnail('WHERE model_name = ?', ['model-a'])).resolves.toBe('https://example.com/smart.webp');
 
         dbMocks.select.mockResolvedValueOnce([{ thumbnail_path: null, timestamp: 1, is_pinned: 0 }]);
         await expect(getSmartCollectionThumbnail('WHERE model_name = ?', ['model-a'])).resolves.toBeUndefined();

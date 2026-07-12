@@ -89,5 +89,11 @@ describe('osOpen helpers', () => {
             status: 'error',
             error: 'invoke failed',
         });
+
+        mocks.showInFolder.mockRejectedValueOnce('bridge failed');
+        await expect(showPathInFolder('C:/library/image.png')).resolves.toEqual({
+            status: 'error',
+            error: 'bridge failed',
+        });
     });
 });

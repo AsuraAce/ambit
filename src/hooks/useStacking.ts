@@ -47,7 +47,7 @@ export const useStacking = (images: AIImage[]) => {
         }
 
         // Avoid re-running if images haven't changed meaningfully (length check is a cheap proxy)
-        const currentSig = images.length + (images[0]?.timestamp || 0);
+        const currentSig = images.length + images[0].timestamp;
         if (currentSig === lastImagesRef.current) return;
         lastImagesRef.current = currentSig;
 
@@ -116,7 +116,7 @@ export const useStacking = (images: AIImage[]) => {
         }, 500); // 500ms debounce
 
         return () => {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            clearTimeout(timeoutRef.current!);
             activeWorkerCleanupRef.current?.();
             activeWorkerCleanupRef.current = null;
         };

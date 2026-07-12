@@ -75,7 +75,8 @@ export class WatcherService {
 
         } catch (err) {
             console.error(`[WatcherService] Failed to start native watcher:`, err);
-            this.diagnostic?.finish('failed', { error: err instanceof Error ? err.message : String(err) });
+            const error = err instanceof Error ? err.message : String(err);
+            this.diagnostic?.finish('failed', { error });
             this.diagnostic = null;
             this.isWatching = false;
             this.lastPaths = [];

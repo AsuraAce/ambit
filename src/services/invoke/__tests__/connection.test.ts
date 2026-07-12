@@ -100,6 +100,15 @@ describe('InvokeAI connection helpers', () => {
         expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
     });
 
+    it('treats a missing connection count row as zero', async () => {
+        sqlMock.load.mockResolvedValue(createDb(async () => []));
+
+        await expect(testConnection('D:/Invoke/invokeai.db')).resolves.toMatchObject({
+            success: true,
+            count: 0,
+        });
+    });
+
     it('tries Invoke root candidates until one contains an images table', async () => {
         const db = createDb(async () => [{ count: 7 }]);
         sqlMock.load
@@ -202,6 +211,27 @@ describe('InvokeAI connection helpers', () => {
 
         await expect(diagnoseInvokeAI('D:/Invoke')).resolves.toEqual({
             error: 'permission denied'
+        });
+
+        sqlMock.load.mockRejectedValueOnce(new Error('database locked'));
+        await expect(diagnoseInvokeAI('D:/Invoke')).resolves.toEqual({
+            error: 'database locked'
+        });
+    });
+
+    it('defaults missing diagnostic count rows to zero', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'PRAGMA table_info(images)') return [];
+            if (sql === 'SELECT count(*) as count FROM images') return [];
+            if (sql === "SELECT name FROM sqlite_master WHERE type='table'") return [{ name: 'empty_table' }];
+            if (sql === 'SELECT count(*) as count FROM empty_table') return [];
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+        sqlMock.load.mockResolvedValue(db);
+
+        await expect(diagnoseInvokeAI('D:/Invoke')).resolves.toMatchObject({
+            totalInDb: 0,
+            tables: [{ name: 'empty_table', count: 0 }],
         });
     });
 });

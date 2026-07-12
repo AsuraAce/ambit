@@ -109,4 +109,36 @@ describe('StartupMaintenanceGate', () => {
         });
         expect(screen.queryByText('Library ready')).toBeNull();
     });
+
+    it('ignores phase and completion callbacks after unmount', async () => {
+        let onPhase: ((phase: 'Loading library') => void) | undefined;
+        let resolveDb!: () => void;
+        vi.mocked(getDb).mockImplementation((options = {}) => new Promise((resolve) => {
+            onPhase = options.onPhase as typeof onPhase;
+            resolveDb = () => resolve({} as Awaited<ReturnType<typeof getDb>>);
+        }));
+        const view = render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        await act(async () => Promise.resolve());
+
+        view.unmount();
+        onPhase?.('Loading library');
+        resolveDb();
+        await act(async () => Promise.resolve());
+    });
+
+    it('ignores rejected preparation after unmount and formats non-Error failures', async () => {
+        let rejectDb!: (reason: unknown) => void;
+        vi.mocked(getDb).mockImplementationOnce(() => new Promise((_resolve, reject) => {
+            rejectDb = reject;
+        }));
+        const view = render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        await act(async () => Promise.resolve());
+        view.unmount();
+        rejectDb('late failure');
+        await act(async () => Promise.resolve());
+
+        vi.mocked(getDb).mockRejectedValueOnce('bridge unavailable');
+        render(<StartupMaintenanceGate><div>Library ready</div></StartupMaintenanceGate>);
+        await waitFor(() => expect(screen.getByText('bridge unavailable')).toBeTruthy());
+    });
 });

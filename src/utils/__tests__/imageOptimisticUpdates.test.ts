@@ -35,4 +35,11 @@ describe('applyOptimisticPinOrder', () => {
             'old-unpinned',
         ]);
     });
+
+    it('treats missing timestamps as the oldest value', () => {
+        const missingTimestamp = { ...image('missing', 1), timestamp: undefined } as unknown as AIImage;
+        const result = applyOptimisticPinOrder([missingTimestamp, image('zero', 0)], [], false, true);
+
+        expect(result.map(item => item.id)).toEqual(['missing', 'zero']);
+    });
 });

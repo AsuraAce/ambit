@@ -191,5 +191,25 @@ describe('useTimelineSelection', () => {
         act(() => upListener(new MouseEvent('mouseup', { clientX: 40, clientY: 60 })));
 
         expect(() => moveListener?.(new MouseEvent('mousemove'))).not.toThrow();
+        addEventListener.mockRestore();
+    });
+
+    it('crosses the drag threshold vertically and excludes non-overlapping items', () => {
+        const onRangeSelection = vi.fn();
+        const { result } = renderHook(() => useTimelineSelection({
+            containerRef: { current: makeContainer() },
+            layoutItems,
+            onRangeSelection,
+        }));
+
+        act(() => result.current.handleMouseDown(makeMouseDown({ clientX: 20, clientY: 50 })));
+        act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 22, clientY: 52 })));
+        expect(result.current.dragBox).toBeNull();
+
+        act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 80 })));
+        act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 25, clientY: 85 })));
+        act(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 130 })));
+
+        expect(onRangeSelection).toHaveBeenCalledWith([1], false);
     });
 });

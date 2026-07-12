@@ -120,6 +120,7 @@ describe('useStacking', () => {
             { ...mockImages[0], metadata: { ...mockImages[0].metadata, model: 'String Model' } },
             { ...mockImages[1], metadata: { ...mockImages[1].metadata, model: { name: 'Object Model' } } },
             { ...mockImages[1], id: '3', metadata: { ...mockImages[1].metadata, model: null } },
+            { ...mockImages[1], id: '4', metadata: { ...mockImages[1].metadata, model: { name: undefined } } },
         ];
         renderHook(() => useStacking(images));
         act(() => vi.advanceTimersByTime(500));
@@ -130,7 +131,25 @@ describe('useStacking', () => {
             'String Model',
             'Object Model',
             '',
+            '',
         ]);
+    });
+
+    it('clears a previously suggested stack when the library becomes empty', () => {
+        const { result, rerender } = renderHook(
+            ({ images }) => useStacking(images),
+            { initialProps: { images: mockImages } }
+        );
+        act(() => vi.advanceTimersByTime(500));
+        const requestId = (vi.mocked(Worker.prototype.postMessage).mock.calls.at(-1)?.[0] as { requestId: string }).requestId;
+        const handler = vi.mocked(Worker.prototype.addEventListener).mock.calls.at(-1)?.[1] as EventListener;
+        act(() => handler(new MessageEvent('message', {
+            data: { requestId, type: 'stacks-result', groups: [{ id: 'stack' }] },
+        })));
+
+        rerender({ images: [] });
+
+        expect(result.current.suggestedStacks).toEqual([]);
     });
 
     it('ignores stale replies and completes matching worker errors without replacing stacks', () => {

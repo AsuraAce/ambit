@@ -30,5 +30,6 @@ describe('useTheme', () => {
         expect(mockSetSettings).toHaveBeenCalled();
         const updater = mockSetSettings.mock.calls[0][0];
         expect(updater({ theme: 'light' })).toEqual({ theme: 'dark' });
+        expect(updater({ theme: 'dark' })).toEqual({ theme: 'light' });
     });
 });

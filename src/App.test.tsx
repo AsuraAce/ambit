@@ -661,6 +661,76 @@ describe('App orchestration', () => {
         expect(mocks.settings.defaultTheaterMode).toBe(true);
     });
 
+    it('handles orchestration defaults, picker variants, and viewer boundaries', async () => {
+        mocks.settings.libraryLayoutMode = undefined;
+        mocks.images = [
+            image('one'),
+            {
+                ...image('two'),
+                metadata: { ...image('two').metadata, positivePrompt: 42 as unknown as string },
+            },
+            {
+                ...image('three'),
+                metadata: { ...image('three').metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' },
+            },
+        ];
+        render(<App />);
+        const layout = requireProbe(captured.appLayout, 'AppLayout');
+
+        act(() => layout.handleOpenCollectionModal());
+        expect(mocks.modals.setAddToCollectionMode).toHaveBeenCalledWith('add');
+
+        act(() => layout.setExportIds(new Set()));
+        requireProbe(captured.globalModals, 'GlobalModals').onExportConfirm('all', 'C:/out');
+        expect(mocks.handleExportConfirm).toHaveBeenCalledWith('all', 'C:/out', undefined);
+        requireProbe(captured.globalModals, 'GlobalModals').onDeleteCollectionConfirm();
+        expect(mocks.deleteCollection).not.toHaveBeenCalled();
+
+        act(() => layout.handlers.setContextMenu({ x: 1, y: 2, imageId: 'one' }));
+        requireProbe(captured.contextMenu, 'AppContextMenu').onMoveToCollection();
+        expect(mocks.modals.setSourceCollectionId).not.toHaveBeenCalledWith(expect.any(String));
+
+        (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+        vi.mocked(open).mockResolvedValueOnce('C:/single.png');
+        await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
+        expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/single.png']);
+        vi.mocked(open).mockResolvedValueOnce(null);
+        await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
+
+        act(() => layout.setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
+        expect(captured.viewer?.image.id).toBe('one');
+
+        act(() => layout.setSelectedImageIndex(mocks.images.length - 1));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('three'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        expect(captured.viewer?.image.id).toBe('three');
+    });
+
+    it('derives fallback collection totals, onboarding visibility, and guarded prompt tags', async () => {
+        vi.useFakeTimers();
+        mocks.settings.hasCompletedOnboarding = false;
+        mocks.collections = [{
+            id: 'collection-a',
+            name: 'Collection A',
+            imageIds: ['one', 'two'],
+            createdAt: 1,
+            source: 'ambit',
+        }];
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.images = [
+            { ...image('one'), metadata: { ...image('one').metadata, positivePrompt: 42 as unknown as string } },
+            { ...image('two'), metadata: { ...image('two').metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' } },
+        ];
+
+        render(<App />);
+
+        expect(requireProbe(captured.appLayout, 'AppLayout').scopeTotal).toBe(2);
+        expect(requireProbe(captured.onboarding, 'OnboardingWizard').isOpen).toBe(true);
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+    });
+
     it('forwards AI, drag-drop, folder-monitor, and shortcut adapters', async () => {
         render(<App />);
         requireProbe(mocks.aiSearchOptions, 'AI search options').onOpenSettings();
