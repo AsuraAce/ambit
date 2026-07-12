@@ -121,6 +121,7 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let relevant_prefixes = [
                 "conditioning",
                 "positive",
+                "negative",
                 "cond",
                 "c",
                 "clip",

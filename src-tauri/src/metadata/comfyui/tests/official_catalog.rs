@@ -30,6 +30,30 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "hidream_i1_full",
         chunks_json: include_str!("fixtures/official_catalog/hidream_i1_full.chunks.json"),
     },
+    CatalogFixture {
+        name: "01_get_started_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/01_get_started_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "02_qwen_Image_edit_subgraphed",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/02_qwen_Image_edit_subgraphed.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_Image_2512_controlnet",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_Image_2512_controlnet.chunks.json"
+        ),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -41,6 +65,7 @@ struct ExpectedMetadata<'a> {
     positive_prompt: &'a str,
     negative_prompt: &'a str,
     loras: &'a [&'a str],
+    control_nets: &'a [&'a str],
     source: ComfyParseLayer,
     graph_node_count: usize,
     output_candidates: usize,
@@ -113,6 +138,13 @@ fn assert_fixture(name: &str, expected: ExpectedMetadata<'_>) {
         (!expected.loras.is_empty()).then_some(&expected.source),
         "{name} LoRA provenance"
     );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::ControlNets),
+        (!expected.control_nets.is_empty()).then_some(&expected.source),
+        "{name} ControlNet provenance"
+    );
 }
 
 fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata<'_>) {
@@ -131,7 +163,10 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata
         "{name} negative prompt"
     );
     assert_eq!(meta.loras, expected.loras, "{name} LoRAs");
-    assert!(meta.control_nets.is_empty(), "{name} ControlNets");
+    assert_eq!(
+        meta.control_nets, expected.control_nets,
+        "{name} ControlNets"
+    );
     assert!(meta.ip_adapters.is_empty(), "{name} IP-Adapters");
     assert!(meta.embeddings.is_empty(), "{name} embeddings");
     assert!(meta.hypernetworks.is_empty(), "{name} hypernetworks");
@@ -151,6 +186,7 @@ fn image_qwen_image_edit_2509() {
                 "Replace the cat with a dalmatian, keeping the environment and scene consistent",
             negative_prompt: "",
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
+            control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 27,
             output_candidates: 1,
@@ -174,6 +210,7 @@ fn flux_fill_inpaint_example() {
                 "anime girl with massive fennec ears blonde hair blue eyes wearing a pink shirt",
             negative_prompt: "",
             loras: &[],
+            control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 13,
             output_candidates: 1,
@@ -196,6 +233,7 @@ fn flux_kontext_dev_basic() {
             positive_prompt: "Using this elegant style, create a portrait of a swan wearing a pearl tiara and lace collar, maintaining the same refined quality and soft color tones.",
             negative_prompt: "",
             loras: &[],
+            control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 18,
             output_candidates: 1,
@@ -218,8 +256,101 @@ fn hidream_i1_full() {
             positive_prompt: "A lo-fi, grungy wide shot of a ragged large red tree leaning slightly to one side Polaroid aesthetic. the tree is alone in a desolate landscape, the tree is illuminated by a red light, the background is pitch black",
             negative_prompt: "bad ugly jpeg artifacts",
             loras: &[],
+            control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn getting_started_z_image_text_to_image() {
+    assert_fixture(
+        "01_get_started_text_to_image",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(0),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: r#"Giant blue and purple big billboard on rooftop in san francisco city billboard says "ComfyUI is built with love" All kinds of buoildings in different shapes and colors. Some buildings have grafitti "We" "Here" "Today""#,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn getting_started_qwen_image_edit_subgraph() {
+    assert_fixture(
+        "02_qwen_Image_edit_subgraphed",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(1_118_877_715_456_453),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Change the style of the image to a realistic style. The cloud in the background is realistic and fluffy. The balloon is yellow and reflective. ",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_text_to_image() {
+    assert_fixture(
+        "image_flux2_text_to_image",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(1_027_111_520_328_378),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler",
+            positive_prompt: "high fashion, vintage couture, street photography, luxury fashion shoot, neo brutalist architecture, pastel paints",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_2512_controlnet() {
+    assert_fixture(
+        "image_qwen_Image_2512_controlnet",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(985_578_626_029_454),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A woman with curly hair, wearing orange sunglasses, a white knit sweater with orange accents, and high-waisted orange trousers, stands confidently against a vibrant, clear blue sky. The photo has a warm, sunlit filter that amplifies the rich terracotta and burnt orange tones of her outfit, while the cool, deep blue background is intensified, creating a bold, saturated contrast that feels vivid and cinematic.",
+            negative_prompt: "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲",
+            loras: &[],
+            control_nets: &["qwen_image_2512_fun_controlnet_union_2602"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 30,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
