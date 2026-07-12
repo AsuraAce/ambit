@@ -109,4 +109,35 @@ describe('useGalleryMotion', () => {
 
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it('disables media-query subscriptions when matchMedia is unavailable', () => {
+        vi.stubGlobal('matchMedia', undefined);
+
+        const { result } = renderGalleryMotion({ transitionKey: 'initial', visibleItemCount: 20 });
+
+        expect(result.current.motionAllowed).toBe(true);
+    });
+
+    it('uses legacy media-query listeners and removes them on unmount', () => {
+        const addListener = vi.fn();
+        const removeListener = vi.fn();
+        const mediaQuery = {
+            matches: false,
+            media: '(prefers-reduced-motion: reduce)',
+            onchange: null,
+            addListener,
+            removeListener,
+            dispatchEvent: vi.fn(),
+        } as unknown as MediaQueryList;
+        vi.stubGlobal('matchMedia', vi.fn(() => mediaQuery));
+
+        const { unmount } = renderGalleryMotion({ transitionKey: 'initial', visibleItemCount: 20 });
+
+        expect(addListener).toHaveBeenCalledWith(expect.any(Function));
+        const changeHandler = addListener.mock.calls[0][0] as () => void;
+        Object.defineProperty(mediaQuery, 'matches', { configurable: true, value: true });
+        act(() => changeHandler());
+        unmount();
+        expect(removeListener).toHaveBeenCalledWith(changeHandler);
+    });
 });

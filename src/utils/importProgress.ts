@@ -13,7 +13,7 @@ interface StableImportProgressOptions {
 }
 
 const folderLabel = (count: number): string =>
-    `${count} ${count === 1 ? 'folder' : 'folders'}`;
+    `${count} folders`;
 
 const withPrefix = (message: string, prefix?: string): string =>
     prefix ? `${prefix}: ${message}` : message;

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useImportOps } from '../useImportOps';
 import { useLibraryStore } from '../../stores/libraryStore';
+import { GeneratorTool } from '../../types';
 import type { AIImage, AppSettings, MonitoredFolder } from '../../types';
 import type { ImportResult } from '../../services/importService';
 import type { Dispatch, SetStateAction } from 'react';
@@ -119,17 +120,22 @@ describe('useImportOps', () => {
         hasCompletedOnboarding: true
     } as AppSettings;
 
-    const renderImportOps = (settingsOverrides: Partial<AppSettings> = {}) => {
-        const setImages = vi.fn() as Dispatch<SetStateAction<AIImage[]>>;
-        return renderHook(() => useImportOps({
-            images: [],
+    const renderImportOps = (
+        settingsOverrides: Partial<AppSettings> = {},
+        images: AIImage[] = []
+    ) => {
+        const setImages = vi.fn<Dispatch<SetStateAction<AIImage[]>>>();
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        const hook = renderHook(() => useImportOps({
+            images,
             setImages,
-            refreshCollections: vi.fn().mockResolvedValue(undefined),
+            refreshCollections,
             settings: {
                 ...settings,
                 ...settingsOverrides
             }
         }));
+        return { ...hook, setImages, refreshCollections };
     };
 
     beforeEach(() => {
@@ -547,5 +553,437 @@ describe('useImportOps', () => {
         expect(updateLastScanned).not.toHaveBeenCalled();
         expect(mocks.processNativePaths).not.toHaveBeenCalled();
         expect(mocks.getThumbnailDir).not.toHaveBeenCalled();
+    });
+
+    it('imports browser files and commits only genuinely new images', async () => {
+        const existing = importedImage('existing');
+        const added = importedImage('added');
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({
+            images: [existing, added],
+            stats: { processed: 2, imported: 0, skipped: 1, errors: 1 }
+        }));
+        const { result, setImages, refreshCollections } = renderImportOps({}, [existing]);
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        expect(setImages).toHaveBeenCalledTimes(1);
+        const update = setImages.mock.calls[0][0] as (value: AIImage[]) => AIImage[];
+        expect(update([existing])).toEqual([added, existing]);
+        expect(update([added, existing])).toEqual([added, existing]);
+        expect(refreshCollections).toHaveBeenCalledTimes(1);
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images. (Skipped 1 duplicates) Ignored 1 intermediate files. 1 failed.', 'info');
+        expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses metadata refresh for imported batches reported by the backend', async () => {
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({
+            images: [importedImage('added')],
+            stats: { processed: 1, imported: 1, skipped: 0, errors: 0 }
+        }));
+        const { result, setImages, refreshCollections } = renderImportOps();
+
+        await act(async () => result.current.handleWebFiles([new File(['x'], 'image.png')]));
+
+        expect(mocks.refreshMetadata).toHaveBeenCalledTimes(1);
+        expect(setImages).not.toHaveBeenCalled();
+        expect(refreshCollections).not.toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images.', 'success');
+    });
+
+    it('reports duplicate-only, skipped-only, and failed-only web scans', async () => {
+        const duplicate = importedImage('duplicate');
+        const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const first = renderImportOps({}, [duplicate]);
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [duplicate] }));
+        await act(async () => first.result.current.handleWebFiles([new File(['x'], 'duplicate.png')]));
+        expect(consoleSpy).toHaveBeenCalledWith('Scan complete: 1 duplicates found.');
+        first.unmount();
+
+        const second = renderImportOps();
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ stats: { processed: 2, imported: 0, skipped: 2, errors: 0 } }));
+        await act(async () => second.result.current.handleWebFiles([new File(['x'], 'skip.png')]));
+        expect(mocks.addToast).toHaveBeenCalledWith('Ignored 2 intermediate files.', 'info');
+        second.unmount();
+
+        const third = renderImportOps();
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ stats: { processed: 1, imported: 0, skipped: 0, errors: 1 } }));
+        await act(async () => third.result.current.handleWebFiles([new File(['x'], 'bad.png')]));
+        expect(mocks.addToast).toHaveBeenCalledWith('Failed to load 1 files.', 'error');
+        consoleSpy.mockRestore();
+    });
+
+    it('handles native file-picker progress, cancellation, contention, and failures', async () => {
+        const native = new File(['x'], 'native.png') as File & { path: string };
+        native.path = 'C:/native.png';
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, onProgress) => {
+            onProgress(1, 2, 'Reading');
+            return emptyImportResult(true);
+        });
+        const first = renderImportOps();
+        const input = document.createElement('input');
+        Object.defineProperty(input, 'files', { value: [native] });
+        await act(async () => first.result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(['C:/native.png'], 'C:/thumbs', expect.any(Function), undefined, expect.any(AbortSignal));
+        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
+        expect(input.value).toBe('');
+        first.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const second = renderImportOps();
+        const busyInput = document.createElement('input');
+        Object.defineProperty(busyInput, 'files', { value: [new File(['x'], 'web.png')] });
+        await act(async () => second.result.current.importImages({ target: busyInput } as unknown as React.ChangeEvent<HTMLInputElement>));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        second.unmount();
+
+        useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
+        mocks.processWebFiles.mockRejectedValueOnce(new Error('bad file'));
+        const third = renderImportOps();
+        const failedInput = document.createElement('input');
+        Object.defineProperty(failedInput, 'files', { value: [new File(['x'], 'bad.png')] });
+        await act(async () => third.result.current.importImages({ target: failedInput } as unknown as React.ChangeEvent<HTMLInputElement>));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import failed', 'error');
+    });
+
+    it('ignores file-picker changes without a FileList', async () => {
+        const { result } = renderImportOps();
+        await act(async () => result.current.importImages({ target: { files: null } } as React.ChangeEvent<HTMLInputElement>));
+        expect(mocks.processWebFiles).not.toHaveBeenCalled();
+    });
+
+    it('commits successful native file-picker imports', async () => {
+        const native = new File(['x'], 'native.png') as File & { path: string };
+        native.path = 'C:/native.png';
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('native')] }));
+        const { result } = renderImportOps();
+        const input = document.createElement('input');
+        Object.defineProperty(input, 'files', { value: [native] });
+
+        await act(async () => result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
+
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images.', 'success');
+        expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits successful browser file-picker imports', async () => {
+        mocks.processWebFiles.mockResolvedValueOnce(importResult({ images: [importedImage('browser')] }));
+        const { result } = renderImportOps();
+        const input = document.createElement('input');
+        Object.defineProperty(input, 'files', { value: [new File(['x'], 'browser.png')] });
+
+        await act(async () => result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
+
+        expect(mocks.processWebFiles).toHaveBeenCalledTimes(1);
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images.', 'success');
+    });
+
+    it('handles native web-file drops across success, cancellation, failure, and contention', async () => {
+        const native = new File(['x'], 'native.png') as File & { path: string };
+        native.path = 'C:/native.png';
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(1, 1, 'Done');
+            return importResult({ images: [importedImage('native')] });
+        });
+        const success = renderImportOps();
+        await act(async () => success.result.current.handleWebFiles([native]));
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images.', 'success');
+        success.unmount();
+
+        mocks.processNativePaths.mockResolvedValueOnce(emptyImportResult(true));
+        const cancelled = renderImportOps();
+        await act(async () => cancelled.result.current.handleWebFiles([native]));
+        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
+        cancelled.unmount();
+
+        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('failed'));
+        const failed = renderImportOps();
+        await act(async () => failed.result.current.handleWebFiles([native]));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import failed', 'error');
+        failed.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const busy = renderImportOps();
+        await act(async () => busy.result.current.handleWebFiles([native]));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+    });
+
+    it('forwards external path progress and startup options without owning import state', async () => {
+        const onProgress = vi.fn();
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(2, 4, 'Halfway', { phase: 'importing' });
+            return emptyImportResult();
+        });
+        const { result } = renderImportOps();
+
+        await act(async () => result.current.handleImportPaths(['C:/image.png'], GeneratorTool.AUTOMATIC1111, {
+            mode: 'startup',
+            skipStateManagement: true,
+            onProgress,
+            forceRescan: true,
+            waitForStableFiles: false,
+            deferFacetCacheRefresh: true,
+            abortSignal: new AbortController().signal
+        }));
+
+        expect(onProgress).toHaveBeenCalledWith(2, 4, 'Halfway', { phase: 'importing' });
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(
+            ['C:/image.png'], 'C:/thumbs', expect.any(Function), GeneratorTool.AUTOMATIC1111, expect.any(AbortSignal), true, true, false, true
+        );
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+    });
+
+    it('short-circuits empty startup paths and handles manual path errors by abort state', async () => {
+        const empty = renderImportOps();
+        await act(async () => empty.result.current.handleImportPaths([], undefined, { mode: 'startup' }));
+        expect(mocks.getThumbnailDir).not.toHaveBeenCalled();
+        empty.unmount();
+
+        const aborted = new AbortController();
+        aborted.abort();
+        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('cancelled'));
+        const first = renderImportOps();
+        await act(async () => first.result.current.handleImportPaths(['C:/x'], undefined, { abortSignal: aborted.signal }));
+        expect(mocks.addToast).toHaveBeenCalledWith(manualCancellationMessage, 'info');
+        first.unmount();
+
+        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('failed'));
+        const second = renderImportOps();
+        await act(async () => second.result.current.handleImportPaths(['C:/x']));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import failed or cancelled', 'error');
+    });
+
+    it('tracks managed path progress and keeps background contention quiet', async () => {
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(1, 2, 'Halfway');
+            return importResult({ images: [importedImage('new')] });
+        });
+        const managed = renderImportOps();
+        await act(async () => managed.result.current.handleImportPaths(['C:/new.png']));
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 images.', 'success');
+        managed.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        mocks.addToast.mockClear();
+        const blocked = renderImportOps();
+        await act(async () => blocked.result.current.handleImportPaths(['C:/new.png'], undefined, { mode: 'background' }));
+        expect(mocks.addToast).not.toHaveBeenCalled();
+    });
+
+    it('reports manual path contention and permits unmanaged progress without a listener', async () => {
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const blocked = renderImportOps();
+        await act(async () => blocked.result.current.handleImportPaths(['C:/new.png']));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        blocked.unmount();
+        useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
+
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(0, 1, 'Starting');
+            return emptyImportResult();
+        });
+        const unmanaged = renderImportOps();
+        await act(async () => unmanaged.result.current.handleImportPaths(['C:/new.png'], undefined, { skipStateManagement: true }));
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+    });
+
+    it('keeps background path failures quiet', async () => {
+        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderImportOps();
+        await act(async () => result.current.handleImportPaths(['C:/new.png'], undefined, { mode: 'background' }));
+        expect(mocks.addToast).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+    });
+
+    it('covers manual folder outcomes without imported images', async () => {
+        const cases: Array<[ImportResult, string, 'info' | 'warning']> = [
+            [importResult({ stats: { processed: 2, imported: 0, skipped: 2, errors: 0 } }), 'Scan complete. No new images found.', 'info'],
+            [importResult({ stats: { processed: 1, imported: 0, skipped: 0, errors: 1 } }), 'Scan complete with 1 errors.', 'warning'],
+            [emptyImportResult(), 'No images found in selected folders', 'info']
+        ];
+        for (const [folderResult, message, level] of cases) {
+            mocks.processFoldersUnified.mockResolvedValueOnce(folderResult);
+            const hook = renderImportOps();
+            await act(async () => hook.result.current.handleImportFolders([{ path: 'C:/watch' }]));
+            expect(mocks.addToast).toHaveBeenCalledWith(message, level);
+            hook.unmount();
+        }
+    });
+
+    it('keeps startup folder failures quiet and marks startup scans', async () => {
+        mocks.processFoldersUnified.mockRejectedValueOnce(new Error('failed'));
+        const { result } = renderImportOps();
+        await act(async () => result.current.handleImportFolders([], { mode: 'startup' }));
+        expect(mocks.processFoldersUnified).toHaveBeenCalledWith([], expect.objectContaining({ isStartup: true }));
+        expect(mocks.addToast).not.toHaveBeenCalled();
+    });
+
+    it('keeps background folder completion and contention quiet', async () => {
+        const completed = renderImportOps();
+        await act(async () => completed.result.current.handleImportFolders([{ path: 'C:/watch' }], { mode: 'background' }));
+        expect(mocks.addToast).not.toHaveBeenCalled();
+        completed.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const blocked = renderImportOps();
+        await act(async () => blocked.result.current.handleImportFolders([{ path: 'C:/watch' }], { mode: 'background' }));
+        expect(mocks.addToast).not.toHaveBeenCalled();
+    });
+
+    it('scans directories with compact commits and tolerates cancellation and errors', async () => {
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('new')] }));
+        const first = renderImportOps();
+        await act(async () => first.result.current.scanDirectory('C:/scan'));
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 new images', 'success');
+        first.unmount();
+
+        mocks.refreshHiddenAvailability.mockClear();
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('cancelled')], wasCancelled: true }));
+        const second = renderImportOps();
+        await act(async () => second.result.current.scanDirectory('C:/scan'));
+        expect(mocks.refreshHiddenAvailability).not.toHaveBeenCalled();
+        second.unmount();
+
+        mocks.getThumbnailDir.mockRejectedValueOnce(new Error('failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const third = renderImportOps();
+        await act(async () => third.result.current.scanDirectory('C:/scan'));
+        expect(errorSpy).toHaveBeenCalled();
+        errorSpy.mockRestore();
+    });
+
+    it('reports directory scan progress and rejects a contended scan', async () => {
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(1, 2, 'Scanning');
+            return emptyImportResult();
+        });
+        const first = renderImportOps();
+        await act(async () => first.result.current.scanDirectory('C:/scan'));
+        first.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const second = renderImportOps();
+        await act(async () => second.result.current.scanDirectory('C:/scan'));
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+    });
+
+    it('handles InvokeAI configuration, progress, cancellation, contention, and failure', async () => {
+        const missing = renderImportOps();
+        await act(async () => missing.result.current.handleInvokeSync());
+        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI not configured', 'error');
+        missing.unmount();
+
+        mocks.syncImages.mockImplementationOnce(async (_path, progress) => {
+            progress(1, 3, 'Syncing');
+            return { imported: 2, updated: 1 };
+        });
+        const success = renderImportOps({ invokeAiPath: 'D:/Invoke' });
+        await act(async () => success.result.current.handleInvokeSync());
+        expect(mocks.syncCollectionImages).toHaveBeenCalledTimes(1);
+        expect(mocks.rebuildFacetCache).toHaveBeenCalledTimes(1);
+        expect(success.refreshCollections).toHaveBeenCalledTimes(1);
+        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI sync complete: 2 imported, 1 updated', 'success');
+        success.unmount();
+
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const busy = renderImportOps({ invokeAiPath: 'D:/Invoke' });
+        await act(async () => busy.result.current.handleInvokeSync());
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        busy.unmount();
+        useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
+
+        mocks.syncImages.mockRejectedValueOnce(new Error('failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const failed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
+        await act(async () => failed.result.current.handleInvokeSync());
+        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI sync failed', 'error');
+        errorSpy.mockRestore();
+    });
+
+    it('handles InvokeAI cancellation both after sync and through the error path', async () => {
+        mocks.syncImages.mockImplementationOnce(async (_path, _progress, signal) => {
+            useLibraryStore.getState().importAbortController?.abort();
+            expect(signal.aborted).toBe(true);
+            return { imported: 0, updated: 0 };
+        });
+        const completed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
+        await act(async () => completed.result.current.handleInvokeSync());
+        expect(mocks.addToast).toHaveBeenCalledWith('Import cancelled', 'info');
+        expect(mocks.syncCollectionImages).not.toHaveBeenCalled();
+        completed.unmount();
+
+        mocks.syncImages.mockImplementationOnce(async () => {
+            useLibraryStore.getState().importAbortController?.abort();
+            throw new Error('cancelled');
+        });
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const failed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
+        await act(async () => failed.result.current.handleInvokeSync());
+        expect(mocks.addToast).toHaveBeenCalledWith('Import cancelled', 'info');
+        errorSpy.mockRestore();
+    });
+
+    it('resyncs full and incremental folders and preserves cancellation results', async () => {
+        const updateLastScanned = vi.fn();
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({ status: 'ok', data: [] });
+        const full = renderImportOps();
+        await act(async () => full.result.current.resyncFolder({ id: 'full', path: 'C:/full', isActive: true, imageCount: 0 }, updateLastScanned));
+        expect(updateLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
+        full.unmount();
+
+        mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 2 }] });
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('new')] }));
+        const incremental = renderImportOps();
+        const completed = await act(async () => incremental.result.current.resyncFolder({ id: 'inc', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1, variant: GeneratorTool.AUTOMATIC1111 }, updateLastScanned));
+        expect(completed).toEqual({ newFiles: 1, totalScanned: 1 });
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(expect.any(Array), 'C:/thumbs', expect.any(Function), GeneratorTool.AUTOMATIC1111, expect.any(AbortSignal), false, true);
+        incremental.unmount();
+
+        mocks.scanDirectorySince.mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/watch/new.png', modified: 1, size: 2 }] });
+        mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('partial')], wasCancelled: true }));
+        const cancelled = renderImportOps();
+        const partial = await act(async () => cancelled.result.current.resyncFolder({ id: 'cancel', path: 'C:/watch', isActive: true, imageCount: 0, lastScanned: 1 }, updateLastScanned));
+        expect(partial).toEqual({ newFiles: 1, totalScanned: 1 });
+    });
+
+    it('rejects contended resyncs and rethrows scan failures after releasing ownership', async () => {
+        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
+        const busy = renderImportOps();
+        const blocked = await act(async () => busy.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn()));
+        expect(blocked).toEqual({ newFiles: 0, totalScanned: 0 });
+        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
+        busy.unmount();
+        useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
+
+        mocks.scanDirectoryWithStats.mockRejectedValueOnce(new Error('scan failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const failed = renderImportOps();
+        await expect(failed.result.current.resyncFolder({ id: 'x', path: 'C:/x', isActive: true, imageCount: 0 }, vi.fn())).rejects.toThrow('scan failed');
+        expect(useLibraryStore.getState().isImporting).toBe(false);
+        errorSpy.mockRestore();
+    });
+
+    it('performs a non-empty full resync and forwards native progress', async () => {
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({
+            status: 'ok',
+            data: [{ path: 'C:/full/image.png', modified: 1, size: 2 }]
+        });
+        mocks.processNativePaths.mockImplementationOnce(async (_paths, _thumbs, progress) => {
+            progress(1, 1, 'Done');
+            return importResult({ images: [importedImage('full')] });
+        });
+        const updateLastScanned = vi.fn();
+        const { result } = renderImportOps();
+
+        const scanResult = await act(async () => result.current.resyncFolder(
+            { id: 'full', path: 'C:/full', isActive: true, imageCount: 0 },
+            updateLastScanned
+        ));
+
+        expect(scanResult).toEqual({ newFiles: 1, totalScanned: 1 });
+        expect(mocks.processNativePaths).toHaveBeenCalledWith(
+            ['C:/full/image.png'], 'C:/thumbs', expect.any(Function), undefined, expect.any(AbortSignal), false, false
+        );
+        expect(updateLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
     });
 });

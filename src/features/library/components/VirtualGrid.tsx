@@ -87,9 +87,7 @@ const VirtualGridInternal = <T extends { id: string }>(
   suspendResizeLayoutRef.current = suspendResizeLayout;
 
   const measureGridOffset = useCallback(() => {
-    if (!containerRef.current) return;
-
-    const off = containerRef.current.offsetTop;
+    const off = containerRef.current!.offsetTop;
     if (off !== gridOffsetRef.current) {
       gridOffsetRef.current = off;
       setGridOffset(off);
@@ -152,8 +150,6 @@ const VirtualGridInternal = <T extends { id: string }>(
 
   // Measure container width
   useLayoutEffect(() => {
-    if (!containerRef.current) return;
-
     let rafId: number | null = null;
 
     // Throttling State
@@ -193,7 +189,7 @@ const VirtualGridInternal = <T extends { id: string }>(
       }
     });
 
-    observer.observe(containerRef.current);
+    observer.observe(containerRef.current!);
     return () => {
       observer.disconnect();
       if (rafId !== null) {
@@ -216,9 +212,7 @@ const VirtualGridInternal = <T extends { id: string }>(
     const fallbackWidth = containerRef.current?.getBoundingClientRect().width;
     const finalWidth = pendingWidth ?? fallbackWidth;
 
-    if (typeof finalWidth === 'number') {
-      commitContainerWidth(finalWidth, true);
-    }
+    commitContainerWidth(finalWidth!, true);
   }, [suspendResizeLayout, commitContainerWidth]);
 
   // Track scroll position with requestAnimationFrame
@@ -229,7 +223,7 @@ const VirtualGridInternal = <T extends { id: string }>(
     let rafId: number;
     let lastCallTime = 0;
 
-    const handleScroll = (suppressMotion = true) => {
+    const handleScroll = (suppressMotion: boolean) => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         if (suppressMotion) {
@@ -511,7 +505,7 @@ const VirtualGridInternal = <T extends { id: string }>(
 
 
   // Use container height if possible, fallback to window
-  const visibleHeight = scrollContainerRef.current ? scrollContainerRef.current.clientHeight : (typeof window !== 'undefined' ? window.innerHeight : 1000);
+  const visibleHeight = scrollContainerRef.current?.clientHeight ?? window.innerHeight;
   const buffer = 1500; // Reduced buffer to avoid texture thrashing
 
   // Relative Scroll Position: Subtract the grid's top offset from container scrollTop
@@ -568,7 +562,6 @@ const VirtualGridInternal = <T extends { id: string }>(
   const len = positions.length;
   for (let i = startIndex; i < len; i++) {
     const pos = positions[i];
-    if (!pos) continue;
 
     // Fast bounds check
     // Overlap: pos.bottom > minVisible && pos.top < maxVisible

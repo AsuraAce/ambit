@@ -44,16 +44,10 @@ export const getGeminiThinkingConfig = (
             medium: ThinkingLevel.MEDIUM,
             high: ThinkingLevel.HIGH,
         };
-        const thinkingLevel = thinkingLevels[normalizedMode];
-        return thinkingLevel ? { thinkingLevel } : undefined;
+        return { thinkingLevel: thinkingLevels[normalizedMode]! };
     }
 
-    if (modelId === 'gemini-2.5-flash' || modelId === 'gemini-2.5-flash-lite') {
-        if (normalizedMode === 'off') return { thinkingBudget: 0 };
-        if (normalizedMode === 'dynamic') return { thinkingBudget: -1 };
-    }
-
-    return undefined;
+    return { thinkingBudget: normalizedMode === 'off' ? 0 : -1 };
 };
 
 /**

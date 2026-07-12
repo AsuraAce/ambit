@@ -44,7 +44,7 @@ const updateImagesQueryData = (
     data: ImagesQueryData,
     queryKey: QueryKey,
     updateImage: (image: AIImage) => AIImage,
-    options: ImageQueryOrderOptions = {}
+    options: ImageQueryOrderOptions
 ): ImagesQueryData => {
     const originalImages = data.pages.flatMap(page => page.images);
     const shouldReorder = !!options.reorderQueryKey

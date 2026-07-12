@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInvokeImagePathResolver } from '../pathResolver';
+import { buildInvokeImageDiskIndex, createInvokeImagePathResolver } from '../pathResolver';
 
 const files = [
     'outputs/images/flat.png',
@@ -12,6 +12,20 @@ const files = [
 ];
 
 describe('InvokeAI image path resolver', () => {
+    it('ignores unsafe disk-index entries', () => {
+        const index = buildInvokeImageDiskIndex([
+            '/absolute.png',
+            '../outside.png',
+            'misc/readme.png',
+            'outputs/images/safe.png',
+            'outputs/images/safe.png',
+        ]);
+
+        expect(index.byRootRelative.size).toBe(2);
+        expect(index.byImagesRelative.size).toBe(1);
+        expect(index.byBasename.get('safe.png')).toBe('outputs/images/safe.png');
+    });
+
     it.each([
         ['flat layout', 'flat.png', 'D:/Invoke/outputs/images/flat.png'],
         ['date layout', 'date.png', 'D:/Invoke/outputs/images/2026/05/25/date.png'],
@@ -41,6 +55,10 @@ describe('InvokeAI image path resolver', () => {
             ambiguous: false
         });
         expect(listImages).not.toHaveBeenCalled();
+
+        await expect(resolver.resolveImagePath('nested/authoritative.png', 'outputs/images/custom')).resolves.toMatchObject({
+            relativePath: 'outputs/images/custom/authoritative.png',
+        });
     });
 
     it('marks basename collisions ambiguous instead of choosing a nested file silently', async () => {
@@ -121,5 +139,93 @@ describe('InvokeAI image path resolver', () => {
         expect(resolver.getThumbnailPathCandidates('/tmp/outside.webp', nested)).toEqual(boundedFallbacks);
         expect(resolver.getThumbnailPathCandidates('C:/outside.webp', nested)).toEqual(boundedFallbacks);
         expect(resolver.getThumbnailPathCandidates('\\\\server\\share\\outside.webp', nested)).toEqual(boundedFallbacks);
+    });
+
+    it('falls back to the bounded flat path when disk indexing fails', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const listImages = vi.fn().mockRejectedValue(new Error('scope denied'));
+        const resolver = createInvokeImagePathResolver('D:/Invoke/', listImages);
+
+        await expect(resolver.resolveImagePath('missing.png')).resolves.toEqual({
+            absolutePath: 'D:/Invoke/outputs/images/missing.png',
+            relativePath: 'outputs/images/missing.png',
+            ambiguous: false
+        });
+        expect(warn).toHaveBeenCalledWith(
+            '[InvokeAI Sync] Failed to build InvokeAI image path index; falling back to flat path resolution.',
+            expect.any(Error)
+        );
+        warn.mockRestore();
+    });
+
+    it('uses the first bounded thumbnail candidate when no path index is supplied', async () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+        const nested = await resolver.resolveImagePath('date.png');
+
+        expect(resolver.resolveThumbnailPath(null, nested)).toBe(
+            'D:/Invoke/outputs/images/2026/05/25/date.webp'
+        );
+        expect(resolver.resolveThumbnailPath('custom/folder/thumb.webp', nested)).toBe(
+            'D:/Invoke/outputs/images/custom/folder/thumb.webp'
+        );
+        expect(resolver.resolveThumbnailPath(null, {
+            absolutePath: null,
+            relativePath: null,
+            ambiguous: false
+        })).toBeNull();
+    });
+
+    it('returns no thumbnail candidates when even the derived name is empty', () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn());
+        const unresolvedName = { absolutePath: '/', relativePath: null, ambiguous: false };
+
+        expect(resolver.getThumbnailPathCandidates(null, unresolvedName)).toEqual([]);
+        expect(resolver.resolveThumbnailPath(null, unresolvedName)).toBe('/');
+        expect(resolver.getThumbnailPathCandidates(null, {
+            absolutePath: null,
+            relativePath: null,
+            ambiguous: false,
+        })).toEqual([]);
+    });
+
+    it('handles rooted thumbnails, missing basename matches, and duplicate candidates', async () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+
+        await expect(resolver.resolveImagePath('not-indexed.png')).resolves.toMatchObject({
+            relativePath: 'outputs/images/not-indexed.png',
+        });
+        expect(resolver.getThumbnailPathCandidates('outputs/images/custom.webp', {
+            absolutePath: 'D:/Invoke/outputs/images/image.png',
+            relativePath: 'outputs/images/image.png',
+            ambiguous: false,
+        })).toEqual(['D:/Invoke/outputs/images/custom.webp']);
+        expect(resolver.getThumbnailPathCandidates(null, {
+            absolutePath: 'D:/Invoke/outputs/images/thumbnails/image.png',
+            relativePath: 'outputs/images/thumbnails/image.png',
+            ambiguous: false,
+        })).toEqual([
+            'D:/Invoke/outputs/images/thumbnails/image.webp',
+            'D:/Invoke/outputs/images/thumbnails/thumbnails/image.webp',
+        ]);
+    });
+
+    it('resolves safe legacy names to the flat output folder and rejects unsafe names', () => {
+        const resolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue(files));
+
+        expect(resolver.getLegacyFlatImagePath('nested/image.png')).toBe(
+            'D:/Invoke/outputs/images/image.png'
+        );
+        expect(resolver.getLegacyFlatImagePath('../outside.png')).toBeNull();
+        expect(resolver.getLegacyFlatImagePath('')).toBeNull();
+    });
+
+    it('builds the disk index once and reuses it for later flat-name resolutions', async () => {
+        const listImages = vi.fn().mockResolvedValue(files);
+        const resolver = createInvokeImagePathResolver('D:/Invoke', listImages);
+
+        await resolver.resolveImagePath('flat.png');
+        await resolver.resolveImagePath('hash.png');
+
+        expect(listImages).toHaveBeenCalledTimes(1);
     });
 });

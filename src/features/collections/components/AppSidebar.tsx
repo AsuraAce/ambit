@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Grid, Clock, Eraser, BarChart3, Filter, Heart, Gift, HelpCircle, Settings, Pin } from 'lucide-react';
 import { ViewMode, FilterState } from '../../../types';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface AppSidebarProps {
   viewMode: ViewMode;
@@ -71,22 +70,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   );
 };
 
-const NavButton = ({ active, onClick, icon, tooltip, badgeContent, badgeColor = "bg-sage-500" }: { active: boolean, onClick: () => void, icon: React.ReactNode, tooltip: string, badgeContent?: string | number, badgeColor?: string }) => (
+const NavButton = ({ active, onClick, icon, tooltip }: { active: boolean, onClick: () => void, icon: React.ReactElement<{ size?: number }>, tooltip: string }) => (
   <button onClick={onClick} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ease-spring group relative ${active ? 'bg-sage-500 text-white shadow-lg shadow-sage-500/30' : 'text-gray-400 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-zinc-200'}`}>
-    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 20 }) : icon}
-
-    <AnimatePresence>
-      {badgeContent !== undefined && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5, y: 5 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.5, y: 5 }}
-          className={`absolute -top-1 -right-1 ${badgeColor} text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900 shadow-sm z-10`}
-        >
-          {badgeContent}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    {React.cloneElement(icon, { size: 20 })}
 
     <div className="absolute left-16 bg-white dark:bg-zinc-800 text-gray-800 dark:text-white text-xs px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-200 dark:border-white/10 shadow-xl backdrop-blur-md">{tooltip}</div>
   </button>

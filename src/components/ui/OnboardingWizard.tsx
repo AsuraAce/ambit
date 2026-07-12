@@ -135,8 +135,6 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     const handleVerifyKey = async (overrideKey?: string) => {
         const keyToVerify = (overrideKey || apiKey).trim();
-        if (!keyToVerify) return;
-
         setIsVerifying(true);
         setVerificationStatus('idle');
         setVerificationError(null);
@@ -174,7 +172,6 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     const handleNext = () => {
         if (step < TOTAL_STEPS) {
-            if (!canContinue) return;
             setStep(current => Math.min(TOTAL_STEPS, current + 1));
             return;
         }
@@ -189,12 +186,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     };
 
     const handleBack = () => {
-        if (isVerifying) return;
         setStep(current => Math.max(1, current - 1));
     };
 
     const handleSetUpLater = () => {
-        if (isVerifying) return;
         setEnableAI(false);
         setVerificationStatus('idle');
         setVerificationError(null);
@@ -412,8 +407,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                     error={verificationError}
                                                     isEnvKey={isEnvKey}
                                                     onTestEnvKey={() => {
-                                                        const keyToTest = process.env.API_KEY || '';
-                                                        if (keyToTest) void handleVerifyKey(keyToTest);
+                                                        void handleVerifyKey(process.env.API_KEY!);
                                                     }}
                                                 />
                                                 <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">

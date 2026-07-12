@@ -96,4 +96,45 @@ describe('useTimeline', () => {
         expect(result.current.groups[0].date).toBe('Today');
         expect(result.current.groups[1].date).toBe('September 2023');
     });
+
+    it.each([
+        ['name_asc', ['alpha', 'beta']],
+        ['name_desc', ['beta', 'alpha']],
+        ['size_asc', ['alpha', 'beta']],
+        ['size_desc', ['beta', 'alpha']],
+        ['date_asc', ['alpha', 'beta']],
+        ['date_desc', ['beta', 'alpha']],
+    ] as const)('sorts images within a date group by %s', (sortOption, expectedIds) => {
+        const alpha = {
+            ...createMockImage('alpha', MOCK_NOW - 1000),
+            filename: 'alpha.png',
+            fileSize: undefined,
+        };
+        const beta = {
+            ...createMockImage('beta', MOCK_NOW),
+            filename: 'beta.png',
+            fileSize: 20,
+        };
+
+        const { result } = renderHook(() => useTimeline([beta, alpha], sortOption));
+
+        expect(result.current.groups[0].images.map(image => image.id)).toEqual(expectedIds);
+    });
+
+    it('keeps pinned images first even when their selected sort value is lower', () => {
+        const pinned = { ...createMockImage('pinned', MOCK_NOW - 1000, true), filename: 'z.png' };
+        const regular = { ...createMockImage('regular', MOCK_NOW, false), filename: 'a.png' };
+
+        const { result } = renderHook(() => useTimeline([pinned, regular], 'name_asc'));
+
+        expect(result.current.groups[0].images.map(image => image.id)).toEqual(['pinned', 'regular']);
+    });
+
+    it('treats missing file sizes as zero on both sort sides', () => {
+        const first = { ...createMockImage('first', MOCK_NOW), fileSize: undefined };
+        const second = { ...createMockImage('second', MOCK_NOW - 1), fileSize: undefined };
+
+        expect(renderHook(() => useTimeline([first, second], 'size_asc')).result.current.groups[0].images).toHaveLength(2);
+        expect(renderHook(() => useTimeline([first, second], 'size_desc')).result.current.groups[0].images).toHaveLength(2);
+    });
 });

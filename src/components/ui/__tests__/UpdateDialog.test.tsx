@@ -46,4 +46,21 @@ describe('UpdateDialog', () => {
 
         expect(screen.getByText('No release notes were included with this update.')).toBeTruthy();
     });
+
+    it('renders supported release-note blocks while suppressing links and images', () => {
+        render(
+            <UpdateDialog
+                {...defaultProps}
+                notes={'# One\n\n## Two\n\n#### Four\n\n1. Ordered\n\n`code` [link](https://example.com) ![image](https://example.com/image.png)'}
+            />
+        );
+
+        expect(screen.getByText('One').tagName).toBe('H4');
+        expect(screen.getByText('Two').tagName).toBe('H4');
+        expect(screen.getByText('Four').tagName).toBe('H4');
+        expect(screen.getByText('Ordered').closest('ol')).not.toBeNull();
+        expect(screen.getByText('code').tagName).toBe('CODE');
+        expect(screen.getByText('link').tagName).toBe('SPAN');
+        expect(document.querySelector('img')).toBeNull();
+    });
 });

@@ -25,6 +25,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   wrapperClassName,
   imgClassName,
   onLoad,
+  onError,
   draggable = false,
   onImageError,
   fallbackSrc,
@@ -110,7 +111,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       setStatus('error');
       if (onImageError) onImageError();
     }
-    if (props.onError) props.onError(e);
+    if (onError) onError(e);
   };
 
   const processedSrc = React.useMemo(() => {

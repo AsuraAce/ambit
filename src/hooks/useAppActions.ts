@@ -111,7 +111,7 @@ export const useAppActions = ({
         }
     }, [addToast, queryClient, setImages]);
 
-    const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null = null) => {
+    const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null) => {
         fileOps.deleteImages(ids);
 
         if (targetDeleteId) {

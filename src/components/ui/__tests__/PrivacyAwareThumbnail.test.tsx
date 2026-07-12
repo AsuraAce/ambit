@@ -20,6 +20,11 @@ describe('PrivacyAwareThumbnail', () => {
         });
     });
 
+    it('treats thumbnails as non-sensitive by default', () => {
+        render(<PrivacyAwareThumbnail src="plain.webp" alt="Plain" />);
+        expect(screen.getByTestId('smart-image').getAttribute('src')).toBe('plain.webp');
+    });
+
     it('renders the normal thumbnail when privacy is disabled', () => {
         useSettingsStore.setState({ privacyEnabled: false });
 

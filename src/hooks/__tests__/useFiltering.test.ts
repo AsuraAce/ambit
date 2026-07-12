@@ -63,6 +63,16 @@ describe('useFiltering', () => {
         expect(result.current.availableTags).toContain('masterpiece');
     });
 
+    it('ignores non-string, short, and oversized prompt tags', () => {
+        const variants = [
+            { ...mockImages[0], metadata: { ...mockImages[0].metadata, positivePrompt: 42 as unknown as string } },
+            { ...mockImages[0], id: '2', metadata: { ...mockImages[0].metadata, positivePrompt: 'a, this prompt token is deliberately much longer than forty characters' } },
+        ];
+        const { result } = renderHook(() => useFiltering(variants, [], false, 'blur', []));
+
+        expect(result.current.availableTags).toEqual([]);
+    });
+
     it('should reflect SQL where clause changes when filters change', () => {
         const { result, rerender } = renderHook(
             ({ privacy }) => useFiltering(mockImages, [], privacy, 'blur', []),

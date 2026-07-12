@@ -73,7 +73,11 @@ const buildLightMetadata = (row: ImageRow): ImageMetadata => ({
 export function mapRowToImage(row: ImageRow): AIImage {
     const normalizedPath = normalizePath(asString(row.path) || asString(row.id) || '');
     const thumbValue = asString(row.thumbnail_path);
-    const thumbPath = thumbValue ? normalizePath(thumbValue) : null;
+    const thumbPath = thumbValue
+        ? (thumbValue.startsWith('http') || thumbValue.startsWith('data:') || thumbValue.startsWith('blob:')
+            ? thumbValue
+            : normalizePath(thumbValue))
+        : null;
 
     let metadata = parseJson<ImageMetadata>(row.metadata_json) || buildLightMetadata(row);
 
@@ -133,7 +137,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
             ...current, // Overlays current sparse metadata (which might have tool/model)
             positivePrompt: current.positivePrompt || result.originalMetadata.positivePrompt,
             negativePrompt: current.negativePrompt || result.originalMetadata.negativePrompt,
-            sampler: current.sampler && current.sampler !== 'Unknown' ? current.sampler : result.originalMetadata.sampler,
+            sampler: result.originalMetadata.sampler,
             steps: current.steps || result.originalMetadata.steps,
             cfg: current.cfg || result.originalMetadata.cfg,
             seed: current.seed ?? result.originalMetadata.seed

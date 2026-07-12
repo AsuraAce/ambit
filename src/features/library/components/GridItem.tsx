@@ -9,8 +9,6 @@ import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { commands } from '../../../bindings';
 import { normalizePath, urlToPath } from '../../../utils/pathUtils';
-import { generateSingleThumbnail } from '../../../services/thumbnailService';
-import { updateThumbnailPath } from '../../../services/db/imageRepo';
 
 interface GridItemProps {
     image: AIImage;
@@ -51,37 +49,9 @@ export const GridItem: React.FC<GridItemProps> = memo(({
 
     const isVerifyingMissingRef = useRef(false);
 
-    // Feature Flag: Scroll-triggered generation
-    // Disabled (2025-01-23) to prevent "scroll thrashing" and UI stutter.
-    // We rely on the background auto-healing queue instead.
-    const ENABLE_SCROLL_GENERATION = false;
-
-    // Lazy Generation: If thumbnailUrl equals url (no real thumbnail), generate in background
-    React.useEffect(() => {
-        if (!ENABLE_SCROLL_GENERATION) return;
-
-        // Only trigger if: not missing, not already generating, and thumbnail == source
-        if (!image.isMissing && image.thumbnailUrl === image.url && image.url) {
-            // Generate thumbnail in background (fire-and-forget, updates state on success)
-            generateSingleThumbnail(image.id).then((newThumb) => {
-                if (newThumb) {
-                    // Success: update React state
-                    setImages(prev => prev.map(img =>
-                        img.id === image.id ? { ...img, thumbnailUrl: newThumb } : img
-                    ));
-                    // Persist to database so we don't regenerate on restart
-                    void updateThumbnailPath(image.id, newThumb);
-                }
-                // If generation fails, keep using source (no change needed)
-            }).catch(() => {
-                // Silent failure - source image continues to work
-            });
-        }
-    }, [image.id, image.isMissing, image.thumbnailUrl, image.url, setImages]);
-
     // Error Handler: If real thumbnail fails to load, regenerate it (with retry limit)
     const handleImageError = () => {
-        const sourcePath = normalizePath(urlToPath(image.url) || image.id);
+        const sourcePath = normalizePath(urlToPath(image.url));
         if (!sourcePath || image.isMissing || isVerifyingMissingRef.current) {
             return;
         }
@@ -111,7 +81,8 @@ export const GridItem: React.FC<GridItemProps> = memo(({
             });
     };
 
-    const isStack = image.stack && image.stack.length > 1;
+    const stackSize = image.stack?.length ?? 0;
+    const isStack = stackSize > 1;
 
     return (
         <div
@@ -165,10 +136,10 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                 {isStack && (
                     <div
                         className={`absolute top-2 right-2 bg-black/70 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1.5 border border-white/10 shadow-lg pointer-events-none z-30 transition-all duration-300 ${image.isPinned ? 'mt-8' : ''}`}
-                        title={`${image.stack?.length} versions stacked`}
+                        title={`${stackSize} versions stacked`}
                     >
                         <Layers className="w-3 h-3 text-sage-400" />
-                        {image.stack?.length}
+                        {stackSize}
                     </div>
                 )}
             </div>

@@ -128,7 +128,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     }, [type, setSettings]);
 
     const handleSortSelect = useCallback((id: string) => {
-        if (isFacetSortOption(id)) setSortOption(id);
+        setSortOption(id as FacetSortOption);
     }, [setSortOption]);
 
     // Map UI type to FilterState key (checkpoints uses 'models' in FilterState for historical reasons)
@@ -171,7 +171,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
             aliasGroup[item.name] = itemAliases;
             return {
                 ...prev,
-                [filterKey]: currentList.includes(item.name) ? currentList : [...currentList, item.name],
+                [filterKey]: [...currentList, item.name],
                 assetFilterAliases: nextAliasGroups
             };
         });
@@ -185,7 +185,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
         return item.createdAt ?? item.localModifiedAt ?? 0;
     }, [assetScope]);
 
-    const filteredItems = useMemo(() => (data || [])
+    const filteredItems = useMemo(() => data
         .filter(item => {
             const aliases = getItemAliases(item);
             const query = searchQuery.toLowerCase();
@@ -215,7 +215,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 case 'recent_asc': return compareWithNameTieBreak((a.lastUsedAt || 0) - (b.lastUsedAt || 0), a, b);
                 case 'added_desc': return compareWithNameTieBreak(getAddedSortValue(b) - getAddedSortValue(a), a, b);
                 case 'added_asc': return compareWithNameTieBreak(getAddedSortValue(a) - getAddedSortValue(b), a, b);
-                default: return compareWithNameTieBreak(b.count - a.count, a, b);
             }
         }), [assetScope, data, getAddedSortValue, getItemAliases, searchQuery, selectedNames, sortOption, validNameSet]);
 
@@ -256,7 +255,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     const getFallbackHash = useCallback((item: ResourceItem) => {
         if (item.hash) return item.hash;
-        switch (type as string) {
+        switch (type) {
             case 'checkpoints':
                 return `name:${item.name}`;
             case 'loras':
@@ -269,8 +268,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                 return `cnet_${item.name}`;
             case 'ipAdapters':
                 return `ipad_${item.name}`;
-            default:
-                return item.name;
         }
     }, [type]);
 
@@ -292,8 +289,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     // "Use Sidecar / Reset" - clears user override, falls back to sidecar > dynamic
     const handleResetToSidecar = async (item: ResourceItem) => {
-        if (!item.hash && !item.name) return;
-
         try {
             const result = await commands.unsetModelThumbnail(getFallbackHash(item), item.name, getBackendResourceType());
             if (result.status === 'error') throw new Error(result.error);
@@ -306,8 +301,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
 
     // "Use Dynamic" - clears BOTH override and sidecar, forces dynamic selection
     const handleUseDynamic = async (item: ResourceItem) => {
-        if (!item.hash && !item.name) return;
-
         try {
             const result = await commands.clearAllThumbnails(getFallbackHash(item), item.name, getBackendResourceType());
             if (result.status === 'error') throw new Error(result.error);
@@ -319,8 +312,6 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
     };
 
     const handleThumbnailSensitivity = async (item: ResourceItem, sensitivity: boolean | null) => {
-        if (!item.hash && !item.name) return;
-
         try {
             const result = await commands.setResourceThumbnailSensitivity(getFallbackHash(item), item.name, sensitivity, getBackendResourceType());
             if (result.status === 'error') throw new Error(result.error);

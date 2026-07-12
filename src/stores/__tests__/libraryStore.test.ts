@@ -374,4 +374,131 @@ describe('libraryStore live watch session', () => {
         expect(useLibraryStore.getState().importProgress).toBeNull();
         expect(useLibraryStore.getState().importAbortController).toBeNull();
     });
+
+    it('contains unavailable debug storage and emits import diagnostics when enabled', () => {
+        const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => {
+            throw new Error('storage unavailable');
+        }).mockReturnValue('1');
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+
+        act(() => {
+            useLibraryStore.getState().beginImportRun({ owner: 'debug-import' });
+            useLibraryStore.getState().setImportProgressForRun('stale', { current: 1, total: 1 });
+        });
+
+        expect(debug).toHaveBeenCalledWith('[ImportRun] progress-ignored-stale-run', expect.any(Object));
+        getItem.mockRestore();
+        debug.mockRestore();
+    });
+
+    it('leaves sync state unchanged when cancellation has no controller', () => {
+        const before = useLibraryStore.getState().syncStatus;
+        act(() => useLibraryStore.getState().cancelSync());
+        expect(useLibraryStore.getState().syncStatus).toBe(before);
+    });
+
+    it('aborts and clears an active sync controller', () => {
+        const controller = new AbortController();
+        const abort = vi.spyOn(controller, 'abort');
+        act(() => {
+            useLibraryStore.getState().setSyncStatus('syncing');
+            useLibraryStore.getState().setSyncAbortController(controller);
+            useLibraryStore.getState().cancelSync();
+        });
+        expect(abort).toHaveBeenCalled();
+        expect(useLibraryStore.getState().syncStatus).toBe('idle');
+    });
+
+    it('sets direct import state and preserves dock dismissal when import stops', () => {
+        const controller = new AbortController();
+        act(() => {
+            useLibraryStore.getState().setIsActivityDockDismissed(true);
+            useLibraryStore.getState().setImportProgress({ current: 2, total: 3 });
+            useLibraryStore.getState().setImportAbortController(controller);
+            useLibraryStore.getState().setIsImporting(false);
+        });
+        expect(useLibraryStore.getState().importProgress).toEqual({ current: 2, total: 3 });
+        expect(useLibraryStore.getState().importAbortController).toBe(controller);
+        expect(useLibraryStore.getState().isActivityDockDismissed).toBeUndefined();
+    });
+
+    it('uses default import-run options and cancels both active scans', () => {
+        const duplicateCancel = vi.spyOn(useLibraryStore.getState(), 'cancelDuplicateScan');
+        const missingCancel = vi.spyOn(useLibraryStore.getState(), 'cancelMissingScan');
+        let runId: string | null = null;
+        act(() => {
+            useLibraryStore.setState({ isScanningDuplicates: true, isScanningMissingFiles: true });
+            runId = useLibraryStore.getState().beginImportRun();
+        });
+        expect(runId).toContain('import-');
+        expect(duplicateCancel).toHaveBeenCalled();
+        expect(missingCancel).toHaveBeenCalled();
+        duplicateCancel.mockRestore();
+        missingCancel.mockRestore();
+    });
+
+    it('accepts a repeated explicit run id but rejects legacy active imports', () => {
+        act(() => {
+            useLibraryStore.getState().beginImportRun({ runId: 'same', owner: 'owner' });
+        });
+        expect(useLibraryStore.getState().beginImportRun({ runId: 'same', owner: 'owner' })).toBe('same');
+
+        act(() => useLibraryStore.setState({ isImporting: true, importRunId: null }));
+        expect(useLibraryStore.getState().beginImportRun({ runId: 'new' })).toBeNull();
+    });
+
+    it('updates model-resolution and thumbnail-population state in both activity directions', () => {
+        const resolution = { resolved: 2, unresolved: 1 } as never;
+        act(() => {
+            useLibraryStore.getState().setModelResolutionProgress({ current: 1, total: 2 });
+            useLibraryStore.getState().setLastModelResolutionResult(resolution);
+            useLibraryStore.getState().setIsResolvingModels(true);
+            useLibraryStore.getState().setIsResolvingModels(false);
+            useLibraryStore.getState().setIsPopulatingThumbnails(true);
+            useLibraryStore.getState().setIsPopulatingThumbnails(false);
+        });
+        expect(useLibraryStore.getState().modelResolutionProgress).toEqual({ current: 1, total: 2 });
+        expect(useLibraryStore.getState().lastModelResolutionResult).toBe(resolution);
+        expect(useLibraryStore.getState().isPopulatingThumbnails).toBe(false);
+    });
+
+    it('uses default live-session updates and retains current fields when omitted', () => {
+        act(() => {
+            useLibraryStore.getState().startLiveWatchSession('generic');
+            useLibraryStore.getState().updateLiveWatchSession({});
+            useLibraryStore.getState().reportLiveImagesReceived(0);
+        });
+        const session = useLibraryStore.getState().liveWatchSession;
+        expect(session.source).toBe('generic');
+        expect(session.phase).toBe('summary');
+        expect(session.message).toBe('Watching for new images...');
+        expect(session.progress).toBeNull();
+    });
+
+    it('repairs legacy live sessions missing phase and start time', () => {
+        const current = useLibraryStore.getState().liveWatchSession;
+        act(() => {
+            useLibraryStore.setState({
+                liveWatchSession: {
+                    ...current,
+                    phase: undefined,
+                    startedAt: undefined,
+                } as never,
+            });
+            useLibraryStore.getState().updateLiveWatchSession({});
+        });
+        expect(useLibraryStore.getState().liveWatchSession.phase).toBe('watching');
+        expect(useLibraryStore.getState().liveWatchSession.startedAt).toEqual(expect.any(Number));
+
+        act(() => {
+            useLibraryStore.setState({
+                liveWatchSession: {
+                    ...useLibraryStore.getState().liveWatchSession,
+                    startedAt: undefined,
+                } as never,
+            });
+            useLibraryStore.getState().reportLiveImagesReceived(1);
+        });
+        expect(useLibraryStore.getState().liveWatchSession.startedAt).toEqual(expect.any(Number));
+    });
 });

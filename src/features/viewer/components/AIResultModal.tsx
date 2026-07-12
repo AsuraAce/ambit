@@ -37,12 +37,10 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
     if (!isOpen || !content) return null;
 
     const handleCopyAll = () => {
-        if (Array.isArray(content)) {
-            const allText = content.join('\n\n');
-            onCopy(allText);
-            setCopiedAll(true);
-            setTimeout(() => setCopiedAll(false), 2000);
-        }
+        const allText = (content as string[]).join('\n\n');
+        onCopy(allText);
+        setCopiedAll(true);
+        setTimeout(() => setCopiedAll(false), 2000);
     };
 
     // Parse analysis content

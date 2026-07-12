@@ -60,7 +60,7 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
 
         // Let's implement a simple Request ID system.
         const requestId = Math.random().toString(36).substring(7);
-        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let timeoutId: ReturnType<typeof setTimeout>;
         let settled = false;
         const diagnostic = startBackgroundDiagnostic('worker', 'Metadata parse', {
             requestId,
@@ -70,10 +70,7 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
 
         const cleanup = () => {
             worker.removeEventListener('message', handler);
-            if (timeoutId !== null) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-            }
+            clearTimeout(timeoutId);
         };
 
         const settle = (
@@ -105,12 +102,10 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
         };
 
         const payload = toWorkerInput(chunks);
-        worker.addEventListener('message', handler);
-
-        // Timeout safety
         timeoutId = setTimeout(() => {
             settle('failed', () => reject(new Error("Worker timed out")), { error: 'Worker timed out' });
         }, 5000);
+        worker.addEventListener('message', handler);
 
         try {
             worker.postMessage({ chunks: payload.chunks, buffer: payload.buffer, filename, requestId, path, defaultTool });

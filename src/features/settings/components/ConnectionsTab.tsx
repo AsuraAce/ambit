@@ -28,9 +28,7 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
 
     // Sync active tab if initialSubTab changes (e.g. deep linking)
     useEffect(() => {
-        if (initialSubTab) {
-            setActiveTab(initialSubTab);
-        }
+        setActiveTab(initialSubTab);
     }, [initialSubTab]);
 
     const tabs: { id: ConnectionSubTab; label: string; icon: React.ReactNode }[] = [

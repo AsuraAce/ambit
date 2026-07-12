@@ -2,8 +2,8 @@ import React, { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useLibraryStatsQuery } from '../useLibraryStatsQuery';
-import { AppSettings, Collection, FilterState } from '../../types';
+import { shouldFetchValidFacets, useLibraryStatsQuery } from '../useLibraryStatsQuery';
+import { AppSettings, Collection, FilterState, GeneratorTool } from '../../types';
 import type { AssetScope } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -15,10 +15,22 @@ const searchRepoMocks = vi.hoisted(() => ({
     getLibraryStatsSummary: vi.fn(),
     getKeywordStats: vi.fn(),
     getValidFacetNames: vi.fn(),
+    browserMockMode: false,
+    getBrowserMockFacets: vi.fn(),
+    getBrowserMockKeywordStats: vi.fn(),
+    getBrowserMockStatsSummary: vi.fn(),
+    getBrowserMockValidFacetNames: vi.fn(),
 }));
 
 vi.mock('../../services/runtime', () => ({
-    isBrowserMockMode: () => false,
+    isBrowserMockMode: () => searchRepoMocks.browserMockMode,
+}));
+
+vi.mock('../../services/browserMockData', () => ({
+    getBrowserMockFacets: searchRepoMocks.getBrowserMockFacets,
+    getBrowserMockKeywordStats: searchRepoMocks.getBrowserMockKeywordStats,
+    getBrowserMockStatsSummary: searchRepoMocks.getBrowserMockStatsSummary,
+    getBrowserMockValidFacetNames: searchRepoMocks.getBrowserMockValidFacetNames,
 }));
 
 vi.mock('../../services/db/searchRepo', () => ({
@@ -132,11 +144,16 @@ const waitForMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms)
 describe('useLibraryStatsQuery valid facets', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        searchRepoMocks.browserMockMode = false;
         useLibraryStore.setState({ facetCacheVersion: 0 });
         searchRepoMocks.getFacets.mockResolvedValue(emptyFacets);
         searchRepoMocks.getLibraryStatsSummary.mockResolvedValue(emptySummary);
         searchRepoMocks.getKeywordStats.mockResolvedValue(emptyKeywordStats);
         searchRepoMocks.getValidFacetNames.mockResolvedValue(validNames);
+        searchRepoMocks.getBrowserMockFacets.mockReturnValue(emptyFacets);
+        searchRepoMocks.getBrowserMockStatsSummary.mockReturnValue(emptySummary);
+        searchRepoMocks.getBrowserMockKeywordStats.mockReturnValue(emptyKeywordStats);
+        searchRepoMocks.getBrowserMockValidFacetNames.mockReturnValue(validNames);
     });
 
     afterEach(() => {
@@ -634,5 +651,158 @@ describe('useLibraryStatsQuery valid facets', () => {
         rerender({ currentFilters: createDefaultFilters({ dateRange: 'today' }), currentAssetScope: 'used', drilldownEnabled: true });
 
         await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledTimes(2));
+    });
+
+    it.each<Partial<FilterState>>([
+        { embeddings: ['embedding'] },
+        { hypernetworks: ['hypernetwork'] },
+        { tools: [GeneratorTool.COMFYUI] },
+        { controlNets: ['control'] },
+        { ipAdapters: ['adapter'] },
+        { collectionId: 'collection' },
+        { dateRange: 'week' as const },
+        { dateFrom: '2026-01-01' },
+        { dateTo: '2026-02-01' },
+        { favoritesOnly: true },
+        { pinnedOnly: true },
+        { maxSteps: 40 },
+        { minCfg: 2 },
+        { maxCfg: 9 }
+    ])('enables valid facets for filter trigger %#', (overrides) => {
+        expect(shouldFetchValidFacets(createDefaultFilters(overrides), false, 'blur')).toBe(true);
+    });
+
+    it('enables valid facets for hidden privacy and rejects null range bounds', () => {
+        expect(shouldFetchValidFacets(createDefaultFilters(), true, 'hide')).toBe(true);
+        const nullRanges = {
+            ...createDefaultFilters(),
+            minSteps: null,
+            maxSteps: null,
+            minCfg: null,
+            maxCfg: null
+        } as unknown as FilterState;
+        expect(shouldFetchValidFacets(nullRanges, false, 'blur')).toBe(false);
+    });
+
+    it('uses browser-backed facets, summary, valid names, and keywords', async () => {
+        searchRepoMocks.browserMockMode = true;
+        const filters = createDefaultFilters({ searchQuery: 'portrait' });
+        const { result } = renderStatsHook(filters);
+
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockFacets).toHaveBeenCalledWith(filters));
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockStatsSummary).toHaveBeenCalledWith(filters));
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockValidFacetNames).toHaveBeenCalledWith(filters));
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockKeywordStats).toHaveBeenCalledWith(filters));
+        expect(searchRepoMocks.getFacets).not.toHaveBeenCalled();
+        expect(result.current.data.validNames).toEqual(validNames);
+    });
+
+    it('returns no browser valid names when no filter requires them', async () => {
+        searchRepoMocks.browserMockMode = true;
+        const { result } = renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockStatsSummary).toHaveBeenCalled());
+        expect(searchRepoMocks.getBrowserMockValidFacetNames).not.toHaveBeenCalled();
+        expect(result.current.data.validNames).toBeNull();
+    });
+
+    it('uses default hook options and fingerprints active smart collections', async () => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const smartFilters = createDefaultFilters({ searchQuery: 'smart' });
+        const collection: Collection = {
+            id: 'smart',
+            name: 'Smart',
+            imageIds: [],
+            createdAt: 1,
+            filters: smartFilters
+        };
+
+        renderHook(() => useLibraryStatsQuery({
+            filters: createDefaultFilters({ collectionId: 'smart' }),
+            settings,
+            privacyEnabled: false,
+            allCollections: [collection]
+        }), { wrapper });
+
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
+        expect(searchRepoMocks.getFacets.mock.calls[0][3]).toEqual(expect.objectContaining({ assetScope: 'used' }));
+    });
+
+    it('skips scoped count overrides when tools are the only disjunctive facet', async () => {
+        renderStatsHook(createDefaultFilters({ tools: [GeneratorTool.COMFYUI] }));
+
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
+        expect(searchRepoMocks.getFacets.mock.calls[0][3].scopedCountOverrides).toBeUndefined();
+    });
+
+    it('invalidates all valid names when a self-excluded facet query fails', async () => {
+        searchRepoMocks.getValidFacetNames
+            .mockResolvedValueOnce(validNames)
+            .mockResolvedValueOnce(null);
+        const { result } = renderStatsHook(createDefaultFilters({ loras: ['CollectionLora'] }));
+
+        await waitFor(() => expect(searchRepoMocks.getValidFacetNames).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(result.current.data.validNames).toBeNull());
+    });
+
+    it('keeps null base valid names null without running self-excluded merges', async () => {
+        searchRepoMocks.getValidFacetNames.mockResolvedValue(null);
+        const { result } = renderStatsHook(createDefaultFilters({ loras: ['CollectionLora'] }));
+
+        await waitFor(() => expect(result.current.data.validNames).toBeNull());
+    });
+
+    it('self-excludes every supported ANY-mode resource facet', async () => {
+        renderStatsHook(createDefaultFilters({
+            embeddings: ['embedding'],
+            hypernetworks: ['hypernetwork'],
+            controlNets: ['control'],
+            ipAdapters: ['adapter'],
+            matchModes: {
+                embeddings: 'any',
+                hypernetworks: 'any',
+                controlNets: 'any',
+                ipAdapters: 'any'
+            }
+        }));
+
+        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
+        const overrides = searchRepoMocks.getFacets.mock.calls[0][3].scopedCountOverrides;
+        expect(Object.keys(overrides)).toEqual(expect.arrayContaining([
+            'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'
+        ]));
+    });
+
+    it('advances keyword analysis for each settled summary even with a fixed clock', async () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        renderHook(() => useLibraryStatsQuery({
+            filters: createDefaultFilters(),
+            settings,
+            privacyEnabled: false,
+            allCollections: []
+        }), { wrapper });
+        await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(1));
+
+        act(() => void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'summary'] }));
+        await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledTimes(2));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(1);
+        now.mockRestore();
+    });
+
+    it('falls back to empty keywords when browser mock keyword data is absent', async () => {
+        searchRepoMocks.browserMockMode = true;
+        searchRepoMocks.getBrowserMockKeywordStats.mockReturnValueOnce(undefined);
+        const { result } = renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getBrowserMockKeywordStats).toHaveBeenCalled());
+        expect(result.current.data.stats.keywordStats).toEqual([]);
     });
 });

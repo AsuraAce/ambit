@@ -11,6 +11,7 @@ const scanResourceThumbnailsMock = vi.hoisted(() => vi.fn());
 const refreshFacetCacheForResourcesStrictMock = vi.hoisted(() => vi.fn());
 const rebuildFacetCacheIncrementalMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
+const runtimeMock = vi.hoisted(() => ({ browserMode: false }));
 const libraryContextState = vi.hoisted(() => ({
     isResolvingModels: false,
     setIsResolvingModels: vi.fn(),
@@ -41,6 +42,10 @@ vi.mock('../../../../services/db/imageRepo', () => ({
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
     open: (...args: Parameters<typeof openMock>) => openMock(...args),
+}));
+
+vi.mock('../../../../services/runtime', () => ({
+    isBrowserMockMode: () => runtimeMock.browserMode,
 }));
 
 vi.mock('../../../../bindings', () => ({
@@ -137,6 +142,7 @@ describe('useResourcesTabLogic', () => {
         libraryContextState.isResolvingModels = false;
         libraryContextState.modelResolutionProgress = null;
         libraryContextState.lastModelResolutionResult = null;
+        runtimeMock.browserMode = false;
         useLibraryStore.setState({
             facetCacheVersion: 0,
             isScanningDiscovery: false,
@@ -261,6 +267,26 @@ describe('useResourcesTabLogic', () => {
                 'warning'
             );
             expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('uses empty touched resources and suppresses classification warnings for an empty scan', async () => {
+        vi.useFakeTimers();
+        try {
+            scanResourceThumbnailsMock.mockResolvedValueOnce({
+                found: 0,
+                updated: 0,
+                cachedFiles: 0,
+                newOrChangedFiles: 0,
+                registeredModels: 0,
+            } as ThumbnailScanResult);
+            const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Empty'] });
+            const promise = result.current.handleScanNow();
+            await finishResourceScanTimer(promise);
+            expect(refreshFacetCacheForResourcesStrictMock).not.toHaveBeenCalled();
+            expect(addToastMock).not.toHaveBeenCalledWith(expect.stringContaining('classified'), 'warning');
         } finally {
             vi.useRealTimers();
         }
@@ -430,5 +456,206 @@ describe('useResourcesTabLogic', () => {
         expect(result.current.isResolveConfirmOpen).toBe(false);
         expect(addToastMock).toHaveBeenCalledWith('Wait for the current library task to finish before resolving hashes', 'warning');
         expect(commands.resolveHashesOnline).not.toHaveBeenCalled();
+    });
+
+    it('ignores cancelled browse selection and falls back to the file input on dialog failure', async () => {
+        openMock.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('dialog unavailable'));
+        const { result } = renderResourcesHook();
+        const click = vi.fn();
+        Object.defineProperty(result.current.resourceInputRef, 'current', { configurable: true, value: { click } });
+
+        await act(async () => result.current.handleBrowseResource());
+        expect(result.current.newResourcePath).toBe('');
+        await act(async () => result.current.handleBrowseResource());
+        expect(click).toHaveBeenCalledOnce();
+    });
+
+    it('ignores empty folder submissions and rejects normalized duplicates', async () => {
+        const settings = { ...baseSettings, resourceFolders: ['D:/Models'] };
+        const { result, setSettings } = renderResourcesHook(settings);
+        const preventDefault = vi.fn();
+        await act(async () => result.current.handleAddResourceFolder({ preventDefault } as unknown as React.FormEvent));
+        expect(preventDefault).toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+
+        act(() => result.current.setNewResourcePath('D:\\Models'));
+        await act(async () => result.current.handleAddResourceFolder({ preventDefault } as unknown as React.FormEvent));
+        expect(addToastMock).toHaveBeenCalledWith('Resource folder is already added', 'info');
+        expect(result.current.newResourcePath).toBe('');
+    });
+
+    it.each([
+        [new Error('cancelled by user'), 'Resource scan cancelled', 'info'],
+        ['scanner offline', 'Resource scan failed', 'error'],
+    ] as const)('reports add-folder scan failures', async (error, message, level) => {
+        scanResourceThumbnailsMock.mockRejectedValueOnce(error);
+        const { result } = renderResourcesHook();
+        act(() => result.current.setNewResourcePath('D:/Models'));
+        await act(async () => result.current.handleAddResourceFolder({ preventDefault: vi.fn() } as unknown as React.FormEvent));
+        expect(addToastMock).toHaveBeenCalledWith(message, level);
+        expect(useLibraryStore.getState().isScanningDiscovery).toBe(false);
+    });
+
+    it('formats multi-resource scans without optional detail counters', async () => {
+        vi.useFakeTimers();
+        try {
+            scanResourceThumbnailsMock.mockResolvedValueOnce({
+                ...scanResult,
+                cachedFiles: 0,
+                newOrChangedFiles: 0,
+                resources: { ...emptyResources, checkpoints: ['one'], loras: ['two'] }
+            });
+            refreshFacetCacheForResourcesStrictMock.mockResolvedValueOnce(0);
+            const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
+            const promise = result.current.handleScanNow();
+            await finishResourceScanTimer(promise);
+            expect(addToastMock).toHaveBeenCalledWith('Resource scan complete: 2 model files found', 'success');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each([
+        [new Error('scan cancel requested'), 'Resource scan cancelled', 'info'],
+        ['offline', 'Resource scan failed', 'error'],
+    ] as const)('reports scan-now failures', async (error, message, level) => {
+        scanResourceThumbnailsMock.mockRejectedValueOnce(error);
+        const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
+        await act(async () => result.current.handleScanNow());
+        expect(addToastMock).toHaveBeenCalledWith(message, level);
+    });
+
+    it('does not scan without configured folders', async () => {
+        const { result } = renderResourcesHook();
+        await act(async () => result.current.handleScanNow());
+        expect(scanResourceThumbnailsMock).not.toHaveBeenCalled();
+    });
+
+    it('removes folders in browser mode without invoking native cleanup', async () => {
+        runtimeMock.browserMode = true;
+        const settings = { ...baseSettings, resourceFolders: ['D:/Models'] };
+        const { result, setSettings } = renderResourcesHook(settings);
+        await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
+        expect(commands.purgeResourceFolderAssets).not.toHaveBeenCalled();
+        expect(setSettings).toHaveBeenCalledOnce();
+        expect(addToastMock).toHaveBeenCalledWith('Removed resource folder', 'success');
+    });
+
+    it('formats a native purge with no indexed cleanup', async () => {
+        const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
+        await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
+        expect(addToastMock).toHaveBeenCalledWith(
+            'Removed resource folder; no indexed local assets needed cleanup',
+            'success'
+        );
+    });
+
+    it('removes safely when current and previous settings omit resource folders', async () => {
+        runtimeMock.browserMode = true;
+        const { result, setSettings } = renderResourcesHook(baseSettings);
+        await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
+        const updater = setSettings.mock.calls[0][0] as (settings: AppSettings) => AppSettings;
+        expect(updater(baseSettings).resourceFolders).toEqual([]);
+    });
+
+    it.each([
+        [{ removedModels: 1, preservedModels: 2 }, 'Removed resource folder: 1 local asset purged, 2 customized assets preserved'],
+        [{ removedModels: 0, preservedModels: 1 }, 'Removed resource folder: 1 customized asset preserved'],
+    ])('formats resource purge result counts', async (counts, expected) => {
+        vi.mocked(commands.purgeResourceFolderAssets).mockResolvedValueOnce({
+            status: 'ok',
+            data: { ...counts, removedScannedFiles: 0, refreshedFacets: 0, resources: emptyResources }
+        });
+        const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
+        await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
+        expect(addToastMock).toHaveBeenCalledWith(expected, 'success');
+    });
+
+    it('blocks folder removal while thumbnails are populating', async () => {
+        useLibraryStore.setState({ isPopulatingThumbnails: true });
+        const { result } = renderResourcesHook({ ...baseSettings, resourceFolders: ['D:/Models'] });
+        await act(async () => result.current.handleRemoveResourceFolder('D:/Models'));
+        expect(commands.purgeResourceFolderAssets).not.toHaveBeenCalled();
+    });
+
+    it('clamps resolution progress and closes confirmation without resolving', () => {
+        libraryContextState.modelResolutionProgress = { current: 150, total: 100, message: 'high' };
+        const first = renderResourcesHook();
+        expect(first.result.current.resolutionProgressPercent).toBe(100);
+        act(() => first.result.current.requestResolveOnline());
+        act(() => first.result.current.cancelResolveConfirmation());
+        expect(first.result.current.isResolveConfirmOpen).toBe(false);
+        first.unmount();
+
+        libraryContextState.modelResolutionProgress = { current: -10, total: 100, message: 'low' };
+        expect(renderResourcesHook().result.current.resolutionProgressPercent).toBe(0);
+    });
+
+    it.each([
+        { syncStatus: 'syncing' as const },
+        { isLiveSyncing: true },
+        { isRegeneratingThumbnails: true },
+        { isRefreshingMetadata: true },
+        { isScanningDuplicates: true },
+        { isScanningMissingFiles: true },
+        { isPopulatingThumbnails: true },
+        { isBackgroundHealingActive: true },
+    ])('pauses confirmation when a library task starts after the prompt opens', async (busyState) => {
+        const { result } = renderResourcesHook();
+        act(() => result.current.requestResolveOnline());
+        useLibraryStore.setState(busyState);
+        await act(async () => result.current.confirmResolveOnline());
+        expect(commands.resolveHashesOnline).not.toHaveBeenCalled();
+        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+    });
+
+    it('reports partial hash resolution', async () => {
+        vi.mocked(commands.resolveHashesOnline).mockResolvedValueOnce({
+            status: 'ok',
+            data: { ...resolutionResult, failedCount: 2, unknownCount: 1 }
+        });
+        const { result } = renderResourcesHook();
+        await act(async () => result.current.confirmResolveOnline());
+        expect(addToastMock).toHaveBeenCalledWith('Lookup finished with 2 failed and 1 unknown', 'warning');
+        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+    });
+
+    it.each([
+        [new Error('cache failed'), 'cache failed'],
+        ['cache unavailable', 'cache unavailable'],
+    ])('keeps lookup results when UI refresh fails', async (error, expected) => {
+        rebuildFacetCacheIncrementalMock.mockRejectedValueOnce(error);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderResourcesHook();
+        await act(async () => result.current.confirmResolveOnline());
+        expect(libraryContextState.setLastModelResolutionResult).toHaveBeenCalledWith(expect.objectContaining({
+            message: expect.stringContaining(expected)
+        }));
+        expect(addToastMock).toHaveBeenCalledWith('Lookup finished, but the UI refresh needs another pass', 'warning');
+        consoleError.mockRestore();
+    });
+
+    it.each([
+        [new Error('cancelled'), 'Resolution cancelled', 'info'],
+        ['backend offline', 'Lookup failed', 'error'],
+    ] as const)('reports hash resolution failures', async (error, message, level) => {
+        vi.mocked(commands.resolveHashesOnline).mockRejectedValueOnce(error);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderResourcesHook();
+        await act(async () => result.current.confirmResolveOnline());
+        expect(addToastMock).toHaveBeenCalledWith(message, level);
+        expect(libraryContextState.setIsResolvingModels).toHaveBeenLastCalledWith(false);
+        consoleError.mockRestore();
+    });
+
+    it('cancels model resolution and tolerates cancellation command failures', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderResourcesHook();
+        await act(async () => result.current.cancelResolveOnline());
+        expect(commands.cancelModelResolution).toHaveBeenCalledOnce();
+        vi.mocked(commands.cancelModelResolution).mockRejectedValueOnce(new Error('cancel failed'));
+        await act(async () => result.current.cancelResolveOnline());
+        expect(consoleError).toHaveBeenCalled();
+        consoleError.mockRestore();
     });
 });

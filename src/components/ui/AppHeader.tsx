@@ -111,7 +111,7 @@ export const AppHeader = React.memo(({
                                 style={{
                                     width: progress && progress.total > 0
                                         ? `${(progress.current / progress.total) * 100}%`
-                                        : (active ? '100%' : '0%')
+                                        : '100%'
                                 }}
                             />
                         </div>

@@ -86,33 +86,31 @@ export const useSettingsStore = create<SettingsState>()(
                     return { settings: newSettings };
                 });
 
-                if (previousSettings !== nextSettings) {
-                    const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
+                const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
 
-                    nextSettings.monitoredFolders.forEach((folder) => {
-                        if (!isBrowserMockMode() && !oldFolders.has(folder.path)) {
-                            void ensureAssetPathAccessible(folder.path, { assumeDirectory: true }).catch((error) =>
-                                console.error('[SettingsStore] Failed to register new folder scope:', error)
-                            );
-                        }
-                    });
-
-                    const oldResourceFolders = new Set(previousSettings.resourceFolders || []);
-                    nextSettings.resourceFolders?.forEach((folder) => {
-                        if (!isBrowserMockMode() && !oldResourceFolders.has(folder)) {
-                            void ensureAssetPathAccessible(folder, { assumeDirectory: true }).catch((error) =>
-                                console.error('[SettingsStore] Failed to register resource folder scope:', error)
-                            );
-                        }
-                    });
-
-                    const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
-                    const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
-                    if (!isBrowserMockMode() && nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
-                        void ensureAssetPathAccessible(nextInvokeRoot, { assumeDirectory: true }).catch((error) =>
-                            console.error('[SettingsStore] Failed to register InvokeAI scope:', error)
+                nextSettings.monitoredFolders.forEach((folder) => {
+                    if (!isBrowserMockMode() && !oldFolders.has(folder.path)) {
+                        void ensureAssetPathAccessible(folder.path, { assumeDirectory: true }).catch((error) =>
+                            console.error('[SettingsStore] Failed to register new folder scope:', error)
                         );
                     }
+                });
+
+                const oldResourceFolders = new Set(previousSettings.resourceFolders || []);
+                nextSettings.resourceFolders?.forEach((folder) => {
+                    if (!isBrowserMockMode() && !oldResourceFolders.has(folder)) {
+                        void ensureAssetPathAccessible(folder, { assumeDirectory: true }).catch((error) =>
+                            console.error('[SettingsStore] Failed to register resource folder scope:', error)
+                        );
+                    }
+                });
+
+                const previousInvokeRoot = normalizeInvokeRoot(previousSettings.invokeAiPath);
+                const nextInvokeRoot = normalizeInvokeRoot(nextSettings.invokeAiPath);
+                if (!isBrowserMockMode() && nextInvokeRoot && nextInvokeRoot !== previousInvokeRoot) {
+                    void ensureAssetPathAccessible(nextInvokeRoot, { assumeDirectory: true }).catch((error) =>
+                        console.error('[SettingsStore] Failed to register InvokeAI scope:', error)
+                    );
                 }
             },
 
@@ -170,7 +168,7 @@ export const useSettingsStore = create<SettingsState>()(
                         }
 
                         // Ensure API key from env takes precedence if present
-                        const envKey = typeof process.env.API_KEY === 'string' ? process.env.API_KEY : undefined;
+                        const envKey = process.env.API_KEY;
                         if (envKey && envKey !== 'undefined') apiKey = envKey;
 
                         // NEW: Enable devMode by default in development environment if not already set

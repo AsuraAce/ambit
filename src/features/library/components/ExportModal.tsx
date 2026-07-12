@@ -41,7 +41,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md"
                     onClick={onClose}
                 >
-                    <div className="absolute inset-0" onClick={onClose} />
+                    <div className="absolute inset-0" />
 
                     <motion.div
                         initial={{ opacity: 0, scale: 0.9, y: 30 }}

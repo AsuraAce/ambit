@@ -63,11 +63,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
     // Measure container
     useLayoutEffect(() => {
-        if (!containerRef.current) return;
+        const container = containerRef.current!;
         const observer = new ResizeObserver(entries => {
             if (entries[0]) setWidth(entries[0].contentRect.width);
         });
-        observer.observe(containerRef.current);
+        observer.observe(container);
         return () => observer.disconnect();
     }, []);
 

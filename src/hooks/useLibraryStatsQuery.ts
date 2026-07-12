@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames, type ScopedFacetCountInput } from '../services/db/searchRepo';
@@ -194,12 +194,10 @@ export const useLibraryStatsQuery = ({
                 return getBrowserMockFacets(sideQueryFilters);
             }
 
-            if (!queryInput) return INITIAL_FACETS;
-
-            return getFacets(queryInput.where, queryInput.params, ALL_FACET_TYPES, {
+            return getFacets(queryInput!.where, queryInput!.params, ALL_FACET_TYPES, {
                 assetScope,
-                collectionId: queryInput.collectionId,
-                loraName: queryInput.loraName,
+                collectionId: queryInput!.collectionId,
+                loraName: queryInput!.loraName,
                 scopedCountOverrides
             });
         },
@@ -215,11 +213,7 @@ export const useLibraryStatsQuery = ({
                 return getBrowserMockStatsSummary(sideQueryFilters);
             }
 
-            if (!queryInput) {
-                return INITIAL_STATS_SUMMARY;
-            }
-
-            const { where, params, collectionId, loraName } = queryInput;
+            const { where, params, collectionId, loraName } = queryInput!;
             return getLibraryStatsSummary(where, params, collectionId, loraName);
         },
         placeholderData: (previousData) => previousData,
@@ -227,17 +221,12 @@ export const useLibraryStatsQuery = ({
         enabled: settingsLoaded
     });
     const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
-    const lastSettledSummaryUpdatedAtRef = useRef(0);
 
     useEffect(() => {
         if (statsSummaryQuery.status !== 'success' || statsSummaryQuery.isFetching || statsSummaryQuery.isPlaceholderData) {
             return;
         }
-        if (statsSummaryQuery.dataUpdatedAt === 0 || statsSummaryQuery.dataUpdatedAt === lastSettledSummaryUpdatedAtRef.current) {
-            return;
-        }
 
-        lastSettledSummaryUpdatedAtRef.current = statsSummaryQuery.dataUpdatedAt;
         setActiveSummaryVersion((version) => version + 1);
     }, [
         statsSummaryQuery.dataUpdatedAt,
@@ -252,11 +241,11 @@ export const useLibraryStatsQuery = ({
                 return fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null;
             }
 
-            if (!queryInput || !fetchValidFacets) {
+            if (!fetchValidFacets) {
                 return null as ValidFacetNames | null;
             }
 
-            const { where, params, collectionId, loraName } = queryInput;
+            const { where, params, collectionId, loraName } = queryInput!;
 
             const baseValidNames = await getValidFacetNames(where, params, collectionId, loraName);
 
@@ -289,9 +278,7 @@ export const useLibraryStatsQuery = ({
                     finalValidNames = null;
                 } else {
                     extraResults.forEach(({ cat, validNames }) => {
-                        if (validNames && finalValidNames) {
-                            finalValidNames[cat] = validNames;
-                        }
+                        finalValidNames![cat] = validNames!;
                     });
                 }
             }
@@ -315,14 +302,7 @@ export const useLibraryStatsQuery = ({
                 };
             }
 
-            if (!queryInput) {
-                return {
-                    summaryVersion: activeSummaryVersion,
-                    keywordStats: INITIAL_KEYWORD_STATS
-                };
-            }
-
-            const { where, params, collectionId, loraName } = queryInput;
+            const { where, params, collectionId, loraName } = queryInput!;
             return {
                 summaryVersion: activeSummaryVersion,
                 keywordStats: await getKeywordStats(where, params, collectionId, loraName)
