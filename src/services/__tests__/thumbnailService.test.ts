@@ -240,4 +240,153 @@ describe('thumbnailService', () => {
             ['relative']
         );
     });
+
+    it('contains thumbnail-directory and single-generation failures', async () => {
+        mocks.appLocalDataDir.mockRejectedValueOnce(new Error('no app data'));
+        let service = await import('../thumbnailService');
+        await expect(service.getThumbnailDir()).resolves.toBeUndefined();
+        await expect(service.generateSingleThumbnail('C:/library/no-dir.png')).resolves.toBeNull();
+
+        vi.resetModules();
+        mocks.appLocalDataDir.mockResolvedValue('C:/AppData/Ambit');
+        mocks.scanImageNative.mockRejectedValueOnce(new Error('scan failed')).mockResolvedValueOnce({});
+        service = await import('../thumbnailService');
+        await expect(service.generateSingleThumbnail('C:/library/error.png')).resolves.toBeNull();
+        await expect(service.generateSingleThumbnail('C:/library/no-thumb.png')).resolves.toBeNull();
+    });
+
+    it('limits concurrent single-thumbnail generation to five paths', async () => {
+        const resolvers: Array<(value: { thumbnail?: string }) => void> = [];
+        mocks.scanImageNative.mockImplementation(() => new Promise(resolve => resolvers.push(resolve)));
+        const { generateSingleThumbnail } = await import('../thumbnailService');
+
+        const active = Array.from({ length: 5 }, (_, index) => generateSingleThumbnail(`C:/library/${index}.png`));
+        await expect(generateSingleThumbnail('C:/library/overflow.png')).resolves.toBeNull();
+        resolvers.forEach(resolve => resolve({}));
+        await Promise.all(active);
+    });
+
+    it('handles empty, cancelled, failed, and unpersisted selected regeneration batches', async () => {
+        const { regenerateThumbnailsForImages } = await import('../thumbnailService');
+        await expect(regenerateThumbnailsForImages([])).resolves.toEqual([]);
+
+        const aborted = new AbortController();
+        aborted.abort();
+        await expect(regenerateThumbnailsForImages([imageFixture('cancelled')], undefined, aborted.signal)).resolves.toEqual([]);
+
+        mocks.scanImagesBulk.mockRejectedValueOnce(new Error('bulk failed'));
+        const progress = vi.fn();
+        await expect(regenerateThumbnailsForImages([imageFixture('failed')], progress)).resolves.toEqual([]);
+        expect(progress).toHaveBeenCalledWith(1, 1);
+
+        mocks.scanImagesBulk.mockResolvedValueOnce([{ thumbnail: 'generated.webp' }]);
+        mocks.updateThumbnailPathsBatch.mockRejectedValueOnce(new Error('persist failed'));
+        await expect(regenerateThumbnailsForImages([imageFixture('unpersisted')])).resolves.toHaveLength(1);
+    });
+
+    it('returns early from regenerate-all defaults and outer cancellation paths', async () => {
+        const { regenerateAllUnoptimized } = await import('../thumbnailService');
+        await expect(regenerateAllUnoptimized()).resolves.toBe(0);
+        expect(mocks.getUnoptimizedImagesCount).toHaveBeenCalledWith('', [], false);
+
+        mocks.getUnoptimizedImagesCount.mockResolvedValueOnce(1);
+        const aborted = new AbortController();
+        aborted.abort();
+        await expect(regenerateAllUnoptimized(undefined, aborted.signal)).resolves.toBe(0);
+    });
+
+    it('handles empty pages and cancellation between regenerate-all fetch and batching', async () => {
+        mocks.getUnoptimizedImagesCount.mockResolvedValue(1);
+        mocks.getUnoptimizedImageEntries.mockResolvedValueOnce([]);
+        const { regenerateAllUnoptimized } = await import('../thumbnailService');
+        await expect(regenerateAllUnoptimized()).resolves.toBe(0);
+
+        const controller = new AbortController();
+        mocks.getUnoptimizedImageEntries.mockImplementationOnce(async () => {
+            controller.abort();
+            return [{ id: 'id-a', path: 'C:/a.png' }];
+        });
+        await expect(regenerateAllUnoptimized(undefined, controller.signal)).resolves.toBe(0);
+        expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
+    });
+
+    it('contains regenerate-all scan and persistence failures', async () => {
+        const entries = Array.from({ length: 151 }, (_, index) => ({
+            id: `id-${index}`,
+            path: `C:/${index}.png`
+        }));
+        mocks.getUnoptimizedImagesCount.mockResolvedValue(151);
+        mocks.getUnoptimizedImageEntries.mockResolvedValueOnce(entries);
+        mocks.scanImagesBulk
+            .mockRejectedValueOnce(new Error('scan failed'))
+            .mockResolvedValueOnce([{ thumbnail: 'persist.webp' }]);
+        mocks.updateThumbnailPathsBatch.mockRejectedValueOnce(new Error('persist failed'));
+        const { regenerateAllUnoptimized } = await import('../thumbnailService');
+
+        await expect(regenerateAllUnoptimized()).resolves.toBe(1);
+    });
+
+    it('returns safely when orphan cleanup cannot read or remove files', async () => {
+        mocks.readDir.mockRejectedValueOnce(new Error('missing directory'));
+        let service = await import('../thumbnailService');
+        await expect(service.cleanupOrphanThumbnails()).resolves.toBe(0);
+
+        vi.resetModules();
+        mocks.readDir.mockResolvedValue([{ name: 'orphan.webp' }]);
+        mocks.remove.mockRejectedValueOnce(new Error('locked'));
+        mocks.getDb.mockResolvedValue({
+            select: vi.fn().mockResolvedValue([{ thumbnail_path: '' }]),
+            execute: vi.fn()
+        });
+        service = await import('../thumbnailService');
+        await expect(service.cleanupOrphanThumbnails()).resolves.toBe(0);
+    });
+
+    it('handles empty, failed, and unpersisted existing-thumbnail syncs with progress', async () => {
+        const select = vi.fn().mockResolvedValueOnce([]);
+        mocks.getDb.mockResolvedValue({ select, execute: vi.fn() });
+        let service = await import('../thumbnailService');
+        await expect(service.syncExistingThumbnailsToDB()).resolves.toBe(0);
+
+        vi.resetModules();
+        select.mockResolvedValue([{ id: 'C:/a.png' }]);
+        mocks.scanImagesBulk.mockRejectedValueOnce(new Error('sync scan failed'));
+        const progress = vi.fn();
+        service = await import('../thumbnailService');
+        await expect(service.syncExistingThumbnailsToDB(progress)).resolves.toBe(0);
+        expect(progress).toHaveBeenCalledWith(1, 1);
+
+        vi.resetModules();
+        mocks.scanImagesBulk.mockResolvedValueOnce([{}]);
+        service = await import('../thumbnailService');
+        await expect(service.syncExistingThumbnailsToDB()).resolves.toBe(0);
+
+        vi.resetModules();
+        mocks.scanImagesBulk.mockResolvedValueOnce([{ thumbnail: 'a.webp' }]);
+        mocks.updateThumbnailPathsBatch.mockRejectedValueOnce(new Error('sync persist failed'));
+        service = await import('../thumbnailService');
+        await expect(service.syncExistingThumbnailsToDB()).resolves.toBe(0);
+    });
+
+    it('contains file-existence errors and reports a clean prune pass', async () => {
+        mocks.getDb.mockResolvedValue({
+            select: vi.fn().mockResolvedValue([{ id: 'error', thumbnail_path: 'C:/thumbs/error.webp' }]),
+            execute: vi.fn()
+        });
+        mocks.exists.mockRejectedValue(new Error('filesystem unavailable'));
+        const { pruneBrokenThumbnails } = await import('../thumbnailService');
+
+        await expect(pruneBrokenThumbnails()).resolves.toBe(0);
+    });
+
+    it('returns safely from every operation when the thumbnail directory cannot resolve', async () => {
+        mocks.appLocalDataDir.mockRejectedValue(new Error('no app data'));
+        const service = await import('../thumbnailService');
+
+        await expect(service.generateSingleThumbnail('C:/a.png')).resolves.toBeNull();
+        await expect(service.regenerateAllUnoptimized()).resolves.toBe(0);
+        await expect(service.cleanupOrphanThumbnails()).resolves.toBe(0);
+        await expect(service.syncExistingThumbnailsToDB()).resolves.toBe(0);
+        await expect(service.pruneBrokenThumbnails()).resolves.toBe(0);
+    });
 });

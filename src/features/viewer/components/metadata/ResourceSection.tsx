@@ -26,10 +26,11 @@ export const ResourceSection = ({ title, items, icon: Icon, onSearch, onClose }:
                     const weightMatch = text.match(/\s+\((-?\d+(\.\d+)?)\)$/);
                     const weight = weightMatch ? weightMatch[1] : null;
 
-                    let name = text.replace(/\.(safetensors|pt|ckpt)$/i, '');
+                    let name = text;
                     if (weight) {
                         name = name.replace(/\s+\(-?\d+(\.\d+)?\)$/, '').trim();
                     }
+                    name = name.replace(/\.(safetensors|pt|ckpt)$/i, '');
 
                     return (
                         <button

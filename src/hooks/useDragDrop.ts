@@ -27,8 +27,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
     }, [onImportPaths, onImportFiles]);
 
     useEffect(() => {
-        // @ts-ignore
-        const isTauriEnv = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+        const isTauriEnv = !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 
         // Helper: is this an internal (image reorder) drag?
         const isInternalDrag = (e: DragEvent): boolean => {
@@ -48,7 +47,7 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
             if (isInternalDrag(e)) return; // Let component drop zones handle it
             if (e.dataTransfer?.types.includes('Files')) {
                 e.preventDefault();
-                if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                e.dataTransfer.dropEffect = 'copy';
             }
         };
 
@@ -70,8 +69,9 @@ export function useDragDrop({ onImportPaths, onImportFiles }: UseDragDropProps) 
                 if (isTauriEnv) {
                     // In Tauri, File objects may have a .path property
                     const files = Array.from(e.dataTransfer.files);
-                    // @ts-ignore - Tauri adds .path to File objects
-                    const paths = files.map(f => f.path).filter((p): p is string => !!p);
+                    const paths = files
+                        .map(file => (file as File & { path?: string }).path)
+                        .filter((path): path is string => !!path);
 
                     if (paths.length > 0) {
                         console.log('[DragDrop] External drop with paths:', paths.length);

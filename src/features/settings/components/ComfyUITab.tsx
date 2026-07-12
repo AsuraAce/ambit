@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Workflow, Folder, Info, FolderSearch, Loader2, CheckCircle2, XCircle, Plus, FolderOpen } from 'lucide-react';
+import { Workflow, Folder, Info, CheckCircle2, XCircle, Plus, FolderOpen } from 'lucide-react';
 import { AppSettings, GeneratorTool } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 
@@ -11,14 +11,12 @@ interface TabProps {
 
 export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-    const [isScanning, setIsScanning] = useState(false);
     const { addToast } = useToast();
 
-    const handleLinkFolder = async () => {
-        if (!settings.comfyUiPath) return;
-
+    const handleLinkFolder = () => {
+        const comfyUiPath = settings.comfyUiPath!;
         // Check if already linked
-        const normalizedPath = settings.comfyUiPath.replace(/\\/g, '/');
+        const normalizedPath = comfyUiPath.replace(/\\/g, '/');
         const exists = settings.monitoredFolders.some(f => f.path.replace(/\\/g, '/') === normalizedPath);
 
         if (exists) {
@@ -28,7 +26,6 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
         }
 
         setTestResult(null);
-        setIsScanning(true);
 
         try {
             // Validate path exists using Tauri fs or just assume valid if selected via dialog
@@ -36,7 +33,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
             const newFolder = {
                 id: `comfyui_${Date.now()}`,
-                path: settings.comfyUiPath,
+                path: comfyUiPath,
                 isActive: true,
                 imageCount: 0, // Will be updated by scanner
                 variant: GeneratorTool.COMFYUI
@@ -53,8 +50,6 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
             console.error(e);
             setTestResult({ success: false, message: "Failed to link folder." });
             addToast("Failed to link folder", "error");
-        } finally {
-            setIsScanning(false);
         }
     };
 
@@ -111,23 +106,14 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         <div className="flex items-center justify-between">
                             <button
                                 onClick={handleLinkFolder}
-                                disabled={isScanning || !settings.comfyUiPath}
+                                disabled={!settings.comfyUiPath}
                                 className={`px-8 py-3 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.comfyUiPath
                                     ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
                                     : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
                                     }`}
                             >
-                                {isScanning ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Linking...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Plus className="w-4 h-4" />
-                                        Link Output Folder
-                                    </>
-                                )}
+                                <Plus className="w-4 h-4" />
+                                Link Output Folder
                             </button>
 
                             {testResult && (

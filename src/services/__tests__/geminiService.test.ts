@@ -121,6 +121,7 @@ describe('geminiService: thinking configuration', () => {
     });
 
     it('omits default and incompatible thinking overrides', () => {
+        expect(getGeminiThinkingConfig('gemini-3.1-flash-lite')).toBeUndefined();
         expect(getGeminiThinkingConfig('gemini-3.5-flash', 'default')).toBeUndefined();
         expect(getGeminiThinkingConfig('gemini-3.1-pro-preview', 'minimal')).toBeUndefined();
         expect(getGeminiThinkingConfig('gemini-2.5-pro', 'off')).toBeUndefined();
@@ -167,5 +168,117 @@ describe('geminiService: image recovery', () => {
                 ]
             }
         }));
+    });
+});
+
+describe('geminiService: fallback behavior', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        delete process.env.API_KEY;
+    });
+
+    it('uses the environment key and default workflow arguments', async () => {
+        process.env.API_KEY = 'environment-key';
+        mockGenerateContent.mockResolvedValueOnce({ text: 'analysis' });
+
+        await expect(analyzePromptAndSuggest('prompt', '')).resolves.toBe('analysis');
+        expect(mockGenerateContent).toHaveBeenCalledWith(expect.objectContaining({
+            model: 'gemini-3.1-flash-lite',
+            config: undefined
+        }));
+    });
+
+    it('rejects workflows when neither an explicit nor environment key exists', async () => {
+        await expect(analyzePromptAndSuggest('prompt', '')).rejects.toThrow('API Key is missing');
+        expect(mockGenerateContent).not.toHaveBeenCalled();
+    });
+
+    it('handles invalid verification responses, permission errors, and unknown thrown values', async () => {
+        mockGenerateContent.mockResolvedValueOnce(null);
+        await expect(verifyApiKey('key')).resolves.toEqual({
+            valid: false,
+            error: 'Invalid response from Gemini API'
+        });
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('permission denied'));
+        await expect(verifyApiKey('key')).resolves.toEqual({
+            valid: false,
+            error: 'Model not found or access denied'
+        });
+
+        mockGenerateContent.mockRejectedValueOnce({ reason: 'opaque' });
+        await expect(verifyApiKey('key')).resolves.toEqual({ valid: false, error: 'Unknown error' });
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('custom failure'));
+        await expect(verifyApiKey('key')).resolves.toEqual({ valid: false, error: 'custom failure' });
+    });
+
+    it('returns analysis and title fallbacks for empty responses and errors', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: '' });
+        await expect(analyzePromptAndSuggest('prompt', 'key')).resolves.toBe('No suggestions available.');
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('analysis failed'));
+        await expect(analyzePromptAndSuggest('prompt', 'key')).rejects.toThrow('analysis failed');
+
+        mockGenerateContent.mockResolvedValueOnce({ text: '  A title  ' });
+        await expect(generateTitleFromPrompt('prompt', 'key')).resolves.toBe('A title');
+
+        mockGenerateContent.mockResolvedValueOnce({ text: undefined });
+        await expect(generateTitleFromPrompt('prompt', 'key')).resolves.toBe('Untitled Creation');
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('title failed'));
+        await expect(generateTitleFromPrompt('prompt', 'key')).resolves.toBe('Untitled');
+    });
+
+    it('handles empty, invalid, and failed prompt variation responses', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: '' });
+        await expect(generatePromptVariations('prompt', 'key')).resolves.toEqual([]);
+
+        mockGenerateContent.mockResolvedValueOnce({ text: '{"not":"an array"}' });
+        await expect(generatePromptVariations('prompt', 'key')).resolves.toEqual([]);
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('variation failed'));
+        await expect(generatePromptVariations('prompt', 'key')).rejects.toThrow('variation failed');
+    });
+
+    it('falls back to the raw query for empty, invalid, and failed filter generation', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: '' });
+        await expect(generateFiltersFromQuery('empty query', 'key')).resolves.toEqual({ searchQuery: 'empty query' });
+
+        mockGenerateContent.mockResolvedValueOnce({ text: '{"dateRange":"invalid"}' });
+        await expect(generateFiltersFromQuery('invalid query', 'key')).resolves.toEqual({ searchQuery: 'invalid query' });
+
+        mockGenerateContent.mockRejectedValueOnce(new Error('filters failed'));
+        await expect(generateFiltersFromQuery('failed query', 'key')).resolves.toEqual({ searchQuery: 'failed query' });
+    });
+
+    it('uses custom prompts without thinking overrides', async () => {
+        mockGenerateContent
+            .mockResolvedValueOnce({ text: '["one"]' })
+            .mockResolvedValueOnce({ text: '{"searchQuery":"mapped"}' });
+
+        await generatePromptVariations('prompt', 'key', undefined, { VARIATIONS: 'Custom {{prompt}}' });
+        await generateFiltersFromQuery('query', 'key', undefined, { FILTERS: 'Find {{query}} on {{today}}' });
+
+        expect(mockGenerateContent.mock.calls[0][0]).toEqual(expect.objectContaining({
+            contents: 'Custom prompt',
+            config: expect.not.objectContaining({ thinkingConfig: expect.anything() })
+        }));
+        expect(mockGenerateContent.mock.calls[1][0].contents).toContain('Find query on ');
+    });
+
+    it('rejects invalid and missing recovery payloads while supporting raw base64 and style fallback', async () => {
+        mockGenerateContent.mockResolvedValueOnce({ text: '{"negativePrompt":"missing positive"}' });
+        await expect(recoverImageMetadata('raw-base64', 'missing-style' as never, 'key')).rejects.toThrow(
+            'Failed to validate Gemini response'
+        );
+        expect(mockGenerateContent).toHaveBeenLastCalledWith(expect.objectContaining({
+            contents: expect.objectContaining({
+                parts: expect.arrayContaining([{ inlineData: { mimeType: 'image/png', data: 'raw-base64' } }])
+            })
+        }));
+
+        mockGenerateContent.mockResolvedValueOnce({ text: '' });
+        await expect(recoverImageMetadata('raw-base64', 'generic', 'key')).rejects.toThrow('Failed to generate metadata');
     });
 });

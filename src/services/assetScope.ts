@@ -14,8 +14,6 @@ const registeredDirectories = new Map<string, Promise<void>>();
 let appLocalDataPromise: Promise<string | null> | null = null;
 
 const getAppLocalDataPath = async (): Promise<string | null> => {
-    if (isBrowserMockMode()) return null;
-
     if (!appLocalDataPromise) {
         appLocalDataPromise = appLocalDataDir()
             .then((path) => normalizePath(path))
