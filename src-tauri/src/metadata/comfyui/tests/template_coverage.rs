@@ -185,7 +185,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
 }
 
 #[test]
-fn manifest_counts_match_the_declared_phase_17_scope() {
+fn manifest_counts_match_the_declared_catalog_scope() {
     let manifest = load_manifest();
     let count = |category: &str, scope: &str| {
         manifest
@@ -210,9 +210,9 @@ fn manifest_counts_match_the_declared_phase_17_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 4);
+    assert_eq!(count_coverage("golden"), 8);
     assert_eq!(count_coverage("pattern_covered"), 1);
-    assert_eq!(count_coverage("unassessed"), 70);
+    assert_eq!(count_coverage("unassessed"), 66);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -220,10 +220,14 @@ fn manifest_counts_match_the_declared_phase_17_scope() {
 fn manifest_links_covered_entries_to_test_evidence() {
     let manifest = load_manifest();
     let expected = [
+        ("01_get_started_text_to_image", "golden"),
+        ("02_qwen_Image_edit_subgraphed", "golden"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
         ("hidream_i1_full", "golden"),
+        ("image_flux2_text_to_image", "golden"),
         ("image_krea2_turbo_t2i", "pattern_covered"),
+        ("image_qwen_Image_2512_controlnet", "golden"),
         ("image_qwen_image_edit_2509", "golden"),
     ];
 

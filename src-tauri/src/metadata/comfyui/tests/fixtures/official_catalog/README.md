@@ -17,6 +17,10 @@ Golden workflows:
 - `flux_fill_inpaint_example.chunks.json`
 - `flux_kontext_dev_basic.chunks.json`
 - `hidream_i1_full.chunks.json`
+- `01_get_started_text_to_image.chunks.json`
+- `02_qwen_Image_edit_subgraphed.chunks.json`
+- `image_flux2_text_to_image.chunks.json`
+- `image_qwen_Image_2512_controlnet.chunks.json`
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser
