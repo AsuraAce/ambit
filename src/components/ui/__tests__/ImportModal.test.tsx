@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../test/testUtils';
-import { DEFAULT_APP_SETTINGS } from '../../../constants/defaultSettings';
 import { ImportModal } from '../ImportModal';
 
 vi.mock('framer-motion', () => {
@@ -37,8 +36,6 @@ const renderModal = () => {
             onClose={onClose}
             onOpenSettings={onOpenSettings}
             onImportFiles={vi.fn()}
-            settings={{ ...DEFAULT_APP_SETTINGS }}
-            setSettings={vi.fn()}
         />
     );
 
@@ -61,7 +58,7 @@ describe('ImportModal', () => {
 
         const heading = screen.getByRole('heading', { name: 'Add Images to Your Library' });
         const firstControl = screen.getByRole('button', { name: 'Close Add Images' });
-        const lastControl = screen.getByRole('button', { name: 'Skip' });
+        const lastControl = screen.getByRole('button', { name: 'Add Folder' });
 
         heading.focus();
         fireEvent.keyDown(heading, { key: 'Tab' });
@@ -78,6 +75,18 @@ describe('ImportModal', () => {
         firstControl.focus();
         fireEvent.keyDown(firstControl, { key: 'Tab', shiftKey: true });
         expect(document.activeElement).toBe(lastControl);
+    });
+
+    it('keeps every import path visible without permanent bypass controls', () => {
+        renderModal();
+
+        expect(screen.getByRole('button', { name: 'InvokeAI' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'ComfyUI' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'SD WebUI' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Select Files' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Add Folder' })).not.toBeNull();
+        expect(screen.queryByRole('button', { name: 'Skip' })).toBeNull();
+        expect(screen.queryByText("Don't show this again")).toBeNull();
     });
 
     it('closes before handing generator setup to Settings', () => {

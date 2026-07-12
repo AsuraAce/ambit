@@ -310,8 +310,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 onClick={() => {
                                     updateContextSettings((prev: AppSettings) => ({
                                         ...prev,
-                                        hasCompletedOnboarding: false,
-                                        hideImportModal: false
+                                        hasCompletedOnboarding: false
                                     }));
                                     onClose?.();
                                     addToast('Onboarding restarted.', 'info');

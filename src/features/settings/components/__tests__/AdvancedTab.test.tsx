@@ -209,7 +209,7 @@ describe('AdvancedTab', () => {
     });
 
     it('restarts onboarding immediately without changing unrelated settings', () => {
-        const settings = createSettings({ hideImportModal: true });
+        const settings = createSettings({ confirmDelete: false });
         const onClose = vi.fn();
         renderAdvanced(settings, onClose);
 
@@ -221,7 +221,6 @@ describe('AdvancedTab', () => {
         expect(update(settings)).toEqual({
             ...settings,
             hasCompletedOnboarding: false,
-            hideImportModal: false,
         });
         expect(onClose).toHaveBeenCalledOnce();
         expect(addToastMock).toHaveBeenCalledWith('Onboarding restarted.', 'info');

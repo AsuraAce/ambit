@@ -38,8 +38,7 @@ describe('SettingsStore', () => {
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
                 enableAI: false,
-                libraryLayoutMode: 'masonry',
-                hideImportModal: false
+                libraryLayoutMode: 'masonry'
             }
         });
     });
