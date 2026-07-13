@@ -94,6 +94,20 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_chroma1_radiance_text_to_image.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_firered_image_edit1_1",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_firered_image_edit1_1.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_ernie_image",
+        chunks_json: include_str!("fixtures/official_catalog/image_ernie_image.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_ernie_image_turbo",
+        chunks_json: include_str!("fixtures/official_catalog/image_ernie_image_turbo.chunks.json"),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -580,6 +594,78 @@ fn chroma_radiance_text_to_image() {
             sampler: "euler (beta)",
             positive_prompt: "Hyperrealistic macro photograph of a team of tiny bakers\u{2014}each precisely 2 inches tall\u{2014}collaborating on an enormous, golden-brown croissant with flaky, layered textures. The bakers are engaged in dynamic, detailed actions: one uses a miniature wooden bucket to spread rich, creamy butter between the croissant\u{2019}s layers, another climbs a thin rope ladder to evenly pipe smooth, glossy chocolate filling onto the top, and a third brushes a light egg wash with a tiny pastry brush. The scene is bathed in warm, soft kitchen lighting with cinematic depth\u{2014}subtle highlights on the croissant\u{2019}s golden crust, gentle shadows that emphasize texture, and a soft glow from overhead pendant lights. Floating flour dust particles catch the light, adding a sense of movement and realism, while tiny details like the bakers\u{2019} stitched cloth aprons, smudged flour on their faces, the rough wood of the worktable, and the slight sheen of melted butter on the croissant are rendered with ultra-precision. Ultra-detailed, 8K resolution, photorealistic textures, sharp focus on the bakers and croissant, shallow depth of field to blur the background slightly, rich warm color palette, lifelike proportions, and a cozy, whimsical atmosphere that balances realism with charm.",
             negative_prompt: "This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom.",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 21,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn firered_image_edit() {
+    assert_fixture(
+        "image_firered_image_edit1_1",
+        ExpectedMetadata {
+            model: "firered_image_edit_1.1_transformer",
+            seed: Some(43),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "A young woman in a layered, ethereal outfit of sheer, frosted white fabric over a matte underlayer, with delicate, glowing fiber-optic threads woven throughout, headpiece is a translucent, frosted glass halo, soft gradient background, diffused studio lighting, photorealistic, dreamlike futurism.",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 23,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn ernie_image_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_ernie_image",
+        ExpectedMetadata {
+            model: "ernie_image",
+            seed: Some(182_596_410_725_960),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn ernie_image_turbo_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_ernie_image_turbo",
+        ExpectedMetadata {
+            model: "ernie_image_turbo",
+            seed: Some(423_299_999_918_804),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
             loras: &[],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
