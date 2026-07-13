@@ -74,6 +74,26 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_qwen_image_union_control_lora.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "Image_capybara_v0_1_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_kandinsky5_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_kandinsky5_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_omnigen2_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_omnigen2_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_chroma1_radiance_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_chroma1_radiance_text_to_image.chunks.json"
+        ),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -469,6 +489,101 @@ fn qwen_image_union_control_lora() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn capybara_text_to_image() {
+    assert_fixture(
+        "Image_capybara_v0_1_text_to_image",
+        ExpectedMetadata {
+            model: "capybara_v0.1",
+            seed: Some(902_334_010_808_173),
+            steps: 20,
+            cfg: 6.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A serene portrait of a young woman, her profile framed against a soft, desaturated teal backdrop; the black habit and white coif and collar are rendered in muted, low-saturation tones, with gentle lighting casting subtle shadows on her face, creating a calm, understated visual balance.",
+            negative_prompt: "blurry, low quality, distorted, ugly, watermark, text",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn kandinsky5_text_to_image() {
+    assert_fixture(
+        "image_kandinsky5_t2i",
+        ExpectedMetadata {
+            model: "kandinsky5lite_t2i",
+            seed: Some(297_935_044_336_751),
+            steps: 50,
+            cfg: 3.5,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "A three-quarter side profile shot captured from a slightly low, stationary camera angle, this image frames a joyful hiker against the jagged, dramatic peaks of the Dolomites, where the elevated perspective emphasizes both the grandeur of the alpine landscape and the upward, hopeful tilt of his gaze. He wears a snug, mustard-yellow knit beanie that matches his chunky, textured sweater, paired with round, wire-rimmed glasses that add a thoughtful, approachable charm, while a rugged, oversized hiking backpack in weathered taupe is secured across his shoulders with gray, adjustable straps, complemented by a utility waist belt with a small, functional pouch. The scene is enhanced by a warm, vintage-inspired filter that bathes the frame in rich golden-amber tones, boosting contrast between the hiker\u{2019}s vibrant knitwear and the tawny mountain slopes, and a subtle film grain that lends a nostalgic, cinematic quality; soft, directional sunlight casts gentle shadows along his beard and sweater to add depth, with the crisp, saturated blue sky providing a striking counterpoint to the earthy foreground, creating an immersive portrait of adventure and warmth.",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn omnigen2_text_to_image() {
+    assert_fixture(
+        "image_omnigen2_t2i",
+        ExpectedMetadata {
+            model: "omnigen2_fp16",
+            seed: Some(375_248_071_721_913),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A cat with a crown lounging on a velvet throne, royal atmosphere, luxurious fabric texture, regal pose, detailed fur, ornate crown, dramatic lighting",
+            negative_prompt: "blurry, low quality, distorted, ugly, bad anatomy, deformed, poorly drawn",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn chroma_radiance_text_to_image() {
+    assert_fixture(
+        "image_chroma1_radiance_text_to_image",
+        ExpectedMetadata {
+            model: "chroma_radiance_x0",
+            seed: Some(883_855_055_680_159),
+            steps: 30,
+            cfg: 3.5,
+            sampler: "euler (beta)",
+            positive_prompt: "Hyperrealistic macro photograph of a team of tiny bakers\u{2014}each precisely 2 inches tall\u{2014}collaborating on an enormous, golden-brown croissant with flaky, layered textures. The bakers are engaged in dynamic, detailed actions: one uses a miniature wooden bucket to spread rich, creamy butter between the croissant\u{2019}s layers, another climbs a thin rope ladder to evenly pipe smooth, glossy chocolate filling onto the top, and a third brushes a light egg wash with a tiny pastry brush. The scene is bathed in warm, soft kitchen lighting with cinematic depth\u{2014}subtle highlights on the croissant\u{2019}s golden crust, gentle shadows that emphasize texture, and a soft glow from overhead pendant lights. Floating flour dust particles catch the light, adding a sense of movement and realism, while tiny details like the bakers\u{2019} stitched cloth aprons, smudged flour on their faces, the rough wood of the worktable, and the slight sheen of melted butter on the croissant are rendered with ultra-precision. Ultra-detailed, 8K resolution, photorealistic textures, sharp focus on the bakers and croissant, shallow depth of field to blur the background slightly, rich warm color palette, lifelike proportions, and a cozy, whimsical atmosphere that balances realism with charm.",
+            negative_prompt: "This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom.",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 21,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

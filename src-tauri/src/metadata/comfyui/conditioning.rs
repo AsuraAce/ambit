@@ -445,6 +445,18 @@ pub fn evaluate_string_node(
         }
     }
 
+    if t == "CLIPTextEncode" {
+        if let Some(text) = get_node_param(node, "text").and_then(Value::as_str) {
+            if !is_placeholder_prompt_value(text) {
+                return Some(text.to_string());
+            }
+        }
+        if let Some(source_id) = get_node_input_link(node, "text") {
+            return evaluate_string_node(graph, &source_id, visited, depth + 1);
+        }
+        return None;
+    }
+
     if t == "PrimitiveNode"
         || t == "String"
         || t.contains("StringLiteral")

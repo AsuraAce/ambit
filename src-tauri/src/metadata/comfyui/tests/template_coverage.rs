@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 11);
+    assert_eq!(count_coverage("golden"), 15);
     assert_eq!(count_coverage("pattern_covered"), 1);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 62);
+    assert_eq!(count_coverage("unassessed"), 58);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -223,6 +223,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
     let expected = [
         ("01_get_started_text_to_image", "golden"),
         ("02_qwen_Image_edit_subgraphed", "golden"),
+        ("Image_capybara_v0_1_text_to_image", "golden"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
         ("gsc_creator_2_2", "golden"),
@@ -230,7 +231,10 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("hidream_i1_full", "golden"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
         ("image_flux2_text_to_image", "golden"),
+        ("image_chroma1_radiance_text_to_image", "golden"),
+        ("image_kandinsky5_t2i", "golden"),
         ("image_krea2_turbo_t2i", "pattern_covered"),
+        ("image_omnigen2_t2i", "golden"),
         ("image_qwen_Image_2512_controlnet", "golden"),
         ("image_qwen_image_edit_2509", "golden"),
         ("image_qwen_image_union_control_lora", "golden"),

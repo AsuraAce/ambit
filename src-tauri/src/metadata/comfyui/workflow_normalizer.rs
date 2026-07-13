@@ -627,6 +627,10 @@ fn apply_proxy_widget_overrides(
     };
 
     for (proxy, value) in proxy_widgets.iter().zip(values) {
+        // ComfyUI uses null instance values to mean "use the definition default".
+        if value.is_null() {
+            continue;
+        }
         let Some(proxy) = proxy.as_array() else {
             continue;
         };
