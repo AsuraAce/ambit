@@ -29,7 +29,9 @@ const image = (current: ImageMetadata, original: ImageMetadata): AIImage => ({
     originalMetadata: original,
 });
 
-const renderTab = (value: AIImage) => render(<MetadataInfoTab
+type EditCallbacks = Pick<React.ComponentProps<typeof MetadataInfoTab>, 'onUpdateTool' | 'onUpdateModel'>;
+
+const renderTab = (value: AIImage, editCallbacks: EditCallbacks = {}) => render(<MetadataInfoTab
     image={value}
     promptValue={value.metadata.positivePrompt}
     setPromptValue={vi.fn()}
@@ -43,6 +45,7 @@ const renderTab = (value: AIImage) => render(<MetadataInfoTab
     onAIAnalysis={vi.fn()}
     onGenerateVariations={vi.fn()}
     isAnalyzing={false}
+    {...editCallbacks}
 />);
 
 describe('MetadataInfoTab prompt revert control', () => {
@@ -56,7 +59,7 @@ describe('MetadataInfoTab prompt revert control', () => {
             metadata({ steps: 20, cfg: 7 }),
         ));
 
-        expect(screen.queryByTitle('Revert all metadata to original')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();
     });
 
     it('shows revert after the prompt has actually changed', () => {
@@ -65,7 +68,7 @@ describe('MetadataInfoTab prompt revert control', () => {
             metadata({ positivePrompt: 'Original prompt' }),
         ));
 
-        expect(screen.getByTitle('Revert all metadata to original')).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Revert All Metadata to Original' })).not.toBeNull();
         expect(screen.getByText('Generation Data').closest('.border')?.className).not.toContain('border-amber');
     });
 
@@ -90,5 +93,19 @@ describe('MetadataInfoTab prompt revert control', () => {
 
         const seedItem = screen.getByText('Seed').parentElement?.parentElement;
         expect(seedItem?.textContent).toContain('Unknown');
+    });
+
+    it('keeps hover-hidden metadata edit actions visible to keyboard focus', () => {
+        localStorage.setItem('aigallery_gendata_open', 'true');
+        renderTab(
+            image(metadata(), metadata()),
+            { onUpdateTool: vi.fn(), onUpdateModel: vi.fn() },
+        );
+
+        for (const name of ['Edit Generation Tool', 'Edit Model']) {
+            const editButton = screen.getByRole('button', { name });
+            expect(editButton.className).toContain('opacity-0');
+            expect(editButton.className).toContain('focus-visible:opacity-100');
+        }
     });
 });

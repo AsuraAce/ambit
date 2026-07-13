@@ -10,6 +10,7 @@ import { ResourceSection } from './ResourceSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
 import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
+import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -200,14 +201,14 @@ export const MetadataInfoTab = ({
                             </div>
                             <div className="flex items-center gap-2">
                                 {onRecoverMetadata && (
-                                    <button onClick={onRecoverMetadata} className="text-amethyst-600 dark:text-amethyst-400 hover:text-amethyst-500 p-1.5 rounded bg-amethyst-100 dark:bg-amethyst-900/20 border border-amethyst-200 dark:border-amethyst-500/20 transition-colors" title="AI Prompt Recovery">
+                                    <TooltipButton label="Recover Prompt with AI" content="Recover Prompt with AI" onClick={onRecoverMetadata} className="text-amethyst-600 dark:text-amethyst-400 hover:text-amethyst-500 p-1.5 rounded bg-amethyst-100 dark:bg-amethyst-900/20 border border-amethyst-200 dark:border-amethyst-500/20 transition-colors">
                                         <Wand2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    </TooltipButton>
                                 )}
                                 {image.originalMetadata && !isLoading && hasModifications() && onRevertMetadata && (
-                                    <button onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20" title="Revert all metadata to original">
+                                    <TooltipButton label="Revert All Metadata to Original" content="Revert All Metadata to Original" onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20">
                                         <Undo2 className="w-3 h-3" />
-                                    </button>
+                                    </TooltipButton>
                                 )}
                                 <button onClick={handleCopyPrompt} className="text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 text-xs flex items-center gap-1 transition-colors bg-sage-100 dark:bg-sage-500/10 px-2 py-1 rounded border border-sage-200 dark:border-sage-500/20">
                                     {copiedPrompt ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
@@ -245,7 +246,7 @@ export const MetadataInfoTab = ({
                         ) : palette.length > 0 ? (
                             <div className="flex gap-2">
                                 {palette.map((color, i) => (
-                                    <button key={i} onClick={() => { navigator.clipboard.writeText(color); setCopiedColor(color); setTimeout(() => setCopiedColor(null), 1500); }} className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 dark:border-white/10 hover:scale-110 transition-transform relative group" style={{ backgroundColor: color }}>
+                                    <button type="button" aria-label={`Copy Color ${color}`} key={i} onClick={() => { navigator.clipboard.writeText(color); setCopiedColor(color); setTimeout(() => setCopiedColor(null), 1500); }} className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 dark:border-white/10 hover:scale-110 transition-transform relative group" style={{ backgroundColor: color }}>
                                         {copiedColor === color && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-lg"><Check className="w-4 h-4 text-white" /></div>}
                                     </button>
                                 ))}
@@ -255,7 +256,7 @@ export const MetadataInfoTab = ({
 
                     {/* Gen Data */}
                     <div className={`border rounded-xl bg-white/50 dark:bg-zinc-800/30 overflow-hidden ${isGenDataModified() ? 'border-amber-300 dark:border-amber-500/30' : 'border-gray-200 dark:border-white/5'}`}>
-                        <button onClick={toggleGenData} className="w-full flex items-center justify-between p-3 bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                        <button type="button" aria-expanded={isGenDataOpen} onClick={toggleGenData} className="w-full flex items-center justify-between p-3 bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
                             <div className="flex items-center gap-2">
                                 <Settings2 className="w-3.5 h-3.5 text-gray-500" />
                                 <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Generation Data</h3>
@@ -282,7 +283,7 @@ export const MetadataInfoTab = ({
                                         <div className="flex items-center justify-between mb-1">
                                             <div className={`text-[10px] uppercase font-bold tracking-wider ${isModified('tool') ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400 dark:text-zinc-500'}`}>Generator Software</div>
                                             {onUpdateTool && !isEditingTool && (
-                                                <button onClick={() => { setIsEditingTool(true); setEditedTool(image.metadata.tool); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
+                                                <button type="button" aria-label="Edit Generation Tool" onClick={() => { setIsEditingTool(true); setEditedTool(image.metadata.tool); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
                                             )}
                                         </div>
 
@@ -312,7 +313,7 @@ export const MetadataInfoTab = ({
                                         <div className="flex items-center justify-between mb-1">
                                             <div className={`text-[10px] uppercase font-bold tracking-wider ${isModified('model') ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400 dark:text-zinc-500'}`}>Model</div>
                                             {onUpdateModel && !isEditingModel && (
-                                                <button onClick={() => { setIsEditingModel(true); setEditedModel(image.metadata.overrideModel || image.metadata.model); setIsCustomModel(false); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
+                                                <button type="button" aria-label="Edit Model" onClick={() => { setIsEditingModel(true); setEditedModel(image.metadata.overrideModel || image.metadata.model); setIsCustomModel(false); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
                                             )}
                                         </div>
 

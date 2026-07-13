@@ -213,6 +213,9 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
                     <button
                         type="button"
+                        role="switch"
+                        aria-checked={settings.enableAutoThumbnailHealing}
+                        aria-label="Smart Thumbnail Optimization"
                         className={`w-12 h-7 rounded-full relative transition-colors ${settings.enableAutoThumbnailHealing ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                     >
                         <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAutoThumbnailHealing ? 'left-6' : 'left-1'}`} />
@@ -239,6 +242,9 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 </div>
                                 <button
                                     type="button"
+                                    role="switch"
+                                    aria-checked={settings.enforceHighQualityThumbnails}
+                                    aria-label="Upgrade Existing Thumbnails"
                                     className={`w-10 h-6 rounded-full relative transition-colors ${settings.enforceHighQualityThumbnails ? 'bg-violet-500' : 'bg-gray-200 dark:bg-white/10'}`}
                                 >
                                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.enforceHighQualityThumbnails ? 'left-5' : 'left-1'}`} />
@@ -380,6 +386,9 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         </div>
                         <button
                             type="button"
+                            role="switch"
+                            aria-checked={settings.confirmDelete}
+                            aria-label="Confirm Deletions"
                             className={`w-12 h-7 rounded-full relative transition-colors ${settings.confirmDelete ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                         >
                             <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.confirmDelete ? 'left-6' : 'left-1'}`} />

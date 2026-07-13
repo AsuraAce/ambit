@@ -95,8 +95,8 @@ describe('AppHeader', () => {
         useLibraryStore.getState().setIsLiveWatching(true);
 
         const { container } = render(<AppHeader {...defaultProps} />);
-        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
-        const importButton = screen.getByTitle(/Import images\./);
+        const liveWatchButton = screen.getByRole('button', { name: 'Disable Live Watch' });
+        const importButton = screen.getByRole('button', { name: 'Import Images' });
 
         expect(liveWatchButton.className).toContain('bg-sage-500/10');
         expect(liveWatchButton.className).toContain('text-sage-600');
@@ -119,8 +119,8 @@ describe('AppHeader', () => {
         });
 
         const { container } = render(<AppHeader {...defaultProps} />);
-        const importButton = screen.getByTitle(/Import images\./);
-        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
+        const importButton = screen.getByRole('button', { name: 'Import Images' });
+        const liveWatchButton = screen.getByRole('button', { name: 'Disable Live Watch' });
 
         expect(screen.queryByTestId('app-header-progress-rail')).toBeNull();
         expect(container.querySelector('.bg-violet-500')).toBeNull();
@@ -143,8 +143,8 @@ describe('AppHeader', () => {
         });
 
         render(<AppHeader {...defaultProps} />);
-        const importButton = screen.getByTitle(/Import images\./);
-        const liveWatchButton = screen.getByTitle(/Live Watch enabled/);
+        const importButton = screen.getByRole('button', { name: 'Import Images' });
+        const liveWatchButton = screen.getByRole('button', { name: 'Disable Live Watch' });
 
         expect(screen.queryByTestId('app-header-progress-rail')).toBeNull();
         expect(liveWatchButton.className).toContain('ring-sage-500/20');
@@ -159,7 +159,7 @@ describe('AppHeader', () => {
         });
 
         const { container } = render(<AppHeader {...defaultProps} />);
-        const importButton = screen.getByTitle(/Import images\./);
+        const importButton = screen.getByRole('button', { name: 'Import Images' });
 
         expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
         expect(container.querySelector('.bg-sage-500')).toBeTruthy();
@@ -175,7 +175,7 @@ describe('AppHeader', () => {
         const { rerender } = render(<AppHeader {...defaultProps} />);
 
         expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
-        expect(screen.getByTitle(/Import images\./).className).toContain('bg-sage-500/20');
+        expect(screen.getByRole('button', { name: 'Import Images' }).className).toContain('bg-sage-500/20');
 
         useLibraryStore.setState({
             isImporting: false,
@@ -186,15 +186,32 @@ describe('AppHeader', () => {
         rerender(<AppHeader {...defaultProps} />);
 
         expect(screen.getByTestId('app-header-progress-rail')).toBeTruthy();
-        expect(screen.getByTitle(/Import images\./).className).toContain('bg-sage-500/20');
+        expect(screen.getByRole('button', { name: 'Import Images' }).className).toContain('bg-sage-500/20');
     });
 
     it('opens the import flow from the header import button', () => {
         const onImport = vi.fn();
 
         render(<AppHeader {...defaultProps} onImport={onImport} />);
-        fireEvent.click(screen.getByTitle(/Import images\./));
+        const importButton = screen.getByRole('button', { name: 'Import Images' });
+        expect(importButton.getAttribute('title')).toBeNull();
+        fireEvent.click(importButton);
 
         expect(onImport).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes dynamic Live Watch state and keyboard-discoverable help', () => {
+        const { rerender } = render(<AppHeader {...defaultProps} />);
+        const enableButton = screen.getByRole('button', { name: 'Enable Live Watch' });
+
+        expect(enableButton.getAttribute('aria-pressed')).toBe('false');
+        expect(enableButton.getAttribute('title')).toBeNull();
+        fireEvent.focus(enableButton);
+        expect(screen.getByRole('tooltip').textContent).toContain('Automatically detect and import');
+
+        useLibraryStore.getState().setIsLiveWatching(true);
+        rerender(<AppHeader {...defaultProps} />);
+
+        expect(screen.getByRole('button', { name: 'Disable Live Watch' }).getAttribute('aria-pressed')).toBe('true');
     });
 });

@@ -53,7 +53,7 @@ describe('ImportModal', () => {
         const heading = screen.getByRole('heading', { name: 'Add Images to Your Library' });
         expect(dialog.getAttribute('aria-modal')).toBe('true');
         expect(document.activeElement).toBe(heading);
-        expect(screen.getByRole('button', { name: 'Close Add Images' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Close Add Images' }).hasAttribute('autofocus')).toBe(false);
     });
 
     it('wraps forward and reverse focus within the dialog', () => {

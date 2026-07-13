@@ -163,6 +163,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         {keyword}
                                         <button
                                             type="button"
+                                            aria-label={`Remove Masked Keyword ${keyword}`}
                                             onClick={() => handleRemoveKeyword(keyword)}
                                             className="p-0.5 hover:bg-rose-200 dark:hover:bg-rose-500/30 rounded-full transition-colors"
                                         >

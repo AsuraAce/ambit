@@ -2,6 +2,7 @@ import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, 
 import { AIImage } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface SelectionBarProps {
     selectedIds: Set<string>;
@@ -48,6 +49,8 @@ export function SelectionBar({
     // Logic for Tri-State Mask Cycling in Bulk:
     // Determine the "base" state to decide the next step in the cycle.
     const selectedImages = filteredImages.filter(img => selectedIds.has(img.id));
+    const allFavorite = selectedImages.length > 0 && selectedImages.every(img => img.isFavorite);
+    const allPinned = selectedImages.length > 0 && selectedImages.every(img => img.isPinned);
 
     const allUserMasked = selectedImages.every(img => img.userMasked === true);
     const allUserUnmasked = selectedImages.every(img => img.userMasked === false);
@@ -103,44 +106,45 @@ export function SelectionBar({
                 </div>
 
                 {selectedIds.size === 2 && (
-                    <button onClick={onCompare} className="p-2 text-sage-600 dark:text-sage-400 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Compare">
+                    <TooltipButton label="Compare Selected Images" content="Compare Selected Images" onClick={onCompare} className="p-2 text-sage-600 dark:text-sage-400 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
                         <SplitSquareHorizontal className="w-5 h-5" />
-                    </button>
+                    </TooltipButton>
                 )}
 
-                <button onClick={onToggleFavorite} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Favorite All">
+                <TooltipButton label={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} content={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} aria-pressed={allFavorite} onClick={onToggleFavorite} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors">
                     <Heart className="w-5 h-5" />
-                </button>
-                <button onClick={onTogglePin} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Pin All">
+                </TooltipButton>
+                <TooltipButton label={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} content={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} aria-pressed={allPinned} onClick={onTogglePin} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
                     <Pin className="w-5 h-5" />
-                </button>
-                <button
+                </TooltipButton>
+                <TooltipButton
+                    label={nextLabel}
+                    content={nextLabel}
                     onClick={() => onToggleMask(undefined, nextState)}
                     className={`p-2 rounded-full transition-colors ${buttonClass}`}
-                    title={nextLabel}
                 >
                     {nextIcon}
-                </button>
+                </TooltipButton>
 
-                <button onClick={onAddToCollection} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors" title="Add to Collection">
+                <TooltipButton label="Add Selected to Collection" content="Add Selected to Collection" onClick={onAddToCollection} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
                     <Folder className="w-5 h-5" />
-                </button>
+                </TooltipButton>
                 {activeCollectionId && onRemoveFromCollection && (
-                    <button onClick={onRemoveFromCollection} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors" title="Remove from this Collection">
+                    <TooltipButton label="Remove Selected from Collection" content="Remove Selected from Collection" onClick={onRemoveFromCollection} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors">
                         <FolderMinus className="w-5 h-5" />
-                    </button>
+                    </TooltipButton>
                 )}
 
 
-                <button onClick={onExport} disabled={isExporting} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors disabled:opacity-50" title="Export">
+                <TooltipButton label="Export Selected Images" content="Export Selected Images" onClick={onExport} disabled={isExporting} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors disabled:opacity-50">
                     <Share className="w-5 h-5" />
-                </button>
+                </TooltipButton>
 
-                <button onClick={onDelete} className="p-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors" title="Remove from Library">
+                <TooltipButton label="Remove Selected from Library" content="Remove Selected from Library" onClick={onDelete} className="p-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors">
                     <Trash2 className="w-5 h-5" />
-                </button>
+                </TooltipButton>
 
-                <button onClick={onClearSelection} className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors ml-1" title="Clear Selection">
+                <button type="button" aria-label="Clear Selection" onClick={onClearSelection} className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors ml-1">
                     <X className="w-5 h-5" />
                 </button>
             </div>

@@ -101,9 +101,9 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     {/* Favorites Group */}
                     <div className={`p-4 rounded-xl border transition-all duration-300 ${syncFavorites ? 'bg-sage-50 dark:bg-sage-500/5 border-sage-500/20' : 'bg-transparent border-gray-100 dark:border-white/5 opacity-60'}`}>
                         <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
-                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncFavorites ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+                            <input type="checkbox" role="switch" aria-label="Sync Favorites" aria-checked={syncFavorites} className="peer sr-only" checked={syncFavorites} onChange={e => handleInvokeSyncFavoritesToggle(e.target.checked)} />
+                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${syncFavorites ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                                 {syncFavorites && <div className="w-2 h-2 bg-white rounded-sm" />}
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncFavorites} onChange={e => handleInvokeSyncFavoritesToggle(e.target.checked)} />
                             </div>
                             <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Favorites</span>
                         </label>
@@ -130,9 +130,9 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     {/* Boards Group */}
                     <div className={`p-4 rounded-xl border transition-all duration-300 ${syncBoards ? 'bg-sage-50 dark:bg-sage-500/5 border-sage-500/20' : 'bg-transparent border-gray-100 dark:border-white/5 opacity-60'}`}>
                         <label className="flex items-center gap-3 cursor-pointer group/label mb-3">
-                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative ${syncBoards ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
+                            <input type="checkbox" role="switch" aria-label="Sync Boards" aria-checked={syncBoards} className="peer sr-only" checked={syncBoards} onChange={e => handleInvokeSyncBoardsToggle(e.target.checked)} />
+                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all relative peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${syncBoards ? 'bg-sage-600 border-sage-600 shadow-lg shadow-sage-500/30' : 'border-gray-300 dark:border-white/20 bg-white/5'}`}>
                                 {syncBoards && <div className="w-2 h-2 bg-white rounded-sm" />}
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={syncBoards} onChange={e => handleInvokeSyncBoardsToggle(e.target.checked)} />
                             </div>
                             <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Sync Boards</span>
                         </label>
@@ -140,8 +140,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         {syncBoards && (
                             <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
                                 <label className="flex items-center gap-2 cursor-pointer group/sub">
-                                    <div className={`w-8 h-4 rounded-full relative transition-colors ${settings.syncBoardsToCollections ? 'bg-sage-600' : 'bg-gray-300 dark:bg-white/10'}`}>
-                                        <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.syncBoardsToCollections || false} onChange={e => handleSyncBoardsToggle(e.target.checked)} />
+                                    <input type="checkbox" role="switch" aria-label="Persist Synced Boards as Collections" aria-checked={settings.syncBoardsToCollections || false} className="peer sr-only" checked={settings.syncBoardsToCollections || false} onChange={e => handleSyncBoardsToggle(e.target.checked)} />
+                                    <div className={`w-8 h-4 rounded-full relative transition-colors peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${settings.syncBoardsToCollections ? 'bg-sage-600' : 'bg-gray-300 dark:bg-white/10'}`}>
                                         <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full pointer-events-none transition-transform ${settings.syncBoardsToCollections ? 'translate-x-4' : 'translate-x-0'}`} />
                                     </div>
                                     <span className="text-[10px] font-bold text-gray-500 group-hover/sub:text-sage-600 transition-colors">Persistent Collections</span>
@@ -157,8 +157,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <label className="flex items-start gap-3 cursor-pointer group/toggle">
-                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importIntermediates ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importIntermediates || false} onChange={e => handleImportIntermediatesToggle(e.target.checked)} />
+                            <input type="checkbox" role="switch" aria-label="Import Intermediates" aria-checked={settings.importIntermediates || false} className="peer sr-only" checked={settings.importIntermediates || false} onChange={e => handleImportIntermediatesToggle(e.target.checked)} />
+                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${settings.importIntermediates ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
                                 <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importIntermediates ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>
@@ -168,8 +168,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         </label>
 
                         <label className="flex items-start gap-3 cursor-pointer group/toggle">
-                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 ${settings.importOrphans === true ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <input type="checkbox" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" checked={settings.importOrphans === true} onChange={e => handleImportOrphansToggle(e.target.checked)} />
+                            <input type="checkbox" role="switch" aria-label="Orphan Recovery" aria-checked={settings.importOrphans === true} className="peer sr-only" checked={settings.importOrphans === true} onChange={e => handleImportOrphansToggle(e.target.checked)} />
+                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${settings.importOrphans === true ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
                                 <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans === true ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>

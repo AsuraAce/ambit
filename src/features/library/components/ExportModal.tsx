@@ -20,6 +20,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
     const [filename, setFilename] = useState(`ambit_export_${new Date().toISOString().slice(0, 10)}`);
     const [folder, setFolder] = useState<string | null>(null);
+    const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
 
     const handlePickFolder = async () => {
         const { open } = await import('@tauri-apps/plugin-dialog');
@@ -128,6 +142,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         {/* Close Button */}
                         {!isExporting && (
                             <button
+                                ref={closeButtonRef}
+                                type="button"
+                                aria-label="Close Export"
                                 onClick={onClose}
                                 className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all"
                             >

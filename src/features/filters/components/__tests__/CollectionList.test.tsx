@@ -146,11 +146,14 @@ describe('CollectionList toolbar tooltips', () => {
 
         const sortButton = screen.getByRole('button', { name: 'Sort Collections' });
         expect(sortButton.getAttribute('title')).toBeNull();
+        expect(sortButton.getAttribute('aria-haspopup')).toBeNull();
+        expect(sortButton.getAttribute('aria-expanded')).toBe('false');
         fireEvent.mouseEnter(sortButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Sort Collections');
         fireEvent.mouseLeave(sortButton);
 
         fireEvent.click(sortButton);
+        expect(sortButton.getAttribute('aria-expanded')).toBe('true');
         const nameSortOption = screen.getByRole('button', { name: 'Name (A-Z)' });
         fireEvent.pointerDown(nameSortOption);
         fireEvent.click(nameSortOption);
@@ -158,6 +161,7 @@ describe('CollectionList toolbar tooltips', () => {
 
         const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
         expect(viewButton.getAttribute('title')).toBeNull();
+        expect(viewButton.getAttribute('aria-pressed')).toBe('false');
         fireEvent.focus(viewButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
         fireEvent.blur(viewButton);
@@ -167,17 +171,20 @@ describe('CollectionList toolbar tooltips', () => {
 
         const archivedButton = screen.getByRole('button', { name: 'Include Archived' });
         expect(archivedButton.getAttribute('title')).toBeNull();
+        expect(archivedButton.getAttribute('aria-pressed')).toBe('false');
         fireEvent.click(archivedButton);
-        expect(screen.getByRole('button', { name: 'Hide Archived' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Hide Archived' }).getAttribute('aria-pressed')).toBe('true');
         expect(screen.getByRole('tooltip').textContent).toBe('Hide Archived');
         fireEvent.pointerDown(document.body);
 
         const searchButton = screen.getByRole('button', { name: 'Search Collections' });
         expect(searchButton.getAttribute('title')).toBeNull();
+        expect(searchButton.getAttribute('aria-expanded')).toBe('false');
         fireEvent.mouseEnter(searchButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Search Collections');
         fireEvent.mouseLeave(searchButton);
         fireEvent.click(searchButton);
+        expect(searchButton.getAttribute('aria-expanded')).toBe('true');
         expect(screen.getByPlaceholderText('Find collection...')).toBeTruthy();
     });
 });

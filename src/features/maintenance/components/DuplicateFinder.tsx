@@ -7,6 +7,7 @@ import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { type SyncProgress } from '../../../stores/libraryStore';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 // --- Sub-Component for Individual Duplicate Image in a Group ---
 const DuplicateItem: React.FC<{
@@ -64,23 +65,25 @@ const DuplicateItem: React.FC<{
 
                 {/* Overlay Actions (Only show if UNMASKED) */}
                 {!isMasked && (
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 backdrop-blur-[1px] z-30">
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 backdrop-blur-[1px] z-30">
                         <div className="flex items-center gap-2">
-                            <button
+                            <TooltipButton
+                                label="Open in Viewer"
+                                content="Open in Viewer"
                                 onClick={() => onView(img)}
                                 className="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full shadow-lg transform hover:scale-105 transition-all"
-                                title="Open in viewer"
                             >
                                 <Eye className="w-4 h-4" />
-                            </button>
-                            <button
+                            </TooltipButton>
+                            <TooltipButton
+                                label="Compare with Another Copy"
+                                content="Compare with Another Copy"
                                 onClick={() => onCompare(img)}
                                 disabled={!canCompare}
                                 className="p-2 bg-white/90 hover:bg-white disabled:opacity-40 disabled:hover:scale-100 text-gray-900 rounded-full shadow-lg transform hover:scale-105 transition-all"
-                                title="Compare with another copy"
                             >
                                 <GitCompare className="w-4 h-4" />
-                            </button>
+                            </TooltipButton>
                         </div>
                         <button
                             onClick={() => onKeepOnly(img.id)}

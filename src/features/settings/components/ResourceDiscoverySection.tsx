@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { AlertTriangle, Folder, FolderSearch, RefreshCw, Trash2, Plus } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface ResourceDiscoverySectionProps {
     resourceFolders: string[];
@@ -99,7 +100,6 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                     onClick={() => onRemove(path)}
                                     disabled={isDiscoveryBusy}
                                     aria-label={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
-                                    title={`${isRemoving ? 'Removing' : 'Remove'} resource folder ${path}`}
                                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                                 >
                                     {isRemoving
@@ -131,16 +131,15 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                             placeholder="e.g. D:/StableDiffusion/models/Lora"
                             className="flex-1 bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm focus:border-sage-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
                         />
-                        <button
-                            type="button"
+                        <TooltipButton
+                            label="Browse for resource folder"
+                            content="Browse for resource folder"
                             onClick={onBrowse}
                             disabled={isDiscoveryBusy}
                             className="px-3 py-2 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-white/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Browse"
-                            aria-label="Browse for resource folder"
                         >
                             <FolderSearch className="w-4 h-4" />
-                        </button>
+                        </TooltipButton>
                         <button
                             type="submit"
                             disabled={!newResourcePath.trim() || isDiscoveryBusy}

@@ -261,6 +261,9 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 </div>
                                 <button
                                     type="button"
+                                    role="switch"
+                                    aria-checked={autoUpdateEnabled}
+                                    aria-label="Automatic Updates"
                                     onClick={() => {
                                         const nextValue = !autoUpdateEnabled;
                                         setSettings((prev) => ({ ...prev, autoCheckForUpdates: nextValue }));

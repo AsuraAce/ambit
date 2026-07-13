@@ -102,6 +102,27 @@ describe('SyncSection', () => {
         }));
     });
 
+    it('keeps every switch focusable and exposes a visible keyboard focus ring on its track', () => {
+        render(<SyncSectionHarness initialSettings={createSettings()} />);
+
+        const switches = screen.getAllByRole('switch');
+        expect(switches).toHaveLength(5);
+
+        switches.forEach((switchInput) => {
+            const track = switchInput.nextElementSibling;
+            expect(switchInput.className.split(/\s+/)).toContain('peer');
+            expect(switchInput.className.split(/\s+/)).toContain('sr-only');
+            expect(track?.className.split(/\s+/)).toContain('peer-focus-visible:ring-2');
+            expect(track?.className.split(/\s+/)).toContain('peer-focus-visible:ring-sage-500/50');
+        });
+
+        const importIntermediates = screen.getByRole('switch', { name: 'Import Intermediates' });
+        importIntermediates.focus();
+        expect(document.activeElement).toBe(importIntermediates);
+        fireEvent.click(importIntermediates);
+        expect((importIntermediates as HTMLInputElement).checked).toBe(true);
+    });
+
     it('confirms a full resync before clearing only the saved cursor', () => {
         render(<SyncSectionHarness initialSettings={createSettings()} />);
 

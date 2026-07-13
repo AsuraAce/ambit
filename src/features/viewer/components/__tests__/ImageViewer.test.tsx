@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
@@ -22,7 +22,11 @@ vi.mock('../../../../services/db/imageRepo', () => ({
 vi.mock('../MetadataSidebar', () => ({
     MetadataSidebar: (props: { image: AIImage }) => {
         mockMetadataSidebar(props);
-        return <div data-testid="metadata-sidebar" />;
+        return (
+            <div data-testid="metadata-sidebar">
+                <button>Metadata Action</button>
+            </div>
+        );
     },
 }));
 
@@ -31,7 +35,9 @@ vi.mock('../ImageCanvas', () => ({
 }));
 
 vi.mock('../ViewerToolbar', () => ({
-    ViewerToolbar: () => <div />,
+    ViewerToolbar: ({ onToggleTheater }: { onToggleTheater: () => void }) => (
+        <button onClick={onToggleTheater}>Toggle Theater Mode</button>
+    ),
 }));
 
 vi.mock('../VersionSelector', () => ({
@@ -166,5 +172,38 @@ describe('ImageViewer full metadata loading', () => {
                 sampler: 'DPM++',
             });
         });
+    });
+
+    it('removes hidden metadata controls from the accessibility tree until the sidebar is visible', () => {
+        mockGetImageWithFullMetadata.mockResolvedValue(lightImage);
+        const viewerProps = {
+            image: lightImage,
+            onAddToCollection: vi.fn(),
+            onClose: vi.fn(),
+            onNext: vi.fn(),
+            onPrev: vi.fn(),
+            onSearch: vi.fn(),
+            onToggleFavorite: vi.fn(),
+            onOpenSettings: vi.fn(),
+            isOpen: true,
+        };
+        const { rerender } = render(<ImageViewer {...viewerProps} isSidebarOpen />);
+
+        expect(screen.getByRole('button', { name: 'Metadata Action' })).toBeTruthy();
+
+        rerender(<ImageViewer {...viewerProps} isSidebarOpen={false} />);
+
+        expect(screen.queryByRole('button', { name: 'Metadata Action' })).toBeNull();
+        const hiddenMetadataAction = screen.getByRole('button', { name: 'Metadata Action', hidden: true });
+        expect(hiddenMetadataAction.closest('[aria-hidden="true"]')?.hasAttribute('inert')).toBe(true);
+
+        rerender(<ImageViewer {...viewerProps} isSidebarOpen />);
+        expect(screen.getByRole('button', { name: 'Metadata Action' })).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Theater Mode' }));
+        expect(screen.queryByRole('button', { name: 'Metadata Action' })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Theater Mode' }));
+        expect(screen.getByRole('button', { name: 'Metadata Action' })).toBeTruthy();
     });
 });

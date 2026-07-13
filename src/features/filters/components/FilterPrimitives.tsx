@@ -215,6 +215,8 @@ export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, place
             />
             {value && (
                 <button
+                    type="button"
+                    aria-label={`Clear ${placeholder}`}
                     onClick={() => onChange('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-lg transition-all"
                 >
@@ -273,6 +275,7 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
             <TooltipButton
                 label={title ?? 'Sort Options'}
                 content={title ?? 'Sort Options'}
+                aria-expanded={isOpen}
                 onClick={() => setIsOpen(!isOpen)}
                 className={resolvedTriggerClass}
             >

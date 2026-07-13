@@ -112,6 +112,8 @@ export const AIResultModal: React.FC<AIResultModalProps> = ({
                                     </button>
                                 )}
                                 <button
+                                    type="button"
+                                    aria-label="Close AI Result"
                                     onClick={onClose}
                                     className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 transition-colors"
                                 >
@@ -297,6 +299,8 @@ const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index, onCopy
                 {/* Navigation Arrows */}
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2">
                     <button
+                        type="button"
+                        aria-label="Previous Result"
                         onClick={onPrev}
                         disabled={!hasPrev}
                         className={cn(
@@ -309,6 +313,8 @@ const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index, onCopy
                 </div>
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2">
                     <button
+                        type="button"
+                        aria-label="Next Result"
                         onClick={onNext}
                         disabled={!hasNext}
                         className={cn(

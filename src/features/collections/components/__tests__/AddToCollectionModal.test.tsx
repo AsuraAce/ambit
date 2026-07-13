@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { render, screen } from '../../../../test/testUtils';
+import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Collection } from '../../../../types';
 import { useCollectionStore } from '../../../../stores/collectionStore';
@@ -55,6 +55,23 @@ const renderModal = (collections: Collection[]) => render(
     />
 );
 
+const FocusHarness = () => {
+    const [isOpen, setIsOpen] = React.useState(false);
+
+    return (
+        <>
+            <button type="button" onClick={() => setIsOpen(true)}>Open collection picker</button>
+            <AddToCollectionModal
+                isOpen={isOpen}
+                onClose={() => setIsOpen(false)}
+                collections={[baseCollection]}
+                selectedIds={['image-1']}
+                onConfirm={() => { }}
+            />
+        </>
+    );
+};
+
 describe('AddToCollectionModal thumbnail hydration states', () => {
     beforeEach(() => {
         useCollectionStore.setState(useCollectionStore.getInitialState(), true);
@@ -91,5 +108,33 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
         expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
         expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
+    });
+});
+
+describe('AddToCollectionModal focus handoff', () => {
+    it('returns focus to the collection launcher after closing', () => {
+        render(<FocusHarness />);
+        const launcher = screen.getByRole('button', { name: 'Open collection picker' });
+        launcher.focus();
+
+        fireEvent.click(launcher);
+        const closeButton = screen.getByRole('button', { name: 'Close Add to Collection' });
+        expect(document.activeElement).toBe(closeButton);
+
+        fireEvent.click(closeButton);
+        expect(document.activeElement).toBe(launcher);
+    });
+
+    it('reports the sort popup as an expanded disclosure without claiming menu behavior', () => {
+        renderModal([baseCollection]);
+
+        const sortButton = screen.getByRole('button', { name: 'Sort Collections' });
+        expect(sortButton.getAttribute('aria-expanded')).toBe('false');
+        expect(sortButton.getAttribute('aria-haspopup')).toBeNull();
+
+        fireEvent.click(sortButton);
+
+        expect(sortButton.getAttribute('aria-expanded')).toBe('true');
+        expect(screen.getByRole('button', { name: 'Name (A-Z)' })).toBeTruthy();
     });
 });

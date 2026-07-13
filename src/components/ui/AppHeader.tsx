@@ -8,6 +8,7 @@ import { ViewControls } from '../../features/library/components/ViewControls';
 import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
 import { isBrowserMockMode } from '../../services/runtime';
 import { ToastContext } from '../../contexts/ToastContext';
+import { TooltipButton } from './InfoTooltip';
 
 interface AppHeaderProps {
     viewMode: ViewMode;
@@ -135,14 +136,18 @@ export const AppHeader = React.memo(({
 
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1">
-                        <button
+                        <TooltipButton
+                            label="Import Images"
+                            content="Import images. For automatic sync with favorites and boards, set up an Integration in Settings."
                             onClick={onImport}
                             className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                            title="Import images. For automatic sync with favorites & boards, set up an Integration in Settings."
                         >
                             <Import className="w-4 h-4" />
-                        </button>
-                        <button
+                        </TooltipButton>
+                        <TooltipButton
+                            label={isLiveWatching ? "Disable Live Watch" : "Enable Live Watch"}
+                            content={isLiveWatching ? "Disable automatic monitoring of generator output folders." : "Automatically detect and import new images from generator output folders."}
+                            aria-pressed={isLiveWatching}
                             onClick={() => {
                                 if (browserMockMode) {
                                     addToast('Unavailable in browser mock mode.', 'info');
@@ -151,10 +156,9 @@ export const AppHeader = React.memo(({
                                 setIsLiveWatching(!isLiveWatching);
                             }}
                             className={`p-2 rounded-xl transition-all border relative group ${liveWatchButtonClass}`}
-                            title={isLiveWatching ? "Live Watch enabled - Watching monitored folders" : "Enable Live Watch - Automatically detect and import new images from generator output folders"}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-                        </button>
+                        </TooltipButton>
                     </div>
 
                     <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />

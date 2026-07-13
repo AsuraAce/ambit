@@ -7,11 +7,9 @@ interface InfoTooltipProps {
     content: string;
 }
 
-interface TooltipButtonProps extends InfoTooltipProps {
+type TooltipButtonProps = InfoTooltipProps & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> & {
     children: React.ReactNode;
-    className: string;
-    onClick?: React.MouseEventHandler<HTMLButtonElement>;
-}
+};
 
 interface TooltipPosition {
     left: number;
@@ -26,7 +24,15 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     content,
     children,
     className,
+    type = 'button',
+    'aria-describedby': describedBy,
     onClick,
+    onMouseEnter,
+    onMouseLeave,
+    onFocus,
+    onBlur,
+    onKeyDown,
+    ...buttonProps
 }) => {
     const tooltipId = React.useId();
     const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -69,7 +75,7 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [isOpen]);
+    }, [isOpen, content]);
 
     React.useEffect(() => {
         if (!isOpen) return;
@@ -118,25 +124,39 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     return (
         <>
             <button
+                {...buttonProps}
                 ref={triggerRef}
-                type="button"
+                type={type}
                 aria-label={label}
-                aria-describedby={isOpen ? tooltipId : undefined}
-                onMouseEnter={() => {
+                aria-describedby={[describedBy, isOpen ? tooltipId : null].filter(Boolean).join(' ') || undefined}
+                onMouseEnter={(event) => {
                     setIsHovered(true);
                     setIsDismissed(false);
+                    onMouseEnter?.(event);
                 }}
-                onMouseLeave={() => setIsHovered(false)}
-                onFocus={() => {
+                onMouseLeave={(event) => {
+                    setIsHovered(false);
+                    onMouseLeave?.(event);
+                }}
+                onFocus={(event) => {
                     setIsFocused(true);
                     setIsDismissed(false);
+                    onFocus?.(event);
                 }}
-                onBlur={() => {
+                onBlur={(event) => {
                     setIsFocused(false);
                     setIsClickOpen(false);
+                    onBlur?.(event);
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.stopPropagation();
+                    }
+                    onKeyDown?.(event);
                 }}
                 onClick={(event) => {
                     event.stopPropagation();
+                    setIsHovered(false);
                     setIsClickOpen(true);
                     setIsDismissed(false);
                     onClick?.(event);

@@ -25,6 +25,21 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   zIndex = 60,
   isLoading = false
 }) => {
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -89,6 +104,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
             {/* Close Button Top Right */}
             <button
+              ref={closeButtonRef}
+              type="button"
+              aria-label="Close Dialog"
               onClick={onCancel}
               disabled={isLoading}
               className={`absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all ${isLoading ? 'opacity-0 pointer-events-none' : ''}`}

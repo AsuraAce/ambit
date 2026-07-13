@@ -13,6 +13,7 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { AI_PROMPTS, AIPromptKey } from '../../../constants/aiPrompts';
 import { cn } from '../../../utils/cn';
 import { listenWithCleanup } from '../../../utils/tauriListener';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { rebuildFacetCache } from '../../../services/db/imageRepo';
 
 type DevTabId = 'prompts' | 'tools';
@@ -150,6 +151,9 @@ export const DevTab: React.FC = () => {
                             </div>
                             <button
                                 type="button"
+                                role="switch"
+                                aria-checked={developerModeEnabled}
+                                aria-label="Developer Mode"
                                 className={`w-10 h-6 rounded-full relative transition-colors ${developerModeEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                             >
                                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${developerModeEnabled ? 'left-5' : 'left-1'}`} />
@@ -222,13 +226,14 @@ export const DevTab: React.FC = () => {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     {isOverridden && (
-                                                        <button
+                                                        <TooltipButton
+                                                            label="Reset Prompt to Default"
+                                                            content="Reset Prompt to Default"
                                                             onClick={() => handleResetPrompt(key)}
                                                             className="p-1.5 text-gray-400 hover:text-rose-500 transition-colors rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                                                            title="Reset to Default"
                                                         >
                                                             <Undo2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        </TooltipButton>
                                                     )}
                                                     {!isEditing && (
                                                         <button

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Folder, Info, Monitor, RefreshCw, Trash2, FileJson } from 'lucide-react';
 import { GeneratorTool, MonitoredFolder } from '../../../types';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface FolderItemProps {
     folder: MonitoredFolder;
@@ -65,19 +66,20 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{folder.imageCount} images</span>
                 )}
 
-                <button
-                    type="button"
+                <TooltipButton
+                    label={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
+                    content={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
                     onClick={() => onRescan(folder.id, path, folder.variant, folder.isManaged)}
                     disabled={isScanning}
                     className={`p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all ${isScanning ? 'opacity-50 cursor-wait' : ''}`}
-                    title={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
                 >
                     <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-                </button>
+                </TooltipButton>
 
                 {onRefresh && (
-                    <button
-                        type="button"
+                    <TooltipButton
+                        label="Resume Smart Refresh"
+                        content="Resume Smart Refresh (Shift+Click to Force Refresh All)"
                         onClick={(e) => {
                             // Click = Resume (force=false), Shift+Click = Force (force=true)
                             console.log('[FolderItem] Refresh clicked. Shift:', e.shiftKey, 'Force:', e.shiftKey);
@@ -85,20 +87,20 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                         }}
                         disabled={isScanning}
                         className="p-1.5 text-gray-400 hover:text-sage-500 hover:bg-sage-50 dark:hover:bg-sage-900/20 rounded-lg transition-all"
-                        title="Resume Smart Refresh (Shift+Click to Force Refresh All)"
                     >
                         <FileJson className="w-4 h-4" />
-                    </button>
+                    </TooltipButton>
                 )}
 
                 {!folder.isManaged && (
-                    <button
-                        type="button"
+                    <TooltipButton
+                        label={`Remove Folder: ${path}`}
+                        content={`Remove Folder: ${path}`}
                         onClick={() => onRemove(folder.id)}
                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
                     >
                         <Trash2 className="w-4 h-4" />
-                    </button>
+                    </TooltipButton>
                 )}
             </div>
         </div>

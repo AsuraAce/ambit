@@ -6,6 +6,7 @@ import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2 } f
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { formatModelName } from '../../../utils/formatUtils';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface ImageCardProps {
   image: AIImage;
@@ -136,12 +137,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         {/* Favorite Icon */}
         {image.isFavorite && !isMissing && (
           <div
-            className="transition-all duration-300 animate-in zoom-in pointer-events-auto cursor-pointer active:scale-95"
-            title="Unfavorite"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleFavorite(e);
-            }}
+            role="img"
+            aria-label="Favorite"
+            className="transition-all duration-300 animate-in zoom-in"
           >
             <Heart className="w-5 h-5 fill-red-500 text-red-500 drop-shadow-md" />
           </div>
@@ -155,8 +153,14 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         </div>
       )}
 
-      <div
-        className={`absolute top-2 left-2 z-20 transition-all duration-300 ease-spring cursor-pointer p-1 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'}`}
+      <button
+        type="button"
+        aria-label={isSelected ? "Deselect Image" : "Select Image"}
+        aria-pressed={isSelected}
+        className={`absolute top-2 left-2 z-20 transition-all duration-300 ease-spring cursor-pointer p-1 ${isSelected ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 focus-visible:opacity-100 focus-visible:scale-100'}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+        }}
         onClick={(e) => {
           e.stopPropagation();
           onToggleSelection(e);
@@ -165,12 +169,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         <div className={`w-5 h-5 rounded-full border flex items-center justify-center shadow-sm backdrop-blur-sm transition-colors ${isSelected ? 'bg-sage-500 border-sage-500' : 'bg-black/40 border-white/30 hover:bg-black/60'}`}>
           {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
         </div>
-      </div>
+      </button>
 
       {/* Hover Overlay - Only show if not blurred and not missing */}
       {!shouldBlur && !isMissing && (
-        <div className={`absolute inset-0 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          <div className="flex justify-between items-end translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-spring">
+        <div className={`absolute inset-0 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+          <div className="flex justify-between items-end translate-y-4 group-hover:translate-y-0 focus-within:translate-y-0 transition-transform duration-500 ease-spring">
             <div className="min-w-0">
               <div className="text-xs font-bold text-white truncate drop-shadow-md font-sans">
                 {(() => {
@@ -191,34 +195,39 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             <div className="flex items-center gap-1 shrink-0">
               {/* Manual Hide Button (Only if it was masked originally) */}
               {isMasked && (
-                <button
+                <TooltipButton
+                  label="Hide Content"
+                  content="Hide Content"
                   className="p-1.5 hover:bg-white/20 rounded-full transition-colors text-white cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); setIsRevealed(false); }}
-                  title="Hide content"
                 >
                   <EyeOff className="w-4 h-4" />
-                </button>
+                </TooltipButton>
               )}
 
               {onTogglePin && (
-                <button
+                <TooltipButton
+                  label={image.isPinned ? "Unpin" : "Pin to Top"}
+                  content={image.isPinned ? "Unpin" : "Pin to Top"}
+                  aria-pressed={Boolean(image.isPinned)}
                   className={`p-1.5 rounded-full transition-colors cursor-pointer ${image.isPinned ? 'text-sage-400 bg-white/10' : 'text-white hover:bg-white/20'}`}
                   onClick={(e) => { e.stopPropagation(); onTogglePin(e); }}
-                  title={image.isPinned ? "Unpin" : "Pin to Top"}
                 >
                   <Pin className={`w-4 h-4 ${image.isPinned ? 'fill-current' : ''}`} />
-                </button>
+                </TooltipButton>
               )}
-              <button
+              <TooltipButton
+                label={image.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                content={image.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                aria-pressed={image.isFavorite}
                 className="p-1.5 hover:bg-white/20 rounded-full transition-colors cursor-pointer active:scale-95"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleFavorite(e);
                 }}
-                title={image.isFavorite ? "Unfavorite" : "Favorite"}
               >
                 <Heart className={`w-4 h-4 ${image.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
-              </button>
+              </TooltipButton>
             </div>
           </div>
         </div>

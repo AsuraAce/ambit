@@ -524,6 +524,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         <TooltipButton
                             label={viewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
                             content={viewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
+                            aria-pressed={viewMode === 'grid'}
                             onClick={toggleViewMode}
                             className={`transition-colors p-1.5 rounded-lg border ${viewMode === 'grid' ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                         >
@@ -535,6 +536,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                                 content={isAllMode
                                     ? 'Match All: Show images containing every selected item.'
                                     : 'Match Any: Show images containing at least one selected item.'}
+                                aria-pressed={isAllMode}
                                 onClick={() => {
                                     const nextMode = isAllMode ? 'any' : 'all';
                                     setFilters(prev => ({
@@ -555,6 +557,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         <TooltipButton
                             label={`Search ${singularType}s`}
                             content={`Search ${singularType}s`}
+                            aria-expanded={isSearchOpen}
                             onClick={() => { setIsSearchOpen(!isSearchOpen); if (isSearchOpen) setSearchQuery(''); }}
                             className={`transition-colors p-1.5 rounded-lg border ${isSearchOpen ? 'text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-900/40 border-sage-200 dark:border-sage-500/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/5'}`}
                         >

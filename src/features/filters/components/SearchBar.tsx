@@ -4,6 +4,7 @@ import { FilterState } from '../../../types';
 import { APP_NAME } from '../../../constants/app';
 import { useSearch } from '../../../contexts/SearchContext';
 import { getAdvancedDateSearchReadiness } from '../../../utils/dateFilters';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface SearchBarProps {
     filters: FilterState;
@@ -150,6 +151,8 @@ export const SearchBar = React.memo(({
                 />
                 {localValue && (
                     <button
+                        type="button"
+                        aria-label="Clear Search"
                         onClick={clearSearch}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white"
                     >
@@ -213,13 +216,15 @@ export const SearchBar = React.memo(({
                     </div>
                 )}
             </div>
-            <button
+            <TooltipButton
+                label={searchProps.isAiSearchEnabled ? "Disable AI Search" : "Enable AI Search"}
+                content={searchProps.isAiSearchEnabled ? "Return to standard library search." : "Use natural-language AI search."}
+                aria-pressed={searchProps.isAiSearchEnabled}
                 onClick={searchProps.toggleAiSearch}
                 className={`p-2 rounded-xl transition-all border ${searchProps.isAiSearchEnabled ? 'bg-amethyst-100 dark:bg-amethyst-600/20 border-amethyst-500/50 text-amethyst-600 dark:text-amethyst-300 shadow-[0_0_15px_rgba(139,92,246,0.2)]' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 dark:text-zinc-500 hover:text-sage-600 dark:hover:text-sage-400 hover:border-gray-300 dark:hover:border-white/10'}`}
-                title={searchProps.isAiSearchEnabled ? "Disable AI Search" : "Enable AI Search"}
             >
                 <Sparkles className="w-4 h-4" />
-            </button>
+            </TooltipButton>
         </div>
     );
 });

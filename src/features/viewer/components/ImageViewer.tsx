@@ -303,6 +303,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     if (!isOpen) return null;
 
+    const isSidebarVisible = isSidebarOpen && !isTheaterMode;
+
     const handleCopyImage = async () => {
         try {
             const response = await fetch(displayImage.url);
@@ -396,7 +398,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             </div>
 
             {/* Right Area: Sidebar */}
-            <div className={`h-full z-30 transition-all duration-500 ease-spring overflow-hidden ${isSidebarOpen && !isTheaterMode ? 'w-[420px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-20'}`}>
+            <div
+                aria-hidden={!isSidebarVisible}
+                inert={isSidebarVisible ? undefined : true}
+                className={`h-full z-30 transition-all duration-500 ease-spring overflow-hidden ${isSidebarVisible ? 'w-[420px] opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-20'}`}
+            >
                 <MetadataSidebar
                     image={displayImage} // Pass active version
                     activeTab={activeTab}

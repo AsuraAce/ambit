@@ -151,7 +151,15 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     return (
         <div className="flex flex-col border-b border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-transparent backdrop-blur-sm z-10 shrink-0 transition-all duration-300">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-3 select-none cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={onToggleCollapse}>
+            <button
+                type="button"
+                aria-expanded={!isCollapsed}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+                }}
+                onClick={onToggleCollapse}
+                className="flex items-center justify-between px-6 py-3 select-none cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
                 <div className="flex items-center gap-2 text-sage-600 dark:text-sage-400 font-bold text-sm">
                     <Pin className="w-4 h-4 fill-current" />
                     <span>Pinned</span>
@@ -159,10 +167,10 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                         {images.length}
                     </span>
                 </div>
-                <button className="p-1 rounded-full text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+                <span className="p-1 rounded-full text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors" aria-hidden="true">
                     {isCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                </button>
-            </div>
+                </span>
+            </button>
 
             {/* Grid Content */}
             <div

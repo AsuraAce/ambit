@@ -117,14 +117,18 @@ export const TitleBar = () => {
 
                 <div className="flex h-full">
                     <button
+                        type="button"
+                        aria-label="Minimize Window"
                         onClick={handleMinimize}
-                        className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white outline-none focus:outline-none"
+                        className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/70 focus-visible:bg-gray-100 dark:focus-visible:bg-white/10"
                     >
                         <Minus className="w-4 h-4" />
                     </button>
                     <button
+                        type="button"
+                        aria-label={isMaximized ? "Restore Window" : "Maximize Window"}
                         onClick={handleMaximize}
-                        className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white outline-none focus:outline-none"
+                        className="h-full px-4 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/70 focus-visible:bg-gray-100 dark:focus-visible:bg-white/10"
                     >
                         {isMaximized ? (
                             <div className="relative w-3 h-3 pointer-events-none">
@@ -136,8 +140,10 @@ export const TitleBar = () => {
                         )}
                     </button>
                     <button
+                        type="button"
+                        aria-label="Close Window"
                         onClick={handleClose}
-                        className="h-full px-4 hover:bg-red-500 flex items-center justify-center transition-colors text-gray-500 hover:text-white dark:text-gray-400 outline-none focus:outline-none"
+                        className="h-full px-4 hover:bg-red-500 flex items-center justify-center transition-colors text-gray-500 hover:text-white dark:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-300 focus-visible:bg-red-500 focus-visible:text-white"
                     >
                         <X className="w-4 h-4" />
                     </button>
